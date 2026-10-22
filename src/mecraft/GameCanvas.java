@@ -76,7 +76,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private boolean diagnosticError;
     private int diagnosticScroll;
     private int recipeSelection;
-    private int miningX = -1, miningY = -1, miningZ = -1, miningProgress;
+    private int miningX = -1, miningY = -1, miningZ = -1;
+    private float miningDamage;
+    private int miningHitWait;
     private final int[] traceResult = new int[6];
     private final int[] crackScreenX = new int[4];
     private final int[] crackScreenY = new int[4];
@@ -184,7 +186,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
         if (keys[1]) updateMining();
         renderer.updateCamera(world, cameraPitch);
-        renderer.updateParticles(world.yaw, cameraPitch);
+        renderer.updateParticles(world, world.yaw, cameraPitch);
     }
 
     private void tryMove(float dx, float dz) {
@@ -386,6 +388,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void updateMining() {
         if (world == null) return;
+        if (miningHitWait > 0) {
+            miningHitWait--;
+            return;
+        }
         advanceMining(trace(5.0f));
     }
 
@@ -394,34 +400,41 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         int x = target[0], y = target[1], z = target[2];
         byte id = world.get(x, y, z);
         if (id == Block.AIR || id == Block.BEDROCK || id == Block.WATER ||
-            (world.mode == 0 && inventory[id] >= 64) ||
+            (world.mode == 0 && Block.dropsItem(id) && inventory[Block.dropId(id)] >= 64) ||
             (world.mode == 0 && (id == Block.CRAFTING_TABLE || id == Block.FURNACE) &&
              hotbarIndex(id) < 0 && emptyHotbarIndex() < 0)) { resetMining(); return; }
         if (x != miningX || y != miningY || z != miningZ) {
-            miningX = x; miningY = y; miningZ = z; miningProgress = 0;
+            miningX = x; miningY = y; miningZ = z; miningDamage = 0.0f;
+            return;
         }
-        if (world.mode == 1) miningProgress = Block.breakTicks(id);
-        else miningProgress++;
-        if (miningProgress >= Block.breakTicks(id)) {
+        boolean grounded = verticalVelocity == 0.0f &&
+            collides(world.playerX, world.playerY - 0.01f, world.playerZ);
+        boolean submerged = world.get(floorBlock(world.playerX),
+            floorBlock(world.playerY + 0.9f), floorBlock(world.playerZ)) == Block.WATER;
+        if (world.mode == 1) miningDamage = 1.0f;
+        else miningDamage += Block.breakStrength(id, grounded, submerged);
+        if (miningDamage >= 1.0f) {
             if (world.mode == 0) {
-                inventory[id]++;
+                if (Block.dropsItem(id)) inventory[Block.dropId(id)]++;
                 if (id == Block.CRAFTING_TABLE || id == Block.FURNACE) ensureHotbarItem(id);
             }
             renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
             world.set(x, y, z, Block.AIR);
             renderer.sync(world);
             resetMining();
+            miningHitWait = 5;
         }
     }
 
     private void resetMining() {
         miningX = miningY = miningZ = -1;
-        miningProgress = 0;
+        miningDamage = 0.0f;
     }
 
     private void cancelMining() {
         keys[1] = false;
         resetMining();
+        miningHitWait = 0;
     }
 
     private void placeBlock() {
@@ -721,6 +734,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         for (int i = 0; i < keys.length; i++) keys[i] = false;
         lookUp = lookDown = lookLeft = lookRight = false;
         resetMining();
+        miningHitWait = 0;
     }
 
     private void cycleSlot(int delta) {
@@ -979,13 +993,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     /** Draw progressive PE-style cracks projected onto the face being mined. */
     private void drawMiningCracks(Graphics g) {
-        if (miningProgress <= 0 || miningX < 0 || world == null) return;
+        if (miningDamage <= 0.0f || miningX < 0 || world == null) return;
         byte id = world.get(miningX, miningY, miningZ);
         if (id == Block.AIR) return;
         int[] target = trace(5.0f);
         if (target == null || target[0] != miningX || target[1] != miningY || target[2] != miningZ) return;
 
-        int stage = miningProgress * 10 / Block.breakTicks(id);
+        int stage = (int)(miningDamage * 10.0f);
         if (stage < 1) stage = 1;
         if (stage > 9) stage = 9;
         int ax = target[3], ay = target[4], az = target[5];
