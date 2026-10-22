@@ -18,7 +18,7 @@ final class Block {
     static final byte FURNACE = 13;
 
     static final int COUNT = 14;
-    static final int[] TILE = new int[] { 0, 0, 2, 1, 18, 205, 20, 52, 17, 34, 33, 4, 44, 45 };
+    static final int[] TILE = new int[] { 0, 0, 2, 1, 18, 205, 20, 52, 17, 34, 33, 4, 59, 45 };
     static final String[] NAME = new String[] {
         "Aire", "Césped", "Tierra", "Piedra", "Arena", "Agua",
         "Tronco", "Hojas", "Roca madre", "Carbón", "Hierro", "Tablones",
@@ -86,16 +86,30 @@ final class Block {
         if (id == GRASS) return 0;
         if (id == LOG) return 21;
         if (id == CRAFTING_TABLE) return 43;
-        if (id == FURNACE) return 61;
+        if (id == FURNACE) return 1;
         return TILE[id & 255];
     }
 
     static int sideTile(byte id) {
         if (id == GRASS) return 3;
         if (id == LOG) return 20;
-        if (id == CRAFTING_TABLE) return 44;
+        if (id == CRAFTING_TABLE) return 59;
         if (id == FURNACE) return 45;
         return TILE[id & 255];
+    }
+
+    /** Indev terrain tile for the renderer's face order: top, x-, x+, z-, z+, bottom. */
+    static int faceTile(byte id, int face) {
+        if (face == 0) return topTile(id);
+        if (face == 5) {
+            if (id == GRASS) return TILE[DIRT];
+            if (id == CRAFTING_TABLE) return TILE[PLANKS];
+            if (id == FURNACE) return 1;
+            return topTile(id);
+        }
+        if (id == CRAFTING_TABLE) return (face == 1 || face == 3) ? 59 : 60;
+        if (id == FURNACE) return face == 4 ? 44 : 45;
+        return sideTile(id);
     }
 
 }
