@@ -123,7 +123,7 @@ final class DroppedItemSystem {
             if (onGround) {
                 vx[i] *= 0.7f;
                 vz[i] *= 0.7f;
-                vy[i] *= -0.5f;
+                vy[i] = 0.0f;
             }
 
             int id = itemId[i];
@@ -157,8 +157,8 @@ final class DroppedItemSystem {
 
         next = y[i] + vy[i];
         if (collides(world, x[i], next, z[i])) {
-            if (vy[i] < 0.0f) y[i] = floorBlock(y[i] - HALF_SIZE) + 1.0f + HALF_SIZE;
-            else y[i] = floorBlock(y[i] + HALF_SIZE) - HALF_SIZE;
+            if (vy[i] < 0.0f) y[i] = floorBlock(next - HALF_SIZE) + 1.0f + HALF_SIZE;
+            else y[i] = floorBlock(next + HALF_SIZE) - HALF_SIZE;
             vy[i] = 0.0f;
         } else {
             y[i] = next;
