@@ -397,6 +397,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             return;
         }
         advanceMining(trace(5.0f));
+        renderer.setHandLooping(miningX >= 0);
     }
 
     private void advanceMining(int[] target) {
@@ -434,6 +435,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private void resetMining() {
         miningX = miningY = miningZ = -1;
         miningDamage = 0.0f;
+        if (renderer != null) renderer.setHandLooping(false);
     }
 
     private void cancelMining() {
