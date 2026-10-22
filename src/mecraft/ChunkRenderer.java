@@ -55,8 +55,11 @@ final class ChunkRenderer {
         handTexture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         handAppearance = createHandAppearance(handTexture);
         handMesh = makeHandMesh();
-        handMesh.setScale(0.16f, 0.52f, 0.16f);
-        handMesh.setTranslation(0.38f, -0.91f, -0.62f);
+        // Keep the forearm inside the narrow portrait viewport used by most
+        // MIDP phones. The previous offset projected it past the right and
+        // bottom edges, making the empty hand appear to be missing.
+        handMesh.setScale(0.16f, 0.44f, 0.16f);
+        handMesh.setTranslation(0.22f, -0.44f, -0.78f);
         handPivot.addChild(handMesh);
         buildHeldItems();
         particles = new ParticleSystem(atlas);
@@ -121,8 +124,8 @@ final class ChunkRenderer {
             for (int i = 0; i < builders.length; i++) {
                 if (builders[i] == null) continue;
                 Mesh mesh = makeMesh(builders[i]);
-                mesh.setScale(0.21f, 0.21f, 0.21f);
-                mesh.setTranslation(0.40f, -0.62f, -0.98f);
+                mesh.setScale(0.17f, 0.17f, 0.17f);
+                mesh.setTranslation(0.28f, -0.36f, -0.62f);
                 mesh.setRenderingEnable(false);
                 handPivot.addChild(mesh);
                 meshes[at++] = mesh;
@@ -161,13 +164,24 @@ final class ChunkRenderer {
             0,0,0, 0,0,1, 1,0,0, 1,0,1
         };
         short[] uv = new short[48];
+        // Classic 64x32 skin layout for the right arm: front, back, both
+        // sides, top and underside. Avoid stretching the sleeve on every face.
+        int[][] armUv = new int[][] {
+            { 44, 20, 48, 32 }, // front
+            { 52, 20, 56, 32 }, // back
+            { 40, 20, 44, 32 }, // right side
+            { 48, 20, 52, 32 }, // left side
+            { 44, 16, 48, 20 }, // top
+            { 48, 16, 52, 20 }  // underside
+        };
         int[] strips = new int[] { 4,4,4,4,4,4 };
         for (int face = 0; face < 6; face++) {
             int offset = face * 8;
-            uv[offset] = 44; uv[offset + 1] = 20;
-            uv[offset + 2] = 44; uv[offset + 3] = 31;
-            uv[offset + 4] = 47; uv[offset + 5] = 20;
-            uv[offset + 6] = 47; uv[offset + 7] = 31;
+            int[] region = armUv[face];
+            uv[offset] = (short)region[0]; uv[offset + 1] = (short)region[1];
+            uv[offset + 2] = (short)region[0]; uv[offset + 3] = (short)region[3];
+            uv[offset + 4] = (short)region[2]; uv[offset + 5] = (short)region[1];
+            uv[offset + 6] = (short)region[2]; uv[offset + 7] = (short)region[3];
         }
         VertexArray positions = new VertexArray(24, 3, 2);
         positions.set(0, 24, p);
