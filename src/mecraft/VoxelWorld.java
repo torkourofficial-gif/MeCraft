@@ -118,11 +118,11 @@ final class VoxelWorld {
         }
         playerX = centerX + 0.5f;
         playerZ = centerZ + 0.5f;
-        playerY = surfaceY(centerX, centerZ) + 1.05f;
+        playerY = surfaceY(centerX, centerZ) + 1.0f;
         yaw = 0f;
     }
 
-    private int surfaceY(int x, int z) {
+    int surfaceY(int x, int z) {
         for (int y = HEIGHT - 1; y >= 0; y--) {
             if (get(x, y, z) != Block.AIR && get(x, y, z) != Block.WATER) return y;
         }
@@ -203,3 +203,4 @@ final class VoxelWorld {
         return false;
     }
 }
+

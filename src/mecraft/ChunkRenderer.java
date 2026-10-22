@@ -30,6 +30,7 @@ final class ChunkRenderer {
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     private final Texture2D atlas;
     private final Appearance blockAppearance;
+    private final ParticleSystem particles;
     private int builtRevision = -1;
     private int builtWidth;
     private int builtHeight;
@@ -43,10 +44,12 @@ final class ChunkRenderer {
         atlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         atlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         blockAppearance = createBlockAppearance();
+        particles = new ParticleSystem(atlas);
 
         camera.setPerspective(68.0f, (float)width / (float)height, 0.1f, 38.0f);
         cameraPivot.addChild(camera);
         scene.addChild(terrain);
+        scene.addChild(particles.mesh);
         scene.addChild(cameraPivot);
         scene.setActiveCamera(camera);
         Background background = new Background();
@@ -69,10 +72,18 @@ final class ChunkRenderer {
     }
 
     void updateCamera(VoxelWorld world, float pitch) {
-        cameraPivot.setTranslation(world.playerX, world.playerY + 0.62f, world.playerZ);
+        cameraPivot.setTranslation(world.playerX, world.playerY + 1.62f, world.playerZ);
         // M3G cameras look down local -Z; 180 degrees makes yaw zero face +Z.
         cameraPivot.setOrientation(world.yaw + 180.0f, 0.0f, 1.0f, 0.0f);
         camera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
+    }
+
+    void spawnBlockDestroy(int x, int y, int z, int tile) {
+        particles.spawnBlockDestroy(x, y, z, tile);
+    }
+
+    void updateParticles(float yaw, float pitch) {
+        particles.update(yaw, pitch);
     }
 
     void sync(VoxelWorld world) {
@@ -294,4 +305,5 @@ final class ChunkRenderer {
 
     }
 }
+
 

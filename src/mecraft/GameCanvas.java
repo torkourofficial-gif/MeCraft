@@ -20,7 +20,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private static final int MENU_CREATIVE = 2;
     private static final int MENU_CONTROLS = 3;
     private static final int MENU_EXIT = 4;
-    private static final float PLAYER_RADIUS = 0.24f;
+    private static final float PLAYER_WIDTH = 0.6f;
+    private static final float PLAYER_HEIGHT = 1.8f;
+    private static final float PLAYER_RADIUS = PLAYER_WIDTH * 0.5f;
+    private static final float PLAYER_EYE_HEIGHT = 1.62f;
 
     private final MeCraft app;
     private final boolean[] keys = new boolean[10];
@@ -44,6 +47,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private boolean hasSavedWorld;
     private float verticalVelocity;
     private float cameraPitch = -5.0f;
+    private boolean lookUp, lookDown, lookLeft, lookRight;
     private VoxelWorld world;
     private ChunkRenderer renderer;
     private Image title;
@@ -99,19 +103,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private synchronized void updateGame() {
         if (!visible || state != PLAYING || world == null || renderer == null) return;
-        float turn = 0.0f;
-        if (keys[4]) turn -= 3.0f;
-        if (keys[6]) turn += 3.0f;
-        world.yaw += turn;
+        if (lookLeft) world.yaw -= 3.0f;
+        if (lookRight) world.yaw += 3.0f;
         if (world.yaw < 0.0f) world.yaw += 360.0f;
         if (world.yaw >= 360.0f) world.yaw -= 360.0f;
+        if (lookUp) cameraPitch += 2.5f;
+        if (lookDown) cameraPitch -= 2.5f;
+        if (cameraPitch > 80.0f) cameraPitch = 80.0f;
+        if (cameraPitch < -80.0f) cameraPitch = -80.0f;
 
         float forward = 0.0f;
         float strafe = 0.0f;
         if (keys[2]) forward += 1.0f;
         if (keys[8]) forward -= 1.0f;
-        if (keys[3]) strafe += 1.0f;
-        if (keys[1]) strafe -= 1.0f;
+        if (keys[6]) strafe += 1.0f;
+        if (keys[4]) strafe -= 1.0f;
         if (forward != 0.0f || strafe != 0.0f) {
             float length = (float)Math.sqrt(forward * forward + strafe * strafe);
             float speed = world.mode == 1 ? 0.145f : 0.105f;
@@ -129,7 +135,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (verticalVelocity < 0.0f && collides(world.playerX, nextY, world.playerZ)) {
             verticalVelocity = 0.0f;
             world.playerY = floorBlock(world.playerY);
-        } else if (verticalVelocity > 0.0f && collides(world.playerX, nextY + 1.5f, world.playerZ)) {
+        } else if (verticalVelocity > 0.0f && collides(world.playerX, nextY, world.playerZ)) {
             verticalVelocity = 0.0f;
         } else {
             world.playerY = nextY;
@@ -137,36 +143,37 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (world.playerY < 1.0f) {
             world.playerX = VoxelWorld.WIDTH / 2 + 0.5f;
             world.playerZ = VoxelWorld.DEPTH / 2 + 0.5f;
-            world.playerY = 14.0f;
+            world.playerY = world.surfaceY(VoxelWorld.WIDTH / 2, VoxelWorld.DEPTH / 2) + 1.0f;
             verticalVelocity = 0.0f;
         }
         renderer.updateCamera(world, cameraPitch);
+        renderer.updateParticles(world.yaw, cameraPitch);
     }
 
     private void tryMove(float dx, float dz) {
         float nx = world.playerX + dx;
-        if (nx > 1.0f && nx < VoxelWorld.WIDTH - 1.0f &&
-            !collides(nx, world.playerY + 0.15f, world.playerZ) &&
-            !collides(nx, world.playerY + 1.25f, world.playerZ)) world.playerX = nx;
+        if (nx > 1.0f && nx < VoxelWorld.WIDTH - 1.0f && !collides(nx, world.playerY, world.playerZ)) world.playerX = nx;
         float nz = world.playerZ + dz;
-        if (nz > 1.0f && nz < VoxelWorld.DEPTH - 1.0f &&
-            !collides(world.playerX, world.playerY + 0.15f, nz) &&
-            !collides(world.playerX, world.playerY + 1.25f, nz)) world.playerZ = nz;
+        if (nz > 1.0f && nz < VoxelWorld.DEPTH - 1.0f && !collides(world.playerX, world.playerY, nz)) world.playerZ = nz;
     }
 
     private boolean collides(float x, float y, float z) {
-        int minX = floorBlock(x - PLAYER_RADIUS);
-        int maxX = floorBlock(x + PLAYER_RADIUS);
-        int minZ = floorBlock(z - PLAYER_RADIUS);
-        int maxZ = floorBlock(z + PLAYER_RADIUS);
-        int blockY = floorBlock(y);
-        return Block.solid(world.get(minX, blockY, minZ)) || Block.solid(world.get(maxX, blockY, minZ)) ||
-               Block.solid(world.get(minX, blockY, maxZ)) || Block.solid(world.get(maxX, blockY, maxZ));
+        int minX = floorBlock(x - PLAYER_RADIUS + 0.001f);
+        int maxX = floorBlock(x + PLAYER_RADIUS - 0.001f);
+        int minZ = floorBlock(z - PLAYER_RADIUS + 0.001f);
+        int maxZ = floorBlock(z + PLAYER_RADIUS - 0.001f);
+        int minY = floorBlock(y + 0.001f);
+        int maxY = floorBlock(y + PLAYER_HEIGHT - 0.001f);
+        for (int by = minY; by <= maxY; by++) {
+            if (Block.solid(world.get(minX, by, minZ)) || Block.solid(world.get(maxX, by, minZ)) ||
+                Block.solid(world.get(minX, by, maxZ)) || Block.solid(world.get(maxX, by, maxZ))) return true;
+        }
+        return false;
     }
 
     private void jump() {
         if (state != PLAYING || verticalVelocity != 0.0f) return;
-        if (collides(world.playerX, world.playerY - 0.05f, world.playerZ)) verticalVelocity = 0.20f;
+        if (collides(world.playerX, world.playerY - 0.01f, world.playerZ)) verticalVelocity = 0.20f;
     }
 
     private void startNewWorld(int mode) {
@@ -332,6 +339,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             int slot = findSlot(id);
             if (slot >= 0 && inventory[slot] < 64) inventory[slot]++;
         }
+        renderer.spawnBlockDestroy(target[0], target[1], target[2], Block.sideTile(id));
         world.set(target[0], target[1], target[2], Block.AIR);
         renderer.sync(world);
     }
@@ -345,7 +353,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         int z = target[2] + target[5];
         if (y <= 0 || y >= VoxelWorld.HEIGHT) return;
         float px = world.playerX, py = world.playerY, pz = world.playerZ;
-        if (floorBlock(px) == x && floorBlock(pz) == z && y >= py - 0.1f && y <= py + 1.7f) return;
+        if (x + 1.0f > px - PLAYER_RADIUS && x < px + PLAYER_RADIUS &&
+            z + 1.0f > pz - PLAYER_RADIUS && z < pz + PLAYER_RADIUS &&
+            y + 1.0f > py && y < py + PLAYER_HEIGHT) return;
         int slot = world.selectedSlot;
         if (world.mode == 0 && inventory[slot] <= 0) return;
         if (world.get(x, y, z) != Block.AIR && world.get(x, y, z) != Block.WATER) return;
@@ -359,7 +369,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         double yaw = world.yaw * Math.PI / 180.0;
         double pitch = cameraPitch * Math.PI / 180.0;
         float ox = world.playerX;
-        float oy = world.playerY + 0.62f;
+        float oy = world.playerY + PLAYER_EYE_HEIGHT;
         float oz = world.playerZ;
         int oldX = floorBlock(ox), oldY = floorBlock(oy), oldZ = floorBlock(oz);
         for (float d = 0.35f; d <= reach; d += 0.12f) {
@@ -416,27 +426,37 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             return;
         }
         if (state != PLAYING) return;
-        if (keyCode == KEY_NUM2 || gameAction(keyCode) == UP) keys[2] = true;
-        if (keyCode == KEY_NUM8 || gameAction(keyCode) == DOWN) keys[8] = true;
-        if (keyCode == KEY_NUM4 || gameAction(keyCode) == LEFT) keys[4] = true;
-        if (keyCode == KEY_NUM6 || gameAction(keyCode) == RIGHT) keys[6] = true;
-        if (keyCode == KEY_NUM1) keys[1] = true;
-        if (keyCode == KEY_NUM3) keys[3] = true;
-        if (keyCode == KEY_NUM5 || gameAction(keyCode) == FIRE) mineTarget();
-        if (keyCode == KEY_NUM0) placeBlock();
+        if (keyCode == KEY_NUM2) keys[2] = true;
+        else if (keyCode == KEY_NUM8) keys[8] = true;
+        else if (keyCode == KEY_NUM4) keys[4] = true;
+        else if (keyCode == KEY_NUM6) keys[6] = true;
+        else {
+            int action = gameAction(keyCode);
+            if (action == UP) lookUp = true;
+            else if (action == DOWN) lookDown = true;
+            else if (action == LEFT) lookLeft = true;
+            else if (action == RIGHT) lookRight = true;
+        }
+        if (keyCode == KEY_NUM5) jump();
+        if (keyCode == KEY_NUM1) mineTarget();
+        if (keyCode == KEY_NUM3) placeBlock();
         if (keyCode == KEY_NUM7) cycleSlot(-1);
         if (keyCode == KEY_NUM9) cycleSlot(1);
-        if (keyCode == KEY_POUND) jump();
         if (keyCode == KEY_STAR) openPause();
     }
 
     public synchronized void keyReleased(int keyCode) {
-        if (keyCode == KEY_NUM2 || gameAction(keyCode) == UP) keys[2] = false;
-        if (keyCode == KEY_NUM8 || gameAction(keyCode) == DOWN) keys[8] = false;
-        if (keyCode == KEY_NUM4 || gameAction(keyCode) == LEFT) keys[4] = false;
-        if (keyCode == KEY_NUM6 || gameAction(keyCode) == RIGHT) keys[6] = false;
-        if (keyCode == KEY_NUM1) keys[1] = false;
-        if (keyCode == KEY_NUM3) keys[3] = false;
+        if (keyCode == KEY_NUM2) keys[2] = false;
+        else if (keyCode == KEY_NUM8) keys[8] = false;
+        else if (keyCode == KEY_NUM4) keys[4] = false;
+        else if (keyCode == KEY_NUM6) keys[6] = false;
+        else {
+            int action = gameAction(keyCode);
+            if (action == UP) lookUp = false;
+            else if (action == DOWN) lookDown = false;
+            else if (action == LEFT) lookLeft = false;
+            else if (action == RIGHT) lookRight = false;
+        }
     }
 
     private void moveSelection(int delta) {
@@ -460,7 +480,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             else if (menuSelection == MENU_SURVIVAL) startNewWorld(0);
             else if (menuSelection == MENU_CREATIVE) startNewWorld(1);
             else if (menuSelection == MENU_CONTROLS) {
-                errorMessage = "Controles: 2/8 mover, 4/6 girar, 1/3 desplazarse, # saltar, 5 romper, 0 colocar, 7/9 elegir bloque, * pausa.";
+                errorMessage = "Controles: cruceta mira alrededor; 2/8 avanzar y retroceder; 4/6 desplazarse; 5 saltar; 1 romper; 3 colocar; 7/9 elegir bloque; * pausa.";
                 state = ERROR;
             }
             else if (menuSelection == MENU_EXIT) app.closeGame();
@@ -504,6 +524,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void clearKeys() {
         for (int i = 0; i < keys.length; i++) keys[i] = false;
+        lookUp = lookDown = lookLeft = lookRight = false;
     }
 
     private void cycleSlot(int delta) {
@@ -612,7 +633,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         g.setColor(255, 255, 255);
         g.drawString(Block.NAME[hotbar[world.selectedSlot]], w / 2, y - 2, Graphics.BOTTOM | Graphics.HCENTER);
         g.drawString(world.mode == 0 ? "Supervivencia" : "Creativo", 3, 2, Graphics.TOP | Graphics.LEFT);
-        g.drawString("5 romper  0 colocar  7/9 cambiar  * pausa", w / 2, h - 1, Graphics.BOTTOM | Graphics.HCENTER);
+        g.drawString("2/8 mover  4/6 lado  5 salto  1 romper  3 poner", w / 2, h - 1, Graphics.BOTTOM | Graphics.HCENTER);
     }
 
     private void drawHearts(Graphics g) {
@@ -688,4 +709,5 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         return value;
     }
 }
+
 

@@ -18,16 +18,16 @@ Es un demake inicial, no una reproducción completa de Indev: todavía no incluy
 
 | Tecla | Acción |
 | --- | --- |
+| Cruceta | Mirar arriba, abajo, izquierda y derecha |
 | 2 / 8 | Avanzar / retroceder |
-| 4 / 6 | Girar |
-| 1 / 3 | Desplazarse lateralmente |
-| 5 | Romper el bloque apuntado / confirmar en menús |
-| 0 | Colocar el bloque seleccionado |
+| 4 / 6 | Desplazarse a la izquierda / derecha |
+| 5 | Saltar / confirmar en menús |
+| 1 | Romper el bloque apuntado |
+| 3 | Colocar el bloque seleccionado |
 | 7 / 9 | Cambiar bloque seleccionado |
-| # | Saltar |
 | * | Pausar, guardar o regresar al menú |
 
-En algunos teléfonos los comandos de pantalla reemplazan a las teclas `*`, `5` y `0`.
+El jugador mide 0,6 × 1,8 bloques y la cámara está a 1,62 bloques sobre sus pies, igual que las medidas clásicas de Indev.
 
 Si falla M3G al iniciar el mundo o al dibujar, la pantalla de diagnóstico muestra la etapa, el tipo y mensaje de la excepción, el perfil/configuración solicitados por el JAD y los perfiles/configuración que soporta el emulador. `microedition.profiles` describe las capacidades del runtime; por ejemplo, un emulador puede anunciar MIDP 2.1 aunque el MIDlet solicite MIDP 2.0. Usa `2`/`8` para recorrer el texto y `5` para volver al menú. El valor M3G reportado por el runtime permite distinguir una API agregada al classpath de una implementación disponible en el emulador.
 
@@ -40,6 +40,7 @@ El objetivo es ejecutarse en un heap Java de **4 MiB o más**. Las decisiones pa
 - 27 sectores como máximo; no se crea un objeto de escena por bloque.
 - Geometría cuantizada a `short`, una apariencia compartida y arreglos temporales de CPU descartables después de construir cada sector.
 - Al editar un bloque se reconstruye su sector y, solo si cae en un borde, los sectores vecinos.
+- Las partículas de rotura reutilizan 32 ranuras y una sola malla, con la textura del bloque y sin asignaciones por partícula durante la actualización.
 - Se libera la imagen de título al entrar al mundo.
 - RMS guarda un registro del tamaño aproximado del mundo; algunos teléfonos pueden imponer un límite menor al tamaño de registro.
 
@@ -54,6 +55,7 @@ El proyecto está configurado para Oracle Java ME SDK 3.2, CLDC 1.1, MIDP 2.0 y 
 Si la plataforma SDK 3.2 no aparece en NetBeans, regístrala en **Tools > Java Platforms** y selecciona el dispositivo y la API opcional **JSR-184** en las propiedades del proyecto. El proyecto usa Java 1.3 y pre-verificación CLDC durante la compilación. Los PNG se guardan en `resources/mecraft/` y se empaquetan bajo `/mecraft/` en el JAR.
 
 Para instalar manualmente, transfiere ambos archivos de `dist/` al teléfono o abre `MeCraft.jad` en el emulador Java ME.
+
 
 
 
