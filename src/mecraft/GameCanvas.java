@@ -700,7 +700,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             int[] iconPixels = new int[16 * 16];
             for (int block = 1; block < Block.COUNT; block++) {
                 int tile = Block.inventoryIconTile((byte)block);
-                source.getRGB(sourcePixels, 0, 48, (tile % 10) * 48, (tile / 10) * 48, 48, 48);
+                int cellX = (tile % 10) * source.getWidth() / 10;
+                int cellY = (tile / 10) * source.getHeight() / 10;
+                int cropX = cellX + (source.getWidth() / 10 - 48) / 2;
+                int cropY = cellY + (source.getHeight() / 10 - 48) / 2;
+                source.getRGB(sourcePixels, 0, 48, cropX, cropY, 48, 48);
                 for (int y = 0; y < 16; y++) {
                     for (int x = 0; x < 16; x++) iconPixels[y * 16 + x] = sourcePixels[(y * 3 + 1) * 48 + x * 3 + 1];
                 }
@@ -756,6 +760,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             String stage = "actualizando mallas M3G";
             try {
                 renderer.sync(world);
+                int heldBlock = hotbar[world.selectedSlot];
+                renderer.updateHeldItem(heldBlock,
+                    world.mode == 1 || inventory[heldBlock] > 0);
                 stage = "obteniendo contexto Graphics3D";
                 Graphics3D graphics3D = Graphics3D.getInstance();
                 stage = "enlazando Graphics del Canvas a M3G";
@@ -884,28 +891,30 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         int output = Crafting.OUTPUT[selected];
         boolean canCraft = Crafting.canCraft(selected, inventory, world.mode == 1);
         if (workbench && containerTexture != null) {
-            int left = (w - containerTexture.getWidth()) / 2;
-            int top = (h - containerTexture.getHeight()) / 2;
-            g.drawImage(containerTexture, left, top, Graphics.TOP | Graphics.LEFT);
+            // container.png is 256x256, but its visible panel spans x=40..216,
+            // y=0..224. Center the visible panel and place controls from that origin.
+            int left = (w - 176) / 2;
+            int top = (h - 224) / 2;
+            g.drawImage(containerTexture, left - 40, top, Graphics.TOP | Graphics.LEFT);
             g.setColor(35, 35, 35);
-            g.drawString("Mesa de crafteo", left + 84, top + 7, Graphics.TOP | Graphics.LEFT);
-            drawRecipeGrid(g, left + 7, top + 29, 18, 3, selected);
+            g.drawString("Mesa de crafteo", left + 88, top + 4, Graphics.TOP | Graphics.LEFT);
+            drawRecipeGrid(g, left + 6, top + 17, 18, 3, selected);
             g.setColor(55, 55, 55);
-            g.drawString("Recetas 3x3", left + 73, top + 30, Graphics.TOP | Graphics.LEFT);
+            g.drawString("Recetas", left + 77, top + 17, Graphics.TOP | Graphics.LEFT);
             for (int i = 0; i < count; i++) {
-                int y = top + 49 + i * 20;
-                drawRecipeRow(g, left + 73, y, i, selected, workbench);
+                int y = top + 37 + i * 20;
+                drawRecipeRow(g, left + 77, y, i, selected, workbench);
             }
-            drawIcon(g, output, left + 142, top + 84);
+            drawIcon(g, output, left + 132, top + 75);
             g.setColor(30, 30, 30);
-            g.drawString("x" + Crafting.OUTPUT_COUNT[selected], left + 158, top + 87, Graphics.TOP | Graphics.LEFT);
+            g.drawString("x" + Crafting.OUTPUT_COUNT[selected], left + 148, top + 78, Graphics.TOP | Graphics.LEFT);
             for (int i = 0; i < hotbar.length; i++) {
-                int x = left + 8 + i * 18;
+                int x = left + 7 + i * 18;
                 int amount = inventory[hotbar[i]];
-                if (world.mode == 1 || amount > 0) drawIcon(g, hotbar[i], x, top + 143);
+                if (world.mode == 1 || amount > 0) drawIcon(g, hotbar[i], x, top + 199);
                 if (amount > 0) {
                     g.setColor(255, 255, 255);
-                    g.drawString(Integer.toString(amount), x + 17, top + 157, Graphics.RIGHT | Graphics.TOP);
+                    g.drawString(Integer.toString(amount), x + 17, top + 215, Graphics.RIGHT | Graphics.TOP);
                 }
             }
         } else {
@@ -1094,4 +1103,5 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         return value;
     }
 }
+
 
