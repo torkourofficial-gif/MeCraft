@@ -210,8 +210,8 @@ final class ChunkRenderer {
             float swingX = handSwinging ? -sinRoot * 0.4f : 0.0f;
             float swingY = handSwinging ? upDown * 0.2f : 0.0f;
             float swingZ = handSwinging ? -sinLinear * 0.2f : 0.0f;
-            heldItemOffset.setTranslation(-0.24f * handHorizontalScale + swingX,
-                    -0.22f + swingY, -0.75f + swingZ);
+            heldItemOffset.setTranslation(0.64f * handHorizontalScale + swingX,
+                    -0.60f + swingY, -0.72f + swingZ);
             heldItemYaw.setOrientation(45.0f + itemYaw, 0.0f, 1.0f, 0.0f);
             heldItemRoll.setOrientation(itemRoll, 0.0f, 0.0f, 1.0f);
             heldItemPitch.setOrientation(itemPitch, 1.0f, 0.0f, 0.0f);
@@ -228,7 +228,7 @@ final class ChunkRenderer {
     }
 
     private void setRestHeldItemPose() {
-        heldItemOffset.setTranslation(-0.24f * handHorizontalScale, -0.22f, -0.75f);
+        heldItemOffset.setTranslation(0.64f * handHorizontalScale, -0.60f, -0.72f);
         heldItemYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
         heldItemRoll.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
         heldItemPitch.setOrientation(0.0f, 1.0f, 0.0f, 0.0f);
@@ -238,7 +238,7 @@ final class ChunkRenderer {
         for (int id = 1; id < Block.COUNT; id++) {
             FaceBuilder[] builders = new FaceBuilder[TILE_COUNT];
             for (int face = 0; face < 6; face++) {
-                int tile = face == 0 ? Block.topTile((byte)id) : Block.sideTile((byte)id);
+                int tile = Block.faceTile((byte)id, face);
                 add(builders, tile, 0, 0, 0, face);
             }
             int count = 0;
@@ -248,10 +248,10 @@ final class ChunkRenderer {
             for (int i = 0; i < builders.length; i++) {
                 if (builders[i] == null) continue;
                 Mesh mesh = makeMesh(builders[i], heldItemAppearance);
-                // Indev ItemRenderer scales inventory block geometry by 0.4.
-                // The group provides the camera-space pose and animation.
-                mesh.setScale(0.4f, 0.4f, 0.4f);
-                mesh.setTranslation(0.0f, 0.0f, 0.0f);
+                // Center the cube at the hand anchor and keep it slightly smaller
+                // than Indev's 0.4 inventory-render scale.
+                mesh.setScale(0.34f, 0.34f, 0.34f);
+                mesh.setTranslation(-0.17f, -0.17f, -0.17f);
                 mesh.setRenderingEnable(false);
                 heldItemPitch.addChild(mesh);
                 meshes[at++] = mesh;
@@ -443,21 +443,19 @@ final class ChunkRenderer {
                 for (int x = x0; x < x1; x++) {
                     byte id = world.get(x, y, z);
                     if (id == Block.AIR) continue;
-                    int tile = Block.sideTile(id);
                     if (Block.faceVisible(id, world.get(x, y + 1, z))) {
-                    add(builders, (id == Block.GRASS || id == Block.LOG || id == Block.CRAFTING_TABLE || id == Block.FURNACE) ? Block.topTile(id) : tile,
-                            x - x0, y - y0, z - z0, 0);
+                        add(builders, Block.faceTile(id, 0), x - x0, y - y0, z - z0, 0);
                     }
                     if (Block.faceVisible(id, world.get(x - 1, y, z)))
-                        add(builders, tile, x - x0, y - y0, z - z0, 1);
+                        add(builders, Block.faceTile(id, 1), x - x0, y - y0, z - z0, 1);
                     if (Block.faceVisible(id, world.get(x + 1, y, z)))
-                        add(builders, tile, x - x0, y - y0, z - z0, 2);
+                        add(builders, Block.faceTile(id, 2), x - x0, y - y0, z - z0, 2);
                     if (Block.faceVisible(id, world.get(x, y, z - 1)))
-                        add(builders, tile, x - x0, y - y0, z - z0, 3);
+                        add(builders, Block.faceTile(id, 3), x - x0, y - y0, z - z0, 3);
                     if (Block.faceVisible(id, world.get(x, y, z + 1)))
-                        add(builders, tile, x - x0, y - y0, z - z0, 4);
+                        add(builders, Block.faceTile(id, 4), x - x0, y - y0, z - z0, 4);
                     if (y > 0 && Block.faceVisible(id, world.get(x, y - 1, z)))
-                        add(builders, tile, x - x0, y - y0, z - z0, 5);
+                        add(builders, Block.faceTile(id, 5), x - x0, y - y0, z - z0, 5);
                 }
             }
         }
