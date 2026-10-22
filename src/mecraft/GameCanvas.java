@@ -462,7 +462,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             inventory[block]--;
             if ((block == Block.CRAFTING_TABLE || block == Block.FURNACE) && inventory[block] == 0)
                 restoreHotbarItem(block);
-            if (inventory[block] == 0) cycleSlot(1);
         }
         renderer.sync(world);
     }
@@ -708,18 +707,19 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         try { containerTexture = Image.createImage("/mecraft/container.png"); } catch (IOException ignored) { containerTexture = null; }
         Image source = null;
         try {
-            source = Image.createImage("/mecraft/gui_blocks.png");
-            int[] sourcePixels = new int[48 * 48];
+            source = Image.createImage("/mecraft/textures.png");
+            int[] sourcePixels = new int[14 * 14];
             int[] iconPixels = new int[16 * 16];
             for (int block = 1; block < Block.COUNT; block++) {
-                int tile = Block.inventoryIconTile((byte)block);
-                int cellX = (tile % 10) * source.getWidth() / 10;
-                int cellY = (tile / 10) * source.getHeight() / 10;
-                int cropX = cellX + (source.getWidth() / 10 - 48) / 2;
-                int cropY = cellY + (source.getHeight() / 10 - 48) / 2;
-                source.getRGB(sourcePixels, 0, 48, cropX, cropY, 48, 48);
+                int tile = Block.sideTile((byte)block);
+                int cropX = (tile & 15) * 16 + 1;
+                int cropY = (tile >> 4) * 16 + 1;
+                source.getRGB(sourcePixels, 0, 14, cropX, cropY, 14, 14);
                 for (int y = 0; y < 16; y++) {
-                    for (int x = 0; x < 16; x++) iconPixels[y * 16 + x] = sourcePixels[(y * 3 + 1) * 48 + x * 3 + 1];
+                    for (int x = 0; x < 16; x++) {
+                        int sourceX = x * 14 / 16, sourceY = y * 14 / 16;
+                        iconPixels[y * 16 + x] = sourcePixels[sourceY * 14 + sourceX];
+                    }
                 }
                 blockIcons[block] = Image.createRGBImage(iconPixels, 16, 16, true);
             }
@@ -738,20 +738,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void cycleSlot(int delta) {
-        if (world.mode == 1) {
-            world.selectedSlot = (world.selectedSlot + delta + hotbar.length) % hotbar.length;
-            return;
-        }
-        // Never select an empty hotbar slot in survival. Keep the current
-        // selection if the player does not own any placeable blocks.
-        int candidate = world.selectedSlot;
-        for (int i = 0; i < hotbar.length; i++) {
-            candidate = (candidate + delta + hotbar.length) % hotbar.length;
-            if (inventory[hotbar[candidate]] > 0) {
-                world.selectedSlot = candidate;
-                return;
-            }
-        }
+        world.selectedSlot = (world.selectedSlot + delta + hotbar.length) % hotbar.length;
     }
 
     private int gameAction(int keyCode) {
