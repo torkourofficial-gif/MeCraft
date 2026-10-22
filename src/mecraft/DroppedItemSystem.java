@@ -209,7 +209,8 @@ final class DroppedItemSystem {
         int vertex = slot * VERTICES_PER_ITEM;
         int at = vertex * 2;
         for (int face = 0; face < 6; face++) {
-            int tile = face == 0 ? Block.topTile((byte)id) : Block.sideTile((byte)id);
+            int blockFace = face == 0 ? 0 : (face == 1 ? 5 : face - 1);
+            int tile = Block.faceTile((byte)id, blockFace);
             int u0 = (tile & 15) * 16 + 1;
             int v0 = (tile >> 4) * 16 + 1;
             int u1 = u0 + 14;
