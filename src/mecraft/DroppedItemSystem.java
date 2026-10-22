@@ -200,7 +200,10 @@ final class DroppedItemSystem {
                     tntTextureFrame[i] = nextTextureFrame;
                 }
             }
-            if (primedTnt && tntFuse[i]-- <= 0) {
+            // Decrement before checking: a fuse of 1 must explode on this
+            // tick. Post-decrement left it at 0, where primedTnt became false
+            // on the next tick, so the explosion was never reached.
+            if (primedTnt && --tntFuse[i] <= 0) {
                 explosionX = floorBlock(x[i]);
                 explosionY = floorBlock(y[i]);
                 explosionZ = floorBlock(z[i]);
