@@ -24,7 +24,7 @@ final class Block {
 
     static final int LEGACY_COUNT = 14;
     static final int COUNT = 19;
-    static final int[] TILE = new int[] { 0, 0, 2, 1, 18, 205, 20, 52, 17, 34, 33, 4, 59, 16, 2, 12, 13, 80, 78 };
+    static final int[] TILE = new int[] { 0, 0, 2, 1, 18, 205, 20, 52, 17, 34, 33, 4, 59, 16, 2, 12, 13, 80, 64 };
     static final String[] NAME = new String[] {
         "Aire", "Césped", "Tierra", "Piedra", "Arena", "Agua",
         "Tronco", "Hojas", "Roca madre", "Carbón", "Hierro", "Tablones",

@@ -121,8 +121,9 @@ final class MobSystem {
         if (target.type == SHEEP && !target.sheared) {
             target.setSheared(true);
             int woolCount = 1 + random.nextInt(3);
-            for (int i = 0; i < woolCount; i++)
+            for (int i = 0; i < woolCount; i++) {
                 drops.spawn(Block.WOOL, floor(target.x), floor(target.y), floor(target.z));
+            }
         }
         target.health -= damage;
         if (target.health <= 0) {
@@ -134,9 +135,16 @@ final class MobSystem {
             target.alive = false;
             target.root.setRenderingEnable(false);
         } else {
-            target.hurtTicks = 8;
+            target.hurtTicks = 10;
             target.setHurt(true);
-            target.verticalVelocity = 0.28f;
+            float knockX = world.playerX - target.x;
+            float knockZ = world.playerZ - target.z;
+            float knockLength = (float)Math.sqrt(knockX * knockX + knockZ * knockZ);
+            if (knockLength > 0.0001f) {
+                target.motionX -= knockX / knockLength * 0.4f;
+                target.motionZ -= knockZ / knockLength * 0.4f;
+            }
+            target.verticalVelocity = 0.4f;
             target.fleeTicks = 35;
             target.targetYaw = yawTo(target.x - world.playerX, target.z - world.playerZ);
         }
@@ -154,6 +162,7 @@ final class MobSystem {
             mob.health = mob.type == ZOMBIE ? 20 : 10;
             mob.hurtTicks = 0;
             mob.verticalVelocity = 0.0f;
+            mob.motionX = mob.motionZ = 0.0f;
             mob.setHurt(false);
             mob.setSheared(false);
             mob.alive = mob.type != ZOMBIE;
@@ -236,6 +245,7 @@ final class MobSystem {
         mob.health = 20;
         mob.hurtTicks = 0;
         mob.verticalVelocity = 0.0f;
+        mob.motionX = mob.motionZ = 0.0f;
         mob.setHurt(false);
         mob.setSheared(false);
         mob.attackDelay = 0;
@@ -294,16 +304,19 @@ final class MobSystem {
         if (mob.type != ZOMBIE && mob.fleeTicks > 0) speed *= 1.6f;
         if (!walking) speed = 0.0f;
         float radians = mob.yaw * (float)Math.PI / 180.0f;
-        float nx = mob.x + (float)Math.sin(radians) * speed;
-        float nz = mob.z + (float)Math.cos(radians) * speed;
+        float nx = mob.x + (float)Math.sin(radians) * speed + mob.motionX;
+        float nz = mob.z + (float)Math.cos(radians) * speed + mob.motionZ;
         if (canMove(world, mob, nx, mob.z)) mob.x = nx;
-        else mob.targetYaw += 75.0f;
+        else { mob.targetYaw += 75.0f; mob.motionX = 0.0f; }
         if (canMove(world, mob, mob.x, nz)) mob.z = nz;
-        else mob.targetYaw -= 140.0f;
+        else { mob.targetYaw -= 140.0f; mob.motionZ = 0.0f; }
+        mob.motionX *= 0.91f;
+        mob.motionZ *= 0.91f;
         float ground = world.surfaceY(floor(mob.x), floor(mob.z)) + 1.0f;
         if (mob.verticalVelocity != 0.0f || mob.y > ground) {
             mob.y += mob.verticalVelocity;
-            mob.verticalVelocity -= 0.04f;
+            mob.verticalVelocity *= 0.98f;
+            mob.verticalVelocity -= 0.08f;
             if (mob.y <= ground) {
                 mob.y = ground;
                 mob.verticalVelocity = 0.0f;
@@ -322,25 +335,30 @@ final class MobSystem {
     }
 
     private void animate(Mob mob) {
-        float phase = mob.age * 0.22f;
+        float phase = mob.age * 0.6662f;
         float walk = 0.0f;
         if (mob.type == ZOMBIE && mob.chasing) walk = 0.9f;
         else if (mob.fleeTicks > 0 || mob.walkTicks > 0) walk = 0.5f;
         if (mob.walkTicks > 0) mob.walkTicks--;
         if (mob.type == ZOMBIE) {
             // ModelBiped.animate() uses a 1.4 radian stride (about 80 degrees).
-            mob.legs[0].setOrientation((float)Math.cos(phase) * 80.0f * walk, 1, 0, 0);
-            mob.legs[1].setOrientation((float)Math.cos(phase + Math.PI) * 80.0f * walk, 1, 0, 0);
-            mob.arms[0].setOrientation(88.0f + (float)Math.sin(phase) * 5.0f, 1, 0, 0);
-            mob.arms[1].setOrientation(88.0f + (float)Math.sin(phase + Math.PI) * 5.0f, 1, 0, 0);
+            mob.legs[0].setOrientation((float)Math.cos(phase) * 80.214f * walk, 1, 0, 0);
+            mob.legs[1].setOrientation((float)Math.cos(phase + Math.PI) * 80.214f * walk, 1, 0, 0);
+            float armPitch = (float)Math.sin(mob.age * 0.067f) * 0.05f * 57.29578f;
+            float armRoll = ((float)Math.cos(mob.age * 0.09f) * 0.05f + 0.05f) * 57.29578f;
+            mob.armsPitch[0].setOrientation(90.0f - armPitch, 1, 0, 0);
+            mob.armsPitch[1].setOrientation(90.0f + armPitch, 1, 0, 0);
+            mob.arms[0].setOrientation(0.1f * 57.29578f, 0, 1, 0);
+            mob.arms[1].setOrientation(-0.1f * 57.29578f, 0, 1, 0);
+            mob.armsRoll[0].setOrientation(-armRoll, 0, 0, 1);
+            mob.armsRoll[1].setOrientation(armRoll, 0, 0, 1);
         } else {
             // ModelQuadruped.animate() also uses a 1.4 radian stride.
-            float stride = (float)Math.cos(phase) * 80.0f * walk;
+            float stride = (float)Math.cos(phase) * 80.214f * walk;
             mob.legs[0].setOrientation(stride, 1, 0, 0);
             mob.legs[1].setOrientation(-stride, 1, 0, 0);
             mob.legs[2].setOrientation(-stride, 1, 0, 0);
             mob.legs[3].setOrientation(stride, 1, 0, 0);
-            mob.head.setOrientation((float)Math.sin(phase * 0.22f) * 6.0f, 0, 1, 0);
         }
     }
 
@@ -450,7 +468,10 @@ final class MobSystem {
         final Group head = new Group();
         final Group[] legs = new Group[4];
         final Group[] arms = new Group[2];
+        final Group[] armsPitch = new Group[2];
+        final Group[] armsRoll = new Group[2];
         final Group[] fleece = new Group[6];
+        private final Appearance skin;
         private final Material skinMaterial;
         private final Material furMaterial;
         int health;
@@ -464,10 +485,12 @@ final class MobSystem {
         int walkTicks;
         int hurtTicks;
         float verticalVelocity;
+        float motionX, motionZ;
         float x, y, z, yaw, targetYaw;
 
         Mob(int type, Appearance appearance, Appearance fur) {
             this.type = type;
+            this.skin = appearance;
             this.skinMaterial = appearance.getMaterial();
             this.furMaterial = fur == null ? null : fur.getMaterial();
             if (type == ZOMBIE) buildZombie(appearance);
@@ -487,28 +510,34 @@ final class MobSystem {
         private void buildQuadruped(Appearance appearance, boolean pig, Appearance fur) {
             if (pig) {
                 addPart(root, 28, 8, 10, 16, 8, 10, 16, 8,
-                        0.0f, 0.625f, 0.0f, 90.0f, 1, 0, 0);
+                        0.0f, 0.8125f, 0.125f, -90.0f, 1, 0, 0,
+                        0.0f, 0.125f, -0.1875f);
                 addPart(head, 0, 0, 8, 8, 8, 8, 8, 8,
-                        0.0f, 0.0f, 0.0f, 0, 0, 1, 0);
-                head.setTranslation(0.0f, 0.75f, -0.625f);
+                        0.0f, 0.0f, 0.0f, 0, 0, 1, 0,
+                        0.0f, 0.0f, -0.25f);
+                head.setTranslation(0.0f, 0.75f, -0.375f);
                 root.addChild(head);
                 addLegs(6, 0.375f, 0.1875f, null);
             } else {
                 addPart(root, 28, 8, 8, 16, 6, 8, 16, 6,
-                        0.0f, 0.9375f, 0.0f, 90.0f, 1, 0, 0);
+                        0.0f, 1.1875f, 0.125f, -90.0f, 1, 0, 0,
+                        0.0f, 0.125f, -0.25f);
                 addPart(head, 0, 0, 6, 6, 8, 6, 6, 8,
-                        0.0f, 0.0f, 0.0f, 0, 0, 1, 0);
-                head.setTranslation(0.0f, 1.1875f, -0.625f);
+                        0.0f, 0.0f, 0.0f, 0, 0, 1, 0,
+                        0.0f, 0.0625f, -0.125f);
+                head.setTranslation(0.0f, 1.125f, -0.5f);
                 root.addChild(head);
                 // Indev renders sheep fleece as a second, inflated model pass.
                 fleece[0] = new Group();
                 head.addChild(fleece[0]);
-                addPart(fleece[0], 0, 0, 8, 8, 8, 6, 6, 6,
-                        0.0f, 0.0f, 0.0f, 0, 0, 1, 0, fur);
+                addPart(fleece[0], 0, 0, 7.2f, 7.2f, 7.2f, 6, 6, 6,
+                        0.0f, 0.0f, 0.0f, 0, 0, 1, 0, fur,
+                        0.0f, 0.0625f, -0.0625f);
                 fleece[1] = new Group();
                 root.addChild(fleece[1]);
-                addPart(fleece[1], 28, 8, 12, 20, 10, 8, 16, 6,
-                        0.0f, 0.9375f, 0.0f, 90.0f, 1, 0, 0, fur);
+                addPart(fleece[1], 28, 8, 11.5f, 19.5f, 9.5f, 8, 16, 6,
+                        0.0f, 1.1875f, 0.125f, -90.0f, 1, 0, 0, fur,
+                        0.0f, 0.125f, -0.25f);
                 addLegs(12, 0.75f, 0.1875f, fur);
             }
         }
@@ -517,8 +546,7 @@ final class MobSystem {
             for (int i = 0; i < 4; i++) {
                 Group leg = new Group();
                 float x = (i & 1) == 0 ? -halfWidth : halfWidth;
-                // The model faces -Z; front legs belong beside the head.
-                float z = i < 2 ? -0.3125f : 0.4375f;
+                float z = i < 2 ? 0.4375f : -0.3125f;
                 leg.setTranslation(x, pivotY, z);
                 root.addChild(leg);
                 addPart(leg, 0, 16, 4, length, 4, 4, length, 4,
@@ -543,52 +571,91 @@ final class MobSystem {
 
         private void buildZombie(Appearance appearance) {
             addPart(head, 0, 0, 8, 8, 8, 8, 8, 8,
-                    0.0f, 1.75f, 0.0f, 0, 0, 1, 0);
+                    0.0f, 0.0f, 0.0f, 0, 0, 1, 0,
+                    0.0f, 0.25f, 0.0f);
             addPart(head, 32, 0, 9, 9, 9, 8, 8, 8,
-                    0.0f, 1.75f, 0.0f, 0, 0, 1, 0);
+                    0.0f, 0.0f, 0.0f, 0, 0, 1, 0,
+                    0.0f, 0.25f, 0.0f);
+            head.setTranslation(0.0f, 1.5f, 0.0f);
             root.addChild(head);
             addPart(root, 16, 16, 8, 12, 4, 8, 12, 4,
-                    0.0f, 1.125f, 0.0f, 0, 0, 1, 0);
+                    0.0f, 1.5f, 0.0f, 0, 0, 1, 0,
+                    0.0f, -0.375f, 0.0f);
             for (int i = 0; i < 2; i++) {
                 float side = i == 0 ? -1.0f : 1.0f;
                 Group arm = new Group();
                 arm.setTranslation(side * 0.3125f, 1.375f, 0.0f);
                 root.addChild(arm);
-                addPart(arm, 40, 16, 4, 12, 4, 4, 12, 4,
-                        side * 0.0625f, -0.25f, 0.0f, 0, 0, 1, 0);
+                Group armPitch = new Group();
+                Group armRoll = new Group();
+                arm.addChild(armPitch);
+                armPitch.addChild(armRoll);
+                addPart(armRoll, 40, 16, 4, 12, 4, 4, 12, 4,
+                        side * 0.0625f, -0.25f, 0.0f, 0, 0, 1, 0,
+                        skin, 0.0f, 0.0f, 0.0f, i == 1);
                 arms[i] = arm;
+                armsPitch[i] = armPitch;
+                armsRoll[i] = armRoll;
 
                 Group leg = new Group();
                 leg.setTranslation(side * 0.125f, 0.75f, 0.0f);
                 root.addChild(leg);
                 addPart(leg, 0, 16, 4, 12, 4, 4, 12, 4,
-                        0.0f, -0.375f, 0.0f, 0, 0, 1, 0);
+                        0.0f, -0.375f, 0.0f, 0, 0, 1, 0,
+                        skin, 0.0f, 0.0f, 0.0f, i == 1);
                 legs[i] = leg;
             }
         }
 
-        private void addPart(Group parent, int u, int v, int width, int height, int depth,
+        private void addPart(Group parent, int u, int v, float width, float height, float depth,
                 int layoutWidth, int layoutHeight, int layoutDepth,
                 float x, float y, float z, float angle, float ax, float ay, float az) {
             addPart(parent, u, v, width, height, depth, layoutWidth, layoutHeight, layoutDepth,
                     x, y, z, angle, ax, ay, az, skin);
         }
 
-        private void addPart(Group parent, int u, int v, int width, int height, int depth,
+        private void addPart(Group parent, int u, int v, float width, float height, float depth,
                 int layoutWidth, int layoutHeight, int layoutDepth,
                 float x, float y, float z, float angle, float ax, float ay, float az,
                 Appearance appearance) {
+            addPart(parent, u, v, width, height, depth, layoutWidth, layoutHeight, layoutDepth,
+                    x, y, z, angle, ax, ay, az, appearance, 0.0f, 0.0f, 0.0f);
+        }
+
+        private void addPart(Group parent, int u, int v, float width, float height, float depth,
+                int layoutWidth, int layoutHeight, int layoutDepth,
+                float x, float y, float z, float angle, float ax, float ay, float az,
+                float boxX, float boxY, float boxZ) {
+            addPart(parent, u, v, width, height, depth, layoutWidth, layoutHeight, layoutDepth,
+                    x, y, z, angle, ax, ay, az, skin, boxX, boxY, boxZ);
+        }
+
+        private void addPart(Group parent, int u, int v, float width, float height, float depth,
+                int layoutWidth, int layoutHeight, int layoutDepth,
+                float x, float y, float z, float angle, float ax, float ay, float az,
+                Appearance appearance, float boxX, float boxY, float boxZ) {
+            addPart(parent, u, v, width, height, depth, layoutWidth, layoutHeight, layoutDepth,
+                    x, y, z, angle, ax, ay, az, appearance, boxX, boxY, boxZ, false);
+        }
+
+        private void addPart(Group parent, int u, int v, float width, float height, float depth,
+                int layoutWidth, int layoutHeight, int layoutDepth,
+                float x, float y, float z, float angle, float ax, float ay, float az,
+                Appearance appearance, float boxX, float boxY, float boxZ, boolean mirror) {
             Group part = new Group();
             part.setTranslation(x, y, z);
             if (angle != 0.0f) part.setOrientation(angle, ax, ay, az);
-            part.addChild(makeBox(u, v, width, height, depth,
-                    layoutWidth, layoutHeight, layoutDepth, appearance));
+            Group box = new Group();
+            box.setTranslation(boxX, boxY, boxZ);
+            box.addChild(makeBox(u, v, width, height, depth,
+                    layoutWidth, layoutHeight, layoutDepth, appearance, mirror));
+            part.addChild(box);
             parent.addChild(part);
         }
     }
 
-    private Mesh makeBox(int u, int v, int width, int height, int depth,
-            int layoutWidth, int layoutHeight, int layoutDepth, Appearance appearance) {
+    private Mesh makeBox(int u, int v, float width, float height, float depth,
+            int layoutWidth, int layoutHeight, int layoutDepth, Appearance appearance, boolean mirror) {
         short[] positions = new short[24 * 3];
         short[] texCoords = new short[24 * 2];
         float x0 = -width * 0.5f, x1 = width * 0.5f;
@@ -617,7 +684,8 @@ final class MobSystem {
             int[] r = rects[face];
             int[] order = faces[face];
             // TexturedQuad reverses U on its first two corners; preserve that Indev face mapping.
-            int[] us = {r[2], r[0], r[0], r[2]};
+            int[] us = mirror ? new int[] {r[0], r[2], r[2], r[0]} :
+                                new int[] {r[2], r[0], r[0], r[2]};
             int[] vs = {r[1], r[1], r[3], r[3]};
             for (int q = 0; q < 4; q++) {
                 float[] p = points[order[q]];
