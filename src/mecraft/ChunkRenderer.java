@@ -5,6 +5,7 @@ import javax.microedition.lcdui.Image;
 import javax.microedition.m3g.Appearance;
 import javax.microedition.m3g.Background;
 import javax.microedition.m3g.Camera;
+import javax.microedition.m3g.CompositingMode;
 import javax.microedition.m3g.Graphics3D;
 import javax.microedition.m3g.Group;
 import javax.microedition.m3g.Image2D;
@@ -39,6 +40,7 @@ final class ChunkRenderer {
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     private final Texture2D atlas;
     private final Appearance blockAppearance;
+    private final Appearance heldItemAppearance;
     private final Appearance handAppearance;
     private final Mesh handMesh;
     private final Mesh[][] heldItemMeshes = new Mesh[Block.COUNT][];
@@ -62,6 +64,7 @@ final class ChunkRenderer {
         atlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         atlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         blockAppearance = createBlockAppearance();
+        heldItemAppearance = createFirstPersonAppearance(true);
         handAppearance = createHandAppearance();
         handMesh = makeHandMesh();
         armBase.setTranslation(handBaseX(width, height), -0.60f, -0.72f);
@@ -208,9 +211,10 @@ final class ChunkRenderer {
             int at = 0;
             for (int i = 0; i < builders.length; i++) {
                 if (builders[i] == null) continue;
-                Mesh mesh = makeMesh(builders[i]);
-                mesh.setScale(0.17f, 0.17f, 0.17f);
-                mesh.setTranslation(-0.12f, -0.36f, -0.62f);
+                Mesh mesh = makeMesh(builders[i], heldItemAppearance);
+                // Keep the held block inside the lower-left view at 240x320.
+                mesh.setScale(0.14f, 0.14f, 0.14f);
+                mesh.setTranslation(-0.24f, -0.22f, -0.75f);
                 mesh.setRenderingEnable(false);
                 heldItemPitch.addChild(mesh);
                 meshes[at++] = mesh;
@@ -234,6 +238,28 @@ final class ChunkRenderer {
         polygon.setCulling(PolygonMode.CULL_NONE);
         polygon.setShading(PolygonMode.SHADE_FLAT);
         appearance.setPolygonMode(polygon);
+        CompositingMode compositing = new CompositingMode();
+        compositing.setDepthTestEnable(false);
+        compositing.setDepthWriteEnable(false);
+        appearance.setCompositingMode(compositing);
+        return appearance;
+    }
+
+    private Appearance createFirstPersonAppearance(boolean textured) {
+        Appearance appearance = new Appearance();
+        if (textured) appearance.setTexture(0, atlas);
+        Material material = new Material();
+        material.setColor(Material.AMBIENT, 0xFFFFFFFF);
+        material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
+        appearance.setMaterial(material);
+        PolygonMode polygon = new PolygonMode();
+        polygon.setCulling(PolygonMode.CULL_NONE);
+        polygon.setShading(PolygonMode.SHADE_FLAT);
+        appearance.setPolygonMode(polygon);
+        CompositingMode compositing = new CompositingMode();
+        compositing.setDepthTestEnable(false);
+        compositing.setDepthWriteEnable(false);
+        appearance.setCompositingMode(compositing);
         return appearance;
     }
 
@@ -422,6 +448,10 @@ final class ChunkRenderer {
     }
 
     private Mesh makeMesh(FaceBuilder data) {
+        return makeMesh(data, blockAppearance);
+    }
+
+    private Mesh makeMesh(FaceBuilder data, Appearance appearance) {
         int vertexCount = data.vertexCount;
         VertexArray positions = new VertexArray(vertexCount, 3, 2);
         positions.set(0, vertexCount, data.p);
@@ -438,7 +468,7 @@ final class ChunkRenderer {
         for (int i = 0; i < strips.length; i++) strips[i] = 4;
         TriangleStripArray triangles = new TriangleStripArray(0, strips);
 
-        return new Mesh(vertices, triangles, blockAppearance);
+        return new Mesh(vertices, triangles, appearance);
     }
 
     private Appearance createBlockAppearance() {
