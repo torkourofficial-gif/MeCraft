@@ -140,6 +140,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (lookDown) cameraPitch -= 2.5f;
         if (cameraPitch > 80.0f) cameraPitch = 80.0f;
         if (cameraPitch < -80.0f) cameraPitch = -80.0f;
+        renderer.updateHandAnimation();
 
         float forward = 0.0f;
         float strafe = 0.0f;
@@ -383,7 +384,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void mineTarget() {
-        if (world != null) advanceMining(trace(5.0f));
+        if (world != null) {
+            renderer.swingHand();
+            advanceMining(trace(5.0f));
+        }
     }
 
     private void updateMining() {
@@ -419,6 +423,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 if (id == Block.CRAFTING_TABLE || id == Block.FURNACE) ensureHotbarItem(id);
             }
             renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
+            renderer.swingHand();
             world.set(x, y, z, Block.AIR);
             renderer.sync(world);
             resetMining();
@@ -458,6 +463,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (world.mode == 0 && inventory[block] <= 0) return;
         if (world.get(x, y, z) != Block.AIR && world.get(x, y, z) != Block.WATER) return;
         if (!world.set(x, y, z, (byte)block)) return;
+        renderer.swingHand();
         if (world.mode == 0) {
             inventory[block]--;
             if ((block == Block.CRAFTING_TABLE || block == Block.FURNACE) && inventory[block] == 0)
@@ -608,7 +614,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         else if (keyCode == KEY_NUM8) keys[8] = true;
         else if (keyCode == KEY_NUM4) keys[4] = true;
         else if (keyCode == KEY_NUM6) keys[6] = true;
-        else if (keyCode == KEY_NUM1) keys[1] = true;
+        else if (keyCode == KEY_NUM1) {
+            if (!keys[1] && renderer != null) renderer.swingHand();
+            keys[1] = true;
+        }
         else {
             int action = gameAction(keyCode);
             if (action == UP) lookUp = true;
