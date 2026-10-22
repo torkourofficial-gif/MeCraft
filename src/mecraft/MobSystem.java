@@ -63,7 +63,8 @@ final class MobSystem {
                 float dx = world.playerX - mob.x;
                 float dz = world.playerZ - mob.z;
                 float distanceSquared = dx * dx + dz * dz;
-                if (distanceSquared < 100.0f) {
+                // EntityMob.findPlayerToAttack() acquires targets inside a 16-block radius.
+                if (distanceSquared < 256.0f) {
                     mob.chasing = true;
                     mob.targetYaw = yawTo(dx, dz);
                     if (distanceSquared < 2.5f * 2.5f &&
