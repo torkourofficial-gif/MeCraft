@@ -27,6 +27,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private static final float PLAYER_HEIGHT = 1.8f;
     private static final float PLAYER_RADIUS = PLAYER_WIDTH * 0.5f;
     private static final float PLAYER_EYE_HEIGHT = 1.62f;
+    private static final int[] CRACK_LINES = new int[] {
+        50,0,42,17, 42,17,51,29, 51,29,37,43, 37,43,48,55,
+        48,55,32,70, 32,70,43,86, 43,17,26,23, 51,29,69,22,
+        37,43,20,49, 48,55,70,47, 32,70,18,77, 43,86,61,94,
+        26,23,24,8, 69,22,78,8, 20,49,7,38, 70,47,91,42,
+        18,77,6,66, 61,94,77,87, 26,23,13,18, 69,22,82,29,
+        20,49,8,57, 70,47,84,60, 32,70,23,86, 61,94,55,100
+    };
+    private static final int[] DEFAULT_HOTBAR = new int[] {
+        Block.DIRT, Block.STONE, Block.LOG, Block.SAND, Block.PLANKS,
+        Block.LEAVES, Block.COAL, Block.IRON, Block.GRASS
+    };
 
     private final MeCraft app;
     private final boolean[] keys = new boolean[10];
@@ -64,6 +76,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private boolean diagnosticError;
     private int diagnosticScroll;
     private int recipeSelection;
+    private int miningX = -1, miningY = -1, miningZ = -1, miningProgress;
+    private final int[] traceResult = new int[6];
+    private final int[] crackScreenX = new int[4];
+    private final int[] crackScreenY = new int[4];
 
     GameCanvas(MeCraft app) {
         this.app = app;
@@ -166,6 +182,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             verticalVelocity = 0.0f;
             fallDistance = 0.0f;
         }
+        if (keys[1]) updateMining();
         renderer.updateCamera(world, cameraPitch);
         renderer.updateParticles(world.yaw, cameraPitch);
     }
@@ -364,19 +381,47 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void mineTarget() {
+        if (world != null) advanceMining(trace(5.0f));
+    }
+
+    private void updateMining() {
         if (world == null) return;
-        int[] target = trace(5.0f);
-        if (target == null) return;
-        byte id = world.get(target[0], target[1], target[2]);
-        if (id == Block.AIR || id == Block.BEDROCK || id == Block.WATER) return;
-        if (world.mode == 0) {
-            if (inventory[id] >= 64) return;
-            inventory[id]++;
-            if ((id == Block.CRAFTING_TABLE || id == Block.FURNACE) && !hasHotbarItem(id)) hotbar[8] = id;
+        advanceMining(trace(5.0f));
+    }
+
+    private void advanceMining(int[] target) {
+        if (target == null) { resetMining(); return; }
+        int x = target[0], y = target[1], z = target[2];
+        byte id = world.get(x, y, z);
+        if (id == Block.AIR || id == Block.BEDROCK || id == Block.WATER ||
+            (world.mode == 0 && inventory[id] >= 64) ||
+            (world.mode == 0 && (id == Block.CRAFTING_TABLE || id == Block.FURNACE) &&
+             hotbarIndex(id) < 0 && emptyHotbarIndex() < 0)) { resetMining(); return; }
+        if (x != miningX || y != miningY || z != miningZ) {
+            miningX = x; miningY = y; miningZ = z; miningProgress = 0;
         }
-        renderer.spawnBlockDestroy(target[0], target[1], target[2], Block.sideTile(id));
-        world.set(target[0], target[1], target[2], Block.AIR);
-        renderer.sync(world);
+        if (world.mode == 1) miningProgress = Block.breakTicks(id);
+        else miningProgress++;
+        if (miningProgress >= Block.breakTicks(id)) {
+            if (world.mode == 0) {
+                inventory[id]++;
+                if (id == Block.CRAFTING_TABLE || id == Block.FURNACE) ensureHotbarItem(id);
+            }
+            renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
+            world.set(x, y, z, Block.AIR);
+            renderer.sync(world);
+            resetMining();
+        }
+    }
+
+    private void resetMining() {
+        miningX = miningY = miningZ = -1;
+        miningProgress = 0;
+    }
+
+    private void cancelMining() {
+        keys[1] = false;
+        resetMining();
     }
 
     private void placeBlock() {
@@ -402,7 +447,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (!world.set(x, y, z, (byte)block)) return;
         if (world.mode == 0) {
             inventory[block]--;
-            if ((block == Block.CRAFTING_TABLE || block == Block.FURNACE) && inventory[block] == 0) hotbar[8] = Block.GRASS;
+            if ((block == Block.CRAFTING_TABLE || block == Block.FURNACE) && inventory[block] == 0)
+                restoreHotbarItem(block);
+            if (inventory[block] == 0) cycleSlot(1);
         }
         renderer.sync(world);
     }
@@ -434,12 +481,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (state != INVENTORY && !workbench) return;
         int recipeCount = Crafting.count(workbench);
         if (recipeSelection < 0 || recipeSelection >= recipeCount) return;
-        if (!Crafting.craft(recipeSelection, inventory, world.mode == 1)) return;
         int output = Crafting.OUTPUT[recipeSelection];
-        if (output == Block.CRAFTING_TABLE || output == Block.FURNACE) {
-            hotbar[8] = output;
-            world.selectedSlot = 8;
-        }
+        int slot = hotbarIndex(output);
+        if (slot < 0) slot = emptyHotbarIndex();
+        if (slot < 0 && world.mode == 1) slot = 8;
+        if (slot < 0) return;
+        if (!Crafting.craft(recipeSelection, inventory, world.mode == 1)) return;
+        hotbar[slot] = output;
+        world.selectedSlot = slot;
         copyInventoryToWorld();
         repaint();
     }
@@ -467,7 +516,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             int bx = floorBlock(x), by = floorBlock(y), bz = floorBlock(z);
             byte id = world.get(bx, by, bz);
             if (id != Block.AIR && id != Block.WATER) {
-                int[] hit = new int[6];
+                int[] hit = traceResult;
                 hit[0] = bx; hit[1] = by; hit[2] = bz;
                 hit[3] = oldX - bx; hit[4] = oldY - by; hit[5] = oldZ - bz;
                 return hit;
@@ -477,9 +526,26 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         return null;
     }
 
-    private boolean hasHotbarItem(int id) {
-        for (int i = 0; i < hotbar.length; i++) if (hotbar[i] == id) return true;
-        return false;
+    private int hotbarIndex(int id) {
+        for (int i = 0; i < hotbar.length; i++) if (hotbar[i] == id) return i;
+        return -1;
+    }
+
+    private int emptyHotbarIndex() {
+        for (int i = 0; i < hotbar.length; i++) if (inventory[hotbar[i]] == 0) return i;
+        return -1;
+    }
+
+    private void ensureHotbarItem(int id) {
+        if (hotbarIndex(id) >= 0) return;
+        int slot = emptyHotbarIndex();
+        if (slot >= 0) hotbar[slot] = id;
+    }
+
+    private void restoreHotbarItem(int id) {
+        for (int i = 0; i < hotbar.length; i++) {
+            if (hotbar[i] == id) hotbar[i] = DEFAULT_HOTBAR[i];
+        }
     }
 
     /** Java ME compatible floor conversion, including negative coordinates. */
@@ -530,6 +596,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         else if (keyCode == KEY_NUM8) keys[8] = true;
         else if (keyCode == KEY_NUM4) keys[4] = true;
         else if (keyCode == KEY_NUM6) keys[6] = true;
+        else if (keyCode == KEY_NUM1) keys[1] = true;
         else {
             int action = gameAction(keyCode);
             if (action == UP) lookUp = true;
@@ -538,7 +605,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             else if (action == RIGHT) lookRight = true;
         }
         if (keyCode == KEY_NUM5) jump();
-        if (keyCode == KEY_NUM1) mineTarget();
         if (keyCode == KEY_NUM3) placeBlock();
         if (keyCode == KEY_NUM7) cycleSlot(-1);
         if (keyCode == KEY_NUM9) cycleSlot(1);
@@ -546,7 +612,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     public synchronized void keyReleased(int keyCode) {
-        if (keyCode == KEY_NUM2) keys[2] = false;
+        if (keyCode == KEY_NUM1) cancelMining();
+        else if (keyCode == KEY_NUM2) keys[2] = false;
         else if (keyCode == KEY_NUM8) keys[8] = false;
         else if (keyCode == KEY_NUM4) keys[4] = false;
         else if (keyCode == KEY_NUM6) keys[6] = false;
@@ -580,7 +647,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             else if (menuSelection == MENU_SURVIVAL) startNewWorld(0);
             else if (menuSelection == MENU_CREATIVE) startNewWorld(1);
             else if (menuSelection == MENU_CONTROLS) {
-                errorMessage = "Controles: cruceta mira; 2/8 avanzar; 4/6 desplazarse; 5 saltar/crear; 1 romper; 3 colocar o usar mesa; # inventario 2x2; 7/9 bloque; * pausa.";
+                errorMessage = "Controles: cruceta mira; 2/8 avanzar; 4/6 desplazarse; 5 saltar/crear; mantener 1 para romper; 3 colocar o usar mesa; # inventario 2x2; 7/9 bloque; * pausa.";
                 state = ERROR;
             }
             else if (menuSelection == MENU_EXIT) app.closeGame();
@@ -649,10 +716,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private void clearKeys() {
         for (int i = 0; i < keys.length; i++) keys[i] = false;
         lookUp = lookDown = lookLeft = lookRight = false;
+        resetMining();
     }
 
     private void cycleSlot(int delta) {
-        world.selectedSlot = (world.selectedSlot + delta + hotbar.length) % hotbar.length;
+        if (world.mode == 1) {
+            world.selectedSlot = (world.selectedSlot + delta + hotbar.length) % hotbar.length;
+            return;
+        }
+        for (int i = 0; i < hotbar.length; i++) {
+            world.selectedSlot = (world.selectedSlot + delta + hotbar.length) % hotbar.length;
+            if (inventory[hotbar[world.selectedSlot]] > 0) return;
+        }
     }
 
     private int gameAction(int keyCode) {
@@ -693,7 +768,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 }
                 finally { graphics3D.releaseTarget(); }
                 stage = "dibujando HUD 2D";
-                if (state == PLAYING || state == PAUSED) drawHud(g);
+                if (state == PLAYING || state == PAUSED) {
+                    drawHud(g);
+                    if (state == PLAYING) drawMiningCracks(g);
+                }
                 if (state == PAUSED) drawPause(g);
                 if (state == INVENTORY || state == WORKBENCH) drawCrafting(g, state == WORKBENCH);
             } catch (OutOfMemoryError exhausted) {
@@ -752,11 +830,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         for (int i = 0; i < 9; i++) {
             int x = left + 2 + i * 20;
             int id = hotbar[i];
-            Image icon = blockIcons[id];
-            if (icon != null) g.drawImage(icon, x, y + 3, Graphics.TOP | Graphics.LEFT);
-            else {
-                g.setColor(blockColor(id));
-                g.fillRect(x + 2, y + 4, 14, 14);
+            if (world.mode == 1 || inventory[id] > 0) {
+                Image icon = blockIcons[id];
+                if (icon != null) g.drawImage(icon, x, y + 3, Graphics.TOP | Graphics.LEFT);
+                else {
+                    g.setColor(blockColor(id));
+                    g.fillRect(x + 2, y + 4, 14, 14);
+                }
             }
             if (world.mode == 0 && inventory[id] > 0) {
                 g.setColor(255, 255, 255);
@@ -821,8 +901,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             g.drawString("x" + Crafting.OUTPUT_COUNT[selected], left + 158, top + 87, Graphics.TOP | Graphics.LEFT);
             for (int i = 0; i < hotbar.length; i++) {
                 int x = left + 8 + i * 18;
-                drawIcon(g, hotbar[i], x, top + 143);
                 int amount = inventory[hotbar[i]];
+                if (world.mode == 1 || amount > 0) drawIcon(g, hotbar[i], x, top + 143);
                 if (amount > 0) {
                     g.setColor(255, 255, 255);
                     g.drawString(Integer.toString(amount), x + 17, top + 157, Graphics.RIGHT | Graphics.TOP);
@@ -886,6 +966,81 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         } else {
             g.setColor(blockColor(id)); g.fillRect(x + 2, y + 2, 12, 12);
         }
+    }
+
+    /** Draw progressive PE-style cracks projected onto the face being mined. */
+    private void drawMiningCracks(Graphics g) {
+        if (miningProgress <= 0 || miningX < 0 || world == null) return;
+        byte id = world.get(miningX, miningY, miningZ);
+        if (id == Block.AIR) return;
+        int[] target = trace(5.0f);
+        if (target == null || target[0] != miningX || target[1] != miningY || target[2] != miningZ) return;
+
+        int stage = miningProgress * 10 / Block.breakTicks(id);
+        if (stage < 1) stage = 1;
+        if (stage > 9) stage = 9;
+        int ax = target[3], ay = target[4], az = target[5];
+        int direction = Math.abs(ay) > Math.abs(ax) && Math.abs(ay) >= Math.abs(az) ? 1 :
+                        (Math.abs(az) > Math.abs(ax) ? 2 : 0);
+        float x = miningX, y = miningY, z = miningZ;
+        if (direction == 0) {
+            float face = x + (ax > 0 ? 1.0f : 0.0f);
+            if (!projectPoint(face, y, z, 0) || !projectPoint(face, y, z + 1, 1) ||
+                !projectPoint(face, y + 1, z + 1, 2) || !projectPoint(face, y + 1, z, 3)) return;
+        } else if (direction == 1) {
+            float face = y + (ay > 0 ? 1.0f : 0.0f);
+            if (!projectPoint(x, face, z, 0) || !projectPoint(x + 1, face, z, 1) ||
+                !projectPoint(x + 1, face, z + 1, 2) || !projectPoint(x, face, z + 1, 3)) return;
+        } else {
+            float face = z + (az > 0 ? 1.0f : 0.0f);
+            if (!projectPoint(x, y, face, 0) || !projectPoint(x + 1, y, face, 1) ||
+                !projectPoint(x + 1, y + 1, face, 2) || !projectPoint(x, y + 1, face, 3)) return;
+        }
+
+        int lines = (CRACK_LINES.length / 4) * stage / 10;
+        if (lines < 1) lines = 1;
+        g.setColor(30, 30, 30);
+        for (int i = 0; i < lines; i++) {
+            int p = i * 4;
+            int x1 = faceX(CRACK_LINES[p], CRACK_LINES[p + 1]);
+            int y1 = faceY(CRACK_LINES[p], CRACK_LINES[p + 1]);
+            int x2 = faceX(CRACK_LINES[p + 2], CRACK_LINES[p + 3]);
+            int y2 = faceY(CRACK_LINES[p + 2], CRACK_LINES[p + 3]);
+            g.drawLine(x1, y1, x2, y2);
+            if (stage >= 7) {
+                g.setColor(185, 185, 185);
+                g.drawLine(x1 + 1, y1, x2 + 1, y2);
+                g.setColor(30, 30, 30);
+            }
+        }
+    }
+
+    private boolean projectPoint(float x, float y, float z, int corner) {
+        double yaw = world.yaw * Math.PI / 180.0;
+        double pitch = cameraPitch * Math.PI / 180.0;
+        float dx = x - world.playerX;
+        float dy = y - (world.playerY + PLAYER_EYE_HEIGHT);
+        float dz = z - world.playerZ;
+        float sinYaw = (float)Math.sin(yaw), cosYaw = (float)Math.cos(yaw);
+        float sinPitch = (float)Math.sin(pitch), cosPitch = (float)Math.cos(pitch);
+        float depth = dx * sinYaw * cosPitch + dy * sinPitch + dz * cosYaw * cosPitch;
+        if (depth <= 0.05f) return false;
+        float right = -dx * cosYaw + dz * sinYaw;
+        float up = -dx * sinYaw * sinPitch + dy * cosPitch - dz * cosYaw * sinPitch;
+        float scale = getHeight() / (2.0f * (float)Math.tan(34.0 * Math.PI / 180.0) * depth);
+        crackScreenX[corner] = getWidth() / 2 + (int)(right * scale);
+        crackScreenY[corner] = getHeight() / 2 - (int)(up * scale);
+        return true;
+    }
+
+    private int faceX(int u, int v) {
+        return ((100 - u) * (100 - v) * crackScreenX[0] + u * (100 - v) * crackScreenX[1] +
+                u * v * crackScreenX[2] + (100 - u) * v * crackScreenX[3]) / 10000;
+    }
+
+    private int faceY(int u, int v) {
+        return ((100 - u) * (100 - v) * crackScreenY[0] + u * (100 - v) * crackScreenY[1] +
+                u * v * crackScreenY[2] + (100 - u) * v * crackScreenY[3]) / 10000;
     }
 
     private void drawPause(Graphics g) {

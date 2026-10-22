@@ -31,6 +31,16 @@ final class Block {
         return id != AIR && id != WATER;
     }
 
+    /** Mining time in 50 ms game-loop steps when using bare hands. */
+    static int breakTicks(byte id) {
+        if (id == LEAVES) return 10;
+        if (id == SAND) return 12;
+        if (id == DIRT || id == GRASS || id == PLANKS) return 18;
+        if (id == LOG || id == CRAFTING_TABLE) return 28;
+        if (id == COAL || id == IRON || id == FURNACE) return 52;
+        return 42;
+    }
+
     static boolean faceVisible(byte current, byte neighbor) {
         if (neighbor == AIR) return true;
         if (neighbor == WATER) return current != WATER;

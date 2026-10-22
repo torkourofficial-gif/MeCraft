@@ -9,7 +9,7 @@ Referencia consultada: [EaglerPorts/in-20100223](https://github.com/EaglerPorts/
 - Mundo de isla procedural de 48 × 24 × 48 bloques, con costa, agua, árboles, carbón, hierro y roca madre.
 - Modo supervivencia empieza con el inventario vacío; los bloques rotos se recogen, y modo creativo tiene bloques ilimitados.
 - Cámara en primera persona, movimiento, colisión, gravedad y salto.
-- Romper/colocar bloques, partículas de rotura, seleccionar la barra rápida y guardar la partida en RMS.
+- Romper/colocar bloques, partículas de rotura, daño progresivo con grietas sobre la cara apuntada, seleccionar la barra rápida y guardar la partida en RMS.
 - HUD con la barra de `gui.png`, corazones de `icons.png` y sprites de bloque de `gui_blocks.png`; la vida y el daño por caída solo se aplican en supervivencia.
 - Crafteo por recetas: `#` abre el inventario 2×2 (tronco → 4 tablones, 4 tablones → mesa); usa `3` apuntando a una mesa colocada para abrir `container.png` y el crafteo 3×3 (incluye horno).
 - Render 3D M3G con sectores de 16 × 8 × 16 bloques y un atlas compartido.
@@ -24,13 +24,14 @@ Es un demake inicial, no una reproducción completa de Indev: todavía no incluy
 | 2 / 8 | Avanzar / retroceder |
 | 4 / 6 | Desplazarse a la izquierda / derecha |
 | 5 | Saltar / crear la receta elegida |
-| 1 | Romper el bloque apuntado |
+| 1 (mantener) | Romper el bloque apuntado; aparecen grietas según el daño |
 | 3 | Colocar bloque; si apuntas a una mesa de crafteo, abrir su interfaz |
 | # | Abrir/cerrar el inventario y crafteo 2×2 |
 | 7 / 9 | Cambiar bloque seleccionado |
 | * | Pausar, guardar o regresar al menú |
 
 En las pantallas de crafteo, usa `2`/`8` para elegir una receta, `5` para crearla y `#` para volver al juego.
+En supervivencia, los espacios vacíos del acceso rápido no muestran bloques y `7`/`9` saltan entre los bloques que tienes. La rotura toma más tiempo en piedra y minerales que en arena, tierra o hojas; soltar `1` cancela el daño acumulado. En creativo los bloques se rompen al primer paso.
 
 El jugador mide 0,6 × 1,8 bloques y la cámara está a 1,62 bloques sobre sus pies, igual que las medidas clásicas de Indev.
 
