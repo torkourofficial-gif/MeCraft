@@ -31,7 +31,7 @@ Es un demake inicial, no una reproducción completa de Indev: todavía no incluy
 | * | Pausar, guardar o regresar al menú |
 
 En las pantallas de crafteo, usa `2`/`8` para elegir una receta, `5` para crearla y `#` para volver al juego.
-En supervivencia, los espacios vacíos del acceso rápido no muestran bloques y `7`/`9` saltan entre los bloques que tienes. La rotura toma más tiempo en piedra y minerales que en arena, tierra o hojas; soltar `1` cancela el daño acumulado. En creativo los bloques se rompen al primer paso.
+En supervivencia, los espacios vacíos del acceso rápido no muestran bloques y `7`/`9` saltan entre los bloques que tienes. La rotura usa dureza y penalizaciones de Indev: tarda más en el aire o bajo el agua, y a mano no se recogen piedra, minerales ni horno. La hierba rota entrega tierra. Soltar `1` cancela el daño acumulado. En creativo los bloques se rompen al instante.
 
 El jugador mide 0,6 × 1,8 bloques y la cámara está a 1,62 bloques sobre sus pies, igual que las medidas clásicas de Indev.
 
@@ -46,7 +46,7 @@ El objetivo es ejecutarse en un heap Java de **4 MiB o más**. Las decisiones pa
 - 27 sectores como máximo; no se crea un objeto de escena por bloque.
 - Geometría cuantizada a `short`, una apariencia compartida y arreglos temporales de CPU descartables después de construir cada sector.
 - Al editar un bloque se reconstruye su sector y, solo si cae en un borde, los sectores vecinos.
-- Las partículas de rotura reutilizan 32 ranuras y una sola malla, con la textura del bloque y sin asignaciones por partícula durante la actualización.
+- Las partículas de rotura reproducen la cuadrícula 4 × 4 × 4 de Indev con 64 ranuras fijas y una sola malla; cada fragmento reutiliza un recorte del atlas y no crea objetos durante la actualización.
 - Se libera la imagen de título al entrar al mundo.
 - RMS guarda un registro del tamaño aproximado del mundo; algunos teléfonos pueden imponer un límite menor al tamaño de registro.
 
@@ -61,6 +61,7 @@ El proyecto está configurado para Oracle Java ME SDK 3.2, CLDC 1.1, MIDP 2.0 y 
 Si la plataforma SDK 3.2 no aparece en NetBeans, regístrala en **Tools > Java Platforms** y selecciona el dispositivo y la API opcional **JSR-184** en las propiedades del proyecto. El proyecto usa Java 1.3 y pre-verificación CLDC durante la compilación. Los PNG se guardan en `resources/mecraft/` y se empaquetan bajo `/mecraft/` en el JAR.
 
 Para instalar manualmente, transfiere ambos archivos de `dist/` al teléfono o abre `MeCraft.jad` en el emulador Java ME.
+
 
 
 
