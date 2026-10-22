@@ -4,6 +4,9 @@ import java.io.IOException;
 import javax.microedition.lcdui.Canvas;
 import javax.microedition.lcdui.Command;
 import javax.microedition.lcdui.CommandListener;
+import javax.microedition.lcdui.Display;
+import javax.microedition.lcdui.TextBox;
+import javax.microedition.lcdui.TextField;
 import javax.microedition.lcdui.Font;
 import javax.microedition.lcdui.Graphics;
 import javax.microedition.lcdui.Image;
@@ -19,11 +22,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private static final int INVENTORY = 4;
     private static final int WORKBENCH = 5;
     private static final int CREATIVE_INVENTORY = 6;
-    private static final int MENU_CONTINUE = 0;
-    private static final int MENU_SURVIVAL = 1;
-    private static final int MENU_CREATIVE = 2;
-    private static final int MENU_CONTROLS = 3;
-    private static final int MENU_EXIT = 4;
+    private static final int WORLD_SELECT = 7;
+    private static final int WORLD_CREATE = 8;
+    private static final int MENU_SINGLEPLAYER = 0;
+    private static final int MENU_CONTROLS = 1;
+    private static final int MENU_EXIT = 2;
     private static final float PLAYER_WIDTH = 0.6f;
     private static final float PLAYER_HEIGHT = 1.8f;
     private static final float PLAYER_RADIUS = PLAYER_WIDTH * 0.5f;
@@ -54,14 +57,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private final Command selectCommand = new Command("Elegir", Command.OK, 1);
     private final Command exitCommand = new Command("Salir", Command.EXIT, 9);
     private final Command craftingCommand = new Command("Cerrar", Command.BACK, 4);
+    private final Command nameAcceptCommand = new Command("Aceptar", Command.OK, 1);
+    private final Command nameCancelCommand = new Command("Cancelar", Command.CANCEL, 2);
 
     private volatile boolean running;
     private volatile boolean visible;
     private volatile int state = MENU;
-    private int menuSelection = MENU_SURVIVAL;
+    private int menuSelection = MENU_SINGLEPLAYER;
+    private int worldSelection;
+    private int createSelection;
+    private int newWorldMode;
+    private String newWorldName = "Mundo 1";
+    private TextBox worldNameEditor;
     private int pauseSelection;
     private boolean selectCommandAttached = true;
-    private boolean hasSavedWorld;
+    private VoxelWorld.SavedWorld[] savedWorlds = new VoxelWorld.SavedWorld[0];
     private final PlayerPhysics playerPhysics = new PlayerPhysics();
     private boolean jumpHeld;
     private boolean descendHeld;
@@ -105,8 +115,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         setCommandListener(this);
         loadTitle();
         loadHudTextures();
-        hasSavedWorld = VoxelWorld.hasSave();
-        menuSelection = hasSavedWorld ? MENU_CONTINUE : MENU_SURVIVAL;
+        refreshWorldList();
+        menuSelection = MENU_SINGLEPLAYER;
         addCommand(selectCommand);
         addCommand(exitCommand);
     }
@@ -237,7 +247,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         hurtTicks = 0;
     }
 
-    private void startNewWorld(int mode) {
+    private void startNewWorld(int mode, String name) {
         String stage = "preparando mundo";
         try {
             title = null;
@@ -247,6 +257,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 System.gc();
             }
             world = new VoxelWorld((int)(System.currentTimeMillis() ^ System.currentTimeMillis() >>> 32), mode);
+            world.worldName = name == null || name.trim().length() == 0 ? "Mundo" : name.trim();
+            world.saveStoreName = VoxelWorld.nextWorldStoreName();
             copyHotbarFromWorld();
             playerPhysics.reset();
             flying = false;
@@ -255,6 +267,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             hurtTicks = 0;
             resetInventory(mode);
             copyInventoryToWorld();
+            world.save();
             stage = "cargando /mecraft/textures.png y creando escena M3G";
             renderer = new ChunkRenderer(getWidth(), getHeight());
             stage = "construyendo mallas M3G para el terreno";
@@ -274,12 +287,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
     }
 
-    private void continueWorld() {
+    private void openSavedWorld(VoxelWorld.SavedWorld savedWorld) {
         title = null;
         System.gc();
-        VoxelWorld saved = VoxelWorld.load();
+        VoxelWorld saved = VoxelWorld.load(savedWorld.storeName);
         if (saved == null) {
-            startNewWorld(0);
+            showError("No se pudo cargar el mundo guardado.");
             return;
         }
         String stage = "restaurando partida guardada";
@@ -405,8 +418,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (world != null && state != MENU && state != ERROR) {
             copyInventoryToWorld();
             world.save();
-            hasSavedWorld = VoxelWorld.hasSave();
+            refreshWorldList();
         }
+    }
+
+    private void refreshWorldList() {
+        savedWorlds = VoxelWorld.listWorlds();
     }
 
     private void mineTarget() {
@@ -691,6 +708,26 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             }
             return;
         }
+        if (state == WORLD_SELECT) {
+            int action = gameAction(keyCode);
+            if (keyCode == KEY_NUM2 || action == UP) moveWorldSelection(-1);
+            else if (keyCode == KEY_NUM8 || action == DOWN) moveWorldSelection(1);
+            else if (keyCode == KEY_NUM5 || action == FIRE) activateWorldSelection();
+            else if (keyCode == KEY_NUM0) backToMainMenu();
+            return;
+        }
+        if (state == WORLD_CREATE) {
+            int action = gameAction(keyCode);
+            if (keyCode == KEY_NUM2 || action == UP) {
+                if (createSelection > 0) createSelection--;
+                repaint();
+            } else if (keyCode == KEY_NUM8 || action == DOWN) {
+                if (createSelection < 3) createSelection++;
+                repaint();
+            } else if (keyCode == KEY_NUM5 || action == FIRE) activateCreateSelection();
+            else if (keyCode == KEY_NUM0) { state = WORLD_SELECT; repaint(); }
+            return;
+        }
         if (state == MENU || state == PAUSED || state == ERROR) {
             int action = gameAction(keyCode);
             if (action == UP || keyCode == KEY_NUM2) moveSelection(-1);
@@ -787,10 +824,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void moveSelection(int delta) {
         if (state == MENU) {
-            int min = VoxelWorldHasSave() ? MENU_CONTINUE : MENU_SURVIVAL;
-            menuSelection += delta;
-            if (menuSelection < min) menuSelection = MENU_EXIT;
-            if (menuSelection > MENU_EXIT) menuSelection = min;
+            menuSelection = (menuSelection + delta + 3) % 3;
         } else if (state == PAUSED) {
             pauseSelection += delta;
             if (pauseSelection < 0) pauseSelection = 2;
@@ -836,13 +870,58 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         closeCreativeInventory();
     }
 
-    private boolean VoxelWorldHasSave() { return hasSavedWorld; }
+    private void moveWorldSelection(int delta) {
+        int count = savedWorlds.length + 2;
+        worldSelection = (worldSelection + delta + count) % count;
+        repaint();
+    }
+
+    private void activateWorldSelection() {
+        if (worldSelection < savedWorlds.length) {
+            openSavedWorld(savedWorlds[worldSelection]);
+        } else if (worldSelection == savedWorlds.length) {
+            newWorldName = "Mundo " + (savedWorlds.length + 1);
+            newWorldMode = 0;
+            createSelection = 0;
+            state = WORLD_CREATE;
+            repaint();
+        } else {
+            backToMainMenu();
+        }
+    }
+
+    private void activateCreateSelection() {
+        if (createSelection == 0) {
+            if (worldNameEditor == null) {
+                worldNameEditor = new TextBox("Nombre del mundo", newWorldName, 24, TextField.ANY);
+                worldNameEditor.addCommand(nameAcceptCommand);
+                worldNameEditor.addCommand(nameCancelCommand);
+                worldNameEditor.setCommandListener(this);
+            } else {
+                worldNameEditor.setString(newWorldName);
+            }
+            Display.getDisplay(app).setCurrent(worldNameEditor);
+        } else if (createSelection == 1) {
+            newWorldMode = 1 - newWorldMode;
+            repaint();
+        } else if (createSelection == 2) {
+            String name = newWorldName == null ? "" : newWorldName.trim();
+            if (name.length() == 0) name = "Mundo " + (savedWorlds.length + 1);
+            startNewWorld(newWorldMode, name);
+        } else {
+            state = WORLD_SELECT;
+            repaint();
+        }
+    }
 
     private void activateSelection() {
         if (state == MENU) {
-            if (menuSelection == MENU_CONTINUE) continueWorld();
-            else if (menuSelection == MENU_SURVIVAL) startNewWorld(0);
-            else if (menuSelection == MENU_CREATIVE) startNewWorld(1);
+            if (menuSelection == MENU_SINGLEPLAYER) {
+                refreshWorldList();
+                worldSelection = 0;
+                state = WORLD_SELECT;
+                repaint();
+            }
             else if (menuSelection == MENU_CONTROLS) {
                 errorMessage = "Controles: cruceta mira; 2/8 avanzar; 4/6 desplazarse; 5 saltar/crear; mantener 1 para romper; 3 colocar o usar mesa; # inventario 2x2; 7/9 bloque; * pausa.";
                 state = ERROR;
@@ -869,8 +948,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void backToMenu() {
         saveIfNeeded();
+        backToMainMenu();
+    }
+
+    private void backToMainMenu() {
+        refreshWorldList();
         state = MENU;
-        menuSelection = VoxelWorldHasSave() ? MENU_CONTINUE : MENU_SURVIVAL;
+        menuSelection = MENU_SINGLEPLAYER;
         removeCommand(mineCommand);
         removeCommand(placeCommand);
         removeCommand(pauseCommand);
@@ -976,13 +1060,26 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     public synchronized void commandAction(Command command, javax.microedition.lcdui.Displayable displayable) {
-        if (command == exitCommand) {
+        if (displayable == worldNameEditor) {
+            if (command == nameAcceptCommand) {
+                newWorldName = worldNameEditor.getString().trim();
+                if (newWorldName.length() == 0) newWorldName = "Mundo " + (savedWorlds.length + 1);
+            }
+            Display.getDisplay(app).setCurrent(this);
+            state = WORLD_CREATE;
+            repaint();
+        } else if (command == exitCommand) {
             if (state == PLAYING) openPause();
             else if (state == INVENTORY || state == WORKBENCH) closeCrafting();
             else if (state == CREATIVE_INVENTORY) closeCreativeInventory();
+            else if (state == WORLD_CREATE) { state = WORLD_SELECT; repaint(); }
+            else if (state == WORLD_SELECT) backToMainMenu();
             else app.closeGame();
         } else if (command == selectCommand) {
-            if (state == MENU) activateSelection(); else backToMenu();
+            if (state == MENU) activateSelection();
+            else if (state == WORLD_SELECT) activateWorldSelection();
+            else if (state == WORLD_CREATE) activateCreateSelection();
+            else backToMenu();
         } else if (command == craftingCommand) {
             if (state == CREATIVE_INVENTORY) closeCreativeInventory();
             else closeCrafting();
@@ -1033,35 +1130,124 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 drawError(g);
             }
         } else if (state == ERROR) drawError(g);
+        else if (state == WORLD_SELECT) drawWorldSelect(g);
+        else if (state == WORLD_CREATE) drawWorldCreate(g);
         else drawMenu(g);
     }
 
     private void drawMenu(Graphics g) {
         int w = getWidth(), h = getHeight();
-        g.setColor(18, 34, 48); g.fillRect(0, 0, w, h);
-        if (title != null) g.drawImage(title, w / 2, 3, Graphics.TOP | Graphics.HCENTER);
-        g.setColor(255, 255, 255);
-        Font f = Font.getDefaultFont();
-        int y = h / 2 + 12;
-        if (VoxelWorldHasSave()) {
-            drawMenuItem(g, "Continuar", y, menuSelection == MENU_CONTINUE); y += f.getHeight() + 4;
+        drawDirtBackground(g);
+        drawInsetPanel(g, 15, 120, w - 30, 142);
+        if (title != null) g.drawImage(title, w / 2, 19, Graphics.TOP | Graphics.HCENTER);
+        else {
+            g.setColor(255, 255, 255);
+            g.drawString("MeCraft", w / 2, 48, Graphics.TOP | Graphics.HCENTER);
         }
-        drawMenuItem(g, "Nuevo mundo: Supervivencia", y, menuSelection == MENU_SURVIVAL); y += f.getHeight() + 4;
-        drawMenuItem(g, "Nuevo mundo: Creativo", y, menuSelection == MENU_CREATIVE); y += f.getHeight() + 4;
-        drawMenuItem(g, "Controles", y, menuSelection == MENU_CONTROLS); y += f.getHeight() + 4;
-        drawMenuItem(g, "Salir", y, menuSelection == MENU_EXIT);
-        g.setColor(225, 225, 225);
-        g.drawString("MECRAFT  |  Java ME 3D", w / 2, h - 8, Graphics.BOTTOM | Graphics.HCENTER);
+        drawMenuItem(g, "Un jugador", 148, menuSelection == MENU_SINGLEPLAYER);
+        drawMenuItem(g, "Controles", 184, menuSelection == MENU_CONTROLS);
+        drawMenuItem(g, "Salir", 220, menuSelection == MENU_EXIT);
+        g.setColor(244, 230, 190);
+        g.drawString("Indev  |  Java ME 3D", w / 2, h - 9, Graphics.BOTTOM | Graphics.HCENTER);
     }
 
     private void drawMenuItem(Graphics g, String label, int y, boolean selected) {
         int w = getWidth();
-        if (selected) {
-            g.setColor(36, 81, 112);
-            g.fillRoundRect(5, y - 1, w - 10, Font.getDefaultFont().getHeight() + 2, 5, 5);
+        int x = 24, width = w - 48, height = Font.getDefaultFont().getHeight() + 7;
+        g.setColor(35, 27, 20); g.fillRect(x + 2, y + 2, width, height);
+        g.setColor(selected ? 198 : 122, selected ? 177 : 122, selected ? 116 : 122);
+        g.fillRect(x, y, width, height);
+        g.setColor(selected ? 228 : 150, selected ? 210 : 150, selected ? 148 : 150);
+        g.drawRect(x, y, width - 1, height - 1);
+        g.setColor(selected ? 255 : 224, selected ? 244 : 224, selected ? 180 : 224);
+        g.drawString((selected ? ">  " : "   ") + label, w / 2, y + 3,
+                Graphics.TOP | Graphics.HCENTER);
+    }
+
+    private void drawDirtBackground(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        if (terrainTexture == null || terrainTexture.getWidth() < 48 || terrainTexture.getHeight() < 16) {
+            g.setColor(108, 75, 47); g.fillRect(0, 0, w, h); return;
         }
-        g.setColor(selected ? 255 : 220, selected ? 224 : 220, selected ? 92 : 220);
-        g.drawString((selected ? "> " : "  ") + label, w / 2, y, Graphics.TOP | Graphics.HCENTER);
+        int tile = Block.atlasTile(Block.DIRT);
+        for (int y = 0; y < h; y += 16) {
+            int tileHeight = Math.min(16, h - y);
+            for (int x = 0; x < w; x += 16) {
+                int tileWidth = Math.min(16, w - x);
+                g.drawRegion(terrainTexture, (tile & 15) * 16, (tile >> 4) * 16,
+                        tileWidth, tileHeight, Sprite.TRANS_NONE, x, y,
+                        Graphics.TOP | Graphics.LEFT);
+            }
+        }
+    }
+
+    private void drawInsetPanel(Graphics g, int x, int y, int width, int height) {
+        g.setColor(48, 34, 24); g.fillRect(x + 3, y + 3, width, height);
+        g.setColor(93, 65, 42); g.fillRect(x, y, width, height);
+        g.setColor(159, 121, 80); g.drawRect(x, y, width - 1, height - 1);
+        g.setColor(68, 46, 31); g.drawRect(x + 3, y + 3, width - 7, height - 7);
+    }
+
+    private void drawWorldSelect(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        drawDirtBackground(g);
+        drawInsetPanel(g, 8, 7, w - 16, h - 42);
+        g.setColor(255, 255, 255);
+        g.drawString("Seleccionar mundo", w / 2, 12, Graphics.TOP | Graphics.HCENTER);
+        int top = 38, rowHeight = 30, visible = 7;
+        int total = savedWorlds.length + 2;
+        int first = worldSelection - visible + 1;
+        if (first < 0) first = 0;
+        int maxFirst = total - visible;
+        if (maxFirst < 0) maxFirst = 0;
+        if (first > maxFirst) first = maxFirst;
+        for (int row = 0; row < visible; row++) {
+            int index = first + row;
+            if (index >= total) break;
+            int y = top + row * rowHeight;
+            boolean selected = index == worldSelection;
+            g.setColor(selected ? 101 : 67, selected ? 73 : 49, selected ? 48 : 34);
+            g.fillRect(15, y, w - 30, rowHeight - 2);
+            g.setColor(selected ? 224 : 145, selected ? 191 : 115, selected ? 132 : 83);
+            g.drawRect(15, y, w - 31, rowHeight - 3);
+            g.setColor(255, 244, 220);
+            if (index < savedWorlds.length) {
+                VoxelWorld.SavedWorld entry = savedWorlds[index];
+                String name = trimText(entry.name, 21);
+                g.drawString(name, 21, y + 2, Graphics.TOP | Graphics.LEFT);
+                g.setColor(214, 196, 167);
+                g.drawString(entry.mode == 1 ? "Creativo" : "Supervivencia", 21,
+                        y + 15, Graphics.TOP | Graphics.LEFT);
+            } else {
+                String label = index == savedWorlds.length ? "Crear mundo nuevo" : "Volver";
+                g.drawString((selected ? "> " : "  ") + label, w / 2, y + 7,
+                        Graphics.TOP | Graphics.HCENTER);
+            }
+        }
+        g.setColor(255, 240, 205);
+        g.drawString("2/8 elegir  5 abrir", w / 2, h - 27, Graphics.TOP | Graphics.HCENTER);
+    }
+
+    private void drawWorldCreate(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        drawDirtBackground(g);
+        drawInsetPanel(g, 12, 50, w - 24, 210);
+        g.setColor(255, 255, 255);
+        g.drawString("Crear mundo", w / 2, 61, Graphics.TOP | Graphics.HCENTER);
+        String[] labels = new String[] {
+            "Nombre: " + trimText(newWorldName, 17),
+            "Modo: " + (newWorldMode == 0 ? "Supervivencia" : "Creativo"),
+            "Crear mundo", "Volver"
+        };
+        for (int i = 0; i < labels.length; i++) drawMenuItem(g, labels[i], 101 + i * 37, i == createSelection);
+        g.setColor(255, 240, 205);
+        g.drawString("5 editar/cambiar/elegir", w / 2, 277, Graphics.TOP | Graphics.HCENTER);
+    }
+
+    private String trimText(String text, int maxChars) {
+        if (text == null) return "Mundo";
+        if (text.length() <= maxChars) return text;
+        return text.substring(0, maxChars - 3) + "...";
     }
 
     private void drawHud(Graphics g) {

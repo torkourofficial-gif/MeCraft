@@ -6,6 +6,7 @@ Referencia consultada: [EaglerPorts/in-20100223](https://github.com/EaglerPorts/
 
 ## Estado jugable
 
+- Menú principal con fondo de tierra del atlas y selector de varios mundos. Cada partida conserva su propio nombre, modo y progreso; al crear una se puede editar el nombre y elegir Supervivencia o Creativo. Las partidas guardadas por versiones anteriores aparecen como «Mundo guardado».
 - Mundo de isla procedural de 48 × 24 × 48 bloques, con costa, agua, árboles, carbón, hierro y roca madre.
 - Modo supervivencia empieza con el inventario vacío; los bloques rotos se recogen, y modo creativo tiene bloques ilimitados.
 - En creativo, `#` abre una paleta paginada con los bloques texturados del atlas `textures.png`; se elige uno con `5` para ponerlo en la casilla rápida seleccionada. Las celdas vacías del atlas no aparecen. La TNT se activa al golpearla con `1`, sin soltar un bloque normal; cae, rebota y explota tras 80 ticks. La explosión puede encadenar otras TNT y dañar criaturas y al jugador.

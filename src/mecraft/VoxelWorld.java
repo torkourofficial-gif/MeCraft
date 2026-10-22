@@ -45,6 +45,8 @@ final class VoxelWorld {
     };
     int seed;
     int mode;
+    String worldName = "Mundo";
+    String saveStoreName;
     int selectedSlot;
     int health = 20;
     int dayTime;
@@ -402,9 +404,10 @@ final class VoxelWorld {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(blocks.length * 2 + 64);
             DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(0x4D434641); // MCFA: creative atlas palette and TNT
+            out.writeInt(0x4D434642); // MCFB: named worlds
             out.writeInt(seed);
             out.writeByte(mode);
+            out.writeUTF(worldName == null ? "Mundo" : worldName);
             out.writeByte(selectedSlot);
             for (int i = 0; i < inventory.length; i++) out.writeByte(inventory[i]);
             for (int i = 0; i < hotbar.length; i++) out.writeByte(hotbar[i]);
@@ -420,9 +423,19 @@ final class VoxelWorld {
             out.flush();
             byte[] data = bytes.toByteArray();
 
-            store = RecordStore.openRecordStore("mecraft-save", true);
+            String storeName = saveStoreName == null ? "mecraft-save" : saveStoreName;
+            store = RecordStore.openRecordStore(storeName, true);
             if (store.getNumRecords() == 0) store.addRecord(data, 0, data.length);
             else store.setRecord(1, data, 0, data.length);
+            ByteArrayOutputStream infoBytes = new ByteArrayOutputStream(40);
+            DataOutputStream info = new DataOutputStream(infoBytes);
+            info.writeInt(0x4D434249); // MCBI: compact world-list metadata
+            info.writeByte(mode);
+            info.writeUTF(worldName == null ? "Mundo" : worldName);
+            info.flush();
+            byte[] infoData = infoBytes.toByteArray();
+            if (store.getNumRecords() < 2) store.addRecord(infoData, 0, infoData.length);
+            else store.setRecord(2, infoData, 0, infoData.length);
         } catch (Exception ignored) {
             // A failed save must not terminate play on devices with tiny RMS limits.
         } catch (OutOfMemoryError ignored) {
@@ -434,10 +447,12 @@ final class VoxelWorld {
         }
     }
 
-    static VoxelWorld load() {
+    static VoxelWorld load() { return load("mecraft-save"); }
+
+    static VoxelWorld load(String storeName) {
         RecordStore store = null;
         try {
-            store = RecordStore.openRecordStore("mecraft-save", false);
+            store = RecordStore.openRecordStore(storeName, false);
             if (store.getNumRecords() == 0) return null;
             byte[] data = store.getRecord(1);
             DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
@@ -445,40 +460,45 @@ final class VoxelWorld {
             if (format != 0x4D434631 && format != 0x4D434632 && format != 0x4D434633 &&
                 format != 0x4D434634 && format != 0x4D434635 && format != 0x4D434636 &&
                 format != 0x4D434637 && format != 0x4D434638 && format != 0x4D434639 &&
-                format != 0x4D434641) return null;
+                format != 0x4D434641 && format != 0x4D434642) return null;
             int seed = in.readInt();
-            VoxelWorld world = new VoxelWorld(seed, in.readByte());
+            int mode = in.readByte();
+            boolean namedFormat = format == 0x4D434642;
+            VoxelWorld world = new VoxelWorld(seed, mode);
+            world.worldName = namedFormat ? in.readUTF() : "Mundo guardado";
+            world.saveStoreName = storeName;
             world.selectedSlot = in.readByte();
+            boolean currentFormat = format == 0x4D434641 || namedFormat;
             if (format == 0x4D434635 || format == 0x4D434636 || format == 0x4D434637 ||
-                format == 0x4D434638 || format == 0x4D434639 || format == 0x4D434641) {
-                int inventoryLength = format == 0x4D434641 ? world.inventory.length :
+                format == 0x4D434638 || format == 0x4D434639 || currentFormat) {
+                int inventoryLength = currentFormat ? world.inventory.length :
                                       (format == 0x4D434639 ? MCF9_ITEM_COUNT :
                                       (format == 0x4D434638 ? MCF8_ITEM_COUNT :
                                        (format == 0x4D434637 ? MCF7_ITEM_COUNT : MCF6_ITEM_COUNT)));
                 for (int i = 0; i < inventoryLength; i++) {
-                    int newId = format == 0x4D434641 ? i : (format == 0x4D434639 ? i :
+                    int newId = currentFormat ? i : (format == 0x4D434639 ? i :
                                 (format == 0x4D434638 ? (i < 18 ? i : i + 1) :
                                  (format == 0x4D434637 ? (i < 17 ? i : i + 2) :
                                   (i < MCF6_BLOCK_COUNT ? i : i + 4))));
-                    if (format != 0x4D434641 && newId >= 19) newId += Block.COUNT - 19;
+                    if (!currentFormat && newId >= 19) newId += Block.COUNT - 19;
                     world.inventory[newId] = in.readUnsignedByte();
                 }
                 for (int i = 0; i < world.hotbar.length; i++) {
                     int id = in.readUnsignedByte();
-                    if (format == 0x4D434641) { }
+                    if (currentFormat) { }
                     else if (format == 0x4D434638 && id >= 18) id++;
                     else if (format == 0x4D434637 && id >= 17) id += 2;
                     else if (format != 0x4D434637 && format != 0x4D434638 &&
                              format != 0x4D434639 && id >= MCF6_BLOCK_COUNT) id += 4;
-                    if (format != 0x4D434641 && id >= 19) id += Block.COUNT - 19;
+                    if (!currentFormat && id >= 19) id += Block.COUNT - 19;
                     world.hotbar[i] = id > Block.AIR && id < ItemCatalog.COUNT ? id : Block.DIRT;
                 }
                 for (int i = 0; i < inventoryLength; i++) {
-                    int newId = format == 0x4D434641 ? i : (format == 0x4D434639 ? i :
+                    int newId = currentFormat ? i : (format == 0x4D434639 ? i :
                                 (format == 0x4D434638 ? (i < 18 ? i : i + 1) :
                                  (format == 0x4D434637 ? (i < 17 ? i : i + 2) :
                                   (i < MCF6_BLOCK_COUNT ? i : i + 4))));
-                    if (format != 0x4D434641 && newId >= 19) newId += Block.COUNT - 19;
+                    if (!currentFormat && newId >= 19) newId += Block.COUNT - 19;
                     world.itemDamage[newId] = in.readUnsignedShort();
                 }
             } else if (format == 0x4D434633 || format == 0x4D434634) {
@@ -498,18 +518,18 @@ final class VoxelWorld {
             world.yaw = in.readFloat();
             if (format == 0x4D434632 || format == 0x4D434633 || format == 0x4D434634 ||
                 format == 0x4D434635 || format == 0x4D434636 || format == 0x4D434637 ||
-                format == 0x4D434638 || format == 0x4D434639 || format == 0x4D434641)
+                format == 0x4D434638 || format == 0x4D434639 || currentFormat)
                 world.health = in.readUnsignedByte();
-            if (format == 0x4D434638 || format == 0x4D434639 || format == 0x4D434641) {
+            if (format == 0x4D434638 || format == 0x4D434639 || currentFormat) {
                 world.dayTime = in.readUnsignedShort() % DAY_LENGTH;
             }
             in.readFully(world.blocks);
             if (format == 0x4D434634 || format == 0x4D434635 || format == 0x4D434636 ||
                 format == 0x4D434637 || format == 0x4D434638 || format == 0x4D434639 ||
-                format == 0x4D434641)
+                currentFormat)
                 in.readFully(world.waterLevels);
             if (format != 0x4D434636 && format != 0x4D434637 && format != 0x4D434638 &&
-                format != 0x4D434639 && format != 0x4D434641)
+                format != 0x4D434639 && !currentFormat)
                 world.migrateLegacyFurnaces();
             world.queueSavedFlowingWater();
             world.revision++;
@@ -538,9 +558,76 @@ final class VoxelWorld {
     }
 
     static boolean hasSave() {
-        String[] names = RecordStore.listRecordStores();
-        if (names == null) return false;
-        for (int i = 0; i < names.length; i++) if ("mecraft-save".equals(names[i])) return true;
-        return false;
+        return listWorlds().length > 0;
+    }
+
+    static final class SavedWorld {
+        final String storeName;
+        final String name;
+        final int mode;
+        SavedWorld(String storeName, String name, int mode) {
+            this.storeName = storeName; this.name = name; this.mode = mode;
+        }
+    }
+
+    static String nextWorldStoreName() {
+        String[] stores = RecordStore.listRecordStores();
+        for (int id = 1; id < 10000; id++) {
+            String candidate = "mecraft-world-" + id;
+            boolean used = false;
+            if (stores != null) for (int i = 0; i < stores.length; i++) {
+                if (candidate.equals(stores[i])) { used = true; break; }
+            }
+            if (!used) return candidate;
+        }
+        return "mecraft-world-9999";
+    }
+
+    static SavedWorld[] listWorlds() {
+        String[] stores = RecordStore.listRecordStores();
+        if (stores == null) return new SavedWorld[0];
+        SavedWorld[] worlds = new SavedWorld[stores.length];
+        int count = 0;
+        for (int i = 0; i < stores.length; i++) {
+            String storeName = stores[i];
+            if (!"mecraft-save".equals(storeName) && !storeName.startsWith("mecraft-world-")) continue;
+            RecordStore store = null;
+            try {
+                store = RecordStore.openRecordStore(storeName, false);
+                if (store.getNumRecords() == 0) continue;
+                String name = "Mundo guardado";
+                int mode = 0;
+                if (store.getNumRecords() >= 2) {
+                    DataInputStream info = new DataInputStream(new ByteArrayInputStream(store.getRecord(2)));
+                    if (info.readInt() == 0x4D434249) {
+                        mode = info.readUnsignedByte();
+                        name = info.readUTF();
+                    }
+                }
+                if ("Mundo guardado".equals(name)) {
+                    DataInputStream header = new DataInputStream(new ByteArrayInputStream(store.getRecord(1)));
+                    int format = header.readInt();
+                    header.readInt();
+                    mode = header.readUnsignedByte();
+                    if (format == 0x4D434642) name = header.readUTF();
+                }
+                worlds[count++] = new SavedWorld(storeName, name, mode);
+            } catch (Exception ignored) {
+                // Ignore incomplete RMS entries rather than blocking the world selector.
+            } finally {
+                if (store != null) try { store.closeRecordStore(); } catch (RecordStoreException ignored) { }
+            }
+        }
+        SavedWorld[] result = new SavedWorld[count];
+        System.arraycopy(worlds, 0, result, 0, count);
+        for (int i = 1; i < result.length; i++) {
+            SavedWorld value = result[i];
+            int j = i - 1;
+            while (j >= 0 && result[j].storeName.compareTo(value.storeName) > 0) {
+                result[j + 1] = result[j]; j--;
+            }
+            result[j + 1] = value;
+        }
+        return result;
     }
 }
