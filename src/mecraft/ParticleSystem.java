@@ -12,7 +12,7 @@ import javax.microedition.m3g.VertexBuffer;
 
 /** Fixed-size, shared-atlas block debris pool; uses no per-tick allocations. */
 final class ParticleSystem {
-    private static final int CAPACITY = 32;
+    private static final int CAPACITY = 64;
     private static final int VERTICES = CAPACITY * 4;
     private static final float SCALE = 256.0f;
 
@@ -27,6 +27,8 @@ final class ParticleSystem {
     private final int[] age = new int[CAPACITY];
     private final int[] lifetime = new int[CAPACITY];
     private final int[] tile = new int[CAPACITY];
+    private final int[] tileOffsetX = new int[CAPACITY];
+    private final int[] tileOffsetY = new int[CAPACITY];
     private final short[] positions = new short[VERTICES * 3];
     private final short[] texCoords = new short[VERTICES * 2];
     private final byte[] colors = new byte[VERTICES * 4];
@@ -76,7 +78,7 @@ final class ParticleSystem {
         for (int i = 0; i < CAPACITY; i++) setParticleColor(i, 0);
     }
 
-    /** Indev emits a 4x4x4 debris grid; a 32 slot ring bounds heap and draw cost. */
+    /** Indev emits a 4x4x4 debris grid; one fixed mesh stores the whole burst. */
     void spawnBlockDestroy(int bx, int by, int bz, int blockTile) {
         for (int gy = 0; gy < 4; gy++) {
             for (int gz = 0; gz < 4; gz++) {
@@ -89,20 +91,28 @@ final class ParticleSystem {
                     x[i] = bx + rx;
                     y[i] = by + ry;
                     z[i] = bz + rz;
-                    vx[i] = (rx - 0.5f) * 0.12f + (nextRandom() - 0.5f) * 0.035f;
-                    vy[i] = (ry - 0.5f) * 0.12f + 0.025f + nextRandom() * 0.045f;
-                    vz[i] = (rz - 0.5f) * 0.12f + (nextRandom() - 0.5f) * 0.035f;
-                    size[i] = 0.09f + nextRandom() * 0.045f;
+                    float mx = rx - 0.5f + (nextRandom() * 0.8f - 0.4f);
+                    float my = ry - 0.5f + (nextRandom() * 0.8f - 0.4f);
+                    float mz = rz - 0.5f + (nextRandom() * 0.8f - 0.4f);
+                    float length = (float)Math.sqrt(mx * mx + my * my + mz * mz);
+                    if (length < 0.0001f) length = 0.0001f;
+                    float speed = (nextRandom() + nextRandom() + 1.0f) * 0.06f;
+                    vx[i] = mx / length * speed;
+                    vy[i] = my / length * speed + 0.1f;
+                    vz[i] = mz / length * speed;
+                    size[i] = (nextRandom() * 0.5f + 0.5f) * 0.1f;
                     age[i] = 0;
-                    lifetime[i] = 18 + (int)(nextRandom() * 20.0f);
+                    lifetime[i] = (int)(4.0f / (nextRandom() * 0.9f + 0.1f));
                     tile[i] = blockTile;
+                    tileOffsetX[i] = (int)(nextRandom() * 4.0f);
+                    tileOffsetY[i] = (int)(nextRandom() * 4.0f);
                     setParticleColor(i, 255);
                 }
             }
         }
     }
 
-    void update(float yawDegrees, float pitchDegrees) {
+    void update(VoxelWorld world, float yawDegrees, float pitchDegrees) {
         double yaw = yawDegrees * Math.PI / 180.0;
         double pitch = pitchDegrees * Math.PI / 180.0;
         float rightX = (float)Math.cos(yaw);
@@ -113,15 +123,22 @@ final class ParticleSystem {
         for (int i = 0; i < CAPACITY; i++) {
             if (age[i] < lifetime[i]) {
                 age[i]++;
+                vy[i] -= 0.04f;
                 x[i] += vx[i];
                 y[i] += vy[i];
                 z[i] += vz[i];
-                vy[i] -= 0.008f;
+                boolean onGround = false;
+                int belowY = floorInt(y[i] - size[i]);
+                if (Block.solid(world.get(floorInt(x[i]), belowY, floorInt(z[i])))) {
+                    y[i] = belowY + 1.0f + size[i];
+                    vy[i] = 0.0f;
+                    onGround = true;
+                }
                 vx[i] *= 0.98f;
                 vy[i] *= 0.98f;
                 vz[i] *= 0.98f;
-                int alpha = (lifetime[i] - age[i]) * 255 / lifetime[i];
-                setParticleColor(i, alpha);
+                if (onGround) { vx[i] *= 0.7f; vz[i] *= 0.7f; }
+                setParticleColor(i, 255);
             } else {
                 setParticleColor(i, 0);
             }
@@ -149,13 +166,13 @@ final class ParticleSystem {
         int v = particle * 12;
         putPosition(v, x0, y0, z0); putPosition(v + 3, x1, y1, z1);
         putPosition(v + 6, x2, y2, z2); putPosition(v + 9, x3, y3, z3);
-        int tileX = (tile[particle] & 15) * 16;
-        int tileY = (tile[particle] >> 4) * 16;
+        int tileX = (tile[particle] & 15) * 16 + tileOffsetX[particle];
+        int tileY = (tile[particle] >> 4) * 16 + tileOffsetY[particle];
         int t = particle * 8;
-        texCoords[t] = (short)(tileX + 1); texCoords[t + 1] = (short)(tileY + 15);
-        texCoords[t + 2] = (short)(tileX + 15); texCoords[t + 3] = (short)(tileY + 15);
-        texCoords[t + 4] = (short)(tileX + 1); texCoords[t + 5] = (short)(tileY + 1);
-        texCoords[t + 6] = (short)(tileX + 15); texCoords[t + 7] = (short)(tileY + 1);
+        texCoords[t] = (short)tileX; texCoords[t + 1] = (short)(tileY + 4);
+        texCoords[t + 2] = (short)(tileX + 4); texCoords[t + 3] = (short)(tileY + 4);
+        texCoords[t + 4] = (short)tileX; texCoords[t + 5] = (short)tileY;
+        texCoords[t + 6] = (short)(tileX + 4); texCoords[t + 7] = (short)tileY;
     }
 
     private void putPosition(int at, float px, float py, float pz) {
@@ -168,12 +185,17 @@ final class ParticleSystem {
         return (short)(value * SCALE);
     }
 
+    private int floorInt(float value) {
+        int result = (int)value;
+        return value < result ? result - 1 : result;
+    }
+
     private void setParticleColor(int particle, int alpha) {
         int at = particle * 16;
         for (int v = 0; v < 4; v++) {
-            colors[at++] = (byte)255;
-            colors[at++] = (byte)255;
-            colors[at++] = (byte)255;
+            colors[at++] = (byte)153;
+            colors[at++] = (byte)153;
+            colors[at++] = (byte)153;
             colors[at++] = (byte)alpha;
         }
     }
@@ -183,3 +205,4 @@ final class ParticleSystem {
         return ((random >>> 8) & 0xFFFF) / 65535.0f;
     }
 }
+
