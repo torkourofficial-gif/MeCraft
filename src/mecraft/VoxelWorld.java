@@ -20,8 +20,13 @@ final class VoxelWorld {
     static final int CHUNKS_X = WIDTH / CHUNK_XZ;
     static final int CHUNKS_Y = HEIGHT / CHUNK_Y;
     static final int CHUNKS_Z = DEPTH / CHUNK_XZ;
+    private static final int BLOCK_COUNT = WIDTH * HEIGHT * DEPTH;
 
-    final byte[] blocks = new byte[WIDTH * HEIGHT * DEPTH];
+    final byte[] blocks = new byte[BLOCK_COUNT];
+    private final byte[] waterLevels = new byte[BLOCK_COUNT];
+    private static final int FLUID_QUEUE_SIZE = 2048;
+    private final short[] fluidQueue = new short[FLUID_QUEUE_SIZE];
+    private final byte[] fluidQueued = new byte[(BLOCK_COUNT + 7) / 8];
     final int[] inventory = new int[Block.COUNT];
     final int[] hotbar = new int[] {
         Block.DIRT, Block.STONE, Block.LOG, Block.SAND, Block.PLANKS,
@@ -39,6 +44,11 @@ final class VoxelWorld {
     int changedX;
     int changedY;
     int changedZ;
+    private int fluidQueueHead;
+    private int fluidQueueTail;
+    private int fluidQueueCount;
+    private int fluidTickDelay;
+    private int fluidDirection;
 
     VoxelWorld(int seed, int mode) {
         this.seed = seed;
@@ -58,16 +68,102 @@ final class VoxelWorld {
     }
 
     boolean set(int x, int y, int z, byte id) {
+        return setBlock(x, y, z, id, 0);
+    }
+
+    private boolean setBlock(int x, int y, int z, byte id, int fluidLevel) {
         if (x < 0 || x >= WIDTH || z < 0 || z >= DEPTH || y <= 0 || y >= HEIGHT) return false;
         if (id < 0 || id >= Block.COUNT) return false;
         int i = index(x, y, z);
         if (blocks[i] == id) return false;
         blocks[i] = id;
+        waterLevels[i] = id == Block.WATER ? (byte)fluidLevel : 0;
         changedX = x;
         changedY = y;
         changedZ = z;
         revision++;
+        scheduleWaterNeighbors(x, y, z);
         return true;
+    }
+
+    private boolean setFlowingWater(int x, int y, int z, int level) {
+        if (get(x, y, z) != Block.AIR || level > 7) return false;
+        return setBlock(x, y, z, Block.WATER, level);
+    }
+
+    /** Bounded Indev water updates; each scheduled cell spreads no more than one block per interval. */
+    void updateFluids() {
+        if (++fluidTickDelay < 5) return;
+        fluidTickDelay = 0;
+        while (fluidQueueCount > 0) {
+            int i = fluidQueue[fluidQueueHead] & 0xFFFF;
+            fluidQueueHead++;
+            if (fluidQueueHead == FLUID_QUEUE_SIZE) fluidQueueHead = 0;
+            fluidQueueCount--;
+            setFluidQueued(i, false);
+            if (blocks[i] != Block.WATER) continue;
+            int x = i % WIDTH;
+            int z = (i / WIDTH) % DEPTH;
+            int y = i / (WIDTH * DEPTH);
+            int level = waterLevels[i] & 0xFF;
+
+            if (y > 1 && get(x, y - 1, z) == Block.AIR) {
+                if (setFlowingWater(x, y - 1, z, level)) scheduleWater(i);
+                return;
+            }
+            if (level >= 7) continue;
+            for (int direction = 0; direction < 4; direction++) {
+                int side = (fluidDirection + direction) & 3;
+                int nx = x + (side == 0 ? -1 : (side == 1 ? 1 : 0));
+                int nz = z + (side == 2 ? -1 : (side == 3 ? 1 : 0));
+                if (nx <= 0 || nx >= WIDTH - 1 || nz <= 0 || nz >= DEPTH - 1) continue;
+                if (get(nx, y, nz) != Block.AIR || get(nx, y - 1, nz) == Block.AIR) continue;
+                fluidDirection = (side + 1) & 3;
+                if (setFlowingWater(nx, y, nz, level + 1)) scheduleWater(i);
+                return;
+            }
+        }
+    }
+
+    private void scheduleWaterNeighbors(int x, int y, int z) {
+        scheduleWater(x, y, z);
+        scheduleWater(x, y - 1, z);
+        scheduleWater(x, y + 1, z);
+        scheduleWater(x - 1, y, z);
+        scheduleWater(x + 1, y, z);
+        scheduleWater(x, y, z - 1);
+        scheduleWater(x, y, z + 1);
+    }
+
+    private void scheduleWater(int x, int y, int z) {
+        if (x < 0 || x >= WIDTH || z < 0 || z >= DEPTH || y < 0 || y >= HEIGHT) return;
+        scheduleWater(index(x, y, z));
+    }
+
+    private void scheduleWater(int i) {
+        if (blocks[i] != Block.WATER || isFluidQueued(i) || fluidQueueCount == FLUID_QUEUE_SIZE) return;
+        fluidQueue[fluidQueueTail] = (short)i;
+        fluidQueueTail++;
+        if (fluidQueueTail == FLUID_QUEUE_SIZE) fluidQueueTail = 0;
+        fluidQueueCount++;
+        setFluidQueued(i, true);
+    }
+
+    private boolean isFluidQueued(int i) {
+        return (fluidQueued[i >> 3] & (1 << (i & 7))) != 0;
+    }
+
+    private void setFluidQueued(int i, boolean queued) {
+        int byteIndex = i >> 3;
+        int bit = 1 << (i & 7);
+        if (queued) fluidQueued[byteIndex] = (byte)(fluidQueued[byteIndex] | bit);
+        else fluidQueued[byteIndex] = (byte)(fluidQueued[byteIndex] & ~bit);
+    }
+
+    private void queueSavedFlowingWater() {
+        for (int i = 0; i < blocks.length; i++) {
+            if (blocks[i] == Block.WATER && waterLevels[i] != 0) scheduleWater(i);
+        }
     }
 
     private void generate() {
@@ -144,9 +240,9 @@ final class VoxelWorld {
     void save() {
         RecordStore store = null;
         try {
-            ByteArrayOutputStream bytes = new ByteArrayOutputStream(blocks.length + 40);
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream(blocks.length * 2 + 64);
             DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(0x4D434633); // MCF3: counts by block id and hotbar item ids
+            out.writeInt(0x4D434634); // MCF4: fluid levels added
             out.writeInt(seed);
             out.writeByte(mode);
             out.writeByte(selectedSlot);
@@ -158,6 +254,7 @@ final class VoxelWorld {
             out.writeFloat(yaw);
             out.writeByte(health);
             out.write(blocks);
+            out.write(waterLevels);
             out.flush();
             byte[] data = bytes.toByteArray();
 
@@ -183,11 +280,12 @@ final class VoxelWorld {
             byte[] data = store.getRecord(1);
             DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
             int format = in.readInt();
-            if (format != 0x4D434631 && format != 0x4D434632 && format != 0x4D434633) return null;
+            if (format != 0x4D434631 && format != 0x4D434632 && format != 0x4D434633 &&
+                format != 0x4D434634) return null;
             int seed = in.readInt();
             VoxelWorld world = new VoxelWorld(seed, in.readByte());
             world.selectedSlot = in.readByte();
-            if (format == 0x4D434633) {
+            if (format == 0x4D434633 || format == 0x4D434634) {
                 for (int i = 0; i < world.inventory.length; i++) world.inventory[i] = in.readUnsignedByte();
                 for (int i = 0; i < world.hotbar.length; i++) {
                     int id = in.readUnsignedByte();
@@ -202,8 +300,11 @@ final class VoxelWorld {
             world.playerY = in.readFloat();
             world.playerZ = in.readFloat();
             world.yaw = in.readFloat();
-            if (format == 0x4D434632 || format == 0x4D434633) world.health = in.readUnsignedByte();
+            if (format == 0x4D434632 || format == 0x4D434633 || format == 0x4D434634)
+                world.health = in.readUnsignedByte();
             in.readFully(world.blocks);
+            if (format == 0x4D434634) in.readFully(world.waterLevels);
+            world.queueSavedFlowingWater();
             world.revision++;
             return world;
         } catch (Exception ignored) {
@@ -222,3 +323,4 @@ final class VoxelWorld {
         return false;
     }
 }
+
