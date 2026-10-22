@@ -499,7 +499,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void loadTitle() {
-        try { title = Image.createImage("/title.png"); } catch (IOException ignored) { title = null; }
+        try { title = Image.createImage("/mecraft/title.png"); } catch (IOException ignored) { title = null; }
     }
 
     private void clearKeys() {
@@ -688,3 +688,4 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         return value;
     }
 }
+

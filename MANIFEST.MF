@@ -2,7 +2,8 @@ Manifest-Version: 1.0
 MIDlet-Name: MeCraft
 MIDlet-Version: 0.1.0
 MIDlet-Vendor: MeCraft
-MIDlet-1: MeCraft, /iconM.png, mecraft.MeCraft
+MIDlet-1: MeCraft, /mecraft/iconM.png, mecraft.MeCraft
 MicroEdition-Profile: MIDP-2.0
 MicroEdition-Configuration: CLDC-1.1
+
 

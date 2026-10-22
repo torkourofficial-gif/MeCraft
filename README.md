@@ -45,17 +45,15 @@ El objetivo es ejecutarse en un heap Java de **4 MiB o más**. Las decisiones pa
 
 El heap de 4 MiB es el mínimo de diseño, no una garantía para cada implementación: M3G puede reservar memoria nativa además del heap Java, y cada fabricante fija sus propios límites. El teléfono debe incluir JSR-184 y permitir el uso de la textura/M3G con un heap de al menos 4 MiB. Java ME sin M3G no puede ejecutar este renderizador.
 
-## Compilación
+## Compilar en NetBeans
 
-El repositorio contiene las fuentes y assets, pero no incluye un binario `.jar`. Para Oracle Java ME SDK 3.2, apunta `J2ME_HOME` a la carpeta del SDK; el script toma de `lib` CLDC 1.1, MIDP 2.0 y M3G 1.1 (`jsr184_1.1.jar`), y usa `preverify` desde `bin`. Para otros toolkits acepta los nombres `cldcapi11.jar` y `midpapi20.jar`; si el API M3G no aparece automáticamente, configura `M3G_API_JAR` con el JSR-184 provisto por el SDK del dispositivo. La compilación por línea de comandos necesita un JDK compatible con `-source 1.3 -target 1.3`.
+El repositorio es un proyecto Java ME de NetBeans; no necesita `build.bat`. Abre la carpeta del repositorio como proyecto y usa **Build** o **Clean and Build**. NetBeans genera `MeCraft.jar` y `MeCraft.jad` dentro de `dist/`; **Run** lo inicia en el emulador seleccionado.
 
-```bat
-set J2ME_HOME=C:\Java_ME_platform_SDK_3.2
-build.bat
-```
+El proyecto está configurado para Oracle Java ME SDK 3.2, CLDC 1.1, MIDP 2.0 y M3G 1.1 (JSR-184). Si NetBeans muestra que el dispositivo soporta MIDP 2.1, eso describe sus capacidades; el perfil solicitado por el MIDlet sigue siendo MIDP 2.0. Puedes comprobarlo en **Project Properties > Platform > Device Profile** y en **Application Descriptor > Attributes**.
 
-El paquete Java del juego es `mecraft` y las fuentes están en `src\mecraft\`, igual que un paquete `mecraft` de NetBeans. El script deja las clases pre-verificadas y `MeCraft.jar`/`MeCraft.jad` en `build\`.
+Si la plataforma SDK 3.2 no aparece en NetBeans, regístrala en **Tools > Java Platforms** y selecciona el dispositivo y la API opcional **JSR-184** en las propiedades del proyecto. El proyecto usa Java 1.3 y pre-verificación CLDC durante la compilación. Los PNG se guardan en `resources/mecraft/` y se empaquetan bajo `/mecraft/` en el JAR.
 
-Para instalar, transfiere ambos archivos al dispositivo o abre el JAD en el emulador Java ME. La disponibilidad de M3G se puede comprobar en la lista de APIs opcionales/JSR del perfil del dispositivo.
+Para instalar manualmente, transfiere ambos archivos de `dist/` al teléfono o abre `MeCraft.jad` en el emulador Java ME.
+
 
 

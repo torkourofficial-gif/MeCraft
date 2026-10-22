@@ -37,7 +37,7 @@ final class ChunkRenderer {
     ChunkRenderer(int width, int height) throws IOException {
         if (width <= 0) width = 1;
         if (height <= 0) height = 1;
-        Image source = Image.createImage("/textures.png");
+        Image source = Image.createImage("/mecraft/textures.png");
         Image2D image = new Image2D(Image2D.RGBA, source);
         atlas = new Texture2D(image);
         atlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
@@ -294,3 +294,4 @@ final class ChunkRenderer {
 
     }
 }
+
