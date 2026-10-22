@@ -71,6 +71,9 @@ final class ChunkRenderer {
     private VertexArray itemSpriteTexCoordArray;
     private final short[] itemSpriteUV;
     private final Mesh[][] heldItemMeshes = new Mesh[Block.COUNT][];
+    private Mesh heldCreativeBlockMesh;
+    private VertexArray heldCreativeBlockUVArray;
+    private final short[] heldCreativeBlockUV = new short[48];
     private final ParticleSystem particles;
     private final DroppedItemSystem droppedItems;
     private final MobSystem mobs;
@@ -86,7 +89,7 @@ final class ChunkRenderer {
     ChunkRenderer(int width, int height) throws IOException {
         if (width <= 0) width = 1;
         if (height <= 0) height = 1;
-        Image source = GameAssets.image("textures.png");
+        Image source = GameAssets.terrain();
         Image2D image = new Image2D(Image2D.RGBA, source);
         atlas = new Texture2D(image);
         atlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
@@ -223,12 +226,48 @@ final class ChunkRenderer {
 
     private void setHeldVisualVisible(int itemId, boolean visible) {
         if (itemId <= Block.AIR) return;
-        if (itemId < Block.COUNT) {
+        if (Block.isDecorative((byte)itemId) || itemId == Block.TNT) {
+            if (visible) setBlockMeshTile(itemId);
+            if (heldCreativeBlockMesh != null) heldCreativeBlockMesh.setRenderingEnable(visible);
+        } else if (itemId < Block.COUNT) {
             if (heldItemMeshes[itemId] != null) setMeshesVisible(heldItemMeshes[itemId], visible);
         } else {
             if (visible) setItemSprite(itemId);
             itemSpriteMesh.setRenderingEnable(visible && ItemCatalog.iconIndex(itemId) >= 0);
         }
+    }
+
+    private void setBlockMeshTile(int blockId) {
+        int at = 0;
+        for (int face = 0; face < 6; face++) {
+            int tile = Block.faceTile((byte)blockId, face);
+            int u0 = (tile & 15) * 16 + 1, v0 = (tile >> 4) * 16 + 1;
+            at = writeHeldCubeFace(at, face, u0, v0, u0 + 14, v0 + 14);
+        }
+        heldCreativeBlockUVArray.set(0, 24, heldCreativeBlockUV);
+    }
+
+    private int writeHeldCubeFace(int at, int face, int u0, int v0, int u1, int v1) {
+        if (face == 0) {
+            at = putHeldUV(at,u0,v1); at = putHeldUV(at,u0,v0);
+            at = putHeldUV(at,u1,v1); at = putHeldUV(at,u1,v0);
+        } else if (face == 1 || face == 4) {
+            at = putHeldUV(at,u1,v1); at = putHeldUV(at,u0,v1);
+            at = putHeldUV(at,u1,v0); at = putHeldUV(at,u0,v0);
+        } else if (face == 5) {
+            at = putHeldUV(at,u0,v0); at = putHeldUV(at,u1,v0);
+            at = putHeldUV(at,u0,v1); at = putHeldUV(at,u1,v1);
+        } else {
+            at = putHeldUV(at,u0,v1); at = putHeldUV(at,u0,v0);
+            at = putHeldUV(at,u1,v1); at = putHeldUV(at,u1,v0);
+        }
+        return at;
+    }
+
+    private int putHeldUV(int at, int u, int v) {
+        heldCreativeBlockUV[at++] = (short)u;
+        heldCreativeBlockUV[at++] = (short)v;
+        return at;
     }
 
     private void setItemSprite(int itemId) {
@@ -334,7 +373,10 @@ final class ChunkRenderer {
     }
 
     private void buildHeldItems() {
-        for (int id = 1; id < Block.COUNT; id++) {
+        // The atlas palette is large; only build dedicated 3D held meshes for
+        // the original gameplay blocks. Creative decorations use one shared
+        // first-person sprite mesh to keep the M3G heap bounded.
+        for (int id = 1; id < Block.DECORATIVE_START; id++) {
             if (Block.isFlower((byte)id)) {
                 FlowerBuilder flower = new FlowerBuilder();
                 flower.add(0, 0, 0, Block.sideTile((byte)id));
@@ -370,6 +412,29 @@ final class ChunkRenderer {
             }
             heldItemMeshes[id] = meshes;
         }
+        buildCreativeHeldBlock();
+    }
+
+    private void buildCreativeHeldBlock() {
+        FaceBuilder data = new FaceBuilder(0);
+        for (int face = 0; face < 6; face++) data.add(0, 0, 0, face);
+        int vertexCount = data.vertexCount;
+        VertexArray positions = new VertexArray(vertexCount, 3, 2);
+        positions.set(0, vertexCount, data.p);
+        heldCreativeBlockUVArray = new VertexArray(vertexCount, 2, 2);
+        heldCreativeBlockUVArray.set(0, vertexCount, data.uv);
+        VertexArray colors = new VertexArray(vertexCount, 4, 1);
+        colors.set(0, vertexCount, data.c);
+        VertexBuffer vertices = new VertexBuffer();
+        vertices.setPositions(positions, 1.0f, null);
+        vertices.setTexCoords(0, heldCreativeBlockUVArray, 1.0f / 256.0f, null);
+        vertices.setColors(colors);
+        int[] strips = new int[] { 4,4,4,4,4,4 };
+        heldCreativeBlockMesh = new Mesh(vertices, new TriangleStripArray(0, strips), heldItemAppearance);
+        heldCreativeBlockMesh.setScale(0.34f, 0.34f, 0.34f);
+        heldCreativeBlockMesh.setTranslation(-0.17f, -0.17f, -0.17f);
+        heldCreativeBlockMesh.setRenderingEnable(false);
+        heldItemPitch.addChild(heldCreativeBlockMesh);
     }
 
     /** Build Indev's 1/16-thick, front/back and extruded first-person icon. */
@@ -600,8 +665,19 @@ final class ChunkRenderer {
         droppedItems.spawn(itemId, x, y, z);
     }
 
+    void spawnPrimedTnt(int x, int y, int z, int fuse) {
+        droppedItems.spawnPrimedTnt(x, y, z, fuse);
+    }
+
     int updateDroppedItems(VoxelWorld world, int[] inventory) {
-        return droppedItems.update(world, inventory);
+        int picked = droppedItems.update(world, inventory);
+        if (droppedItems.consumeExplosion()) {
+            mobs.damageFromExplosion(world, droppedItems.explosionX(),
+                    droppedItems.explosionY(), droppedItems.explosionZ(), 4.0f);
+            particles.spawnBlockDestroy(droppedItems.explosionX(), droppedItems.explosionY(),
+                    droppedItems.explosionZ(), Block.atlasTile(Block.TNT));
+        }
+        return picked;
     }
 
     int updateMobs(VoxelWorld world) {
@@ -673,10 +749,11 @@ final class ChunkRenderer {
     }
 
     void sync(VoxelWorld world) {
-        if (world.revision != builtRevision) {
-            if (builtRevision < 0) rebuildWorld(world);
+        if (world.revision != builtRevision || world.fullRebuild) {
+            if (builtRevision < 0 || world.fullRebuild) rebuildWorld(world);
             else rebuildChanged(world);
             builtRevision = world.revision;
+            world.fullRebuild = false;
         }
     }
 

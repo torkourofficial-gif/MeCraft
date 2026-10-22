@@ -21,15 +21,74 @@ final class Block {
     static final byte YELLOW_FLOWER = 16;
     static final byte TORCH = 17;
     static final byte WOOL = 18;
+    static final byte TNT = 19;
 
     static final int LEGACY_COUNT = 14;
-    static final int COUNT = 19;
-    static final int[] TILE = new int[] { 0, 0, 2, 1, 18, 205, 20, 52, 17, 34, 33, 4, 59, 16, 2, 12, 13, 80, 64 };
-    static final String[] NAME = new String[] {
+    static final int DECORATIVE_START = 20;
+    private static final int[] EXISTING_TILES = new int[] {
+        0,2,1,18,20,52,17,34,33,4,59,16,12,13,64,21,43,60,80,87
+    };
+    private static final int[] EXTRA_TILES = makeExtraTiles();
+    static final int COUNT = DECORATIVE_START + EXTRA_TILES.length;
+    static final int[] TILE = makeTiles();
+    static final String[] NAME = makeNames();
+
+    private static int[] makeExtraTiles() {
+        int[] temporary = new int[110];
+        int count = 0;
+        for (int tile = 0; tile < 80; tile++) {
+            if (!isAtlasBlockTile(tile)) continue;
+            if (tile == 8 || tile == 9 || tile == 10 || isExistingTile(tile)) continue;
+            temporary[count++] = tile;
+        }
+        // The atlas also contains the old door, foliage, and rail tile cells.
+        int[] lowerAtlasTiles = new int[] { 81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,
+                                            97,98,99,100,101,112,128 };
+        for (int i = 0; i < lowerAtlasTiles.length; i++) {
+            int tile = lowerAtlasTiles[i];
+            if (!isExistingTile(tile)) temporary[count++] = tile;
+        }
+        int[] result = new int[count];
+        System.arraycopy(temporary, 0, result, 0, count);
+        return result;
+    }
+
+    private static boolean isAtlasBlockTile(int tile) {
+        int row = tile >> 4, column = tile & 15;
+        if (row == 0) return column <= 12 || column == 14;
+        if (row == 1) return column <= 13;
+        if (row == 2) return column <= 13;
+        if (row == 3 || row == 4) return column <= 11;
+        return false;
+    }
+
+    private static boolean isExistingTile(int tile) {
+        for (int i = 0; i < EXISTING_TILES.length; i++) if (EXISTING_TILES[i] == tile) return true;
+        return false;
+    }
+
+    private static int[] makeTiles() {
+        int[] result = new int[COUNT];
+        int[] basic = new int[] { 0,0,2,1,18,205,20,52,17,34,33,4,59,16,2,12,13,80,64,8 };
+        System.arraycopy(basic, 0, result, 0, basic.length);
+        for (int i = 0; i < EXTRA_TILES.length; i++) result[DECORATIVE_START + i] = EXTRA_TILES[i];
+        return result;
+    }
+
+    private static String[] makeNames() {
+        String[] result = new String[COUNT];
+        String[] basic = new String[] {
         "Aire", "Césped", "Tierra", "Piedra", "Arena", "Agua",
         "Tronco", "Hojas", "Roca madre", "Carbón", "Hierro", "Tablones",
-        "Mesa de crafteo", "Piedra labrada", "Tierra de cultivo", "Flor roja", "Flor amarilla", "Antorcha", "Lana"
-    };
+        "Mesa de crafteo", "Piedra labrada", "Tierra de cultivo", "Flor roja", "Flor amarilla", "Antorcha", "Lana", "TNT"
+        };
+        System.arraycopy(basic, 0, result, 0, basic.length);
+        for (int i = 0; i < EXTRA_TILES.length; i++) {
+            result[DECORATIVE_START + i] = new StringBuffer().append("Decoración ")
+                    .append(EXTRA_TILES[i]).toString();
+        }
+        return result;
+    }
 
     private Block() { }
 
@@ -79,7 +138,7 @@ final class Block {
     }
 
     static boolean dropsItem(byte id) {
-        return id != AIR && id != WATER && id != BEDROCK;
+        return id != AIR && id != WATER && id != BEDROCK && id != TNT;
     }
 
     static byte dropId(byte id) {
@@ -89,7 +148,7 @@ final class Block {
 
     private static int hardnessTenths(byte id) {
         if (id == BEDROCK) return -1;
-        if (isFlower(id)) return 0;
+        if (isFlower(id) || id == TNT) return 0;
         if (id == LEAVES) return 2;
         if (id == DIRT || id == SAND) return 5;
         if (id == GRASS) return 6;
@@ -111,6 +170,8 @@ final class Block {
     }
 
     static int topTile(byte id) {
+        if (id == TNT) return 9;
+        if (isDecorative(id)) return TILE[id & 255];
         if (id == GRASS) return 0;
         if (id == LOG) return 21;
         if (id == CRAFTING_TABLE) return 43;
@@ -119,6 +180,8 @@ final class Block {
     }
 
     static int sideTile(byte id) {
+        if (id == TNT) return 8;
+        if (isDecorative(id)) return TILE[id & 255];
         if (id == GRASS) return 3;
         if (id == LOG) return 20;
         if (id == CRAFTING_TABLE) return 59;
@@ -129,6 +192,7 @@ final class Block {
     /** Indev terrain tile for the renderer's face order: top, x-, x+, z-, z+, bottom. */
     static int faceTile(byte id, int face) {
         if (face == 0) return topTile(id);
+        if (id == TNT && face == 5) return 10;
         if (face == 5) {
             if (id == GRASS) return TILE[DIRT];
             if (id == CRAFTING_TABLE) return TILE[PLANKS];
@@ -137,6 +201,14 @@ final class Block {
         }
         if (id == CRAFTING_TABLE) return (face == 1 || face == 3) ? 59 : 60;
         return sideTile(id);
+    }
+
+    static boolean isDecorative(byte id) {
+        return (id & 255) >= DECORATIVE_START && (id & 255) < COUNT;
+    }
+
+    static int atlasTile(int id) {
+        return id >= 0 && id < TILE.length ? TILE[id] : 0;
     }
 
 }

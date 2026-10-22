@@ -20,17 +20,44 @@ final class PlayerPhysics {
 
     boolean isOnGround() { return onGround; }
 
+    void clearVerticalMotion() {
+        motionY = 0.0f;
+        fallDistance = 0.0f;
+    }
+
     boolean isInWater(VoxelWorld world) {
         return intersectsWater(world, world.playerX, world.playerY + 0.4f,
                 world.playerZ, world.playerY + HEIGHT - 0.4f);
     }
 
     /** Returns Indev fall damage, if a landing occurred this tick. */
-    int update(VoxelWorld world, float forward, float strafe, boolean jumping) {
+    int update(VoxelWorld world, float forward, float strafe, boolean jumping,
+               boolean flying, boolean descending) {
         float inputLength = (float)Math.sqrt(forward * forward + strafe * strafe);
         if (inputLength > 1.0f) {
             forward /= inputLength;
             strafe /= inputLength;
+        }
+
+        if (flying) {
+            motionY = jumping ? 0.24f : (descending ? -0.24f : 0.0f);
+            float requestedY = motionY;
+            float movedY = clipY(world, world.playerX, world.playerY, world.playerZ, requestedY);
+            world.playerY += movedY;
+            if (movedY != requestedY) motionY = 0.0f;
+            onGround = false;
+            fallDistance = 0.0f;
+            float radians = world.yaw * (float)Math.PI / 180.0f;
+            float sin = (float)Math.sin(radians);
+            float cos = (float)Math.cos(radians);
+            motionX += (forward * sin - strafe * cos) * 0.10f;
+            motionZ += (forward * cos + strafe * sin) * 0.10f;
+            moveHorizontally(world);
+            motionX *= 0.91f;
+            motionZ *= 0.91f;
+            if (world.playerY < 1.0f) world.playerY = 1.0f;
+            if (world.playerY > VoxelWorld.HEIGHT - HEIGHT) world.playerY = VoxelWorld.HEIGHT - HEIGHT;
+            return 0;
         }
 
         boolean inWater = isInWater(world);

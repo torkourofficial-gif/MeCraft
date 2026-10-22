@@ -43,6 +43,8 @@ final class DroppedItemSystem {
     private final int[] itemId = new int[CAPACITY];
     private final int[] age = new int[CAPACITY];
     private final int[] pickupDelay = new int[CAPACITY];
+    private final int[] tntFuse = new int[CAPACITY];
+    private final int[] tntTextureFrame = new int[CAPACITY];
     private final short[] positions = new short[VERTEX_COUNT * 3];
     private final short[] texCoords = new short[VERTEX_COUNT * 2];
     private final short[] spritePositions = new short[VERTEX_COUNT * 3];
@@ -54,6 +56,8 @@ final class DroppedItemSystem {
     private int cursor;
     private int activeCount;
     private int random = 0x2468ACE1;
+    private boolean explosionPending;
+    private int explosionX, explosionY, explosionZ;
 
     DroppedItemSystem(Texture2D atlas, Texture2D itemAtlas) {
         positionArray = new VertexArray(VERTEX_COUNT, 3, 2);
@@ -127,6 +131,8 @@ final class DroppedItemSystem {
         if (itemId[slot] == 0) activeCount++;
 
         itemId[slot] = id;
+        tntFuse[slot] = 0;
+        tntTextureFrame[slot] = -1;
         age[slot] = 0;
         pickupDelay[slot] = 10;
         x[slot] = bx + 0.15f + nextRandom() * 0.70f;
@@ -137,6 +143,19 @@ final class DroppedItemSystem {
         vz[slot] = nextRandom() * 0.2f - 0.1f;
         if (id < Block.COUNT) writeTexture(slot, id);
         else writeSpriteTexture(slot, id);
+    }
+
+    void spawnPrimedTnt(int bx, int by, int bz, int fuse) {
+        spawn(Block.TNT, bx, by, bz);
+        int slot = cursor == 0 ? CAPACITY - 1 : cursor - 1;
+        tntFuse[slot] = fuse;
+        pickupDelay[slot] = fuse + 20;
+        float angle = nextRandom() * 6.2831855f;
+        vx[slot] = (float)Math.sin(angle) * 0.02f;
+        vy[slot] = 0.2f;
+        vz[slot] = (float)Math.cos(angle) * 0.02f;
+        tntTextureFrame[slot] = tntFuse[slot] / 5 % 2;
+        writeTexture(slot, Block.TNT);
     }
 
     /** Returns one collected block ID, or -1 when nothing was collected. */
@@ -153,11 +172,14 @@ final class DroppedItemSystem {
             if (pickupDelay[i] > 0) pickupDelay[i]--;
             if (age[i] >= 6000 || y[i] < -2.0f) {
                 itemId[i] = 0;
+                tntFuse[i] = 0;
                 activeCount--;
                 writeItem(i);
                 continue;
             }
 
+            boolean primedTnt = tntFuse[i] > 0;
+            int textureFrame = tntFuse[i] / 5 % 2;
             vy[i] -= 0.04f;
             move(world, i);
             vx[i] *= 0.98f;
@@ -168,7 +190,29 @@ final class DroppedItemSystem {
             if (onGround) {
                 vx[i] *= 0.7f;
                 vz[i] *= 0.7f;
-                vy[i] = 0.0f;
+                if (primedTnt) vy[i] *= -0.5f;
+                else vy[i] = 0.0f;
+            }
+            if (primedTnt) {
+                int nextTextureFrame = tntFuse[i] / 5 % 2;
+                if (nextTextureFrame != textureFrame || nextTextureFrame != tntTextureFrame[i]) {
+                    writeTexture(i, Block.TNT);
+                    tntTextureFrame[i] = nextTextureFrame;
+                }
+            }
+            if (primedTnt && tntFuse[i]-- <= 0) {
+                explosionX = floorBlock(x[i]);
+                explosionY = floorBlock(y[i]);
+                explosionZ = floorBlock(z[i]);
+                explosionPending = true;
+                damagePlayerFromExplosion(world, x[i], y[i], z[i]);
+                world.explode(x[i], y[i], z[i], 4.0f, this);
+                itemId[i] = 0;
+                tntFuse[i] = 0;
+                tntTextureFrame[i] = -1;
+                activeCount--;
+                writeItem(i);
+                continue;
             }
 
             int id = itemId[i];
@@ -179,6 +223,8 @@ final class DroppedItemSystem {
             if (pickupDelay[i] == 0 && picked < 0 && inventory[id] < ItemCatalog.maxStack(id) && inPickupRange) {
                 inventory[id]++;
                 itemId[i] = 0;
+                tntFuse[i] = 0;
+                tntTextureFrame[i] = -1;
                 activeCount--;
                 picked = id;
                 writeItem(i);
@@ -195,6 +241,29 @@ final class DroppedItemSystem {
         mesh.setRenderingEnable(hasBlocks);
         spriteMesh.setRenderingEnable(hasSprites);
         return picked;
+    }
+
+    boolean consumeExplosion() {
+        if (!explosionPending) return false;
+        explosionPending = false;
+        return true;
+    }
+
+    int explosionX() { return explosionX; }
+    int explosionY() { return explosionY; }
+    int explosionZ() { return explosionZ; }
+
+    private void damagePlayerFromExplosion(VoxelWorld world, float ex, float ey, float ez) {
+        if (world.mode != 0) return;
+        float dx = world.playerX - ex;
+        float dy = world.playerY + 0.9f - ey;
+        float dz = world.playerZ - ez;
+        float distance = (float)Math.sqrt(dx * dx + dy * dy + dz * dz);
+        float impact = 1.0f - distance / 8.0f;
+        if (impact <= 0.0f) return;
+        int damage = (int)((impact * impact + impact) * 32.0f + 1.0f);
+        world.health -= damage;
+        if (world.health < 0) world.health = 0;
     }
 
     private void move(VoxelWorld world, int i) {
@@ -242,6 +311,13 @@ final class DroppedItemSystem {
         float sin = (float)Math.sin(angle);
         float cos = (float)Math.cos(angle);
         float bob = (float)Math.sin(age[slot] * 0.12f) * 0.035f;
+        float scale = 1.0f;
+        if (itemId[slot] == Block.TNT && tntFuse[slot] > 0 && tntFuse[slot] < 10) {
+            float progress = 1.0f - tntFuse[slot] / 10.0f;
+            float pulse = progress * progress;
+            pulse *= pulse;
+            scale += pulse * 0.3f;
+        }
         float centerY = y[slot] + bob;
         int centerX = toShort(x[slot]);
         int centerYS = toShort(centerY);
@@ -274,6 +350,9 @@ final class DroppedItemSystem {
                 ly = LOCAL[v * 3 + 1];
                 lz = LOCAL[v * 3 + 2];
             }
+            lx = (int)(lx * scale);
+            ly = (int)(ly * scale);
+            lz = (int)(lz * scale);
             positions[at++] = (short)(centerX + (int)(lx * cos + lz * sin));
             positions[at++] = (short)(centerYS + ly);
             positions[at++] = (short)(centerZ + (int)(-lx * sin + lz * cos));
@@ -286,6 +365,7 @@ final class DroppedItemSystem {
         for (int face = 0; face < 6; face++) {
             int blockFace = face == 0 ? 0 : (face == 1 ? 5 : face - 1);
             int tile = Block.faceTile((byte)id, blockFace);
+            if (id == Block.TNT && tntFuse[slot] > 0 && tntFuse[slot] / 5 % 2 == 0) tile = 5;
             int u0 = (tile & 15) * 16 + 1;
             int v0 = (tile >> 4) * 16 + 1;
             int u1 = u0 + 14;

@@ -28,10 +28,12 @@ final class VoxelWorld {
     private static final int MCF6_ITEM_COUNT = 45;
     private static final int MCF7_ITEM_COUNT = 47;
     private static final int MCF8_ITEM_COUNT = 48;
+    private static final int MCF9_ITEM_COUNT = 51;
     static final int DAY_LENGTH = 24000;
 
     final byte[] blocks = new byte[BLOCK_COUNT];
     private final byte[] waterLevels = new byte[BLOCK_COUNT];
+    private final byte[] explosionBits = new byte[(BLOCK_COUNT + 7) / 8];
     private static final int FLUID_QUEUE_SIZE = 2048;
     private final short[] fluidQueue = new short[FLUID_QUEUE_SIZE];
     private final byte[] fluidQueued = new byte[(BLOCK_COUNT + 7) / 8];
@@ -54,6 +56,8 @@ final class VoxelWorld {
     int changedX;
     int changedY;
     int changedZ;
+    boolean fullRebuild;
+    private int explosionRandom = 0x51F15E;
     private int fluidQueueHead;
     private int fluidQueueTail;
     private int fluidQueueCount;
@@ -89,6 +93,80 @@ final class VoxelWorld {
 
     boolean set(int x, int y, int z, byte id) {
         return setBlock(x, y, z, id, 0);
+    }
+
+    /** Indev's shell ray blast, scaled to TNT radius 4 and stored in a reusable bitset. */
+    void explode(float x, float y, float z, float radius, DroppedItemSystem drops) {
+        for (int i = 0; i < explosionBits.length; i++) explosionBits[i] = 0;
+        for (int rx = 0; rx < 16; rx++) {
+            for (int ry = 0; ry < 16; ry++) {
+                for (int rz = 0; rz < 16; rz++) {
+                    if (rx != 0 && rx != 15 && ry != 0 && ry != 15 && rz != 0 && rz != 15) continue;
+                    float dx = rx / 15.0f * 2.0f - 1.0f;
+                    float dy = ry / 15.0f * 2.0f - 1.0f;
+                    float dz = rz / 15.0f * 2.0f - 1.0f;
+                    float length = (float)Math.sqrt(dx * dx + dy * dy + dz * dz);
+                    if (length == 0.0f) continue;
+                    dx /= length; dy /= length; dz /= length;
+                    float strength = radius * (0.7f + randomFloat() * 0.6f);
+                    float px = x, py = y, pz = z;
+                    while (strength > 0.0f) {
+                        int bx = floorBlock(px), by = floorBlock(py), bz = floorBlock(pz);
+                        byte id = get(bx, by, bz);
+                        if (id != Block.AIR) strength -= (explosionResistance(id) + 0.3f) * 0.3f;
+                        if (strength > 0.0f && bx >= 0 && bx < WIDTH && by > 0 && by < HEIGHT && bz >= 0 && bz < DEPTH) {
+                            int index = index(bx, by, bz);
+                            explosionBits[index >> 3] |= (byte)(1 << (index & 7));
+                        }
+                        px += dx * 0.3f; py += dy * 0.3f; pz += dz * 0.3f;
+                        strength -= 0.22500001f;
+                    }
+                }
+            }
+        }
+        int minX = Math.max(0, floorBlock(x - radius * 2.0f - 1.0f));
+        int maxX = Math.min(WIDTH - 1, floorBlock(x + radius * 2.0f + 1.0f));
+        int minY = Math.max(1, floorBlock(y - radius * 2.0f - 1.0f));
+        int maxY = Math.min(HEIGHT - 1, floorBlock(y + radius * 2.0f + 1.0f));
+        int minZ = Math.max(0, floorBlock(z - radius * 2.0f - 1.0f));
+        int maxZ = Math.min(DEPTH - 1, floorBlock(z + radius * 2.0f + 1.0f));
+        for (int by = minY; by <= maxY; by++) {
+            for (int bz = minZ; bz <= maxZ; bz++) {
+                for (int bx = minX; bx <= maxX; bx++) {
+                    int index = index(bx, by, bz);
+                    if ((explosionBits[index >> 3] & (1 << (index & 7))) == 0) continue;
+                    byte id = get(bx, by, bz);
+                    if (id == Block.AIR) continue;
+                    if (id == Block.TNT) drops.spawnPrimedTnt(bx, by, bz, 10 + randomInt(20));
+                    else if (Block.dropsItem(id) && randomFloat() < 0.3f)
+                        drops.spawn(Block.dropId(id), bx, by, bz);
+                    set(bx, by, bz, Block.AIR);
+                }
+            }
+        }
+        fullRebuild = true;
+    }
+
+    private float explosionResistance(byte id) {
+        if (id == Block.BEDROCK) return 10000.0f;
+        if (id == Block.STONE || id == Block.COBBLESTONE || id == Block.IRON) return 2.0f;
+        if (id == Block.WATER) return 100.0f;
+        return 0.0f;
+    }
+
+    private int randomInt(int bound) {
+        explosionRandom = explosionRandom * 1664525 + 1013904223;
+        return (explosionRandom >>> 1) % bound;
+    }
+
+    private float randomFloat() {
+        explosionRandom = explosionRandom * 1664525 + 1013904223;
+        return (explosionRandom >>> 8 & 0xFFFF) / 65535.0f;
+    }
+
+    private int floorBlock(float value) {
+        int result = (int)value;
+        return value < result ? result - 1 : result;
     }
 
     private boolean setBlock(int x, int y, int z, byte id, int fluidLevel) {
@@ -324,7 +402,7 @@ final class VoxelWorld {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(blocks.length * 2 + 64);
             DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(0x4D434639); // MCF9: wool and mob-drop items
+            out.writeInt(0x4D434641); // MCFA: creative atlas palette and TNT
             out.writeInt(seed);
             out.writeByte(mode);
             out.writeByte(selectedSlot);
@@ -366,35 +444,41 @@ final class VoxelWorld {
             int format = in.readInt();
             if (format != 0x4D434631 && format != 0x4D434632 && format != 0x4D434633 &&
                 format != 0x4D434634 && format != 0x4D434635 && format != 0x4D434636 &&
-                format != 0x4D434637 && format != 0x4D434638 && format != 0x4D434639) return null;
+                format != 0x4D434637 && format != 0x4D434638 && format != 0x4D434639 &&
+                format != 0x4D434641) return null;
             int seed = in.readInt();
             VoxelWorld world = new VoxelWorld(seed, in.readByte());
             world.selectedSlot = in.readByte();
             if (format == 0x4D434635 || format == 0x4D434636 || format == 0x4D434637 ||
-                format == 0x4D434638 || format == 0x4D434639) {
-                int inventoryLength = format == 0x4D434639 ? world.inventory.length :
+                format == 0x4D434638 || format == 0x4D434639 || format == 0x4D434641) {
+                int inventoryLength = format == 0x4D434641 ? world.inventory.length :
+                                      (format == 0x4D434639 ? MCF9_ITEM_COUNT :
                                       (format == 0x4D434638 ? MCF8_ITEM_COUNT :
-                                       (format == 0x4D434637 ? MCF7_ITEM_COUNT : MCF6_ITEM_COUNT));
+                                       (format == 0x4D434637 ? MCF7_ITEM_COUNT : MCF6_ITEM_COUNT)));
                 for (int i = 0; i < inventoryLength; i++) {
-                    int newId = format == 0x4D434639 ? i :
+                    int newId = format == 0x4D434641 ? i : (format == 0x4D434639 ? i :
                                 (format == 0x4D434638 ? (i < 18 ? i : i + 1) :
                                  (format == 0x4D434637 ? (i < 17 ? i : i + 2) :
-                                  (i < MCF6_BLOCK_COUNT ? i : i + 4)));
+                                  (i < MCF6_BLOCK_COUNT ? i : i + 4))));
+                    if (format != 0x4D434641 && newId >= 19) newId += Block.COUNT - 19;
                     world.inventory[newId] = in.readUnsignedByte();
                 }
                 for (int i = 0; i < world.hotbar.length; i++) {
                     int id = in.readUnsignedByte();
-                    if (format == 0x4D434638 && id >= 18) id++;
+                    if (format == 0x4D434641) { }
+                    else if (format == 0x4D434638 && id >= 18) id++;
                     else if (format == 0x4D434637 && id >= 17) id += 2;
                     else if (format != 0x4D434637 && format != 0x4D434638 &&
                              format != 0x4D434639 && id >= MCF6_BLOCK_COUNT) id += 4;
+                    if (format != 0x4D434641 && id >= 19) id += Block.COUNT - 19;
                     world.hotbar[i] = id > Block.AIR && id < ItemCatalog.COUNT ? id : Block.DIRT;
                 }
                 for (int i = 0; i < inventoryLength; i++) {
-                    int newId = format == 0x4D434639 ? i :
+                    int newId = format == 0x4D434641 ? i : (format == 0x4D434639 ? i :
                                 (format == 0x4D434638 ? (i < 18 ? i : i + 1) :
                                  (format == 0x4D434637 ? (i < 17 ? i : i + 2) :
-                                  (i < MCF6_BLOCK_COUNT ? i : i + 4)));
+                                  (i < MCF6_BLOCK_COUNT ? i : i + 4))));
+                    if (format != 0x4D434641 && newId >= 19) newId += Block.COUNT - 19;
                     world.itemDamage[newId] = in.readUnsignedShort();
                 }
             } else if (format == 0x4D434633 || format == 0x4D434634) {
@@ -414,17 +498,18 @@ final class VoxelWorld {
             world.yaw = in.readFloat();
             if (format == 0x4D434632 || format == 0x4D434633 || format == 0x4D434634 ||
                 format == 0x4D434635 || format == 0x4D434636 || format == 0x4D434637 ||
-                format == 0x4D434638 || format == 0x4D434639)
+                format == 0x4D434638 || format == 0x4D434639 || format == 0x4D434641)
                 world.health = in.readUnsignedByte();
-            if (format == 0x4D434638 || format == 0x4D434639) {
+            if (format == 0x4D434638 || format == 0x4D434639 || format == 0x4D434641) {
                 world.dayTime = in.readUnsignedShort() % DAY_LENGTH;
             }
             in.readFully(world.blocks);
             if (format == 0x4D434634 || format == 0x4D434635 || format == 0x4D434636 ||
-                format == 0x4D434637 || format == 0x4D434638 || format == 0x4D434639)
+                format == 0x4D434637 || format == 0x4D434638 || format == 0x4D434639 ||
+                format == 0x4D434641)
                 in.readFully(world.waterLevels);
             if (format != 0x4D434636 && format != 0x4D434637 && format != 0x4D434638 &&
-                format != 0x4D434639)
+                format != 0x4D434639 && format != 0x4D434641)
                 world.migrateLegacyFurnaces();
             world.queueSavedFlowingWater();
             world.revision++;

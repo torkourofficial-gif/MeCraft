@@ -18,6 +18,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private static final int ERROR = 3;
     private static final int INVENTORY = 4;
     private static final int WORKBENCH = 5;
+    private static final int CREATIVE_INVENTORY = 6;
     private static final int MENU_CONTINUE = 0;
     private static final int MENU_SURVIVAL = 1;
     private static final int MENU_CREATIVE = 2;
@@ -63,6 +64,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private boolean hasSavedWorld;
     private final PlayerPhysics playerPhysics = new PlayerPhysics();
     private boolean jumpHeld;
+    private boolean descendHeld;
+    private boolean flying;
+    private boolean hasJumpTap;
+    private long lastJumpTap;
     private float cameraPitch = -5.0f;
     private boolean lookUp, lookDown, lookLeft, lookRight;
     private VoxelWorld world;
@@ -71,6 +76,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private Image guiTexture;
     private Image iconsTexture;
     private Image containerTexture;
+    private Image terrainTexture;
     private final Image[] blockIcons = new Image[Block.COUNT];
     private final Image[] itemIcons = new Image[ItemCatalog.COUNT];
     private final Image[] mutedItemIcons = new Image[ItemCatalog.COUNT];
@@ -80,6 +86,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private int diagnosticScroll;
     private int recipeSelection;
     private int recipeScroll;
+    private int creativeSelection;
     private int miningX = -1, miningY = -1, miningZ = -1;
     private float miningDamage;
     private int miningHitWait;
@@ -161,12 +168,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (keys[8]) forward -= 1.0f;
         if (keys[6]) strafe += 1.0f;
         if (keys[4]) strafe -= 1.0f;
-        int fallDamage = playerPhysics.update(world, forward, strafe, jumpHeld);
+        int fallDamage = playerPhysics.update(world, forward, strafe, jumpHeld,
+                world.mode == 1 && flying, descendHeld);
         if (world.mode == 0 && fallDamage > 0) damagePlayer(fallDamage);
         int mobDamage = renderer.updateMobs(world);
         if (world.mode == 0 && mobDamage > 0) damagePlayer(mobDamage);
         tickAirAndHurt();
+        int healthBeforeDrops = world.health;
         int pickedItem = renderer.updateDroppedItems(world, inventory);
+        if (world.mode == 0 && world.health < healthBeforeDrops) {
+            hurtTicks = 10;
+            if (world.health == 0) respawn();
+        }
         if (pickedItem > Block.AIR) ensureHotbarItem(pickedItem);
         if (keys[1]) updateMining();
         renderer.updateCamera(world, cameraPitch);
@@ -236,6 +249,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             world = new VoxelWorld((int)(System.currentTimeMillis() ^ System.currentTimeMillis() >>> 32), mode);
             copyHotbarFromWorld();
             playerPhysics.reset();
+            flying = false;
+            hasJumpTap = false;
             airTicks = MAX_AIR;
             hurtTicks = 0;
             resetInventory(mode);
@@ -273,6 +288,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             world = saved;
             world.health = clamp(world.health, 0, 20);
             playerPhysics.reset();
+            flying = false;
+            hasJumpTap = false;
             airTicks = MAX_AIR;
             hurtTicks = 0;
             copyHotbarFromWorld();
@@ -454,6 +471,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             if (world.mode == 0 && Block.dropsItem(id) && canHarvest)
                 renderer.spawnDroppedItem(Block.dropId(id), x, y, z);
             renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
+            if (id == Block.TNT) renderer.spawnPrimedTnt(x, y, z, 80);
             renderer.swingHand();
             world.set(x, y, z, Block.AIR);
             if (world.mode == 0) damageTool(heldItem, ItemCatalog.durabilityCost(heldItem));
@@ -679,9 +697,19 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             else if (keyCode == KEY_NUM5 || action == FIRE) craftSelected();
             return;
         }
+        if (state == CREATIVE_INVENTORY) {
+            if (keyCode == KEY_POUND || keyCode == KEY_NUM0) closeCreativeInventory();
+            else if (keyCode == KEY_NUM2) moveCreativeSelection(-9);
+            else if (keyCode == KEY_NUM8) moveCreativeSelection(9);
+            else if (keyCode == KEY_NUM4) moveCreativeSelection(-1);
+            else if (keyCode == KEY_NUM6) moveCreativeSelection(1);
+            else if (keyCode == KEY_NUM5) selectCreativeBlock();
+            return;
+        }
         if (state != PLAYING) return;
         if (keyCode == KEY_POUND) {
-            openCrafting(false);
+            if (world.mode == 1) openCreativeInventory();
+            else openCrafting(false);
             return;
         }
         if (keyCode == KEY_NUM2) keys[2] = true;
@@ -707,7 +735,23 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             else if (action == LEFT) lookLeft = true;
             else if (action == RIGHT) lookRight = true;
         }
-        if (keyCode == KEY_NUM5) jumpHeld = true;
+        boolean toggledFlight = false;
+        if (keyCode == KEY_NUM5) {
+            if (!jumpHeld && world.mode == 1) {
+                long now = System.currentTimeMillis();
+                if (hasJumpTap && now - lastJumpTap <= 350L) {
+                    flying = !flying;
+                    toggledFlight = true;
+                    hasJumpTap = false;
+                    playerPhysics.clearVerticalMotion();
+                } else {
+                    hasJumpTap = true;
+                    lastJumpTap = now;
+                }
+            }
+            jumpHeld = !(toggledFlight && !flying);
+        }
+        if (keyCode == KEY_NUM0 && world.mode == 1) descendHeld = true;
         if (keyCode == KEY_NUM3) placeBlock();
         if (keyCode == KEY_NUM7) cycleSlot(-1);
         if (keyCode == KEY_NUM9) cycleSlot(1);
@@ -716,6 +760,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     public synchronized void keyReleased(int keyCode) {
         if (keyCode == KEY_NUM5) jumpHeld = false;
+        if (keyCode == KEY_NUM0) descendHeld = false;
         if (keyCode == KEY_NUM1) cancelMining();
         else if (keyCode == KEY_NUM2) keys[2] = false;
         else if (keyCode == KEY_NUM8) keys[8] = false;
@@ -741,6 +786,44 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             if (pauseSelection < 0) pauseSelection = 2;
             if (pauseSelection > 2) pauseSelection = 0;
         }
+    }
+
+    private void openCreativeInventory() {
+        if (state != PLAYING || world == null || world.mode != 1) return;
+        state = CREATIVE_INVENTORY;
+        creativeSelection = 0;
+        clearKeys();
+        removeCommand(mineCommand);
+        removeCommand(placeCommand);
+        removeCommand(pauseCommand);
+        addCommand(craftingCommand);
+        repaint();
+    }
+
+    private void closeCreativeInventory() {
+        if (state != CREATIVE_INVENTORY) return;
+        state = PLAYING;
+        removeCommand(craftingCommand);
+        addCommand(mineCommand);
+        addCommand(placeCommand);
+        addCommand(pauseCommand);
+        repaint();
+    }
+
+    private void moveCreativeSelection(int delta) {
+        int count = Block.COUNT - 1;
+        creativeSelection = (creativeSelection + delta) % count;
+        if (creativeSelection < 0) creativeSelection += count;
+        repaint();
+    }
+
+    private void selectCreativeBlock() {
+        int block = creativeSelection + 1;
+        if (block <= Block.AIR || block >= Block.COUNT) return;
+        hotbar[world.selectedSlot] = block;
+        inventory[block] = ItemCatalog.maxStack(block);
+        copyInventoryToWorld();
+        closeCreativeInventory();
     }
 
     private boolean VoxelWorldHasSave() { return hasSavedWorld; }
@@ -809,10 +892,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         hurtTintPixels = null;
         Image source = null;
         try {
-            source = GameAssets.image("textures.png");
+            source = GameAssets.terrain();
+            terrainTexture = source;
             int[] sourcePixels = new int[14 * 14];
             int[] iconPixels = new int[16 * 16];
             for (int block = 1; block < Block.COUNT; block++) {
+                if (Block.isDecorative((byte)block) || block == Block.TNT) continue;
                 int tile = Block.sideTile((byte)block);
                 int cropX = (tile & 15) * 16 + 1;
                 int cropY = (tile >> 4) * 16 + 1;
@@ -866,6 +951,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private void clearKeys() {
         for (int i = 0; i < keys.length; i++) keys[i] = false;
         jumpHeld = false;
+        descendHeld = false;
         lookUp = lookDown = lookLeft = lookRight = false;
         resetMining();
         miningHitWait = 0;
@@ -883,10 +969,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (command == exitCommand) {
             if (state == PLAYING) openPause();
             else if (state == INVENTORY || state == WORKBENCH) closeCrafting();
+            else if (state == CREATIVE_INVENTORY) closeCreativeInventory();
             else app.closeGame();
         } else if (command == selectCommand) {
             if (state == MENU) activateSelection(); else backToMenu();
-        } else if (command == craftingCommand) closeCrafting();
+        } else if (command == craftingCommand) {
+            if (state == CREATIVE_INVENTORY) closeCreativeInventory();
+            else closeCrafting();
+        }
         else if (command == mineCommand) mineTarget();
         else if (command == placeCommand) placeBlock();
         else if (command == pauseCommand) openPause();
@@ -897,7 +987,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     protected synchronized void paint(Graphics g) {
-        if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH) {
+        if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH || state == CREATIVE_INVENTORY) {
             String stage = "actualizando mallas M3G";
             try {
                 renderer.sync(world);
@@ -924,6 +1014,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 }
                 if (state == PAUSED) drawPause(g);
                 if (state == INVENTORY || state == WORKBENCH) drawCrafting(g, state == WORKBENCH);
+                if (state == CREATIVE_INVENTORY) drawCreativeInventory(g);
             } catch (OutOfMemoryError exhausted) {
                 showError("M3G agotó el heap. El diseño apunta a móviles con heap total de 4 MiB o más.");
                 drawError(g);
@@ -994,6 +1085,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
         g.drawString(world.mode == 0 ? "Supervivencia" : "Creativo", 3, 2, Graphics.TOP | Graphics.LEFT);
         g.drawString(world.isNight() ? "Noche" : "Día", w - 3, 2, Graphics.TOP | Graphics.RIGHT);
+        if (world.mode == 1)
+            g.drawString(flying ? "Volando  5 subir  0 bajar" : "5 dos veces: volar",
+                    centerX, 13, Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawHearts(Graphics g) {
@@ -1102,15 +1196,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
 
         // Player inventory: 27 item slots and the nine hotbar slots below it.
-        int itemId = 1;
         for (int slot = 0; slot < 27; slot++) {
             int sx = left + 5 + (slot % 9) * 18;
             int sy = top + 139 + (slot / 9) * 18;
-            while (itemId < ItemCatalog.COUNT &&
-                   (itemId == Block.WATER || itemId == Block.BEDROCK)) itemId++;
-            if (itemId >= ItemCatalog.COUNT) break;
+            int itemId = inventoryCellItem(slot);
+            if (itemId < 0 || itemId >= ItemCatalog.COUNT) continue;
             drawInventoryCell(g, itemId, sx, sy);
-            itemId++;
         }
         for (int slot = 0; slot < hotbar.length; slot++) {
             int sx = left + 5 + slot * 18;
@@ -1135,6 +1226,61 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                Crafting.canCraft(recipe, inventory, world.mode == 1);
     }
 
+    private int inventoryCellItem(int cell) {
+        int visibleBlocks = 0;
+        for (int id = 1; id < Block.LEGACY_COUNT + 5; id++) {
+            if (id == Block.WATER || id == Block.BEDROCK) continue;
+            if (visibleBlocks++ == cell) return id;
+        }
+        int item = Block.COUNT + cell - visibleBlocks;
+        return item < ItemCatalog.COUNT ? item : -1;
+    }
+
+    private void drawCreativeInventory(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        final int panelW = 176, panelH = 222, pageSize = 54;
+        int left = (w - panelW) / 2;
+        int top = (h - panelH) / 2;
+        if (containerTexture != null && containerTexture.getWidth() >= panelW &&
+            containerTexture.getHeight() >= panelH) {
+            g.drawRegion(containerTexture, 0, 0, panelW, panelH, Sprite.TRANS_NONE,
+                    left, top, Graphics.TOP | Graphics.LEFT);
+        } else {
+            g.setColor(198, 198, 198); g.fillRect(left, top, panelW, panelH);
+            g.setColor(40, 40, 40); g.drawRect(left, top, panelW - 1, panelH - 1);
+        }
+        int first = creativeSelection / pageSize * pageSize;
+        int pageCount = (Block.COUNT - 2) / pageSize + 1;
+        g.setColor(35, 35, 35);
+        g.drawString("Bloques creativos", w / 2, top + 3, Graphics.TOP | Graphics.HCENTER);
+        for (int cell = 0; cell < pageSize; cell++) {
+            int block = first + cell + 1;
+            if (block >= Block.COUNT) break;
+            int x = left + 7 + (cell % 9) * 18;
+            int y = top + 23 + (cell / 9) * 18;
+            if (block - 1 == creativeSelection) {
+                g.setColor(255, 255, 255);
+                g.fillRect(x - 1, y - 1, 18, 18);
+                g.setColor(90, 90, 90);
+                g.fillRect(x, y, 16, 16);
+            }
+            drawIcon(g, block, x, y, false);
+        }
+        for (int slot = 0; slot < hotbar.length; slot++) {
+            int x = left + 7 + slot * 18;
+            int y = top + 199;
+            drawInventoryCell(g, hotbar[slot], x, y);
+        }
+        int selectedBlock = creativeSelection + 1;
+        g.setColor(35, 35, 35);
+        String name = selectedBlock < Block.COUNT ? Block.NAME[selectedBlock] : "";
+        if (name.length() > 16) name = name.substring(0, 16);
+        g.drawString(name + "  " + (creativeSelection / pageSize + 1) + "/" + pageCount,
+                w / 2, top + 137, Graphics.TOP | Graphics.HCENTER);
+        g.drawString("4/6 mover  2/8 fila  5 tomar  # cerrar",
+                w / 2, top + panelH + 2, Graphics.TOP | Graphics.HCENTER);
+    }
+
     private void drawInventoryCell(Graphics g, int id, int x, int y) {
         if (id <= 0 || id >= ItemCatalog.COUNT) return;
         int amount = inventory[id];
@@ -1151,6 +1297,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void drawIcon(Graphics g, int id, int x, int y, boolean muted) {
         if (id <= Block.AIR || id >= ItemCatalog.COUNT) return;
+        if (id < Block.COUNT && terrainTexture != null &&
+            (Block.isDecorative((byte)id) || id == Block.TNT)) {
+            int tile = Block.atlasTile(id);
+            g.drawRegion(terrainTexture, (tile & 15) * 16, (tile >> 4) * 16, 16, 16,
+                    Sprite.TRANS_NONE, x, y, Graphics.TOP | Graphics.LEFT);
+            return;
+        }
         Image icon = muted ? mutedItemIcons[id] : itemIcons[id];
         if (icon == null && id < blockIcons.length) icon = blockIcons[id];
         if (icon != null) g.drawImage(icon, x, y, Graphics.TOP | Graphics.LEFT);

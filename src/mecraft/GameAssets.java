@@ -5,7 +5,14 @@ import javax.microedition.lcdui.Image;
 
 /** Loads resources from either NetBeans' /mecraft package or a flat JAR root. */
 final class GameAssets {
+    private static Image terrain;
+
     private GameAssets() { }
+
+    static Image terrain() throws IOException {
+        if (terrain == null) terrain = image("textures.png");
+        return terrain;
+    }
 
     static Image image(String fileName) throws IOException {
         String packaged = "/mecraft/" + fileName;

@@ -152,6 +152,38 @@ final class MobSystem {
         return 1;
     }
 
+    void damageFromExplosion(VoxelWorld world, float x, float y, float z, float radius) {
+        float reach = radius * 2.0f;
+        for (int i = 0; i < mobs.length; i++) {
+            Mob mob = mobs[i];
+            if (!mob.alive) continue;
+            float dx = mob.x - x, dy = mob.y + 0.5f - y, dz = mob.z - z;
+            float distance = (float)Math.sqrt(dx * dx + dy * dy + dz * dz);
+            float impact = 1.0f - distance / reach;
+            if (impact <= 0.0f) continue;
+            int damage = (int)((impact * impact + impact) * 32.0f + 1.0f);
+            mob.health -= damage;
+            if (mob.health <= 0) {
+                int drop = mob.type == PIG ? ItemCatalog.PORK_RAW :
+                           (mob.type == ZOMBIE ? ItemCatalog.FEATHER : 0);
+                int count = drop == 0 ? 0 : random.nextInt(3);
+                for (int n = 0; n < count; n++)
+                    drops.spawn(drop, floor(mob.x), floor(mob.y), floor(mob.z));
+                mob.alive = false;
+                mob.root.setRenderingEnable(false);
+            } else {
+                mob.hurtTicks = 10;
+                mob.setHurt(true);
+                if (distance > 0.0001f) {
+                    mob.motionX += dx / distance * impact;
+                    mob.motionZ += dz / distance * impact;
+                    mob.verticalVelocity += dy / distance * impact;
+                }
+                mob.fleeTicks = 35;
+            }
+        }
+    }
+
     private void reset(VoxelWorld world) {
         worldSeed = world.seed;
         tick = 0;
