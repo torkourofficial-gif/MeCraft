@@ -967,7 +967,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void loadTitle() {
-        try { title = GameAssets.image("title.png"); } catch (IOException ignored) { title = null; }
+        try { title = GameAssets.image("title_small.png"); } catch (IOException ignored) { title = null; }
     }
 
     private void loadHudTextures() {
@@ -1139,7 +1139,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         int w = getWidth(), h = getHeight();
         drawDirtBackground(g);
         drawInsetPanel(g, 15, 120, w - 30, 142);
-        if (title != null) g.drawImage(title, w / 2, 19, Graphics.TOP | Graphics.HCENTER);
+        if (title != null) g.drawImage(title, w / 2, 35, Graphics.TOP | Graphics.HCENTER);
         else {
             g.setColor(255, 255, 255);
             g.drawString("MeCraft", w / 2, 48, Graphics.TOP | Graphics.HCENTER);

@@ -691,8 +691,9 @@ final class ChunkRenderer {
         float sun = (float)Math.cos(angle) * 1.5f + 0.5f;
         if (sun < 0.0f) sun = 0.0f;
         if (sun > 1.0f) sun = 1.0f;
-        sunlight.setIntensity(0.04f + sun * 0.96f);
-        sky.setColor(blendColor(0xFF070C1B, 0xFF82B8E8, sun));
+        // Keep moonlight visible on small, low-brightness phone displays.
+        sunlight.setIntensity(0.28f + sun * 0.72f);
+        sky.setColor(blendColor(0xFF26354A, 0xFF82B8E8, sun));
         updateTorchLights(world);
     }
 
