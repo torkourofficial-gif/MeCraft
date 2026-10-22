@@ -272,7 +272,7 @@ final class ChunkRenderer {
             float swingX = handSwinging ? -sinRoot * 0.4f : 0.0f;
             float swingY = handSwinging ? upDown * 0.2f : 0.0f;
             float swingZ = handSwinging ? -sinLinear * 0.2f : 0.0f;
-            if (visibleHeldItem >= ItemCatalog.STICK) {
+            if (usesSpriteHandPose(visibleHeldItem)) {
                 heldItemOffset.setTranslation(0.56f * handHorizontalScale + swingX,
                         -0.52f + swingY, -0.72f + swingZ);
                 itemSpriteBaseYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
@@ -291,6 +291,12 @@ final class ChunkRenderer {
         } else {
             setRestHeldItemPose();
         }
+    }
+
+    /** Flowers use the same first-person grip and swing path as Indev's stick. */
+    private boolean usesSpriteHandPose(int itemId) {
+        return itemId >= ItemCatalog.STICK ||
+               (itemId > Block.AIR && itemId < Block.COUNT && Block.isFlower((byte)itemId));
     }
 
     private void setRestHandPose() {
@@ -313,10 +319,11 @@ final class ChunkRenderer {
                 FlowerBuilder flower = new FlowerBuilder();
                 flower.add(0, 0, 0, Block.sideTile((byte)id));
                 Mesh flowerMesh = makeFlowerMesh(flower, heldItemAppearance);
-                flowerMesh.setScale(0.34f, 0.34f, 0.34f);
-                flowerMesh.setTranslation(-0.17f, -0.17f, -0.17f);
+                // Keep the crossed 3D plant, but parent it to the same pose
+                // groups as the stick so its grip and swing line up exactly.
+                flowerMesh.setTranslation(-0.5f, 0.0f, -0.5f);
                 flowerMesh.setRenderingEnable(false);
-                heldItemPitch.addChild(flowerMesh);
+                itemSpriteOrigin.addChild(flowerMesh);
                 heldItemMeshes[id] = new Mesh[] { flowerMesh };
                 continue;
             }
