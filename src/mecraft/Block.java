@@ -99,23 +99,5 @@ final class Block {
         return TILE[id & 255];
     }
 
-    /** Sprite positions in the supplied 10-column gui_blocks.png atlas. */
-    static int inventoryIconTile(byte id) {
-        switch (id) {
-            case BEDROCK: return 0;
-            case GRASS: return 9;
-            case DIRT: return 8;
-            case STONE: return 7;
-            case SAND: return 14;
-            case LOG: return 16;
-            case LEAVES: return 77;
-            case COAL: return 37;
-            case IRON: return 38;
-            case PLANKS: return 5;
-            case CRAFTING_TABLE: return 72;
-            case FURNACE: return 73;
-            default: return 7;
-        }
-    }
 }
 
