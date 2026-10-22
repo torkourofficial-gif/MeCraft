@@ -45,8 +45,12 @@ final class ChunkRenderer {
     private final Texture2D atlas;
     private final Appearance blockAppearance;
     private final Appearance heldItemAppearance;
+    private final Appearance itemSpriteAppearance;
     private final Appearance handAppearance;
     private final Mesh handMesh;
+    private final Mesh itemSpriteMesh;
+    private VertexArray itemSpriteTexCoordArray;
+    private final short[] itemSpriteUV = new short[8];
     private final Mesh[][] heldItemMeshes = new Mesh[Block.COUNT][];
     private final ParticleSystem particles;
     private final DroppedItemSystem droppedItems;
@@ -69,6 +73,12 @@ final class ChunkRenderer {
         atlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         blockAppearance = createBlockAppearance();
         heldItemAppearance = createFirstPersonAppearance(true);
+        Image itemSource = Image.createImage("/mecraft/items.png");
+        Texture2D itemAtlas = new Texture2D(new Image2D(Image2D.RGBA, itemSource));
+        itemAtlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
+        itemAtlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
+        itemSpriteAppearance = createFirstPersonAppearance(itemAtlas);
+        itemSpriteMesh = makeItemSpriteMesh();
         handAppearance = createHandAppearance();
         handMesh = makeHandMesh();
         armBase.setTranslation(handBaseX(width, height), -0.60f, -0.72f);
@@ -82,6 +92,7 @@ final class ChunkRenderer {
         heldItemOffset.addChild(heldItemYaw);
         heldItemYaw.addChild(heldItemRoll);
         heldItemRoll.addChild(heldItemPitch);
+        heldItemPitch.addChild(itemSpriteMesh);
         buildHeldItems();
         particles = new ParticleSystem(atlas);
         droppedItems = new DroppedItemSystem(atlas);
@@ -152,17 +163,36 @@ final class ChunkRenderer {
     }
 
     void updateHeldItem(int itemId, boolean visible) {
-        if (!visible || itemId <= Block.AIR || itemId >= heldItemMeshes.length) itemId = 0;
+        if (!visible || itemId <= Block.AIR || itemId >= ItemCatalog.COUNT) itemId = 0;
         handMesh.setRenderingEnable(itemId == Block.AIR);
         if (itemId == visibleHeldItem) return;
-        if (visibleHeldItem > 0 && heldItemMeshes[visibleHeldItem] != null) {
-            setMeshesVisible(heldItemMeshes[visibleHeldItem], false);
-        }
+        setHeldVisualVisible(visibleHeldItem, false);
         visibleHeldItem = itemId;
-        if (visibleHeldItem > 0 && heldItemMeshes[visibleHeldItem] != null) {
-            setMeshesVisible(heldItemMeshes[visibleHeldItem], true);
-        }
+        setHeldVisualVisible(visibleHeldItem, true);
         applyHandPose();
+    }
+
+    private void setHeldVisualVisible(int itemId, boolean visible) {
+        if (itemId <= Block.AIR) return;
+        if (itemId < Block.COUNT) {
+            if (heldItemMeshes[itemId] != null) setMeshesVisible(heldItemMeshes[itemId], visible);
+        } else {
+            if (visible) setItemSprite(itemId);
+            itemSpriteMesh.setRenderingEnable(visible && ItemCatalog.iconIndex(itemId) >= 0);
+        }
+    }
+
+    private void setItemSprite(int itemId) {
+        int tile = ItemCatalog.iconIndex(itemId);
+        if (tile < 0) return;
+        int u0 = (tile & 15) * 16 + 1;
+        int v0 = (tile >> 4) * 16 + 1;
+        int u1 = u0 + 14, v1 = v0 + 14;
+        itemSpriteUV[0]=(short)u0; itemSpriteUV[1]=(short)v1;
+        itemSpriteUV[2]=(short)u0; itemSpriteUV[3]=(short)v0;
+        itemSpriteUV[4]=(short)u1; itemSpriteUV[5]=(short)v1;
+        itemSpriteUV[6]=(short)u1; itemSpriteUV[7]=(short)v0;
+        itemSpriteTexCoordArray.set(0, 4, itemSpriteUV);
     }
 
     void swingHand() {
@@ -268,6 +298,22 @@ final class ChunkRenderer {
         }
     }
 
+    /** A single reusable first-person quad, textured from Indev's items.png. */
+    private Mesh makeItemSpriteMesh() {
+        short[] p = new short[] { -288,-288,0, -288,288,0, 288,-288,0, 288,288,0 };
+        short[] uv = new short[8];
+        VertexArray positionArray = new VertexArray(4, 3, 2);
+        positionArray.set(0, 4, p);
+        itemSpriteTexCoordArray = new VertexArray(4, 2, 2);
+        itemSpriteTexCoordArray.set(0, 4, uv);
+        VertexBuffer buffer = new VertexBuffer();
+        buffer.setPositions(positionArray, 1.0f / 1024.0f, null);
+        buffer.setTexCoords(0, itemSpriteTexCoordArray, 1.0f / 256.0f, null);
+        Mesh mesh = new Mesh(buffer, new TriangleStripArray(0, new int[] { 4 }), itemSpriteAppearance);
+        mesh.setRenderingEnable(false);
+        return mesh;
+    }
+
     private void setMeshesVisible(Mesh[] meshes, boolean visible) {
         for (int i = 0; i < meshes.length; i++) meshes[i].setRenderingEnable(visible);
     }
@@ -290,8 +336,12 @@ final class ChunkRenderer {
     }
 
     private Appearance createFirstPersonAppearance(boolean textured) {
+        return createFirstPersonAppearance(textured ? atlas : null);
+    }
+
+    private Appearance createFirstPersonAppearance(Texture2D texture) {
         Appearance appearance = new Appearance();
-        if (textured) appearance.setTexture(0, atlas);
+        if (texture != null) appearance.setTexture(0, texture);
         Material material = new Material();
         material.setColor(Material.AMBIENT, 0xFFFFFFFF);
         material.setColor(Material.DIFFUSE, 0xFFFFFFFF);

@@ -11,7 +11,7 @@ Referencia consultada: [EaglerPorts/in-20100223](https://github.com/EaglerPorts/
 - Cámara en primera persona, movimiento, colisión, gravedad y salto.
 - Romper/colocar bloques, partículas de rotura, daño progresivo con grietas sobre la cara apuntada, seleccionar la barra rápida y guardar la partida en RMS.
 - HUD con la barra de `gui.png`, corazones y burbujas de `icons.png` y sprites de bloque de `gui_blocks.png`; al sumergir la cámara aparece un filtro azul, el oxígeno se agota y provoca ahogamiento, y tanto la caída como el ahogamiento activan la animación de daño de Indev. La vida y estos daños solo se aplican en supervivencia.
-- Crafteo por recetas: `#` abre el inventario 2×2 (tronco → 4 tablones, 4 tablones → mesa); usa `3` apuntando a una mesa colocada para abrir `container.png` y el crafteo 3×3 (incluye horno).
+- Crafteo por recetas: `#` abre el inventario 2×2 (tronco → 4 tablones, tablones → mesa y palos); usa `3` apuntando a una mesa para abrir `container.png`, centrado, con una lista desplazable de recetas y las no disponibles atenuadas. En la mesa se crean herramientas de madera, piedra, hierro, diamante y oro. El horno fue retirado.
 - Render 3D M3G con sectores de 16 × 8 × 16 bloques y un atlas compartido.
 
 Es un demake inicial, no una reproducción completa de Indev: todavía no incluye criaturas, día/noche ni los demás tipos de mundo de Indev.
@@ -31,7 +31,7 @@ Es un demake inicial, no una reproducción completa de Indev: todavía no incluy
 | * | Pausar, guardar o regresar al menú |
 
 En las pantallas de crafteo, usa `2`/`8` para elegir una receta, `5` para crearla y `#` para volver al juego.
-En supervivencia, los espacios vacíos del acceso rápido no muestran bloques y `7`/`9` saltan entre los bloques que tienes. La rotura usa dureza y penalizaciones de Indev: tarda más en el aire o bajo el agua, y a mano no se recogen piedra, minerales ni horno. La hierba rota entrega tierra. Soltar `1` cancela el daño acumulado. En creativo los bloques se rompen al instante.
+En supervivencia, las casillas vacías del acceso rápido no muestran bloques y `7`/`9` recorren también esas casillas. Las herramientas de un solo uso se gastan según el material; picos, palas y hachas aceleran los bloques que les corresponden, y solo el pico recoge piedra, adoquín y minerales. La piedra deja adoquín. La azada convierte tierra o césped expuestos en tierra de cultivo y puede producir semillas. La espada pierde dos puntos de durabilidad al romper un bloque. La rotura conserva las penalizaciones de Indev por estar en el aire o bajo el agua. Soltar `1` cancela el daño acumulado. En creativo los bloques se rompen al instante.
 
 El jugador mide 0,6 × 1,8 bloques y la cámara está a 1,62 bloques sobre sus pies, igual que las medidas clásicas de Indev.
 

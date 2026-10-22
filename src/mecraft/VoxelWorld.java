@@ -27,7 +27,8 @@ final class VoxelWorld {
     private static final int FLUID_QUEUE_SIZE = 2048;
     private final short[] fluidQueue = new short[FLUID_QUEUE_SIZE];
     private final byte[] fluidQueued = new byte[(BLOCK_COUNT + 7) / 8];
-    final int[] inventory = new int[Block.COUNT];
+    final int[] inventory = new int[ItemCatalog.COUNT];
+    final int[] itemDamage = new int[ItemCatalog.COUNT];
     final int[] hotbar = new int[] {
         Block.DIRT, Block.STONE, Block.LOG, Block.SAND, Block.PLANKS,
         Block.LEAVES, Block.COAL, Block.IRON, Block.GRASS
@@ -242,12 +243,13 @@ final class VoxelWorld {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(blocks.length * 2 + 64);
             DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(0x4D434634); // MCF4: fluid levels added
+            out.writeInt(0x4D434636); // MCF6: furnace slot replaced by cobblestone
             out.writeInt(seed);
             out.writeByte(mode);
             out.writeByte(selectedSlot);
             for (int i = 0; i < inventory.length; i++) out.writeByte(inventory[i]);
             for (int i = 0; i < hotbar.length; i++) out.writeByte(hotbar[i]);
+            for (int i = 0; i < itemDamage.length; i++) out.writeShort(itemDamage[i]);
             out.writeFloat(playerX);
             out.writeFloat(playerY);
             out.writeFloat(playerZ);
@@ -281,15 +283,22 @@ final class VoxelWorld {
             DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
             int format = in.readInt();
             if (format != 0x4D434631 && format != 0x4D434632 && format != 0x4D434633 &&
-                format != 0x4D434634) return null;
+                format != 0x4D434634 && format != 0x4D434635 && format != 0x4D434636) return null;
             int seed = in.readInt();
             VoxelWorld world = new VoxelWorld(seed, in.readByte());
             world.selectedSlot = in.readByte();
-            if (format == 0x4D434633 || format == 0x4D434634) {
+            if (format == 0x4D434635 || format == 0x4D434636) {
                 for (int i = 0; i < world.inventory.length; i++) world.inventory[i] = in.readUnsignedByte();
                 for (int i = 0; i < world.hotbar.length; i++) {
                     int id = in.readUnsignedByte();
-                    world.hotbar[i] = id > Block.AIR && id < Block.COUNT ? id : Block.DIRT;
+                    world.hotbar[i] = id > Block.AIR && id < ItemCatalog.COUNT ? id : Block.DIRT;
+                }
+                for (int i = 0; i < world.itemDamage.length; i++) world.itemDamage[i] = in.readUnsignedShort();
+            } else if (format == 0x4D434633 || format == 0x4D434634) {
+                for (int i = 0; i < Block.LEGACY_COUNT; i++) world.inventory[i] = in.readUnsignedByte();
+                for (int i = 0; i < world.hotbar.length; i++) {
+                    int id = in.readUnsignedByte();
+                    world.hotbar[i] = id > Block.AIR && id < Block.LEGACY_COUNT ? id : Block.DIRT;
                 }
             } else {
                 int[] oldHotbar = new int[] { Block.DIRT, Block.STONE, Block.LOG, Block.SAND,
@@ -303,7 +312,9 @@ final class VoxelWorld {
             if (format == 0x4D434632 || format == 0x4D434633 || format == 0x4D434634)
                 world.health = in.readUnsignedByte();
             in.readFully(world.blocks);
-            if (format == 0x4D434634) in.readFully(world.waterLevels);
+            if (format == 0x4D434634 || format == 0x4D434635 || format == 0x4D434636)
+                in.readFully(world.waterLevels);
+            if (format != 0x4D434636) world.migrateLegacyFurnaces();
             world.queueSavedFlowingWater();
             world.revision++;
             return world;
@@ -312,6 +323,20 @@ final class VoxelWorld {
         } finally {
             if (store != null) {
                 try { store.closeRecordStore(); } catch (RecordStoreException ignored) { }
+            }
+        }
+    }
+
+    /** MCF1–MCF5 used block/item ID 13 for the removed furnace. */
+    private void migrateLegacyFurnaces() {
+        inventory[13] = 0;
+        for (int i = 0; i < hotbar.length; i++) {
+            if (hotbar[i] == 13) hotbar[i] = Block.STONE;
+        }
+        for (int i = 0; i < blocks.length; i++) {
+            if (blocks[i] == 13) {
+                blocks[i] = Block.STONE;
+                revision++;
             }
         }
     }

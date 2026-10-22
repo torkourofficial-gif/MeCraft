@@ -46,7 +46,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         Block.DIRT, Block.STONE, Block.LOG, Block.SAND, Block.PLANKS,
         Block.LEAVES, Block.COAL, Block.IRON, Block.GRASS
     };
-    private final int[] inventory = new int[Block.COUNT];
+    private final int[] inventory = new int[ItemCatalog.COUNT];
     private final Command mineCommand = new Command("Romper", Command.SCREEN, 1);
     private final Command placeCommand = new Command("Colocar", Command.SCREEN, 2);
     private final Command pauseCommand = new Command("Pausa", Command.SCREEN, 3);
@@ -72,10 +72,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private Image iconsTexture;
     private Image containerTexture;
     private final Image[] blockIcons = new Image[Block.COUNT];
+    private final Image[] itemIcons = new Image[ItemCatalog.COUNT];
+    private final Image[] mutedItemIcons = new Image[ItemCatalog.COUNT];
+    private int randomSeed = 0x4D454352;
     private String errorMessage;
     private boolean diagnosticError;
     private int diagnosticScroll;
     private int recipeSelection;
+    private int recipeScroll;
     private int miningX = -1, miningY = -1, miningZ = -1;
     private float miningDamage;
     private int miningHitWait;
@@ -158,7 +162,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (world.mode == 0 && fallDamage > 0) damagePlayer(fallDamage);
         tickAirAndHurt();
         int pickedItem = renderer.updateDroppedItems(world, inventory);
-        if (pickedItem == Block.CRAFTING_TABLE || pickedItem == Block.FURNACE) ensureHotbarItem(pickedItem);
+        if (pickedItem > Block.AIR) ensureHotbarItem(pickedItem);
         if (keys[1]) updateMining();
         renderer.updateCamera(world, cameraPitch);
         renderer.setHurtCameraRoll(hurtCameraRoll());
@@ -289,7 +293,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void resetInventory(int mode) {
-        for (int i = 0; i < inventory.length; i++) inventory[i] = mode == 1 ? 64 : 0;
+        for (int i = 0; i < inventory.length; i++) {
+            inventory[i] = mode == 1 ? ItemCatalog.maxStack(i) : 0;
+        }
     }
 
     private void showError(String message) {
@@ -366,7 +372,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void copyHotbarFromWorld() {
         if (world == null) return;
-        for (int i = 0; i < hotbar.length; i++) hotbar[i] = world.hotbar[i];
+        for (int i = 0; i < hotbar.length; i++) {
+            int id = world.hotbar[i];
+            hotbar[i] = id <= Block.AIR || id >= ItemCatalog.COUNT ?
+                    DEFAULT_HOTBAR[i] : id;
+        }
     }
 
     private void saveIfNeeded() {
@@ -406,13 +416,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         boolean grounded = playerPhysics.isOnGround();
         boolean submerged = playerPhysics.isInWater(world);
         if (world.mode == 1) miningDamage = 1.0f;
-        else miningDamage += Block.breakStrength(id, grounded, submerged);
+        else miningDamage += Block.breakStrength(id, grounded, submerged, hotbar[world.selectedSlot]);
         if (miningDamage >= 1.0f) {
-            if (world.mode == 0 && Block.dropsItem(id))
+            int heldItem = hotbar[world.selectedSlot];
+            boolean canHarvest = Block.canHarvest(id, heldItem);
+            if (world.mode == 0 && Block.dropsItem(id) && canHarvest)
                 renderer.spawnDroppedItem(Block.dropId(id), x, y, z);
             renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
             renderer.swingHand();
             world.set(x, y, z, Block.AIR);
+            if (world.mode == 0) damageTool(heldItem, ItemCatalog.durabilityCost(heldItem));
             renderer.sync(world);
             resetMining();
             miningHitWait = 5;
@@ -431,6 +444,37 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         miningHitWait = 0;
     }
 
+    private void damageTool(int itemId, int amount) {
+        if (!ItemCatalog.isTool(itemId) || amount <= 0 || inventory[itemId] <= 0) return;
+        world.itemDamage[itemId] += amount;
+        // Indev ItemStack breaks only once damage exceeds maxDamage.
+        if (world.itemDamage[itemId] > ItemCatalog.maxDamage(itemId)) {
+            inventory[itemId] = 0;
+            world.itemDamage[itemId] = 0;
+            restoreHotbarItem(itemId);
+        }
+    }
+
+    /** ItemHoe.onItemUse: turn exposed grass/dirt into farmland and wear one use. */
+    private void tillSoil(int x, int y, int z, int hoe) {
+        if (x <= 0 || y <= 0 || z <= 0 || x >= VoxelWorld.WIDTH - 1 ||
+            y >= VoxelWorld.HEIGHT - 1 || z >= VoxelWorld.DEPTH - 1) return;
+        byte soil = world.get(x, y, z);
+        if ((soil != Block.GRASS && soil != Block.DIRT) || Block.solid(world.get(x, y + 1, z))) return;
+        if (!world.set(x, y, z, Block.FARMLAND)) return;
+        damageTool(hoe, 1);
+        if (soil == Block.GRASS && (nextRandom() & 7) == 0 && inventory[ItemCatalog.SEEDS] < 64)
+            inventory[ItemCatalog.SEEDS]++;
+        renderer.swingHand();
+        renderer.sync(world);
+        copyInventoryToWorld();
+    }
+
+    private int nextRandom() {
+        randomSeed = randomSeed * 1664525 + 1013904223;
+        return randomSeed >>> 1;
+    }
+
     private void placeBlock() {
         if (world == null) return;
         int[] target = trace(5.0f);
@@ -439,6 +483,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             return;
         }
         if (target == null || target[3] == Integer.MIN_VALUE) return;
+        int selectedItem = hotbar[world.selectedSlot];
+        if (ItemCatalog.isTool(selectedItem) && ItemCatalog.kind(selectedItem) == ItemCatalog.HOE) {
+            tillSoil(target[0], target[1], target[2], selectedItem);
+            return;
+        }
+        if (selectedItem >= Block.COUNT || selectedItem == Block.AIR) return;
         int x = target[0] + target[3];
         int y = target[1] + target[4];
         int z = target[2] + target[5];
@@ -455,8 +505,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         renderer.swingHand();
         if (world.mode == 0) {
             inventory[block]--;
-            if ((block == Block.CRAFTING_TABLE || block == Block.FURNACE) && inventory[block] == 0)
-                restoreHotbarItem(block);
+            if (inventory[block] == 0) restoreHotbarItem(block);
         }
         renderer.sync(world);
     }
@@ -465,6 +514,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (state != PLAYING || world == null || (world.mode == 1 && !workbench)) return;
         state = workbench ? WORKBENCH : INVENTORY;
         recipeSelection = 0;
+        recipeScroll = 0;
         clearKeys();
         removeCommand(mineCommand);
         removeCommand(placeCommand);
@@ -488,6 +538,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (state != INVENTORY && !workbench) return;
         int recipeCount = Crafting.count(workbench);
         if (recipeSelection < 0 || recipeSelection >= recipeCount) return;
+        if (!workbench && Crafting.requiresWorkbench(recipeSelection)) return;
         int output = Crafting.OUTPUT[recipeSelection];
         int slot = hotbarIndex(output);
         if (slot < 0) slot = emptyHotbarIndex();
@@ -505,6 +556,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         recipeSelection += delta;
         if (recipeSelection < 0) recipeSelection = count - 1;
         if (recipeSelection >= count) recipeSelection = 0;
+        if (recipeSelection < recipeScroll) recipeScroll = recipeSelection;
+        if (recipeSelection >= recipeScroll + 6) recipeScroll = recipeSelection - 5;
         repaint();
     }
 
@@ -731,12 +784,43 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                     }
                 }
                 blockIcons[block] = Image.createRGBImage(iconPixels, 16, 16, true);
+                itemIcons[block] = blockIcons[block];
+                mutedItemIcons[block] = makeMutedIcon(blockIcons[block]);
             }
         } catch (Throwable unavailableAtlas) {
             for (int i = 0; i < blockIcons.length; i++) blockIcons[i] = null;
         }
         source = null;
+        try {
+            source = Image.createImage("/mecraft/items.png");
+            int[] iconPixels = new int[16 * 16];
+            for (int id = Block.COUNT; id < ItemCatalog.COUNT; id++) {
+                int tile = ItemCatalog.iconIndex(id);
+                if (tile < 0) continue;
+                source.getRGB(iconPixels, 0, 16, (tile & 15) * 16, (tile >> 4) * 16, 16, 16);
+                itemIcons[id] = Image.createRGBImage(iconPixels, 16, 16, true);
+                mutedItemIcons[id] = makeMutedIcon(itemIcons[id]);
+            }
+        } catch (Throwable unavailableItemsAtlas) {
+            for (int i = Block.COUNT; i < itemIcons.length; i++) itemIcons[i] = null;
+        }
+        source = null;
         System.gc();
+    }
+
+    private Image makeMutedIcon(Image source) {
+        if (source == null) return null;
+        int[] pixels = new int[16 * 16];
+        source.getRGB(pixels, 0, 16, 0, 0, 16, 16);
+        for (int i = 0; i < pixels.length; i++) {
+            int color = pixels[i];
+            int alpha = color >>> 24;
+            int red = color >> 16 & 255, green = color >> 8 & 255, blue = color & 255;
+            int gray = (red * 30 + green * 59 + blue * 11) / 100;
+            pixels[i] = alpha << 24 | gray << 16 | gray << 8 | gray;
+        }
+        try { return Image.createRGBImage(pixels, 16, 16, true); }
+        catch (Throwable ignored) { return source; }
     }
 
     private void clearKeys() {
@@ -859,17 +943,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         for (int i = 0; i < 9; i++) {
             int x = left + 2 + i * 20;
             int id = hotbar[i];
-            if (world.mode == 1 || inventory[id] > 0) {
-                Image icon = blockIcons[id];
-                if (icon != null) g.drawImage(icon, x, y + 3, Graphics.TOP | Graphics.LEFT);
-                else {
-                    g.setColor(blockColor(id));
-                    g.fillRect(x + 2, y + 4, 14, 14);
-                }
-            }
+            if (id > Block.AIR && id < ItemCatalog.COUNT &&
+                (world.mode == 1 || inventory[id] > 0)) drawIcon(g, id, x, y + 3, false);
             if (world.mode == 0 && inventory[id] > 0) {
-                g.setColor(255, 255, 255);
-                g.drawString(Integer.toString(inventory[id]), x + 17, y + 20, Graphics.RIGHT | Graphics.BOTTOM);
+                if (!ItemCatalog.isTool(id)) {
+                    g.setColor(255, 255, 255);
+                    g.drawString(Integer.toString(inventory[id]), x + 17, y + 20, Graphics.RIGHT | Graphics.BOTTOM);
+                } else drawDurability(g, id, x + 2, y + 19);
             }
         }
         g.drawString(world.mode == 0 ? "Supervivencia" : "Creativo", 3, 2, Graphics.TOP | Graphics.LEFT);
@@ -930,101 +1010,124 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (id == Block.COAL) return 0x414141;
         if (id == Block.IRON) return 0xB8A98A;
         if (id == Block.CRAFTING_TABLE) return 0x9B6534;
-        if (id == Block.FURNACE) return 0x696969;
+        if (id == Block.COBBLESTONE) return 0x777777;
         return 0x777777;
     }
 
     private void drawCrafting(Graphics g, boolean workbench) {
         int w = getWidth(), h = getHeight();
+        final int panelW = 176, panelH = 222;
+        int left = (w - panelW) / 2;
+        int top = (h - panelH) / 2;
         int count = Crafting.count(workbench);
         int selected = clamp(recipeSelection, 0, count - 1);
-        int output = Crafting.OUTPUT[selected];
-        boolean canCraft = Crafting.canCraft(selected, inventory, world.mode == 1);
-        if (workbench && containerTexture != null) {
-            // container.png is 256x256, but its visible panel spans x=40..216,
-            // y=0..224. Center the visible panel and place controls from that origin.
-            int left = (w - 176) / 2;
-            int top = (h - 224) / 2;
-            g.drawImage(containerTexture, left - 40, top, Graphics.TOP | Graphics.LEFT);
-            g.setColor(35, 35, 35);
-            g.drawString("Mesa de crafteo", left + 88, top + 4, Graphics.TOP | Graphics.HCENTER);
-            drawRecipeGrid(g, left + 6, top + 17, 18, 3, selected);
-            g.setColor(55, 55, 55);
-            g.drawString("Recetas", left + 77, top + 17, Graphics.TOP | Graphics.LEFT);
-            for (int i = 0; i < count; i++) {
-                int y = top + 37 + i * 20;
-                drawRecipeRow(g, left + 77, y, i, selected, workbench);
-            }
-            drawIcon(g, output, left + 132, top + 75);
-            g.setColor(30, 30, 30);
-            g.drawString("x" + Crafting.OUTPUT_COUNT[selected], left + 148, top + 78, Graphics.TOP | Graphics.LEFT);
-            for (int i = 0; i < hotbar.length; i++) {
-                int x = left + 7 + i * 18;
-                int amount = inventory[hotbar[i]];
-                if (world.mode == 1 || amount > 0) drawIcon(g, hotbar[i], x, top + 199);
-                if (amount > 0) {
-                    g.setColor(255, 255, 255);
-                    g.drawString(Integer.toString(amount), x + 17, top + 215, Graphics.RIGHT | Graphics.TOP);
-                }
-            }
+        boolean available = recipeAvailable(selected, workbench);
+
+        if (containerTexture != null && containerTexture.getWidth() >= panelW &&
+            containerTexture.getHeight() >= panelH) {
+            g.drawRegion(containerTexture, 0, 0, panelW, panelH, Sprite.TRANS_NONE,
+                    left, top, Graphics.TOP | Graphics.LEFT);
         } else {
-            int panelW = Math.min(220, w - 12), panelH = 166;
-            int left = (w - panelW) / 2, top = (h - panelH) / 2;
-            g.setColor(30, 30, 30); g.fillRect(left, top, panelW, panelH);
-            g.setColor(195, 195, 195); g.drawRect(left, top, panelW - 1, panelH - 1);
-            g.setColor(255, 255, 255);
-            g.drawString("Inventario  |  crafteo 2x2", w / 2, top + 7, Graphics.TOP | Graphics.HCENTER);
-            drawRecipeGrid(g, left + 12, top + 34, 22, 2, selected);
-            g.setColor(220, 220, 220);
-            g.drawString("=>", left + 67, top + 54, Graphics.TOP | Graphics.LEFT);
-            drawIcon(g, output, left + 91, top + 51);
-            for (int i = 0; i < count; i++) drawRecipeRow(g, left + 116, top + 38 + i * 27,
-                                                            i, selected, false);
-            g.setColor(canCraft ? 255 : 180, canCraft ? 230 : 180, canCraft ? 100 : 180);
-            g.drawString(canCraft ? "5 crear" : "Faltan materiales", w / 2, top + 116,
-                         Graphics.TOP | Graphics.HCENTER);
-            g.setColor(220, 220, 220);
-            g.drawString("# cerrar  |  2/8 elegir", w / 2, top + 138, Graphics.TOP | Graphics.HCENTER);
+            g.setColor(198, 198, 198); g.fillRect(left, top, panelW, panelH);
+            g.setColor(40, 40, 40); g.drawRect(left, top, panelW - 1, panelH - 1);
         }
-        if (workbench) {
-            g.setColor(canCraft ? 20 : 120, canCraft ? 100 : 30, canCraft ? 20 : 30);
-            g.drawString(canCraft ? "5 crear" : "Faltan materiales", w / 2, h - 18,
-                         Graphics.BOTTOM | Graphics.HCENTER);
-            g.setColor(255, 255, 255);
-            g.drawString("# cerrar  |  2/8 elegir", w / 2, h - 3,
-                         Graphics.BOTTOM | Graphics.HCENTER);
-        }
-    }
 
-    private void drawRecipeGrid(Graphics g, int x, int y, int cell, int size, int recipe) {
-        int rows = recipe == Crafting.STONE_TO_FURNACE ? 3 : size;
-        for (int row = 0; row < rows; row++) {
-            for (int col = 0; col < rows; col++) {
-                int sx = x + col * cell, sy = y + row * cell;
-                g.setColor(90, 90, 90); g.fillRect(sx, sy, cell - 1, cell - 1);
-                g.setColor(35, 35, 35); g.drawRect(sx, sy, cell - 1, cell - 1);
-                boolean ingredient = recipe == Crafting.LOG_TO_PLANKS ? row == 0 && col == 0 :
-                    recipe == Crafting.PLANKS_TO_TABLE ? true : row != 1 || col != 1;
-                if (ingredient) drawIcon(g, Crafting.INGREDIENTS[recipe * 4], sx + 1, sy + 1);
+        // The reference container is 9 columns by 6 rows. Use those rows as a
+        // compact recipe list; unavailable entries remain visible in gray.
+        int first = recipeScroll;
+        if (first > count - 6) first = count > 6 ? count - 6 : 0;
+        g.setClip(left + 3, top + 1, panelW - 6, 15);
+        g.setColor(35, 35, 35);
+        g.drawString(workbench ? "Recetas de la mesa" : "Crafteo 2x2",
+                left + panelW / 2, top + 1, Graphics.TOP | Graphics.HCENTER);
+        g.setClip(0, 0, w, h);
+        for (int row = 0; row < 6; row++) {
+            int recipe = first + row;
+            if (recipe >= count) break;
+            int y = top + 17 + row * 18;
+            boolean rowAvailable = recipeAvailable(recipe, workbench);
+            if (recipe == selected) {
+                g.setColor(104, 104, 104);
+                g.fillRect(left + 4, y, panelW - 8, 18);
+            }
+            int output = Crafting.OUTPUT[recipe];
+            drawIcon(g, output, left + 6, y + 1, !rowAvailable);
+            g.setColor(rowAvailable ? (recipe == selected ? 255 : 35) : 115,
+                       rowAvailable ? (recipe == selected ? 230 : 35) : 115,
+                       rowAvailable ? (recipe == selected ? 100 : 35) : 115);
+            g.drawString(Crafting.NAME[recipe], left + 26, y + 2, Graphics.TOP | Graphics.LEFT);
+            String amount = "x" + Crafting.OUTPUT_COUNT[recipe];
+            g.drawString(amount, left + panelW - 7, y + 2, Graphics.TOP | Graphics.RIGHT);
+        }
+
+        // Player inventory: 27 item slots and the nine hotbar slots below it.
+        int itemId = 1;
+        for (int slot = 0; slot < 27; slot++) {
+            int sx = left + 5 + (slot % 9) * 18;
+            int sy = top + 139 + (slot / 9) * 18;
+            while (itemId < ItemCatalog.COUNT &&
+                   (itemId == Block.WATER || itemId == Block.BEDROCK)) itemId++;
+            if (itemId >= ItemCatalog.COUNT) break;
+            drawInventoryCell(g, itemId, sx, sy);
+            itemId++;
+        }
+        for (int slot = 0; slot < hotbar.length; slot++) {
+            int sx = left + 5 + slot * 18;
+            int sy = top + 199;
+            drawInventoryCell(g, hotbar[slot], sx, sy);
+            if (hotbar[slot] > 0 && inventory[hotbar[slot]] > 0 && !ItemCatalog.isTool(hotbar[slot])) {
+                g.setColor(255, 255, 255);
+                g.drawString(Integer.toString(inventory[hotbar[slot]]), sx + 16, sy + 16,
+                        Graphics.RIGHT | Graphics.BOTTOM);
             }
         }
+
+        g.setColor(35, 35, 35);
+        g.drawString(available ? "5 crear" : "No disponible",
+                w / 2, top + panelH + 2, Graphics.TOP | Graphics.HCENTER);
+        g.drawString("# cerrar  |  2/8 lista", w / 2, top + panelH + 15,
+                Graphics.TOP | Graphics.HCENTER);
     }
 
-    private void drawRecipeRow(Graphics g, int x, int y, int recipe, int selected, boolean workbench) {
-        boolean available = Crafting.canCraft(recipe, inventory, world.mode == 1);
-        g.setColor(recipe == selected ? 255 : (available ? 245 : 135),
-                   recipe == selected ? 225 : (available ? 245 : 135),
-                   recipe == selected ? 80 : (available ? 245 : 135));
-        String marker = recipe == selected ? "> " : "  ";
-        g.drawString(marker + Crafting.NAME[recipe], x, y, Graphics.TOP | Graphics.LEFT);
+    private boolean recipeAvailable(int recipe, boolean workbench) {
+        return (!Crafting.requiresWorkbench(recipe) || workbench) &&
+               Crafting.canCraft(recipe, inventory, world.mode == 1);
     }
 
-    private void drawIcon(Graphics g, int id, int x, int y) {
-        if (id > 0 && id < blockIcons.length && blockIcons[id] != null) {
-            g.drawImage(blockIcons[id], x, y, Graphics.TOP | Graphics.LEFT);
-        } else {
-            g.setColor(blockColor(id)); g.fillRect(x + 2, y + 2, 12, 12);
+    private void drawInventoryCell(Graphics g, int id, int x, int y) {
+        if (id <= 0 || id >= ItemCatalog.COUNT) return;
+        int amount = inventory[id];
+        if (world.mode == 1 || amount > 0) {
+            drawIcon(g, id, x + 1, y + 1, false);
+            if (world.mode == 0 && amount > 1 && !ItemCatalog.isTool(id)) {
+                g.setColor(255, 255, 255);
+                g.drawString(Integer.toString(amount), x + 17, y + 17,
+                        Graphics.RIGHT | Graphics.BOTTOM);
+            }
+            if (ItemCatalog.isTool(id) && amount > 0) drawDurability(g, id, x + 1, y + 16);
         }
+    }
+
+    private void drawIcon(Graphics g, int id, int x, int y, boolean muted) {
+        if (id <= Block.AIR || id >= ItemCatalog.COUNT) return;
+        Image icon = muted ? mutedItemIcons[id] : itemIcons[id];
+        if (icon == null && id < blockIcons.length) icon = blockIcons[id];
+        if (icon != null) g.drawImage(icon, x, y, Graphics.TOP | Graphics.LEFT);
+        else {
+            g.setColor(muted ? 120 : blockColor(id));
+            g.fillRect(x + 2, y + 2, 12, 12);
+        }
+    }
+
+    private void drawDurability(Graphics g, int id, int x, int y) {
+        int max = ItemCatalog.maxDamage(id);
+        if (max <= 0) return;
+        int remaining = max - world.itemDamage[id];
+        int width = remaining * 14 / max;
+        if (width < 0) width = 0;
+        g.setColor(0, 0, 0); g.fillRect(x, y, 14, 2);
+        g.setColor(255 - width * 255 / 14, width * 255 / 14, 0);
+        g.fillRect(x, y, width, 1);
     }
 
     /** Draw progressive PE-style cracks projected onto the face being mined. */
