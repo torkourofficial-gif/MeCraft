@@ -31,6 +31,10 @@ final class ChunkRenderer {
     private final Group handSwingYaw = new Group();
     private final Group handSwingRoll = new Group();
     private final Group handSwingPitch = new Group();
+    private final Group armSwingOffset = new Group();
+    private final Group armBase = new Group();
+    private final Group armSwingYaw = new Group();
+    private final Group armSwingRoll = new Group();
     private final Group terrain = new Group();
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     private final Texture2D atlas;
@@ -42,6 +46,7 @@ final class ChunkRenderer {
     private int visibleHeldItem = -1;
     private int handSwingTicks = 8;
     private boolean handSwinging;
+    private float handHorizontalScale = 1.0f;
     private int builtRevision = -1;
     private int builtWidth;
     private int builtHeight;
@@ -57,16 +62,17 @@ final class ChunkRenderer {
         blockAppearance = createBlockAppearance();
         handAppearance = createHandAppearance();
         handMesh = makeHandMesh();
-        // Keep the forearm inside the narrow portrait viewport used by most
-        // MIDP phones. The previous offset projected it past the right and
-        // bottom edges, making the empty hand appear to be missing.
-        handMesh.setScale(0.16f, 0.44f, 0.16f);
-        handMesh.setTranslation(0.22f, -0.44f, -0.78f);
+        armBase.setTranslation(handBaseX(width, height), -0.60f, -0.72f);
+        armSwingYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
+        armSwingOffset.addChild(armBase);
+        armBase.addChild(armSwingYaw);
+        armSwingYaw.addChild(armSwingRoll);
+        armSwingRoll.addChild(handMesh);
+        handPivot.addChild(armSwingOffset);
         handPivot.addChild(handSwingOffset);
         handSwingOffset.addChild(handSwingYaw);
         handSwingYaw.addChild(handSwingRoll);
         handSwingRoll.addChild(handSwingPitch);
-        handSwingPitch.addChild(handMesh);
         buildHeldItems();
         particles = new ParticleSystem(atlas);
 
@@ -94,6 +100,16 @@ final class ChunkRenderer {
         builtWidth = width;
         builtHeight = height;
         camera.setPerspective(68.0f, (float)width / (float)height, 0.1f, 38.0f);
+        armBase.setTranslation(handBaseX(width, height), -0.60f, -0.72f);
+    }
+
+    private float handBaseX(int width, int height) {
+        // Indev's 0.64 view-space offset was authored for a 4:3 viewport.
+        // Scale only its horizontal placement to keep the same apparent angle
+        // on narrow Java ME portrait screens.
+        handHorizontalScale = ((float)width / (float)height) / (4.0f / 3.0f);
+        if (handHorizontalScale > 1.0f) handHorizontalScale = 1.0f;
+        return 0.64f * handHorizontalScale;
     }
 
     void updateCamera(VoxelWorld world, float pitch) {
@@ -115,6 +131,7 @@ final class ChunkRenderer {
         if (visibleHeldItem > 0 && heldItemMeshes[visibleHeldItem] != null) {
             setMeshesVisible(heldItemMeshes[visibleHeldItem], true);
         }
+        applyHandPose();
     }
 
     void swingHand() {
@@ -124,13 +141,20 @@ final class ChunkRenderer {
 
     /** Indev first-person swing curve, sampled once per 50 ms game tick. */
     void updateHandAnimation() {
-        if (!handSwinging && handSwingTicks >= 8) return;
         if (handSwinging) {
             handSwingTicks++;
             if (handSwingTicks >= 8) {
                 handSwingTicks = 8;
                 handSwinging = false;
             }
+        }
+        applyHandPose();
+    }
+
+    private void applyHandPose() {
+        if (!handSwinging && handSwingTicks >= 8) {
+            setRestHandPose();
+            return;
         }
         float progress = (float)handSwingTicks / 8.0f;
         float sinSwing = (float)Math.sin(progress * progress * Math.PI);
@@ -142,12 +166,31 @@ final class ChunkRenderer {
             handSwingYaw.setOrientation(-sinSwing * 20.0f, 0.0f, 1.0f, 0.0f);
             handSwingRoll.setOrientation(-sinRoot * 20.0f, 0.0f, 0.0f, 1.0f);
             handSwingPitch.setOrientation(-sinRoot * 80.0f, 1.0f, 0.0f, 0.0f);
+            armSwingOffset.setTranslation(0.0f, 0.0f, 0.0f);
+            armSwingYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
+            armSwingRoll.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
         } else {
-            handSwingOffset.setTranslation(-sinRoot * 0.3f, upDown * 0.4f, -sinLinear * 0.4f);
-            handSwingYaw.setOrientation(sinRoot * 70.0f, 0.0f, 1.0f, 0.0f);
-            handSwingRoll.setOrientation(-sinLinear * 20.0f, 0.0f, 0.0f, 1.0f);
+            // ItemRenderer's empty-hand path: view translation, 45-degree
+            // hold angle, then the animated yaw and roll.
+            armSwingOffset.setTranslation(-sinRoot * 0.3f * handHorizontalScale,
+                                           upDown * 0.4f, -sinLinear * 0.4f);
+            armSwingYaw.setOrientation(45.0f + sinRoot * 70.0f, 0.0f, 1.0f, 0.0f);
+            armSwingRoll.setOrientation(-sinLinear * 20.0f, 0.0f, 0.0f, 1.0f);
+            handSwingOffset.setTranslation(0.0f, 0.0f, 0.0f);
+            handSwingYaw.setOrientation(0.0f, 0.0f, 1.0f, 0.0f);
+            handSwingRoll.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
             handSwingPitch.setOrientation(0.0f, 1.0f, 0.0f, 0.0f);
         }
+    }
+
+    private void setRestHandPose() {
+        handSwingOffset.setTranslation(0.0f, 0.0f, 0.0f);
+        handSwingYaw.setOrientation(0.0f, 0.0f, 1.0f, 0.0f);
+        handSwingRoll.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
+        handSwingPitch.setOrientation(0.0f, 1.0f, 0.0f, 0.0f);
+        armSwingOffset.setTranslation(0.0f, 0.0f, 0.0f);
+        armSwingYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
+        armSwingRoll.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
     }
 
     private void buildHeldItems() {
@@ -192,21 +235,46 @@ final class ChunkRenderer {
         return appearance;
     }
 
-    /** Solid-color low-poly first-person forearm shown with an empty slot. */
+    /** Indev ModelBiped right arm, transformed into first-person local space. */
     private Mesh makeHandMesh() {
         short[] p = new short[] {
-            0,0,1, 0,1,1, 1,0,1, 1,1,1,
-            1,0,0, 1,1,0, 0,0,0, 0,1,0,
-            0,0,0, 0,1,0, 0,0,1, 0,1,1,
-            1,0,1, 1,1,1, 1,0,0, 1,1,0,
-            0,1,1, 0,1,0, 1,1,1, 1,1,0,
-            0,0,0, 0,0,1, 1,0,0, 1,0,1
+            -3,-2,2, -3,10,2, 1,-2,2, 1,10,2,
+            1,-2,-2, 1,10,-2, -3,-2,-2, -3,10,-2,
+            -3,-2,-2, -3,10,-2, -3,-2,2, -3,10,2,
+            1,-2,2, 1,10,2, 1,-2,-2, 1,10,-2,
+            -3,10,2, -3,10,-2, 1,10,2, 1,10,-2,
+            -3,-2,-2, -3,-2,2, 1,-2,-2, 1,-2,2
         };
+        final float inv16 = 1.0f / 16.0f;
+        final float toShort = 1024.0f;
+        final float sinY = (float)Math.sin(-135.0 * Math.PI / 180.0);
+        final float cosY = (float)Math.cos(-135.0 * Math.PI / 180.0);
+        final float sinX = (float)Math.sin(200.0 * Math.PI / 180.0);
+        final float cosX = (float)Math.cos(200.0 * Math.PI / 180.0);
+        final float sinZ = (float)Math.sin(120.0 * Math.PI / 180.0);
+        final float cosZ = (float)Math.cos(120.0 * Math.PI / 180.0);
+        for (int i = 0; i < 24; i++) {
+            float x = (p[i * 3] + 1.0f) * inv16;
+            float y = (p[i * 3 + 1] + 2.0f) * inv16;
+            float z = p[i * 3 + 2] * inv16;
+
+            float rotatedX = x * cosY + z * sinY;
+            float rotatedZ = -x * sinY + z * cosY;
+            float rotatedY = y * cosX - rotatedZ * sinX;
+            float finalZ = y * sinX + rotatedZ * cosX;
+            float finalX = rotatedX * cosZ - rotatedY * sinZ - 0.2f;
+            float finalY = rotatedX * sinZ + rotatedY * cosZ - 0.3f;
+            finalZ += 0.1f;
+
+            p[i * 3] = (short)Math.round(finalX * toShort);
+            p[i * 3 + 1] = (short)Math.round(finalY * toShort);
+            p[i * 3 + 2] = (short)Math.round(finalZ * toShort);
+        }
         int[] strips = new int[] { 4,4,4,4,4,4 };
         VertexArray positions = new VertexArray(24, 3, 2);
         positions.set(0, 24, p);
         VertexBuffer vertices = new VertexBuffer();
-        vertices.setPositions(positions, 1.0f, null);
+        vertices.setPositions(positions, 1.0f / toShort, null);
         TriangleStripArray triangles = new TriangleStripArray(0, strips);
         return new Mesh(vertices, triangles, handAppearance);
     }
