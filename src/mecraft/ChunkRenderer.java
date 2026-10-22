@@ -184,8 +184,8 @@ final class ChunkRenderer {
         particles.spawnBlockDestroy(x, y, z, tile);
     }
 
-    void updateParticles(float yaw, float pitch) {
-        particles.update(yaw, pitch);
+    void updateParticles(VoxelWorld world, float yaw, float pitch) {
+        particles.update(world, yaw, pitch);
     }
 
     void sync(VoxelWorld world) {
