@@ -26,11 +26,16 @@ final class ChunkRenderer {
     final World scene = new World();
     final Camera camera = new Camera();
     final Group cameraPivot = new Group();
+    private final Group handPivot = new Group();
     private final Group terrain = new Group();
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     private final Texture2D atlas;
     private final Appearance blockAppearance;
+    private final Appearance handAppearance;
+    private final Mesh handMesh;
+    private final Mesh[][] heldItemMeshes = new Mesh[Block.COUNT][];
     private final ParticleSystem particles;
+    private int visibleHeldItem = -1;
     private int builtRevision = -1;
     private int builtWidth;
     private int builtHeight;
@@ -44,10 +49,21 @@ final class ChunkRenderer {
         atlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         atlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         blockAppearance = createBlockAppearance();
+        Image handSource = Image.createImage("/mecraft/char.png");
+        Texture2D handTexture = new Texture2D(new Image2D(Image2D.RGBA, handSource));
+        handTexture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
+        handTexture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
+        handAppearance = createHandAppearance(handTexture);
+        handMesh = makeHandMesh();
+        handMesh.setScale(0.16f, 0.52f, 0.16f);
+        handMesh.setTranslation(0.38f, -0.91f, -0.62f);
+        handPivot.addChild(handMesh);
+        buildHeldItems();
         particles = new ParticleSystem(atlas);
 
         camera.setPerspective(68.0f, (float)width / (float)height, 0.1f, 38.0f);
         cameraPivot.addChild(camera);
+        cameraPivot.addChild(handPivot);
         scene.addChild(terrain);
         scene.addChild(particles.mesh);
         scene.addChild(cameraPivot);
@@ -76,6 +92,92 @@ final class ChunkRenderer {
         // M3G cameras look down local -Z; 180 degrees makes yaw zero face +Z.
         cameraPivot.setOrientation(world.yaw + 180.0f, 0.0f, 1.0f, 0.0f);
         camera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
+        handPivot.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
+    }
+
+    void updateHeldItem(int itemId, boolean visible) {
+        if (!visible || itemId <= Block.AIR || itemId >= heldItemMeshes.length) itemId = 0;
+        if (itemId == visibleHeldItem) return;
+        if (visibleHeldItem > 0 && heldItemMeshes[visibleHeldItem] != null) {
+            setMeshesVisible(heldItemMeshes[visibleHeldItem], false);
+        }
+        visibleHeldItem = itemId;
+        if (visibleHeldItem > 0 && heldItemMeshes[visibleHeldItem] != null) {
+            setMeshesVisible(heldItemMeshes[visibleHeldItem], true);
+        }
+    }
+
+    private void buildHeldItems() {
+        for (int id = 1; id < Block.COUNT; id++) {
+            FaceBuilder[] builders = new FaceBuilder[TILE_COUNT];
+            for (int face = 0; face < 6; face++) {
+                int tile = face == 0 ? Block.topTile((byte)id) : Block.sideTile((byte)id);
+                add(builders, tile, 0, 0, 0, face);
+            }
+            int count = 0;
+            for (int i = 0; i < builders.length; i++) if (builders[i] != null) count++;
+            Mesh[] meshes = new Mesh[count];
+            int at = 0;
+            for (int i = 0; i < builders.length; i++) {
+                if (builders[i] == null) continue;
+                Mesh mesh = makeMesh(builders[i]);
+                mesh.setScale(0.21f, 0.21f, 0.21f);
+                mesh.setTranslation(0.40f, -0.62f, -0.98f);
+                mesh.setRenderingEnable(false);
+                handPivot.addChild(mesh);
+                meshes[at++] = mesh;
+                builders[i] = null;
+            }
+            heldItemMeshes[id] = meshes;
+        }
+    }
+
+    private void setMeshesVisible(Mesh[] meshes, boolean visible) {
+        for (int i = 0; i < meshes.length; i++) meshes[i].setRenderingEnable(visible);
+    }
+
+    private Appearance createHandAppearance(Texture2D texture) {
+        Appearance appearance = new Appearance();
+        appearance.setTexture(0, texture);
+        Material material = new Material();
+        material.setColor(Material.AMBIENT, 0xFFFFFFFF);
+        material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
+        appearance.setMaterial(material);
+        PolygonMode polygon = new PolygonMode();
+        polygon.setCulling(PolygonMode.CULL_NONE);
+        polygon.setShading(PolygonMode.SHADE_FLAT);
+        appearance.setPolygonMode(polygon);
+        return appearance;
+    }
+
+    /** Low-poly first-person forearm textured from the classic char.png skin. */
+    private Mesh makeHandMesh() {
+        short[] p = new short[] {
+            0,0,1, 0,1,1, 1,0,1, 1,1,1,
+            1,0,0, 1,1,0, 0,0,0, 0,1,0,
+            0,0,0, 0,1,0, 0,0,1, 0,1,1,
+            1,0,1, 1,1,1, 1,0,0, 1,1,0,
+            0,1,1, 0,1,0, 1,1,1, 1,1,0,
+            0,0,0, 0,0,1, 1,0,0, 1,0,1
+        };
+        short[] uv = new short[48];
+        int[] strips = new int[] { 4,4,4,4,4,4 };
+        for (int face = 0; face < 6; face++) {
+            int offset = face * 8;
+            uv[offset] = 44; uv[offset + 1] = 20;
+            uv[offset + 2] = 44; uv[offset + 3] = 31;
+            uv[offset + 4] = 47; uv[offset + 5] = 20;
+            uv[offset + 6] = 47; uv[offset + 7] = 31;
+        }
+        VertexArray positions = new VertexArray(24, 3, 2);
+        positions.set(0, 24, p);
+        VertexArray texCoords = new VertexArray(24, 2, 2);
+        texCoords.set(0, 24, uv);
+        VertexBuffer vertices = new VertexBuffer();
+        vertices.setPositions(positions, 1.0f, null);
+        vertices.setTexCoords(0, texCoords, 1.0f / 64.0f, null);
+        TriangleStripArray triangles = new TriangleStripArray(0, strips);
+        return new Mesh(vertices, triangles, handAppearance);
     }
 
     void spawnBlockDestroy(int x, int y, int z, int tile) {
@@ -305,4 +407,5 @@ final class ChunkRenderer {
 
     }
 }
+
 
