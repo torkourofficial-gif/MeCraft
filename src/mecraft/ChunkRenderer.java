@@ -51,6 +51,13 @@ final class ChunkRenderer {
     private final Group armSwingYaw = new Group();
     private final Group armSwingRoll = new Group();
     private final Group terrain = new Group();
+    private final Background sky = new Background();
+    private final Light sunlight = new Light();
+    private final Light[] torchLights = new Light[3];
+    private final float[] nearestTorchDistance = new float[] { 65.0f, 65.0f, 65.0f };
+    private final int[] nearestTorchX = new int[3];
+    private final int[] nearestTorchY = new int[3];
+    private final int[] nearestTorchZ = new int[3];
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     private final Texture2D atlas;
     private final Appearance blockAppearance;
@@ -139,14 +146,21 @@ final class ChunkRenderer {
         scene.addChild(droppedItems.mesh);
         scene.addChild(cameraPivot);
         scene.setActiveCamera(camera);
-        Background background = new Background();
-        background.setColor(0xFF82B8E8);
-        background.setDepthClearEnable(true);
-        scene.setBackground(background);
-        Light ambient = new Light();
-        ambient.setMode(Light.AMBIENT);
-        ambient.setIntensity(1.0f);
-        scene.addChild(ambient);
+        sky.setColor(0xFF82B8E8);
+        sky.setDepthClearEnable(true);
+        scene.setBackground(sky);
+        sunlight.setMode(Light.AMBIENT);
+        sunlight.setIntensity(1.0f);
+        scene.addChild(sunlight);
+        for (int i = 0; i < torchLights.length; i++) {
+            Light light = new Light();
+            light.setMode(Light.OMNI);
+            light.setColor(0xFFFFC46B);
+            light.setAttenuation(1.0f, 0.10f, 0.035f);
+            light.setIntensity(0.0f);
+            torchLights[i] = light;
+            scene.addChild(light);
+        }
         builtWidth = width;
         builtHeight = height;
     }
@@ -590,6 +604,66 @@ final class ChunkRenderer {
         return mobs.update(world);
     }
 
+    /** Applies Indev's 24000-tick celestial curve and lights nearby torches with a fixed M3G pool. */
+    void updateDayNight(VoxelWorld world) {
+        float angle = ((float)world.dayTime / (float)VoxelWorld.DAY_LENGTH - 0.15f) *
+                      6.2831855f;
+        float sun = (float)Math.cos(angle) * 1.5f + 0.5f;
+        if (sun < 0.0f) sun = 0.0f;
+        if (sun > 1.0f) sun = 1.0f;
+        sunlight.setIntensity(0.16f + sun * 0.84f);
+        sky.setColor(blendColor(0xFF10182E, 0xFF82B8E8, 0.10f + sun * 0.90f));
+        updateTorchLights(world);
+    }
+
+    private int blendColor(int night, int day, float amount) {
+        int r = (night >> 16) & 255;
+        int g = (night >> 8) & 255;
+        int b = night & 255;
+        r += (int)(((day >> 16) & 255) - r) * amount;
+        g += (int)(((day >> 8) & 255) - g) * amount;
+        b += (int)((day & 255) - b) * amount;
+        return 0xFF000000 | (r << 16) | (g << 8) | b;
+    }
+
+    private void updateTorchLights(VoxelWorld world) {
+        for (int i = 0; i < torchLights.length; i++) nearestTorchDistance[i] = 65.0f;
+        int px = (int)world.playerX, py = (int)world.playerY, pz = (int)world.playerZ;
+        for (int y = py - 5; y <= py + 6; y++) {
+            for (int z = pz - 8; z <= pz + 8; z++) {
+                for (int x = px - 8; x <= px + 8; x++) {
+                    if (world.get(x, y, z) != Block.TORCH) continue;
+                    float dx = x + 0.5f - world.playerX;
+                    float dy = y + 0.8f - (world.playerY + 1.0f);
+                    float dz = z + 0.5f - world.playerZ;
+                    float distance = dx * dx + dy * dy + dz * dz;
+                    if (distance > 64.0f || distance >= nearestTorchDistance[2]) continue;
+                    int at = 2;
+                    while (at > 0 && distance < nearestTorchDistance[at - 1]) {
+                        nearestTorchDistance[at] = nearestTorchDistance[at - 1];
+                        nearestTorchX[at] = nearestTorchX[at - 1];
+                        nearestTorchY[at] = nearestTorchY[at - 1];
+                        nearestTorchZ[at] = nearestTorchZ[at - 1];
+                        at--;
+                    }
+                    nearestTorchDistance[at] = distance;
+                    nearestTorchX[at] = x;
+                    nearestTorchY[at] = y;
+                    nearestTorchZ[at] = z;
+                }
+            }
+        }
+        for (int i = 0; i < torchLights.length; i++) {
+            if (nearestTorchDistance[i] <= 64.0f) {
+                torchLights[i].setTranslation(nearestTorchX[i] + 0.5f,
+                    nearestTorchY[i] + 0.8f, nearestTorchZ[i] + 0.5f);
+                torchLights[i].setIntensity(0.85f);
+            } else {
+                torchLights[i].setIntensity(0.0f);
+            }
+        }
+    }
+
     boolean hitMob(VoxelWorld world, float pitch, int damage) {
         return mobs.hit(world, pitch, damage);
     }
@@ -656,7 +730,7 @@ final class ChunkRenderer {
 
     private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {
         FaceBuilder[] builders = new FaceBuilder[TILE_COUNT];
-        FlowerBuilder[] flowers = new FlowerBuilder[2];
+        FlowerBuilder[] flowers = new FlowerBuilder[1];
         int x0 = cx * VoxelWorld.CHUNK_XZ;
         int y0 = cy * VoxelWorld.CHUNK_Y;
         int z0 = cz * VoxelWorld.CHUNK_XZ;
@@ -670,9 +744,8 @@ final class ChunkRenderer {
                     byte id = world.get(x, y, z);
                     if (id == Block.AIR) continue;
                     if (Block.isFlower(id)) {
-                        int flower = id == Block.RED_FLOWER ? 0 : 1;
-                        if (flowers[flower] == null) flowers[flower] = new FlowerBuilder();
-                        flowers[flower].add(x - x0, y - y0, z - z0, Block.sideTile(id));
+                        if (flowers[0] == null) flowers[0] = new FlowerBuilder();
+                        flowers[0].add(x - x0, y - y0, z - z0, Block.sideTile(id));
                         continue;
                     }
                     if (Block.faceVisible(id, world.get(x, y + 1, z))) {

@@ -37,14 +37,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     };
     private static final int[] DEFAULT_HOTBAR = new int[] {
         Block.DIRT, Block.STONE, Block.LOG, Block.SAND, Block.PLANKS,
-        Block.LEAVES, Block.COAL, Block.IRON, Block.GRASS
+        Block.LEAVES, Block.COAL, Block.IRON, Block.TORCH
     };
 
     private final MeCraft app;
     private final boolean[] keys = new boolean[10];
     private final int[] hotbar = new int[] {
         Block.DIRT, Block.STONE, Block.LOG, Block.SAND, Block.PLANKS,
-        Block.LEAVES, Block.COAL, Block.IRON, Block.GRASS
+        Block.LEAVES, Block.COAL, Block.IRON, Block.TORCH
     };
     private final int[] inventory = new int[ItemCatalog.COUNT];
     private final Command mineCommand = new Command("Romper", Command.SCREEN, 1);
@@ -150,6 +150,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (cameraPitch > 80.0f) cameraPitch = 80.0f;
         if (cameraPitch < -80.0f) cameraPitch = -80.0f;
         renderer.updateHandAnimation();
+
+        world.tickTime();
+        renderer.updateDayNight(world);
 
         world.updateFluids();
         float forward = 0.0f;
@@ -501,6 +504,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         int y = target[1] + target[4];
         int z = target[2] + target[5];
         if (y <= 0 || y >= VoxelWorld.HEIGHT) return;
+        if (selectedItem == Block.TORCH && !Block.solid(world.get(x, y - 1, z))) return;
         float px = world.playerX, py = world.playerY, pz = world.playerZ;
         if (x + 1.0f > px - PLAYER_RADIUS && x < px + PLAYER_RADIUS &&
             z + 1.0f > pz - PLAYER_RADIUS && z < pz + PLAYER_RADIUS &&

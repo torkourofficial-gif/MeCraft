@@ -23,6 +23,8 @@ final class VoxelWorld {
     private static final int BLOCK_COUNT = WIDTH * HEIGHT * DEPTH;
     private static final int MCF6_BLOCK_COUNT = 15;
     private static final int MCF6_ITEM_COUNT = 45;
+    private static final int MCF7_ITEM_COUNT = 47;
+    static final int DAY_LENGTH = 24000;
 
     final byte[] blocks = new byte[BLOCK_COUNT];
     private final byte[] waterLevels = new byte[BLOCK_COUNT];
@@ -33,12 +35,13 @@ final class VoxelWorld {
     final int[] itemDamage = new int[ItemCatalog.COUNT];
     final int[] hotbar = new int[] {
         Block.DIRT, Block.STONE, Block.LOG, Block.SAND, Block.PLANKS,
-        Block.LEAVES, Block.COAL, Block.IRON, Block.GRASS
+        Block.LEAVES, Block.COAL, Block.IRON, Block.TORCH
     };
     int seed;
     int mode;
     int selectedSlot;
     int health = 20;
+    int dayTime;
     float playerX;
     float playerY;
     float playerZ;
@@ -52,6 +55,16 @@ final class VoxelWorld {
     private int fluidQueueCount;
     private int fluidTickDelay;
     private int fluidDirection;
+
+    void tickTime() {
+        dayTime++;
+        if (dayTime >= DAY_LENGTH) dayTime = 0;
+    }
+
+    /** Indev's celestial curve reaches darkness after sunset and dawn near tick 23000. */
+    boolean isNight() {
+        return dayTime >= 13000 && dayTime < 23000;
+    }
 
     VoxelWorld(int seed, int mode) {
         this.seed = seed;
@@ -307,7 +320,7 @@ final class VoxelWorld {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(blocks.length * 2 + 64);
             DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(0x4D434637); // MCF7: flowers added; item IDs shifted by two
+            out.writeInt(0x4D434638); // MCF8: torch block and Indev day clock
             out.writeInt(seed);
             out.writeByte(mode);
             out.writeByte(selectedSlot);
@@ -319,6 +332,7 @@ final class VoxelWorld {
             out.writeFloat(playerZ);
             out.writeFloat(yaw);
             out.writeByte(health);
+            out.writeShort(dayTime);
             out.write(blocks);
             out.write(waterLevels);
             out.flush();
@@ -348,23 +362,30 @@ final class VoxelWorld {
             int format = in.readInt();
             if (format != 0x4D434631 && format != 0x4D434632 && format != 0x4D434633 &&
                 format != 0x4D434634 && format != 0x4D434635 && format != 0x4D434636 &&
-                format != 0x4D434637) return null;
+                format != 0x4D434637 && format != 0x4D434638) return null;
             int seed = in.readInt();
             VoxelWorld world = new VoxelWorld(seed, in.readByte());
             world.selectedSlot = in.readByte();
-            if (format == 0x4D434635 || format == 0x4D434636 || format == 0x4D434637) {
-                int inventoryLength = format == 0x4D434637 ? world.inventory.length : MCF6_ITEM_COUNT;
+            if (format == 0x4D434635 || format == 0x4D434636 || format == 0x4D434637 ||
+                format == 0x4D434638) {
+                int inventoryLength = format == 0x4D434638 ? world.inventory.length :
+                                      (format == 0x4D434637 ? MCF7_ITEM_COUNT : MCF6_ITEM_COUNT);
                 for (int i = 0; i < inventoryLength; i++) {
-                    int newId = format == 0x4D434637 || i < MCF6_BLOCK_COUNT ? i : i + 2;
+                    int newId = format == 0x4D434638 ? i :
+                                (format == 0x4D434637 ? (i < 17 ? i : i + 1) :
+                                 (i < MCF6_BLOCK_COUNT ? i : i + 2));
                     world.inventory[newId] = in.readUnsignedByte();
                 }
                 for (int i = 0; i < world.hotbar.length; i++) {
                     int id = in.readUnsignedByte();
-                    if (format != 0x4D434637 && id >= MCF6_BLOCK_COUNT) id += 2;
+                    if (format == 0x4D434637 && id >= 17) id++;
+                    else if (format != 0x4D434637 && format != 0x4D434638 && id >= MCF6_BLOCK_COUNT) id += 2;
                     world.hotbar[i] = id > Block.AIR && id < ItemCatalog.COUNT ? id : Block.DIRT;
                 }
                 for (int i = 0; i < inventoryLength; i++) {
-                    int newId = format == 0x4D434637 || i < MCF6_BLOCK_COUNT ? i : i + 2;
+                    int newId = format == 0x4D434638 ? i :
+                                (format == 0x4D434637 ? (i < 17 ? i : i + 1) :
+                                 (i < MCF6_BLOCK_COUNT ? i : i + 2));
                     world.itemDamage[newId] = in.readUnsignedShort();
                 }
             } else if (format == 0x4D434633 || format == 0x4D434634) {
@@ -383,13 +404,18 @@ final class VoxelWorld {
             world.playerZ = in.readFloat();
             world.yaw = in.readFloat();
             if (format == 0x4D434632 || format == 0x4D434633 || format == 0x4D434634 ||
-                format == 0x4D434635 || format == 0x4D434636 || format == 0x4D434637)
+                format == 0x4D434635 || format == 0x4D434636 || format == 0x4D434637 ||
+                format == 0x4D434638)
                 world.health = in.readUnsignedByte();
+            if (format == 0x4D434638) {
+                world.dayTime = in.readUnsignedShort() % DAY_LENGTH;
+            }
             in.readFully(world.blocks);
             if (format == 0x4D434634 || format == 0x4D434635 || format == 0x4D434636 ||
-                format == 0x4D434637)
+                format == 0x4D434637 || format == 0x4D434638)
                 in.readFully(world.waterLevels);
-            if (format != 0x4D434636 && format != 0x4D434637) world.migrateLegacyFurnaces();
+            if (format != 0x4D434636 && format != 0x4D434637 && format != 0x4D434638)
+                world.migrateLegacyFurnaces();
             world.queueSavedFlowingWater();
             world.revision++;
             return world;

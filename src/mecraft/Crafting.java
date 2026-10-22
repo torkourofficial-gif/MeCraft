@@ -5,7 +5,8 @@ final class Crafting {
     static final int LOG_TO_PLANKS = 0;
     static final int PLANKS_TO_TABLE = 1;
     static final int PLANKS_TO_STICKS = 2;
-    static final int TOOL_RECIPES = 3;
+    static final int TORCHES = 3;
+    static final int TOOL_RECIPES = 4;
     static final int RECIPE_COUNT = TOOL_RECIPES + ItemCatalog.TOOL_KINDS * ItemCatalog.TOOL_TIERS;
 
     static final int[] OUTPUT = new int[RECIPE_COUNT];
@@ -17,6 +18,7 @@ final class Crafting {
         setRecipe(LOG_TO_PLANKS, Block.PLANKS, 4, "4 Tablones", Block.LOG, 1, 0, 0);
         setRecipe(PLANKS_TO_TABLE, Block.CRAFTING_TABLE, 1, "Mesa de trabajo", Block.PLANKS, 4, 0, 0);
         setRecipe(PLANKS_TO_STICKS, ItemCatalog.STICK, 4, "4 Palos", Block.PLANKS, 2, 0, 0);
+        setRecipe(TORCHES, Block.TORCH, 4, "4 Antorchas", Block.COAL, 1, ItemCatalog.STICK, 1);
         for (int tier = 0; tier < ItemCatalog.TOOL_TIERS; tier++) {
             int material = ItemCatalog.materialItem(tier);
             for (int kind = 0; kind < ItemCatalog.TOOL_KINDS; kind++) {

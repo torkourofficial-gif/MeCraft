@@ -27,6 +27,7 @@ final class MobSystem {
     private int worldSeed = Integer.MIN_VALUE;
     private int tick;
     private int attackCooldown;
+    private boolean zombiesNightActive;
 
     MobSystem(Group scene) throws IOException {
         Appearance[] skins = new Appearance[] {
@@ -44,6 +45,7 @@ final class MobSystem {
     int update(VoxelWorld world) {
         if (worldSeed != world.seed) reset(world);
         tick++;
+        updateZombieCycle(world);
         if (attackCooldown > 0) attackCooldown--;
         int playerDamage = 0;
         for (int i = 0; i < mobs.length; i++) {
@@ -128,11 +130,12 @@ final class MobSystem {
         worldSeed = world.seed;
         tick = 0;
         attackCooldown = 0;
+        zombiesNightActive = false;
         random.setSeed(world.seed ^ 0x51ED270B);
         for (int i = 0; i < mobs.length; i++) {
             Mob mob = mobs[i];
             mob.health = mob.type == ZOMBIE ? 20 : (mob.type == PIG ? 10 : 8);
-            mob.alive = mob.type != ZOMBIE || world.mode == 0;
+            mob.alive = mob.type != ZOMBIE;
             mob.root.setRenderingEnable(mob.alive);
             int attempts = 0;
             int x = VoxelWorld.WIDTH / 2, z = VoxelWorld.DEPTH / 2;
@@ -162,6 +165,64 @@ final class MobSystem {
         }
     }
 
+    /** Zombies are hidden by day and are placed at safe ground locations when night begins. */
+    private void updateZombieCycle(VoxelWorld world) {
+        boolean night = world.mode == 0 && world.isNight();
+        if (!night) {
+            if (zombiesNightActive) {
+                for (int i = 0; i < mobs.length; i++) {
+                    if (mobs[i].type == ZOMBIE) {
+                        mobs[i].alive = false;
+                        mobs[i].root.setRenderingEnable(false);
+                    }
+                }
+            }
+            zombiesNightActive = false;
+            return;
+        }
+        if (zombiesNightActive) return;
+        zombiesNightActive = true;
+        for (int i = 0; i < mobs.length; i++) {
+            Mob mob = mobs[i];
+            if (mob.type != ZOMBIE) continue;
+            spawnZombie(world, mob);
+        }
+    }
+
+    private void spawnZombie(VoxelWorld world, Mob mob) {
+        mob.alive = false;
+        mob.root.setRenderingEnable(false);
+        int attempts = 0;
+        int x = clamp((int)world.playerX, 2, VoxelWorld.WIDTH - 3);
+        int z = clamp((int)world.playerZ, 2, VoxelWorld.DEPTH - 3);
+        do {
+            int radius = 9 + random.nextInt(10);
+            int angle = random.nextInt(360);
+            x = clamp((int)world.playerX + (int)(Math.cos(angle * Math.PI / 180.0) * radius),
+                      2, VoxelWorld.WIDTH - 3);
+            z = clamp((int)world.playerZ + (int)(Math.sin(angle * Math.PI / 180.0) * radius),
+                      2, VoxelWorld.DEPTH - 3);
+            attempts++;
+        } while ((!validSpawn(world, x, z) || tooClose(mob, x + 0.5f, z + 0.5f)) && attempts < 48);
+        int ground = world.surfaceY(x, z);
+        mob.x = x + 0.5f;
+        mob.z = z + 0.5f;
+        mob.y = ground + 1.0f;
+        mob.yaw = random.nextInt(360);
+        mob.targetYaw = mob.yaw;
+        mob.age = random.nextInt(100);
+        mob.nextWander = tick + 20 + random.nextInt(100);
+        mob.health = 20;
+        mob.attackDelay = 0;
+        mob.fleeTicks = 0;
+        mob.walkTicks = 0;
+        mob.chasing = false;
+        mob.alive = true;
+        mob.root.setTranslation(mob.x, mob.y, mob.z);
+        mob.root.setOrientation(mob.yaw, 0.0f, 1.0f, 0.0f);
+        mob.root.setRenderingEnable(true);
+    }
+
     private boolean validSpawn(VoxelWorld world, int x, int z) {
         int y = world.surfaceY(x, z);
         byte ground = world.get(x, y, z);
@@ -172,7 +233,7 @@ final class MobSystem {
     private boolean tooClose(Mob mob, float x, float z) {
         for (int i = 0; i < mobs.length; i++) {
             Mob other = mobs[i];
-            if (other == mob || other.y <= 0.0f) continue;
+            if (other == mob || !other.alive || other.y <= 0.0f) continue;
             float dx = other.x - x, dz = other.z - z;
             if (dx * dx + dz * dz < 9.0f) return true;
         }

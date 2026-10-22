@@ -9,13 +9,15 @@ Referencia consultada: [EaglerPorts/in-20100223](https://github.com/EaglerPorts/
 - Mundo de isla procedural de 48 × 24 × 48 bloques, con costa, agua, árboles, carbón, hierro y roca madre.
 - Modo supervivencia empieza con el inventario vacío; los bloques rotos se recogen, y modo creativo tiene bloques ilimitados.
 - Cámara en primera persona, movimiento, colisión, gravedad y salto.
+- Ciclo de día y noche de 24 000 ticks de Indev, con atardecer, oscuridad y amanecer; la hora se conserva al guardar.
+- Antorchas colocables y rompibles, fabricadas en grupos de cuatro con carbón y un palo. Iluminan el entorno con un conjunto M3G fijo de tres luces cercanas para limitar el costo de memoria.
 - Romper/colocar bloques, partículas de rotura, daño progresivo con grietas sobre la cara apuntada, seleccionar la barra rápida y guardar la partida en RMS.
 - HUD con la barra de `gui.png`, corazones y burbujas de `icons.png` y sprites de bloque de `gui_blocks.png`; al sumergir la cámara aparece un filtro azul, el oxígeno se agota y provoca ahogamiento, y tanto la caída como el ahogamiento activan la animación de daño de Indev. La vida y estos daños solo se aplican en supervivencia.
 - Crafteo por recetas: `#` abre el inventario 2×2 (tronco → 4 tablones, tablones → mesa y palos); usa `3` apuntando a una mesa para abrir `container.png`, centrado, con una lista desplazable de recetas y las no disponibles atenuadas. En la mesa se crean herramientas de madera, piedra, hierro, diamante y oro. El horno fue retirado.
-- Criaturas 3D con las texturas locales de cerdo, oveja y zombi; los animales deambulan, huyen al recibir golpes y los zombis persiguen y dañan al jugador en supervivencia. `1` golpea a una criatura apuntada antes de intentar romper un bloque.
+- Criaturas 3D con las texturas locales de cerdo, oveja y zombi; los animales deambulan, huyen al recibir golpes y los zombis aparecen al anochecer, persiguen y dañan al jugador en supervivencia, y desaparecen al amanecer. `1` golpea a una criatura apuntada antes de intentar romper un bloque.
 - Render 3D M3G con sectores de 16 × 8 × 16 bloques y un grupo fijo de cuatro criaturas para limitar memoria y geometría.
 
-Es un demake inicial, no una reproducción completa de Indev: todavía no incluye ciclo de día/noche ni los demás tipos de mundo de Indev. Las criaturas adaptan los modelos y la conducta básica de Indev; no implementan todavía la ruta de drops de animales.
+Es un demake inicial, no una reproducción completa de Indev: todavía no incluye los demás tipos de mundo de Indev ni la ruta de drops de animales. El reloj, la curva de luz y el tile 80 de la antorcha siguen el código de referencia; las luces cercanas y la aparición nocturna se adaptan al tamaño pequeño del mundo y al límite de memoria de Java ME.
 
 ## Controles
 
