@@ -742,9 +742,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             world.selectedSlot = (world.selectedSlot + delta + hotbar.length) % hotbar.length;
             return;
         }
+        // Never select an empty hotbar slot in survival. Keep the current
+        // selection if the player does not own any placeable blocks.
+        int candidate = world.selectedSlot;
         for (int i = 0; i < hotbar.length; i++) {
-            world.selectedSlot = (world.selectedSlot + delta + hotbar.length) % hotbar.length;
-            if (inventory[hotbar[world.selectedSlot]] > 0) return;
+            candidate = (candidate + delta + hotbar.length) % hotbar.length;
+            if (inventory[hotbar[candidate]] > 0) {
+                world.selectedSlot = candidate;
+                return;
+            }
         }
     }
 
