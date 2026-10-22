@@ -17,20 +17,30 @@ final class Block {
     static final byte CRAFTING_TABLE = 12;
     static final byte COBBLESTONE = 13;
     static final byte FARMLAND = 14;
+    static final byte RED_FLOWER = 15;
+    static final byte YELLOW_FLOWER = 16;
 
     static final int LEGACY_COUNT = 14;
-    static final int COUNT = 15;
-    static final int[] TILE = new int[] { 0, 0, 2, 1, 18, 205, 20, 52, 17, 34, 33, 4, 59, 16, 2 };
+    static final int COUNT = 17;
+    static final int[] TILE = new int[] { 0, 0, 2, 1, 18, 205, 20, 52, 17, 34, 33, 4, 59, 16, 2, 12, 13 };
     static final String[] NAME = new String[] {
         "Aire", "Césped", "Tierra", "Piedra", "Arena", "Agua",
         "Tronco", "Hojas", "Roca madre", "Carbón", "Hierro", "Tablones",
-        "Mesa de crafteo", "Piedra labrada", "Tierra de cultivo"
+        "Mesa de crafteo", "Piedra labrada", "Tierra de cultivo", "Flor roja", "Flor amarilla"
     };
 
     private Block() { }
 
     static boolean solid(byte id) {
-        return id != AIR && id != WATER;
+        return id != AIR && id != WATER && !isFlower(id);
+    }
+
+    static boolean isFlower(byte id) {
+        return id == RED_FLOWER || id == YELLOW_FLOWER;
+    }
+
+    static boolean replaceable(byte id) {
+        return id == AIR || id == WATER || isFlower(id);
     }
 
     /** Mining time in 50 ms game-loop steps when standing on dry ground. */
@@ -77,6 +87,7 @@ final class Block {
 
     private static int hardnessTenths(byte id) {
         if (id == BEDROCK) return -1;
+        if (isFlower(id)) return 0;
         if (id == LEAVES) return 2;
         if (id == DIRT || id == SAND) return 5;
         if (id == GRASS) return 6;
@@ -90,7 +101,7 @@ final class Block {
     }
 
     static boolean faceVisible(byte current, byte neighbor) {
-        if (neighbor == AIR) return true;
+        if (neighbor == AIR || isFlower(neighbor)) return true;
         if (neighbor == WATER) return current != WATER;
         if (neighbor == LEAVES) return current != LEAVES;
         return false;

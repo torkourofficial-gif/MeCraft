@@ -500,7 +500,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         int slot = world.selectedSlot;
         int block = hotbar[slot];
         if (world.mode == 0 && inventory[block] <= 0) return;
-        if (world.get(x, y, z) != Block.AIR && world.get(x, y, z) != Block.WATER) return;
+        if (!Block.replaceable(world.get(x, y, z))) return;
         if (!world.set(x, y, z, (byte)block)) return;
         renderer.swingHand();
         if (world.mode == 0) {

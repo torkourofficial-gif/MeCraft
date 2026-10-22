@@ -21,6 +21,8 @@ final class VoxelWorld {
     static final int CHUNKS_Y = HEIGHT / CHUNK_Y;
     static final int CHUNKS_Z = DEPTH / CHUNK_XZ;
     private static final int BLOCK_COUNT = WIDTH * HEIGHT * DEPTH;
+    private static final int MCF6_BLOCK_COUNT = 15;
+    private static final int MCF6_ITEM_COUNT = 45;
 
     final byte[] blocks = new byte[BLOCK_COUNT];
     private final byte[] waterLevels = new byte[BLOCK_COUNT];
@@ -88,7 +90,7 @@ final class VoxelWorld {
     }
 
     private boolean setFlowingWater(int x, int y, int z, int level) {
-        if (get(x, y, z) != Block.AIR || level > 7) return false;
+        if (!Block.replaceable(get(x, y, z)) || level > 7) return false;
         return setBlock(x, y, z, Block.WATER, level);
     }
 
@@ -199,6 +201,8 @@ final class VoxelWorld {
             }
         }
 
+        carveCaves(random);
+
         // Sparse, deterministic trees keep the small island readable at phone resolution.
         for (int z = 4; z < DEPTH - 4; z += 5) {
             for (int x = 4; x < WIDTH - 4; x += 5) {
@@ -218,10 +222,70 @@ final class VoxelWorld {
                 }
             }
         }
+        placeFlowers(random, centerX, centerZ);
         playerX = centerX + 0.5f;
         playerZ = centerZ + 0.5f;
         playerY = surfaceY(centerX, centerZ) + 1.0f;
         yaw = 0f;
+    }
+
+    /** Carve a few short, low-cost tunnels below the island's surface. */
+    private void carveCaves(Random random) {
+        for (int cave = 0; cave < 10; cave++) {
+            float x = 3 + random.nextInt(WIDTH - 6);
+            float z = 3 + random.nextInt(DEPTH - 6);
+            int surface = surfaceY((int)x, (int)z);
+            int maxY = surface - 4;
+            if (maxY > 12) maxY = 12;
+            if (maxY < 3) continue;
+            float y = 2 + random.nextInt(maxY - 1);
+            float angle = random.nextFloat() * (float)(Math.PI * 2.0);
+            float slope = random.nextFloat() * 0.24f - 0.12f;
+            float radius = 1.05f + random.nextFloat() * 0.3f;
+            float verticalRadius = 1.0f + random.nextFloat() * 0.25f;
+            int steps = 3 + random.nextInt(4);
+
+            for (int step = 0; step < steps; step++) {
+                x += (float)Math.cos(angle) * 0.8f;
+                z += (float)Math.sin(angle) * 0.8f;
+                y += slope;
+                angle += random.nextFloat() * 0.5f - 0.25f;
+                int cx = (int)x, cy = (int)y, cz = (int)z;
+                int extent = (int)radius + 1;
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dz = -extent; dz <= extent; dz++) {
+                        for (int dx = -extent; dx <= extent; dx++) {
+                            int bx = cx + dx, by = cy + dy, bz = cz + dz;
+                            if (by <= 1 || by >= HEIGHT - 1 || bx <= 1 || bx >= WIDTH - 2 ||
+                                bz <= 1 || bz >= DEPTH - 2) continue;
+                            float horizontal = (dx * dx + dz * dz) / (radius * radius);
+                            float vertical = dy * dy / (verticalRadius * verticalRadius);
+                            if (horizontal + vertical > 1.0f || by >= surfaceY(bx, bz) - 1) continue;
+                            byte block = get(bx, by, bz);
+                            if (block == Block.STONE || block == Block.DIRT ||
+                                block == Block.COAL || block == Block.IRON) {
+                                blocks[index(bx, by, bz)] = Block.AIR;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Scatter both Indev flower variants over clear grass patches. */
+    private void placeFlowers(Random random, int centerX, int centerZ) {
+        for (int z = 2; z < DEPTH - 2; z++) {
+            for (int x = 2; x < WIDTH - 2; x++) {
+                if (Math.abs(x - centerX) <= 3 && Math.abs(z - centerZ) <= 3) continue;
+                if (random.nextInt(34) != 0) continue;
+                int y = surfaceY(x, z);
+                if (get(x, y, z) != Block.GRASS || y + 1 >= HEIGHT ||
+                    get(x, y + 1, z) != Block.AIR) continue;
+                blocks[index(x, y + 1, z)] = random.nextInt(2) == 0 ?
+                    Block.RED_FLOWER : Block.YELLOW_FLOWER;
+            }
+        }
     }
 
     int surfaceY(int x, int z) {
@@ -243,7 +307,7 @@ final class VoxelWorld {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(blocks.length * 2 + 64);
             DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(0x4D434636); // MCF6: furnace slot replaced by cobblestone
+            out.writeInt(0x4D434637); // MCF7: flowers added; item IDs shifted by two
             out.writeInt(seed);
             out.writeByte(mode);
             out.writeByte(selectedSlot);
@@ -283,17 +347,26 @@ final class VoxelWorld {
             DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
             int format = in.readInt();
             if (format != 0x4D434631 && format != 0x4D434632 && format != 0x4D434633 &&
-                format != 0x4D434634 && format != 0x4D434635 && format != 0x4D434636) return null;
+                format != 0x4D434634 && format != 0x4D434635 && format != 0x4D434636 &&
+                format != 0x4D434637) return null;
             int seed = in.readInt();
             VoxelWorld world = new VoxelWorld(seed, in.readByte());
             world.selectedSlot = in.readByte();
-            if (format == 0x4D434635 || format == 0x4D434636) {
-                for (int i = 0; i < world.inventory.length; i++) world.inventory[i] = in.readUnsignedByte();
+            if (format == 0x4D434635 || format == 0x4D434636 || format == 0x4D434637) {
+                int inventoryLength = format == 0x4D434637 ? world.inventory.length : MCF6_ITEM_COUNT;
+                for (int i = 0; i < inventoryLength; i++) {
+                    int newId = format == 0x4D434637 || i < MCF6_BLOCK_COUNT ? i : i + 2;
+                    world.inventory[newId] = in.readUnsignedByte();
+                }
                 for (int i = 0; i < world.hotbar.length; i++) {
                     int id = in.readUnsignedByte();
+                    if (format != 0x4D434637 && id >= MCF6_BLOCK_COUNT) id += 2;
                     world.hotbar[i] = id > Block.AIR && id < ItemCatalog.COUNT ? id : Block.DIRT;
                 }
-                for (int i = 0; i < world.itemDamage.length; i++) world.itemDamage[i] = in.readUnsignedShort();
+                for (int i = 0; i < inventoryLength; i++) {
+                    int newId = format == 0x4D434637 || i < MCF6_BLOCK_COUNT ? i : i + 2;
+                    world.itemDamage[newId] = in.readUnsignedShort();
+                }
             } else if (format == 0x4D434633 || format == 0x4D434634) {
                 for (int i = 0; i < Block.LEGACY_COUNT; i++) world.inventory[i] = in.readUnsignedByte();
                 for (int i = 0; i < world.hotbar.length; i++) {
@@ -309,12 +382,14 @@ final class VoxelWorld {
             world.playerY = in.readFloat();
             world.playerZ = in.readFloat();
             world.yaw = in.readFloat();
-            if (format == 0x4D434632 || format == 0x4D434633 || format == 0x4D434634)
+            if (format == 0x4D434632 || format == 0x4D434633 || format == 0x4D434634 ||
+                format == 0x4D434635 || format == 0x4D434636 || format == 0x4D434637)
                 world.health = in.readUnsignedByte();
             in.readFully(world.blocks);
-            if (format == 0x4D434634 || format == 0x4D434635 || format == 0x4D434636)
+            if (format == 0x4D434634 || format == 0x4D434635 || format == 0x4D434636 ||
+                format == 0x4D434637)
                 in.readFully(world.waterLevels);
-            if (format != 0x4D434636) world.migrateLegacyFurnaces();
+            if (format != 0x4D434636 && format != 0x4D434637) world.migrateLegacyFurnaces();
             world.queueSavedFlowingWater();
             world.revision++;
             return world;

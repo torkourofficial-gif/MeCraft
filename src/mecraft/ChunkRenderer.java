@@ -54,6 +54,7 @@ final class ChunkRenderer {
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     private final Texture2D atlas;
     private final Appearance blockAppearance;
+    private final Appearance flowerAppearance;
     private final Appearance heldItemAppearance;
     private final Appearance itemSpriteAppearance;
     private final Appearance handAppearance;
@@ -82,7 +83,8 @@ final class ChunkRenderer {
         atlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         atlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         blockAppearance = createBlockAppearance();
-        heldItemAppearance = createFirstPersonAppearance(true);
+        flowerAppearance = createFlowerAppearance();
+        heldItemAppearance = createFirstPersonAppearance(atlas, true);
         Image itemSource = Image.createImage("/mecraft/items.png");
         Texture2D itemAtlas = new Texture2D(new Image2D(Image2D.RGBA, itemSource));
         itemAtlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
@@ -307,6 +309,17 @@ final class ChunkRenderer {
 
     private void buildHeldItems() {
         for (int id = 1; id < Block.COUNT; id++) {
+            if (Block.isFlower((byte)id)) {
+                FlowerBuilder flower = new FlowerBuilder();
+                flower.add(0, 0, 0, Block.sideTile((byte)id));
+                Mesh flowerMesh = makeFlowerMesh(flower, heldItemAppearance);
+                flowerMesh.setScale(0.34f, 0.34f, 0.34f);
+                flowerMesh.setTranslation(-0.17f, -0.17f, -0.17f);
+                flowerMesh.setRenderingEnable(false);
+                heldItemPitch.addChild(flowerMesh);
+                heldItemMeshes[id] = new Mesh[] { flowerMesh };
+                continue;
+            }
             FaceBuilder[] builders = new FaceBuilder[TILE_COUNT];
             for (int face = 0; face < 6; face++) {
                 int tile = Block.faceTile((byte)id, face);
@@ -471,10 +484,6 @@ final class ChunkRenderer {
         return appearance;
     }
 
-    private Appearance createFirstPersonAppearance(boolean textured) {
-        return createFirstPersonAppearance(textured ? atlas : null, false);
-    }
-
     private Appearance createFirstPersonAppearance(Texture2D texture, boolean alphaBlending) {
         Appearance appearance = new Appearance();
         if (texture != null) appearance.setTexture(0, texture);
@@ -630,6 +639,7 @@ final class ChunkRenderer {
 
     private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {
         FaceBuilder[] builders = new FaceBuilder[TILE_COUNT];
+        FlowerBuilder[] flowers = new FlowerBuilder[2];
         int x0 = cx * VoxelWorld.CHUNK_XZ;
         int y0 = cy * VoxelWorld.CHUNK_Y;
         int z0 = cz * VoxelWorld.CHUNK_XZ;
@@ -642,6 +652,12 @@ final class ChunkRenderer {
                 for (int x = x0; x < x1; x++) {
                     byte id = world.get(x, y, z);
                     if (id == Block.AIR) continue;
+                    if (Block.isFlower(id)) {
+                        int flower = id == Block.RED_FLOWER ? 0 : 1;
+                        if (flowers[flower] == null) flowers[flower] = new FlowerBuilder();
+                        flowers[flower].add(x - x0, y - y0, z - z0, Block.sideTile(id));
+                        continue;
+                    }
                     if (Block.faceVisible(id, world.get(x, y + 1, z))) {
                         add(builders, Block.faceTile(id, 0), x - x0, y - y0, z - z0, 0);
                     }
@@ -661,13 +677,18 @@ final class ChunkRenderer {
 
         int count = 0;
         for (int i = 0; i < builders.length; i++) if (builders[i] != null) count++;
-        if (count == 0) return null;
-        Mesh[] meshes = new Mesh[count];
+        int flowerCount = 0;
+        for (int i = 0; i < flowers.length; i++) if (flowers[i] != null) flowerCount++;
+        if (count + flowerCount == 0) return null;
+        Mesh[] meshes = new Mesh[count + flowerCount];
         int at = 0;
         for (int i = 0; i < builders.length; i++) {
             if (builders[i] == null) continue;
             meshes[at++] = makeMesh(builders[i]);
             builders[i] = null;
+        }
+        for (int i = 0; i < flowers.length; i++) {
+            if (flowers[i] != null) meshes[at++] = makeFlowerMesh(flowers[i], flowerAppearance);
         }
         Chunk chunk = new Chunk();
         chunk.meshes = meshes;
@@ -705,6 +726,20 @@ final class ChunkRenderer {
         return new Mesh(vertices, triangles, appearance);
     }
 
+    private Mesh makeFlowerMesh(FlowerBuilder data, Appearance appearance) {
+        int vertexCount = data.vertexCount;
+        VertexArray positions = new VertexArray(vertexCount, 3, 2);
+        positions.set(0, vertexCount, data.p);
+        VertexArray texCoords = new VertexArray(vertexCount, 2, 2);
+        texCoords.set(0, vertexCount, data.uv);
+        VertexBuffer vertices = new VertexBuffer();
+        vertices.setPositions(positions, 1.0f / 256.0f, null);
+        vertices.setTexCoords(0, texCoords, 1.0f / 256.0f, null);
+        int[] strips = new int[vertexCount / 4];
+        for (int i = 0; i < strips.length; i++) strips[i] = 4;
+        return new Mesh(vertices, new TriangleStripArray(0, strips), appearance);
+    }
+
     private Appearance createBlockAppearance() {
         Appearance appearance = new Appearance();
         appearance.setTexture(0, atlas);
@@ -720,7 +755,64 @@ final class ChunkRenderer {
         return appearance;
     }
 
+    private Appearance createFlowerAppearance() {
+        Appearance appearance = new Appearance();
+        appearance.setTexture(0, atlas);
+        Material material = new Material();
+        material.setColor(Material.AMBIENT, 0xFFFFFFFF);
+        material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
+        appearance.setMaterial(material);
+        PolygonMode polygon = new PolygonMode();
+        polygon.setCulling(PolygonMode.CULL_NONE);
+        polygon.setShading(PolygonMode.SHADE_FLAT);
+        appearance.setPolygonMode(polygon);
+        CompositingMode compositing = new CompositingMode();
+        compositing.setAlphaThreshold(0.5f);
+        compositing.setBlending(CompositingMode.ALPHA);
+        appearance.setCompositingMode(compositing);
+        return appearance;
+    }
+
     private static final class Chunk { Mesh[] meshes; }
+
+    /** Two crossed, alpha-cutout quads per flower, grouped by chunk and type. */
+    private static final class FlowerBuilder {
+        short[] p = new short[48];
+        short[] uv = new short[32];
+        int vertexCount;
+
+        void add(int x, int y, int z, int tile) {
+            ensure(vertexCount + 8);
+            int x0 = x * 256 + 77, x1 = x * 256 + 179;
+            int y0 = y * 256, y1 = y * 256 + 205;
+            int z0 = z * 256 + 77, z1 = z * 256 + 179;
+            int u0 = (tile & 15) * 16 + 1, v0 = (tile >> 4) * 16 + 1;
+            int u1 = u0 + 14, v1 = v0 + 14;
+            vertex(x0,y0,z0,u0,v1); vertex(x1,y0,z1,u1,v1);
+            vertex(x1,y1,z1,u1,v0); vertex(x0,y1,z0,u0,v0);
+            vertex(x0,y0,z1,u0,v1); vertex(x1,y0,z0,u1,v1);
+            vertex(x1,y1,z0,u1,v0); vertex(x0,y1,z1,u0,v0);
+        }
+
+        private void vertex(int x, int y, int z, int u, int v) {
+            int pi = vertexCount * 3;
+            p[pi] = (short)x; p[pi + 1] = (short)y; p[pi + 2] = (short)z;
+            int ti = vertexCount * 2;
+            uv[ti] = (short)u; uv[ti + 1] = (short)v;
+            vertexCount++;
+        }
+
+        private void ensure(int needed) {
+            if (needed <= p.length / 3) return;
+            int size = p.length / 3;
+            while (size < needed) size <<= 1;
+            short[] nextP = new short[size * 3];
+            short[] nextUv = new short[size * 2];
+            System.arraycopy(p, 0, nextP, 0, vertexCount * 3);
+            System.arraycopy(uv, 0, nextUv, 0, vertexCount * 2);
+            p = nextP; uv = nextUv;
+        }
+    }
 
     /** Reuses one short position array per material; no per-block scene nodes. */
     private static final class FaceBuilder {

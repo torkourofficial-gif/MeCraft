@@ -1,6 +1,7 @@
 package mecraft;
 
 import javax.microedition.m3g.Appearance;
+import javax.microedition.m3g.CompositingMode;
 import javax.microedition.m3g.Material;
 import javax.microedition.m3g.Mesh;
 import javax.microedition.m3g.PolygonMode;
@@ -25,6 +26,10 @@ final class DroppedItemSystem {
         32,-32,32, 32,-32,-32, 32,32,32, 32,32,-32,
         -32,-32,-32, -32,32,-32, 32,-32,-32, 32,32,-32,
         32,-32,32, -32,-32,32, 32,32,32, -32,32,32
+    };
+    private static final int[] FLOWER_LOCAL = new int[] {
+        -16,-32,-16, 16,-32,16, 16,32,16, -16,32,-16,
+        -16,-32,16, 16,-32,-16, 16,32,-16, -16,32,16
     };
 
     final Mesh mesh;
@@ -66,6 +71,10 @@ final class DroppedItemSystem {
         PolygonMode polygon = new PolygonMode();
         polygon.setCulling(PolygonMode.CULL_NONE);
         appearance.setPolygonMode(polygon);
+        CompositingMode compositing = new CompositingMode();
+        compositing.setAlphaThreshold(0.5f);
+        compositing.setBlending(CompositingMode.ALPHA);
+        appearance.setCompositingMode(compositing);
         mesh = new Mesh(buffer, triangles, appearance);
         mesh.setRenderingEnable(false);
         for (int i = 0; i < CAPACITY; i++) writeItem(i);
@@ -198,9 +207,16 @@ final class DroppedItemSystem {
         int centerZ = toShort(z[slot]);
         int at = baseVertex * 3;
         for (int v = 0; v < VERTICES_PER_ITEM; v++) {
-            int lx = LOCAL[v * 3];
-            int ly = LOCAL[v * 3 + 1];
-            int lz = LOCAL[v * 3 + 2];
+            int lx, ly, lz;
+            if (Block.isFlower((byte)itemId[slot])) {
+                lx = v < 8 ? FLOWER_LOCAL[v * 3] : 0;
+                ly = v < 8 ? FLOWER_LOCAL[v * 3 + 1] : 0;
+                lz = v < 8 ? FLOWER_LOCAL[v * 3 + 2] : 0;
+            } else {
+                lx = LOCAL[v * 3];
+                ly = LOCAL[v * 3 + 1];
+                lz = LOCAL[v * 3 + 2];
+            }
             positions[at++] = (short)(centerX + (int)(lx * cos + lz * sin));
             positions[at++] = (short)(centerYS + ly);
             positions[at++] = (short)(centerZ + (int)(-lx * sin + lz * cos));
