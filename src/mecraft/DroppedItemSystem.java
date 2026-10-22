@@ -34,6 +34,7 @@ final class DroppedItemSystem {
     private final float[] vz = new float[CAPACITY];
     private final int[] itemId = new int[CAPACITY];
     private final int[] age = new int[CAPACITY];
+    private final int[] pickupDelay = new int[CAPACITY];
     private final short[] positions = new short[VERTEX_COUNT * 3];
     private final short[] texCoords = new short[VERTEX_COUNT * 2];
     private final VertexArray positionArray;
@@ -85,6 +86,7 @@ final class DroppedItemSystem {
 
         itemId[slot] = id;
         age[slot] = 0;
+        pickupDelay[slot] = 10;
         x[slot] = bx + 0.15f + nextRandom() * 0.70f;
         y[slot] = by + 0.5f;
         z[slot] = bz + 0.15f + nextRandom() * 0.70f;
@@ -103,6 +105,7 @@ final class DroppedItemSystem {
                 continue;
             }
             age[i]++;
+            if (pickupDelay[i] > 0) pickupDelay[i]--;
             if (age[i] >= 6000 || y[i] < -2.0f) {
                 itemId[i] = 0;
                 activeCount--;
@@ -125,9 +128,10 @@ final class DroppedItemSystem {
 
             int id = itemId[i];
             float dx = x[i] - world.playerX;
-            float dy = y[i] - (world.playerY + 0.8f);
             float dz = z[i] - world.playerZ;
-            if (picked < 0 && inventory[id] < 64 && dx * dx + dy * dy + dz * dz < 0.75f * 0.75f) {
+            boolean overlapsPlayer = Math.abs(dx) < 0.425f && Math.abs(dz) < 0.425f &&
+                y[i] + HALF_SIZE >= world.playerY && y[i] - HALF_SIZE <= world.playerY + 1.8f;
+            if (pickupDelay[i] == 0 && picked < 0 && inventory[id] < 64 && overlapsPlayer) {
                 inventory[id]++;
                 itemId[i] = 0;
                 activeCount--;
