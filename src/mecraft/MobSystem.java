@@ -33,9 +33,9 @@ final class MobSystem {
     MobSystem(Group scene, DroppedItemSystem drops) throws IOException {
         this.drops = drops;
         Appearance[] skins = new Appearance[] {
-            skin("/mecraft/pig.png"), skin("/mecraft/sheep.png"), skin("/mecraft/zombie.png")
+            skin("pig.png"), skin("sheep.png"), skin("zombie.png")
         };
-        Appearance sheepFur = skin("/mecraft/sheep_fur.png");
+        Appearance sheepFur = skin("sheep_fur.png");
         for (int i = 0; i < mobs.length; i++) {
             int type = i == 0 ? PIG : (i == 1 ? SHEEP : ZOMBIE);
             mobs[i] = new Mob(type, skins[type], type == SHEEP ? sheepFur : null);
@@ -332,7 +332,7 @@ final class MobSystem {
     }
 
     private Appearance skin(String resource) throws IOException {
-        Image image = Image.createImage(resource);
+        Image image = GameAssets.image(resource);
         Texture2D texture = new Texture2D(new Image2D(Image2D.RGBA, image));
         texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);

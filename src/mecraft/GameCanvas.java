@@ -240,7 +240,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             hurtTicks = 0;
             resetInventory(mode);
             copyInventoryToWorld();
-            stage = "cargando /textures.png y creando escena M3G";
+            stage = "cargando /mecraft/textures.png y creando escena M3G";
             renderer = new ChunkRenderer(getWidth(), getHeight());
             stage = "construyendo mallas M3G para el terreno";
             renderer.sync(world);
@@ -279,7 +279,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             resetInventory(world.mode);
             for (int i = 0; i < inventory.length; i++) inventory[i] = world.inventory[i];
             world.selectedSlot = clamp(world.selectedSlot, 0, hotbar.length - 1);
-            stage = "cargando /textures.png y creando escena M3G";
+            stage = "cargando /mecraft/textures.png y creando escena M3G";
             renderer = new ChunkRenderer(getWidth(), getHeight());
             stage = "construyendo mallas M3G del mundo guardado";
             renderer.sync(world);
@@ -790,13 +790,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void loadTitle() {
-        try { title = Image.createImage("/mecraft/title.png"); } catch (IOException ignored) { title = null; }
+        try { title = GameAssets.image("title.png"); } catch (IOException ignored) { title = null; }
     }
 
     private void loadHudTextures() {
-        try { guiTexture = Image.createImage("/mecraft/gui.png"); } catch (IOException ignored) { guiTexture = null; }
-        try { iconsTexture = Image.createImage("/mecraft/icons.png"); } catch (IOException ignored) { iconsTexture = null; }
-        try { containerTexture = Image.createImage("/mecraft/container.png"); } catch (IOException ignored) { containerTexture = null; }
+        try { guiTexture = GameAssets.image("gui.png"); } catch (IOException ignored) { guiTexture = null; }
+        try { iconsTexture = GameAssets.image("icons.png"); } catch (IOException ignored) { iconsTexture = null; }
+        try { containerTexture = GameAssets.image("container.png"); } catch (IOException ignored) { containerTexture = null; }
         int[] blueTintPixels = new int[16 * 16];
         int[] hurtTintPixels = new int[16 * 16];
         for (int i = 0; i < blueTintPixels.length; i++) {
@@ -809,7 +809,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         hurtTintPixels = null;
         Image source = null;
         try {
-            source = Image.createImage("/mecraft/textures.png");
+            source = GameAssets.image("textures.png");
             int[] sourcePixels = new int[14 * 14];
             int[] iconPixels = new int[16 * 16];
             for (int block = 1; block < Block.COUNT; block++) {
@@ -832,7 +832,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
         source = null;
         try {
-            source = Image.createImage("/mecraft/items.png");
+            source = GameAssets.image("items.png");
             int[] iconPixels = new int[16 * 16];
             for (int id = Block.COUNT; id < ItemCatalog.COUNT; id++) {
                 int tile = ItemCatalog.iconIndex(id);

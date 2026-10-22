@@ -86,7 +86,7 @@ final class ChunkRenderer {
     ChunkRenderer(int width, int height) throws IOException {
         if (width <= 0) width = 1;
         if (height <= 0) height = 1;
-        Image source = Image.createImage("/mecraft/textures.png");
+        Image source = GameAssets.image("textures.png");
         Image2D image = new Image2D(Image2D.RGBA, source);
         atlas = new Texture2D(image);
         atlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
@@ -94,7 +94,7 @@ final class ChunkRenderer {
         blockAppearance = createBlockAppearance();
         flowerAppearance = createFlowerAppearance();
         heldItemAppearance = createFirstPersonAppearance(atlas, true);
-        Image itemSource = Image.createImage("/mecraft/items.png");
+        Image itemSource = GameAssets.image("items.png");
         itemAtlas = new Texture2D(new Image2D(Image2D.RGBA, itemSource));
         itemAtlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         itemAtlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);

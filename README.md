@@ -63,7 +63,7 @@ El repositorio es un proyecto Java ME de NetBeans; no necesita `build.bat`. Abre
 
 El proyecto está configurado para Oracle Java ME SDK 3.2, CLDC 1.1, MIDP 2.0 y M3G 1.1 (JSR-184). Si NetBeans muestra que el dispositivo soporta MIDP 2.1, eso describe sus capacidades; el perfil solicitado por el MIDlet sigue siendo MIDP 2.0. Puedes comprobarlo en **Project Properties > Platform > Device Profile** y en **Application Descriptor > Attributes**.
 
-Si la plataforma SDK 3.2 no aparece en NetBeans, regístrala en **Tools > Java Platforms** y selecciona el dispositivo y la API opcional **JSR-184** en las propiedades del proyecto. El proyecto usa Java 1.3 y pre-verificación CLDC durante la compilación. Los PNG se guardan en `resources/mecraft/` y se empaquetan bajo `/mecraft/` en el JAR.
+Si la plataforma SDK 3.2 no aparece en NetBeans, regístrala en **Tools > Java Platforms** y selecciona el dispositivo y la API opcional **JSR-184** en las propiedades del proyecto. El proyecto usa Java 1.3 y pre-verificación CLDC durante la compilación. Los PNG están junto a las clases en `src/mecraft/` y se empaquetan bajo `/mecraft/` en el JAR; el cargador también acepta esos recursos en la raíz del JAR.
 
 Para instalar manualmente, transfiere ambos archivos de `dist/` al teléfono o abre `MeCraft.jad` en el emulador Java ME.
 
