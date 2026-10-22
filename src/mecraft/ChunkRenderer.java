@@ -49,11 +49,7 @@ final class ChunkRenderer {
         atlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         atlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         blockAppearance = createBlockAppearance();
-        Image handSource = Image.createImage("/mecraft/char.png");
-        Texture2D handTexture = new Texture2D(new Image2D(Image2D.RGBA, handSource));
-        handTexture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
-        handTexture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
-        handAppearance = createHandAppearance(handTexture);
+        handAppearance = createHandAppearance();
         handMesh = makeHandMesh();
         // Keep the forearm inside the narrow portrait viewport used by most
         // MIDP phones. The previous offset projected it past the right and
@@ -100,6 +96,7 @@ final class ChunkRenderer {
 
     void updateHeldItem(int itemId, boolean visible) {
         if (!visible || itemId <= Block.AIR || itemId >= heldItemMeshes.length) itemId = 0;
+        handMesh.setRenderingEnable(itemId == Block.AIR);
         if (itemId == visibleHeldItem) return;
         if (visibleHeldItem > 0 && heldItemMeshes[visibleHeldItem] != null) {
             setMeshesVisible(heldItemMeshes[visibleHeldItem], false);
@@ -139,12 +136,11 @@ final class ChunkRenderer {
         for (int i = 0; i < meshes.length; i++) meshes[i].setRenderingEnable(visible);
     }
 
-    private Appearance createHandAppearance(Texture2D texture) {
+    private Appearance createHandAppearance() {
         Appearance appearance = new Appearance();
-        appearance.setTexture(0, texture);
         Material material = new Material();
-        material.setColor(Material.AMBIENT, 0xFFFFFFFF);
-        material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
+        material.setColor(Material.AMBIENT, 0xFFFFD6A0);
+        material.setColor(Material.DIFFUSE, 0xFFFFD6A0);
         appearance.setMaterial(material);
         PolygonMode polygon = new PolygonMode();
         polygon.setCulling(PolygonMode.CULL_NONE);
@@ -153,7 +149,7 @@ final class ChunkRenderer {
         return appearance;
     }
 
-    /** Low-poly first-person forearm textured from the classic char.png skin. */
+    /** Solid-color low-poly first-person forearm shown with an empty slot. */
     private Mesh makeHandMesh() {
         short[] p = new short[] {
             0,0,1, 0,1,1, 1,0,1, 1,1,1,
@@ -163,33 +159,11 @@ final class ChunkRenderer {
             0,1,1, 0,1,0, 1,1,1, 1,1,0,
             0,0,0, 0,0,1, 1,0,0, 1,0,1
         };
-        short[] uv = new short[48];
-        // Classic 64x32 skin layout for the right arm: front, back, both
-        // sides, top and underside. Avoid stretching the sleeve on every face.
-        int[][] armUv = new int[][] {
-            { 44, 20, 48, 32 }, // front
-            { 52, 20, 56, 32 }, // back
-            { 40, 20, 44, 32 }, // right side
-            { 48, 20, 52, 32 }, // left side
-            { 44, 16, 48, 20 }, // top
-            { 48, 16, 52, 20 }  // underside
-        };
         int[] strips = new int[] { 4,4,4,4,4,4 };
-        for (int face = 0; face < 6; face++) {
-            int offset = face * 8;
-            int[] region = armUv[face];
-            uv[offset] = (short)region[0]; uv[offset + 1] = (short)region[1];
-            uv[offset + 2] = (short)region[0]; uv[offset + 3] = (short)region[3];
-            uv[offset + 4] = (short)region[2]; uv[offset + 5] = (short)region[1];
-            uv[offset + 6] = (short)region[2]; uv[offset + 7] = (short)region[3];
-        }
         VertexArray positions = new VertexArray(24, 3, 2);
         positions.set(0, 24, p);
-        VertexArray texCoords = new VertexArray(24, 2, 2);
-        texCoords.set(0, 24, uv);
         VertexBuffer vertices = new VertexBuffer();
         vertices.setPositions(positions, 1.0f, null);
-        vertices.setTexCoords(0, texCoords, 1.0f / 64.0f, null);
         TriangleStripArray triangles = new TriangleStripArray(0, strips);
         return new Mesh(vertices, triangles, handAppearance);
     }
