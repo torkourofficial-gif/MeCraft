@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 10211)
-Total output lines: 943
-
 package mecraft;
 
 import java.io.IOException;
@@ -499,7 +496,24 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 repaint();
             } else if (action == DOWN || keyCode == KEY_NUM8) {
                 int max = Math.max(12, getWidth() / Math.max(5, Font.getDefaultFont().charWidth('M')));
-                int total = wrappedLineCount(errorMessage, m…211 tokens truncated…= WORKBENCH) {
+                int total = wrappedLineCount(errorMessage, max);
+                int visible = Math.max(1, (getHeight() - 58) / (Font.getDefaultFont().getHeight() + 2));
+                if (diagnosticScroll < total - visible) diagnosticScroll++;
+                repaint();
+            } else if (action == FIRE || keyCode == KEY_NUM5 || keyCode == KEY_NUM0) {
+                backToMenu();
+            }
+            return;
+        }
+        if (state == MENU || state == PAUSED || state == ERROR) {
+            int action = gameAction(keyCode);
+            if (action == UP || keyCode == KEY_NUM2) moveSelection(-1);
+            else if (action == DOWN || keyCode == KEY_NUM8) moveSelection(1);
+            else if (action == FIRE || keyCode == KEY_NUM5) activateSelection();
+            else if (keyCode == KEY_NUM0) backToMenu();
+            return;
+        }
+        if (state == INVENTORY || state == WORKBENCH) {
             int action = gameAction(keyCode);
             if (keyCode == KEY_POUND || keyCode == KEY_NUM0) closeCrafting();
             else if (keyCode == KEY_NUM2 || action == UP) moveRecipeSelection(-1);
