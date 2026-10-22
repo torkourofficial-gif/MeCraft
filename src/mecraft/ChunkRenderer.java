@@ -184,32 +184,51 @@ final class ChunkRenderer {
     }
 
     private void applyHandPose() {
-        if (!handSwinging && handSwingTicks >= 8) {
-            setRestHandPose();
-            return;
-        }
-        float progress = (float)handSwingTicks / 8.0f;
+        float progress = handSwinging ? (float)handSwingTicks / 8.0f : 1.0f;
         float sinRoot = (float)Math.sin(Math.sqrt(progress) * Math.PI);
         float upDown = (float)Math.sin(Math.sqrt(progress) * Math.PI * 2.0);
         float sinLinear = (float)Math.sin(progress * Math.PI);
-        float offsetX = -sinRoot * 0.3f * handHorizontalScale;
-        float offsetY = upDown * 0.4f;
-        float offsetZ = -sinLinear * 0.4f;
-        float yaw = 45.0f + sinRoot * 70.0f;
-        float roll = -sinLinear * 20.0f;
-        armSwingOffset.setTranslation(offsetX, offsetY, offsetZ);
-        armSwingYaw.setOrientation(yaw, 0.0f, 1.0f, 0.0f);
-        armSwingRoll.setOrientation(roll, 0.0f, 0.0f, 1.0f);
-        heldItemOffset.setTranslation(offsetX, offsetY, offsetZ);
-        heldItemYaw.setOrientation(yaw, 0.0f, 1.0f, 0.0f);
-        heldItemRoll.setOrientation(roll, 0.0f, 0.0f, 1.0f);
+        if (handSwinging) {
+            // Empty-hand swing from the Indev first-person arm path.
+            armSwingOffset.setTranslation(-sinRoot * 0.3f * handHorizontalScale,
+                    upDown * 0.4f, -sinLinear * 0.4f);
+            armSwingYaw.setOrientation(45.0f + sinRoot * 70.0f, 0.0f, 1.0f, 0.0f);
+            armSwingRoll.setOrientation(-sinLinear * 20.0f, 0.0f, 0.0f, 1.0f);
+        } else {
+            armSwingOffset.setTranslation(0.0f, 0.0f, 0.0f);
+            armSwingYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
+            armSwingRoll.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
+        }
+
+        if (visibleHeldItem > 0) {
+            // ItemRenderer.renderItemInFirstPerson: translate, rotate Y 45,
+            // then apply its separate Y/Z/X swing rotations before scaling.
+            float squaredProgress = progress * progress;
+            float itemYaw = (float)Math.sin(squaredProgress * Math.PI) * -20.0f;
+            float itemRoll = sinRoot * -20.0f;
+            float itemPitch = sinRoot * -80.0f;
+            float swingX = handSwinging ? -sinRoot * 0.4f : 0.0f;
+            float swingY = handSwinging ? upDown * 0.2f : 0.0f;
+            float swingZ = handSwinging ? -sinLinear * 0.2f : 0.0f;
+            heldItemOffset.setTranslation(-0.24f * handHorizontalScale + swingX,
+                    -0.22f + swingY, -0.75f + swingZ);
+            heldItemYaw.setOrientation(45.0f + itemYaw, 0.0f, 1.0f, 0.0f);
+            heldItemRoll.setOrientation(itemRoll, 0.0f, 0.0f, 1.0f);
+            heldItemPitch.setOrientation(itemPitch, 1.0f, 0.0f, 0.0f);
+        } else {
+            setRestHeldItemPose();
+        }
     }
 
     private void setRestHandPose() {
         armSwingOffset.setTranslation(0.0f, 0.0f, 0.0f);
         armSwingYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
         armSwingRoll.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
-        heldItemOffset.setTranslation(0.0f, 0.0f, 0.0f);
+        setRestHeldItemPose();
+    }
+
+    private void setRestHeldItemPose() {
+        heldItemOffset.setTranslation(-0.24f * handHorizontalScale, -0.22f, -0.75f);
         heldItemYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
         heldItemRoll.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
         heldItemPitch.setOrientation(0.0f, 1.0f, 0.0f, 0.0f);
@@ -229,9 +248,10 @@ final class ChunkRenderer {
             for (int i = 0; i < builders.length; i++) {
                 if (builders[i] == null) continue;
                 Mesh mesh = makeMesh(builders[i], heldItemAppearance);
-                // Keep the held block inside the lower-left view at 240x320.
-                mesh.setScale(0.14f, 0.14f, 0.14f);
-                mesh.setTranslation(-0.24f, -0.22f, -0.75f);
+                // Indev ItemRenderer scales inventory block geometry by 0.4.
+                // The group provides the camera-space pose and animation.
+                mesh.setScale(0.4f, 0.4f, 0.4f);
+                mesh.setTranslation(0.0f, 0.0f, 0.0f);
                 mesh.setRenderingEnable(false);
                 heldItemPitch.addChild(mesh);
                 meshes[at++] = mesh;
