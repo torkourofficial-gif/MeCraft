@@ -55,8 +55,7 @@ final class Block {
     }
 
     static boolean dropsItem(byte id) {
-        return id != AIR && id != WATER && id != BEDROCK && id != STONE &&
-               id != LEAVES && id != COAL && id != IRON && id != FURNACE;
+        return id != AIR && id != WATER && id != BEDROCK;
     }
 
     static byte dropId(byte id) {
