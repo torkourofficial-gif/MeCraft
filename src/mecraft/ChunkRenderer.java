@@ -27,6 +27,10 @@ final class ChunkRenderer {
     final Camera camera = new Camera();
     final Group cameraPivot = new Group();
     private final Group handPivot = new Group();
+    private final Group handSwingOffset = new Group();
+    private final Group handSwingYaw = new Group();
+    private final Group handSwingRoll = new Group();
+    private final Group handSwingPitch = new Group();
     private final Group terrain = new Group();
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     private final Texture2D atlas;
@@ -36,6 +40,8 @@ final class ChunkRenderer {
     private final Mesh[][] heldItemMeshes = new Mesh[Block.COUNT][];
     private final ParticleSystem particles;
     private int visibleHeldItem = -1;
+    private int handSwingTicks = 8;
+    private boolean handSwinging;
     private int builtRevision = -1;
     private int builtWidth;
     private int builtHeight;
@@ -56,7 +62,11 @@ final class ChunkRenderer {
         // bottom edges, making the empty hand appear to be missing.
         handMesh.setScale(0.16f, 0.44f, 0.16f);
         handMesh.setTranslation(0.22f, -0.44f, -0.78f);
-        handPivot.addChild(handMesh);
+        handPivot.addChild(handSwingOffset);
+        handSwingOffset.addChild(handSwingYaw);
+        handSwingYaw.addChild(handSwingRoll);
+        handSwingRoll.addChild(handSwingPitch);
+        handSwingPitch.addChild(handMesh);
         buildHeldItems();
         particles = new ParticleSystem(atlas);
 
@@ -107,6 +117,39 @@ final class ChunkRenderer {
         }
     }
 
+    void swingHand() {
+        handSwingTicks = 0;
+        handSwinging = true;
+    }
+
+    /** Indev first-person swing curve, sampled once per 50 ms game tick. */
+    void updateHandAnimation() {
+        if (!handSwinging && handSwingTicks >= 8) return;
+        if (handSwinging) {
+            handSwingTicks++;
+            if (handSwingTicks >= 8) {
+                handSwingTicks = 8;
+                handSwinging = false;
+            }
+        }
+        float progress = (float)handSwingTicks / 8.0f;
+        float sinSwing = (float)Math.sin(progress * progress * Math.PI);
+        float sinRoot = (float)Math.sin(Math.sqrt(progress) * Math.PI);
+        float sinLinear = (float)Math.sin(progress * Math.PI);
+        float upDown = (float)Math.sin(Math.sqrt(progress) * Math.PI * 2.0);
+        if (visibleHeldItem > 0) {
+            handSwingOffset.setTranslation(-sinRoot * 0.4f, upDown * 0.2f, -sinSwing * 0.2f);
+            handSwingYaw.setOrientation(-sinSwing * 20.0f, 0.0f, 1.0f, 0.0f);
+            handSwingRoll.setOrientation(-sinRoot * 20.0f, 0.0f, 0.0f, 1.0f);
+            handSwingPitch.setOrientation(-sinRoot * 80.0f, 1.0f, 0.0f, 0.0f);
+        } else {
+            handSwingOffset.setTranslation(-sinRoot * 0.3f, upDown * 0.4f, -sinLinear * 0.4f);
+            handSwingYaw.setOrientation(sinRoot * 70.0f, 0.0f, 1.0f, 0.0f);
+            handSwingRoll.setOrientation(-sinLinear * 20.0f, 0.0f, 0.0f, 1.0f);
+            handSwingPitch.setOrientation(0.0f, 1.0f, 0.0f, 0.0f);
+        }
+    }
+
     private void buildHeldItems() {
         for (int id = 1; id < Block.COUNT; id++) {
             FaceBuilder[] builders = new FaceBuilder[TILE_COUNT];
@@ -124,7 +167,7 @@ final class ChunkRenderer {
                 mesh.setScale(0.17f, 0.17f, 0.17f);
                 mesh.setTranslation(0.28f, -0.36f, -0.62f);
                 mesh.setRenderingEnable(false);
-                handPivot.addChild(mesh);
+                handSwingPitch.addChild(mesh);
                 meshes[at++] = mesh;
                 builders[i] = null;
             }
