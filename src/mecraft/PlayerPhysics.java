@@ -43,7 +43,8 @@ final class PlayerPhysics {
         float sin = (float)Math.sin(radians);
         float cos = (float)Math.cos(radians);
         float acceleration = inWater ? 0.02f : (onGround ? 0.10f : 0.02f);
-        motionX += (strafe * cos - forward * sin) * acceleration;
+        // The view uses yaw zero facing +Z, so its screen-right basis is -X.
+        motionX += (forward * sin - strafe * cos) * acceleration;
         motionZ += (forward * cos + strafe * sin) * acceleration;
 
         float requestedY = motionY;
