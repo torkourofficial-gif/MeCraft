@@ -967,7 +967,54 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void loadTitle() {
-        try { title = GameAssets.image("title_small.png"); } catch (IOException ignored) { title = null; }
+        try {
+            Image source = GameAssets.image("title.png");
+            title = scaleMenuLogo(source);
+        } catch (Throwable ignored) { title = null; }
+    }
+
+    /** Scale the original high-resolution logo to fit the 240px-wide menu. */
+    private Image scaleMenuLogo(Image source) {
+        final int cropX = 17, cropY = 66, cropWidth = 340, cropHeight = 102;
+        final int outputWidth = 140, outputHeight = 42;
+        if (source.getWidth() < cropX + cropWidth || source.getHeight() < cropY + cropHeight)
+            return source;
+        int[] pixels = new int[outputWidth * outputHeight];
+        int[] upper = new int[cropWidth];
+        int[] lower = new int[cropWidth];
+        for (int y = 0; y < outputHeight; y++) {
+            float sourceY = ((y + 0.5f) * cropHeight / outputHeight) - 0.5f;
+            int y0 = (int)sourceY;
+            if (y0 < 0) y0 = 0;
+            int y1 = y0 + 1;
+            if (y1 >= cropHeight) y1 = cropHeight - 1;
+            float fy = sourceY - y0;
+            source.getRGB(upper, 0, cropWidth, cropX, cropY + y0, cropWidth, 1);
+            source.getRGB(lower, 0, cropWidth, cropX, cropY + y1, cropWidth, 1);
+            for (int x = 0; x < outputWidth; x++) {
+                float sourceX = ((x + 0.5f) * cropWidth / outputWidth) - 0.5f;
+                int x0 = (int)sourceX;
+                if (x0 < 0) x0 = 0;
+                int x1 = x0 + 1;
+                if (x1 >= cropWidth) x1 = cropWidth - 1;
+                float fx = sourceX - x0;
+                int p00 = upper[x0], p10 = upper[x1], p01 = lower[x0], p11 = lower[x1];
+                int a = bilinearChannel(p00 >>> 24, p10 >>> 24, p01 >>> 24, p11 >>> 24, fx, fy);
+                int r = bilinearChannel(p00 >> 16 & 255, p10 >> 16 & 255,
+                        p01 >> 16 & 255, p11 >> 16 & 255, fx, fy);
+                int g = bilinearChannel(p00 >> 8 & 255, p10 >> 8 & 255,
+                        p01 >> 8 & 255, p11 >> 8 & 255, fx, fy);
+                int b = bilinearChannel(p00 & 255, p10 & 255, p01 & 255, p11 & 255, fx, fy);
+                pixels[y * outputWidth + x] = a << 24 | r << 16 | g << 8 | b;
+            }
+        }
+        return Image.createRGBImage(pixels, outputWidth, outputHeight, true);
+    }
+
+    private int bilinearChannel(int p00, int p10, int p01, int p11, float fx, float fy) {
+        float upper = p00 + (p10 - p00) * fx;
+        float lower = p01 + (p11 - p01) * fx;
+        return (int)(upper + (lower - upper) * fy + 0.5f);
     }
 
     private void loadHudTextures() {
@@ -1139,7 +1186,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         int w = getWidth(), h = getHeight();
         drawDirtBackground(g);
         drawInsetPanel(g, 15, 120, w - 30, 142);
-        if (title != null) g.drawImage(title, w / 2, 35, Graphics.TOP | Graphics.HCENTER);
+        if (title != null) g.drawImage(title, w / 2, 38, Graphics.TOP | Graphics.HCENTER);
         else {
             g.setColor(255, 255, 255);
             g.drawString("MeCraft", w / 2, 48, Graphics.TOP | Graphics.HCENTER);
