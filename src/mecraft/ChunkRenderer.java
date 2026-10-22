@@ -87,7 +87,7 @@ final class ChunkRenderer {
         Texture2D itemAtlas = new Texture2D(new Image2D(Image2D.RGBA, itemSource));
         itemAtlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         itemAtlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
-        itemSpriteAppearance = createFirstPersonAppearance(itemAtlas);
+        itemSpriteAppearance = createFirstPersonAppearance(itemAtlas, true);
         ItemSpriteData itemData = makeItemSpriteMesh();
         itemSpriteMesh = itemData.mesh;
         itemSpriteTexCoordArray = itemData.texCoords;
@@ -471,10 +471,10 @@ final class ChunkRenderer {
     }
 
     private Appearance createFirstPersonAppearance(boolean textured) {
-        return createFirstPersonAppearance(textured ? atlas : null);
+        return createFirstPersonAppearance(textured ? atlas : null, false);
     }
 
-    private Appearance createFirstPersonAppearance(Texture2D texture) {
+    private Appearance createFirstPersonAppearance(Texture2D texture, boolean alphaBlending) {
         Appearance appearance = new Appearance();
         if (texture != null) appearance.setTexture(0, texture);
         Material material = new Material();
@@ -488,6 +488,7 @@ final class ChunkRenderer {
         CompositingMode compositing = new CompositingMode();
         compositing.setDepthTestEnable(false);
         compositing.setDepthWriteEnable(false);
+        if (alphaBlending) compositing.setBlending(CompositingMode.ALPHA);
         appearance.setCompositingMode(compositing);
         return appearance;
     }

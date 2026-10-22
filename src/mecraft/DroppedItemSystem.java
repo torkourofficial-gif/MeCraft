@@ -16,6 +16,8 @@ final class DroppedItemSystem {
     private static final int VERTEX_COUNT = CAPACITY * VERTICES_PER_ITEM;
     private static final float POSITION_SCALE = 256.0f;
     private static final float HALF_SIZE = 0.125f;
+    private static final float PICKUP_RADIUS = 1.5f;
+    private static final float PICKUP_RADIUS_SQUARED = PICKUP_RADIUS * PICKUP_RADIUS;
     private static final int[] LOCAL = new int[] {
         -32,32,-32, -32,32,32, 32,32,-32, 32,32,32,
         -32,-32,32, -32,-32,-32, 32,-32,32, 32,-32,-32,
@@ -128,10 +130,10 @@ final class DroppedItemSystem {
 
             int id = itemId[i];
             float dx = x[i] - world.playerX;
+            float dy = y[i] - (world.playerY + 0.9f);
             float dz = z[i] - world.playerZ;
-            boolean overlapsPlayer = Math.abs(dx) < 0.425f && Math.abs(dz) < 0.425f &&
-                y[i] + HALF_SIZE >= world.playerY && y[i] - HALF_SIZE <= world.playerY + 1.8f;
-            if (pickupDelay[i] == 0 && picked < 0 && inventory[id] < 64 && overlapsPlayer) {
+            boolean inPickupRange = dx * dx + dy * dy + dz * dz <= PICKUP_RADIUS_SQUARED;
+            if (pickupDelay[i] == 0 && picked < 0 && inventory[id] < 64 && inPickupRange) {
                 inventory[id]++;
                 itemId[i] = 0;
                 activeCount--;
