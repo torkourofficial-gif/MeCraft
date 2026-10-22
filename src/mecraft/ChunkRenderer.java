@@ -46,6 +46,7 @@ final class ChunkRenderer {
     private int visibleHeldItem = -1;
     private int handSwingTicks = 8;
     private boolean handSwinging;
+    private boolean handLooping;
     private float handHorizontalScale = 1.0f;
     private int builtRevision = -1;
     private int builtWidth;
@@ -139,13 +140,21 @@ final class ChunkRenderer {
         handSwinging = true;
     }
 
+    void setHandLooping(boolean looping) {
+        handLooping = looping;
+    }
+
     /** Indev first-person swing curve, sampled once per 50 ms game tick. */
     void updateHandAnimation() {
         if (handSwinging) {
             handSwingTicks++;
             if (handSwingTicks >= 8) {
-                handSwingTicks = 8;
-                handSwinging = false;
+                if (handLooping) {
+                    handSwingTicks = 0;
+                } else {
+                    handSwingTicks = 8;
+                    handSwinging = false;
+                }
             }
         }
         applyHandPose();
