@@ -234,6 +234,8 @@ final class ChunkRenderer {
     private void setItemSprite(int itemId) {
         int tile = ItemCatalog.iconIndex(itemId);
         if (tile < 0) return;
+        // Keep the held-item mesh bound to items.png; block meshes use textures.png.
+        itemSpriteAppearance.setTexture(0, itemAtlas);
         int u0 = (tile & 15) * 16;
         int v0 = (tile >> 4) * 16;
         fillItemSpriteUV(u0, v0);
@@ -613,8 +615,8 @@ final class ChunkRenderer {
         float sun = (float)Math.cos(angle) * 1.5f + 0.5f;
         if (sun < 0.0f) sun = 0.0f;
         if (sun > 1.0f) sun = 1.0f;
-        sunlight.setIntensity(0.16f + sun * 0.84f);
-        sky.setColor(blendColor(0xFF10182E, 0xFF82B8E8, 0.10f + sun * 0.90f));
+        sunlight.setIntensity(0.04f + sun * 0.96f);
+        sky.setColor(blendColor(0xFF070C1B, 0xFF82B8E8, sun));
         updateTorchLights(world);
     }
 

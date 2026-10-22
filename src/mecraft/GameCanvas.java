@@ -993,6 +993,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             }
         }
         g.drawString(world.mode == 0 ? "Supervivencia" : "Creativo", 3, 2, Graphics.TOP | Graphics.LEFT);
+        g.drawString(world.isNight() ? "Noche" : "Día", w - 3, 2, Graphics.TOP | Graphics.RIGHT);
     }
 
     private void drawHearts(Graphics g) {

@@ -9,7 +9,7 @@ Referencia consultada: [EaglerPorts/in-20100223](https://github.com/EaglerPorts/
 - Mundo de isla procedural de 48 × 24 × 48 bloques, con costa, agua, árboles, carbón, hierro y roca madre.
 - Modo supervivencia empieza con el inventario vacío; los bloques rotos se recogen, y modo creativo tiene bloques ilimitados.
 - Cámara en primera persona, movimiento, colisión, gravedad y salto.
-- Ciclo de día y noche de 24 000 ticks de Indev, con atardecer, oscuridad y amanecer; la hora se conserva al guardar.
+- Ciclo de día y noche basado en la curva de Indev de 24 000 ticks, acelerado 10× para que cada ciclo se vea en unos dos minutos; la hora se conserva al guardar y el HUD indica si es de día o de noche.
 - Antorchas colocables y rompibles, fabricadas en grupos de cuatro con carbón y un palo. Iluminan el entorno con un conjunto M3G fijo de tres luces cercanas para limitar el costo de memoria.
 - Romper/colocar bloques, partículas de rotura, daño progresivo con grietas sobre la cara apuntada, seleccionar la barra rápida y guardar la partida en RMS.
 - HUD con la barra de `gui.png`, corazones y burbujas de `icons.png` y sprites de bloque de `gui_blocks.png`; al sumergir la cámara aparece un filtro azul, el oxígeno se agota y provoca ahogamiento, y tanto la caída como el ahogamiento activan la animación de daño de Indev. La vida y estos daños solo se aplican en supervivencia.

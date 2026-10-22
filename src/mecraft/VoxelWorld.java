@@ -21,6 +21,9 @@ final class VoxelWorld {
     static final int CHUNKS_Y = HEIGHT / CHUNK_Y;
     static final int CHUNKS_Z = DEPTH / CHUNK_XZ;
     private static final int BLOCK_COUNT = WIDTH * HEIGHT * DEPTH;
+    // Keep Indev's 24,000-tick lighting curve, but run it at 10x so a full cycle
+    // is visible in a short Java ME play session rather than taking 20 minutes.
+    private static final int DAY_TICKS_PER_UPDATE = 10;
     private static final int MCF6_BLOCK_COUNT = 15;
     private static final int MCF6_ITEM_COUNT = 45;
     private static final int MCF7_ITEM_COUNT = 47;
@@ -58,8 +61,8 @@ final class VoxelWorld {
     private int fluidDirection;
 
     void tickTime() {
-        dayTime++;
-        if (dayTime >= DAY_LENGTH) dayTime = 0;
+        dayTime += DAY_TICKS_PER_UPDATE;
+        if (dayTime >= DAY_LENGTH) dayTime -= DAY_LENGTH;
     }
 
     /** Indev's celestial curve reaches darkness after sunset and dawn near tick 23000. */

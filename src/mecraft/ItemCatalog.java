@@ -26,15 +26,10 @@ final class ItemCatalog {
     static final int DIAMOND_TIER = 3;
     static final int GOLD = 4;
 
-    private static final int[] ICONS = new int[] {
-        53,
-        64,80,96,112,128,
-        65,81,97,113,129,
-        66,82,98,114,130,
-        67,83,99,115,131,
-        68,84,100,116,132,
-        23,55,39,9,87,24
-    };
+    // items.png stores tools in columns by kind: swords 64+, shovels 80+,
+    // pickaxes 96+, axes 112+, and hoes 128+. Each material advances one tile.
+    private static final int[] TOOL_ICON_BASE = new int[] { 64,80,96,112,128 };
+    private static final int[] MATERIAL_ICON = new int[] { 23,55,39,9,87,24 };
     private static final String[] MATERIAL_NAMES = new String[] {
         "madera", "piedra", "hierro", "diamante", "oro"
     };
@@ -70,8 +65,14 @@ final class ItemCatalog {
     }
 
     static int iconIndex(int id) {
-        if (id < STICK || id >= COUNT) return -1;
-        return ICONS[id - STICK];
+        if (id == STICK) return 53;
+        if (isTool(id)) {
+            int offset = id - TOOL_START;
+            return TOOL_ICON_BASE[offset % TOOL_KINDS] + offset / TOOL_KINDS;
+        }
+        if (id >= IRON_INGOT && id < COUNT)
+            return MATERIAL_ICON[id - IRON_INGOT];
+        return -1;
     }
 
     static String name(int id) {
