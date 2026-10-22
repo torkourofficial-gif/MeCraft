@@ -45,6 +45,8 @@ final class DroppedItemSystem {
     DroppedItemSystem(Texture2D atlas) {
         positionArray = new VertexArray(VERTEX_COUNT, 3, 2);
         texCoordArray = new VertexArray(VERTEX_COUNT, 2, 2);
+        positionArray.set(0, VERTEX_COUNT, positions);
+        texCoordArray.set(0, VERTEX_COUNT, texCoords);
         VertexBuffer buffer = new VertexBuffer();
         buffer.setPositions(positionArray, 1.0f / POSITION_SCALE, null);
         buffer.setTexCoords(0, texCoordArray, 1.0f / POSITION_SCALE, null);
