@@ -14,6 +14,7 @@ import javax.microedition.m3g.Mesh;
 import javax.microedition.m3g.Material;
 import javax.microedition.m3g.PolygonMode;
 import javax.microedition.m3g.Texture2D;
+import javax.microedition.m3g.Transform;
 import javax.microedition.m3g.TriangleStripArray;
 import javax.microedition.m3g.VertexArray;
 import javax.microedition.m3g.VertexBuffer;
@@ -26,6 +27,8 @@ final class ChunkRenderer {
 
     final World scene = new World();
     final Camera camera = new Camera();
+    private final Transform cameraTransform = new Transform();
+    private final Transform handTransform = new Transform();
     final Group cameraPivot = new Group();
     private final Group handPivot = new Group();
     private final Group heldItemOffset = new Group();
@@ -125,6 +128,20 @@ final class ChunkRenderer {
         cameraPivot.setOrientation(world.yaw + 180.0f, 0.0f, 1.0f, 0.0f);
         camera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
         handPivot.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
+    }
+
+    /** Render the first-person hand and held block in a final overlay pass. */
+    void render(Graphics3D graphics) {
+        handPivot.setRenderingEnable(false);
+        try {
+            graphics.render(scene);
+        } finally {
+            handPivot.setRenderingEnable(true);
+        }
+        camera.getTransformTo(scene, cameraTransform);
+        handPivot.getTransformTo(scene, handTransform);
+        graphics.setCamera(camera, cameraTransform);
+        graphics.render(handPivot, handTransform);
     }
 
     void updateHeldItem(int itemId, boolean visible) {
