@@ -27,10 +27,6 @@ final class ChunkRenderer {
     final Camera camera = new Camera();
     final Group cameraPivot = new Group();
     private final Group handPivot = new Group();
-    private final Group handSwingOffset = new Group();
-    private final Group handSwingYaw = new Group();
-    private final Group handSwingRoll = new Group();
-    private final Group handSwingPitch = new Group();
     private final Group armSwingOffset = new Group();
     private final Group armBase = new Group();
     private final Group armSwingYaw = new Group();
@@ -43,6 +39,7 @@ final class ChunkRenderer {
     private final Mesh handMesh;
     private final Mesh[][] heldItemMeshes = new Mesh[Block.COUNT][];
     private final ParticleSystem particles;
+    private final DroppedItemSystem droppedItems;
     private int visibleHeldItem = -1;
     private int handSwingTicks = 8;
     private boolean handSwinging;
@@ -70,18 +67,16 @@ final class ChunkRenderer {
         armSwingYaw.addChild(armSwingRoll);
         armSwingRoll.addChild(handMesh);
         handPivot.addChild(armSwingOffset);
-        handPivot.addChild(handSwingOffset);
-        handSwingOffset.addChild(handSwingYaw);
-        handSwingYaw.addChild(handSwingRoll);
-        handSwingRoll.addChild(handSwingPitch);
         buildHeldItems();
         particles = new ParticleSystem(atlas);
+        droppedItems = new DroppedItemSystem(atlas);
 
         camera.setPerspective(68.0f, (float)width / (float)height, 0.1f, 38.0f);
         cameraPivot.addChild(camera);
         cameraPivot.addChild(handPivot);
         scene.addChild(terrain);
         scene.addChild(particles.mesh);
+        scene.addChild(droppedItems.mesh);
         scene.addChild(cameraPivot);
         scene.setActiveCamera(camera);
         Background background = new Background();
@@ -166,37 +161,16 @@ final class ChunkRenderer {
             return;
         }
         float progress = (float)handSwingTicks / 8.0f;
-        float sinSwing = (float)Math.sin(progress * progress * Math.PI);
         float sinRoot = (float)Math.sin(Math.sqrt(progress) * Math.PI);
-        float sinLinear = (float)Math.sin(progress * Math.PI);
         float upDown = (float)Math.sin(Math.sqrt(progress) * Math.PI * 2.0);
-        if (visibleHeldItem > 0) {
-            handSwingOffset.setTranslation(-sinRoot * 0.4f, upDown * 0.2f, -sinSwing * 0.2f);
-            handSwingYaw.setOrientation(-sinSwing * 20.0f, 0.0f, 1.0f, 0.0f);
-            handSwingRoll.setOrientation(-sinRoot * 20.0f, 0.0f, 0.0f, 1.0f);
-            handSwingPitch.setOrientation(-sinRoot * 80.0f, 1.0f, 0.0f, 0.0f);
-            armSwingOffset.setTranslation(0.0f, 0.0f, 0.0f);
-            armSwingYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
-            armSwingRoll.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
-        } else {
-            // ItemRenderer's empty-hand path: view translation, 45-degree
-            // hold angle, then the animated yaw and roll.
-            armSwingOffset.setTranslation(-sinRoot * 0.3f * handHorizontalScale,
-                                           upDown * 0.4f, -sinLinear * 0.4f);
-            armSwingYaw.setOrientation(45.0f + sinRoot * 70.0f, 0.0f, 1.0f, 0.0f);
-            armSwingRoll.setOrientation(-sinLinear * 20.0f, 0.0f, 0.0f, 1.0f);
-            handSwingOffset.setTranslation(0.0f, 0.0f, 0.0f);
-            handSwingYaw.setOrientation(0.0f, 0.0f, 1.0f, 0.0f);
-            handSwingRoll.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
-            handSwingPitch.setOrientation(0.0f, 1.0f, 0.0f, 0.0f);
-        }
+        float sinLinear = (float)Math.sin(progress * Math.PI);
+        armSwingOffset.setTranslation(-sinRoot * 0.3f * handHorizontalScale,
+                                       upDown * 0.4f, -sinLinear * 0.4f);
+        armSwingYaw.setOrientation(45.0f + sinRoot * 70.0f, 0.0f, 1.0f, 0.0f);
+        armSwingRoll.setOrientation(-sinLinear * 20.0f, 0.0f, 0.0f, 1.0f);
     }
 
     private void setRestHandPose() {
-        handSwingOffset.setTranslation(0.0f, 0.0f, 0.0f);
-        handSwingYaw.setOrientation(0.0f, 0.0f, 1.0f, 0.0f);
-        handSwingRoll.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
-        handSwingPitch.setOrientation(0.0f, 1.0f, 0.0f, 0.0f);
         armSwingOffset.setTranslation(0.0f, 0.0f, 0.0f);
         armSwingYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
         armSwingRoll.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
@@ -217,9 +191,9 @@ final class ChunkRenderer {
                 if (builders[i] == null) continue;
                 Mesh mesh = makeMesh(builders[i]);
                 mesh.setScale(0.17f, 0.17f, 0.17f);
-                mesh.setTranslation(0.28f, -0.36f, -0.62f);
+                mesh.setTranslation(-0.12f, -0.36f, -0.62f);
                 mesh.setRenderingEnable(false);
-                handSwingPitch.addChild(mesh);
+                armSwingRoll.addChild(mesh);
                 meshes[at++] = mesh;
                 builders[i] = null;
             }
@@ -303,6 +277,14 @@ final class ChunkRenderer {
 
     void updateParticles(VoxelWorld world, float yaw, float pitch) {
         particles.update(world, yaw, pitch);
+    }
+
+    void spawnDroppedItem(int itemId, int x, int y, int z) {
+        droppedItems.spawn(itemId, x, y, z);
+    }
+
+    int updateDroppedItems(VoxelWorld world, int[] inventory) {
+        return droppedItems.update(world, inventory);
     }
 
     void sync(VoxelWorld world) {
