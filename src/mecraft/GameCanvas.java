@@ -132,8 +132,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private synchronized void updateGame() {
         if (!visible || state != PLAYING || world == null || renderer == null) return;
-        if (lookLeft) world.yaw -= 3.0f;
-        if (lookRight) world.yaw += 3.0f;
+        if (lookLeft) world.yaw += 3.0f;
+        if (lookRight) world.yaw -= 3.0f;
         if (world.yaw < 0.0f) world.yaw += 360.0f;
         if (world.yaw >= 360.0f) world.yaw -= 360.0f;
         if (lookUp) cameraPitch += 2.5f;
@@ -786,7 +786,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                     stage = "configurando viewport M3G";
                     graphics3D.setViewport(0, 0, getWidth(), getHeight());
                     stage = "dibujando World M3G";
-                    graphics3D.render(renderer.scene);
+                    renderer.render(graphics3D);
                 }
                 finally { graphics3D.releaseTarget(); }
                 stage = "dibujando HUD 2D";
