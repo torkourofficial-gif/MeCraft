@@ -31,14 +31,49 @@ final class Block {
         return id != AIR && id != WATER;
     }
 
-    /** Mining time in 50 ms game-loop steps when using bare hands. */
+    /** Mining time in 50 ms game-loop steps when standing on dry ground. */
     static int breakTicks(byte id) {
-        if (id == LEAVES) return 10;
-        if (id == SAND) return 12;
-        if (id == DIRT || id == GRASS || id == PLANKS) return 18;
-        if (id == LOG || id == CRAFTING_TABLE) return 28;
-        if (id == COAL || id == IRON || id == FURNACE) return 52;
-        return 42;
+        float strength = breakStrength(id, true, false);
+        if (strength <= 0.0f) return 0x7FFFFFFF;
+        return (int)(1.0f / strength + 0.999f);
+    }
+
+    /** Port of Indev blockStrength for an empty hand, with its hardness table. */
+    static float breakStrength(byte id, boolean grounded, boolean submerged) {
+        int hardnessTenths = hardnessTenths(id);
+        if (hardnessTenths < 0) return 0.0f;
+        if (hardnessTenths == 0) return 1.0f;
+        boolean canHarvest = canHarvest(id);
+        float strength = 10.0f / ((float)hardnessTenths * (canHarvest ? 30.0f : 100.0f));
+        if (canHarvest && submerged) strength /= 5.0f;
+        if (canHarvest && !grounded) strength /= 5.0f;
+        return strength;
+    }
+
+    static boolean canHarvest(byte id) {
+        return id != STONE && id != COAL && id != IRON && id != FURNACE && id != BEDROCK;
+    }
+
+    static boolean dropsItem(byte id) {
+        return id != AIR && id != WATER && id != BEDROCK && id != STONE &&
+               id != LEAVES && id != COAL && id != IRON && id != FURNACE;
+    }
+
+    static byte dropId(byte id) {
+        return id == GRASS ? DIRT : id;
+    }
+
+    private static int hardnessTenths(byte id) {
+        if (id == BEDROCK) return -1;
+        if (id == LEAVES) return 2;
+        if (id == DIRT || id == SAND) return 5;
+        if (id == GRASS) return 6;
+        if (id == STONE) return 15;
+        if (id == LOG || id == PLANKS) return 20;
+        if (id == CRAFTING_TABLE) return 25;
+        if (id == COAL || id == IRON) return 30;
+        if (id == FURNACE) return 35;
+        return 10;
     }
 
     static boolean faceVisible(byte current, byte neighbor) {
@@ -82,3 +117,4 @@ final class Block {
         }
     }
 }
+
