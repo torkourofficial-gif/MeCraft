@@ -185,6 +185,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             verticalVelocity = 0.0f;
             fallDistance = 0.0f;
         }
+        int pickedItem = renderer.updateDroppedItems(world, inventory);
+        if (pickedItem == Block.CRAFTING_TABLE || pickedItem == Block.FURNACE) ensureHotbarItem(pickedItem);
         if (keys[1]) updateMining();
         renderer.updateCamera(world, cameraPitch);
         renderer.updateParticles(world, world.yaw, cameraPitch);
@@ -404,10 +406,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (target == null) { resetMining(); return; }
         int x = target[0], y = target[1], z = target[2];
         byte id = world.get(x, y, z);
-        if (id == Block.AIR || id == Block.BEDROCK || id == Block.WATER ||
-            (world.mode == 0 && Block.dropsItem(id) && inventory[Block.dropId(id)] >= 64) ||
-            (world.mode == 0 && (id == Block.CRAFTING_TABLE || id == Block.FURNACE) &&
-             hotbarIndex(id) < 0 && emptyHotbarIndex() < 0)) { resetMining(); return; }
+        if (id == Block.AIR || id == Block.BEDROCK || id == Block.WATER) { resetMining(); return; }
         if (x != miningX || y != miningY || z != miningZ) {
             miningX = x; miningY = y; miningZ = z; miningDamage = 0.0f;
             return;
@@ -419,10 +418,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (world.mode == 1) miningDamage = 1.0f;
         else miningDamage += Block.breakStrength(id, grounded, submerged);
         if (miningDamage >= 1.0f) {
-            if (world.mode == 0) {
-                if (Block.dropsItem(id)) inventory[Block.dropId(id)]++;
-                if (id == Block.CRAFTING_TABLE || id == Block.FURNACE) ensureHotbarItem(id);
-            }
+            if (world.mode == 0 && Block.dropsItem(id))
+                renderer.spawnDroppedItem(Block.dropId(id), x, y, z);
             renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
             renderer.swingHand();
             world.set(x, y, z, Block.AIR);
