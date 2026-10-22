@@ -897,7 +897,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             int top = (h - 224) / 2;
             g.drawImage(containerTexture, left - 40, top, Graphics.TOP | Graphics.LEFT);
             g.setColor(35, 35, 35);
-            g.drawString("Mesa de crafteo", left + 88, top + 4, Graphics.TOP | Graphics.LEFT);
+            g.drawString("Mesa de crafteo", left + 88, top + 4, Graphics.TOP | Graphics.HCENTER);
             drawRecipeGrid(g, left + 6, top + 17, 18, 3, selected);
             g.setColor(55, 55, 55);
             g.drawString("Recetas", left + 77, top + 17, Graphics.TOP | Graphics.LEFT);
