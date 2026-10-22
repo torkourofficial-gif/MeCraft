@@ -82,6 +82,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private final int[] traceResult = new int[6];
     private final int[] crackScreenX = new int[4];
     private final int[] crackScreenY = new int[4];
+    private static final int MAX_AIR = 300;
+    private int airTicks = MAX_AIR;
+    private int hurtTicks;
+    private Image waterTint;
+    private Image hurtTint;
 
     GameCanvas(MeCraft app) {
         this.app = app;
@@ -150,16 +155,54 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (keys[6]) strafe += 1.0f;
         if (keys[4]) strafe -= 1.0f;
         int fallDamage = playerPhysics.update(world, forward, strafe, jumpHeld);
-        if (fallDamage > 0 && world.mode == 0) {
-            world.health -= fallDamage;
-            if (world.health < 0) world.health = 0;
-            if (world.health == 0) respawn();
-        }
+        if (world.mode == 0 && fallDamage > 0) damagePlayer(fallDamage);
+        tickAirAndHurt();
         int pickedItem = renderer.updateDroppedItems(world, inventory);
         if (pickedItem == Block.CRAFTING_TABLE || pickedItem == Block.FURNACE) ensureHotbarItem(pickedItem);
         if (keys[1]) updateMining();
         renderer.updateCamera(world, cameraPitch);
+        renderer.setHurtCameraRoll(hurtCameraRoll());
         renderer.updateParticles(world, world.yaw, cameraPitch);
+    }
+
+    /** Indev drains 300 air ticks, waits another 20 ticks, then deals a heart. */
+    private void tickAirAndHurt() {
+        if (hurtTicks > 0) hurtTicks--;
+        if (world.mode != 0) {
+            airTicks = MAX_AIR;
+            return;
+        }
+        if (cameraUnderwater()) {
+            if (airTicks > -20) airTicks--;
+            if (airTicks <= -20) {
+                airTicks = 0;
+                damagePlayer(2);
+            }
+        } else {
+            airTicks = MAX_AIR;
+        }
+    }
+
+    private boolean cameraUnderwater() {
+        if (world == null) return false;
+        return world.get(floorBlock(world.playerX), floorBlock(world.playerY + PLAYER_EYE_HEIGHT),
+                         floorBlock(world.playerZ)) == Block.WATER;
+    }
+
+    private void damagePlayer(int amount) {
+        if (world == null || world.mode != 0 || world.health <= 0) return;
+        world.health -= amount;
+        if (world.health < 0) world.health = 0;
+        hurtTicks = 10;
+        if (world.health == 0) respawn();
+    }
+
+    /** Matches Indev's hurt camera pulse, with a 14 degree roll. */
+    private float hurtCameraRoll() {
+        if (hurtTicks <= 0) return 0.0f;
+        float progress = hurtTicks / 10.0f;
+        float squared = progress * progress;
+        return (float)Math.sin(squared * squared * Math.PI) * 14.0f;
     }
 
     private void respawn() {
@@ -168,6 +211,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         world.playerY = world.surfaceY(VoxelWorld.WIDTH / 2, VoxelWorld.DEPTH / 2) + 1.0f;
         world.health = 20;
         playerPhysics.reset();
+        airTicks = MAX_AIR;
+        hurtTicks = 0;
     }
 
     private void startNewWorld(int mode) {
@@ -182,6 +227,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             world = new VoxelWorld((int)(System.currentTimeMillis() ^ System.currentTimeMillis() >>> 32), mode);
             copyHotbarFromWorld();
             playerPhysics.reset();
+            airTicks = MAX_AIR;
+            hurtTicks = 0;
             resetInventory(mode);
             copyInventoryToWorld();
             stage = "cargando /textures.png y creando escena M3G";
@@ -217,6 +264,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             world = saved;
             world.health = clamp(world.health, 0, 20);
             playerPhysics.reset();
+            airTicks = MAX_AIR;
+            hurtTicks = 0;
             copyHotbarFromWorld();
             resetInventory(world.mode);
             for (int i = 0; i < inventory.length; i++) inventory[i] = world.inventory[i];
@@ -655,6 +704,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         try { guiTexture = Image.createImage("/mecraft/gui.png"); } catch (IOException ignored) { guiTexture = null; }
         try { iconsTexture = Image.createImage("/mecraft/icons.png"); } catch (IOException ignored) { iconsTexture = null; }
         try { containerTexture = Image.createImage("/mecraft/container.png"); } catch (IOException ignored) { containerTexture = null; }
+        int[] blueTintPixels = new int[16 * 16];
+        int[] hurtTintPixels = new int[16 * 16];
+        for (int i = 0; i < blueTintPixels.length; i++) {
+            blueTintPixels[i] = 0x500035A0;
+            hurtTintPixels[i] = 0x503F0000;
+        }
+        try { waterTint = Image.createRGBImage(blueTintPixels, 16, 16, true); } catch (Throwable ignored) { waterTint = null; }
+        try { hurtTint = Image.createRGBImage(hurtTintPixels, 16, 16, true); } catch (Throwable ignored) { hurtTint = null; }
+        blueTintPixels = null;
+        hurtTintPixels = null;
         Image source = null;
         try {
             source = Image.createImage("/mecraft/textures.png");
@@ -734,6 +793,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 finally { graphics3D.releaseTarget(); }
                 stage = "dibujando HUD 2D";
                 if (state == PLAYING || state == PAUSED) {
+                    if (cameraUnderwater()) drawTint(g, waterTint);
+                    if (hurtTicks > 0) drawTint(g, hurtTint);
                     drawHud(g);
                     if (state == PLAYING) drawMiningCracks(g);
                 }
@@ -784,7 +845,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         g.setColor(255, 255, 255);
         g.drawLine(centerX - 4, centerY, centerX + 4, centerY);
         g.drawLine(centerX, centerY - 4, centerX, centerY + 4);
-        if (world.mode == 0) drawHearts(g);
+        if (world.mode == 0) {
+            drawHearts(g);
+            if (cameraUnderwater()) drawBubbles(g);
+        }
         int left = w / 2 - 91;
         int y = h - 22;
         if (guiTexture != null && guiTexture.getWidth() >= 182 && guiTexture.getHeight() >= 44) {
@@ -823,6 +887,34 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 g.setColor(world.health > i * 2 ? 202 : 100, world.health > i * 2 ? 54 : 100,
                            world.health > i * 2 ? 47 : 100);
                 g.fillArc(x, y, 7, 7, 0, 360);
+            }
+        }
+    }
+
+    private void drawBubbles(Graphics g) {
+        int full = (airTicks * 10 + MAX_AIR - 1) / MAX_AIR;
+        if (full < 0) full = 0;
+        if (full > 10) full = 10;
+        int y = getHeight() - 41;
+        for (int i = 0; i < 10; i++) {
+            int x = getWidth() / 2 - 91 + i * 8;
+            if (iconsTexture != null && iconsTexture.getWidth() >= 34 && iconsTexture.getHeight() >= 27) {
+                g.drawRegion(iconsTexture, i < full ? 16 : 25, 18, 9, 9, Sprite.TRANS_NONE,
+                        x, y, Graphics.TOP | Graphics.LEFT);
+            }
+        }
+    }
+
+    /** Tile a tiny alpha image to tint the rendered world without a screen-sized heap buffer. */
+    private void drawTint(Graphics g, Image tint) {
+        if (tint == null) return;
+        int width = getWidth(), height = getHeight();
+        for (int y = 0; y < height; y += 16) {
+            int tileHeight = Math.min(16, height - y);
+            for (int x = 0; x < width; x += 16) {
+                int tileWidth = Math.min(16, width - x);
+                g.drawRegion(tint, 0, 0, tileWidth, tileHeight, Sprite.TRANS_NONE,
+                        x, y, Graphics.TOP | Graphics.LEFT);
             }
         }
     }
@@ -1061,5 +1153,4 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         return value;
     }
 }
-
 

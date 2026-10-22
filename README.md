@@ -10,7 +10,7 @@ Referencia consultada: [EaglerPorts/in-20100223](https://github.com/EaglerPorts/
 - Modo supervivencia empieza con el inventario vacío; los bloques rotos se recogen, y modo creativo tiene bloques ilimitados.
 - Cámara en primera persona, movimiento, colisión, gravedad y salto.
 - Romper/colocar bloques, partículas de rotura, daño progresivo con grietas sobre la cara apuntada, seleccionar la barra rápida y guardar la partida en RMS.
-- HUD con la barra de `gui.png`, corazones de `icons.png` y sprites de bloque de `gui_blocks.png`; la vida y el daño por caída solo se aplican en supervivencia.
+- HUD con la barra de `gui.png`, corazones y burbujas de `icons.png` y sprites de bloque de `gui_blocks.png`; al sumergir la cámara aparece un filtro azul, el oxígeno se agota y provoca ahogamiento, y tanto la caída como el ahogamiento activan la animación de daño de Indev. La vida y estos daños solo se aplican en supervivencia.
 - Crafteo por recetas: `#` abre el inventario 2×2 (tronco → 4 tablones, 4 tablones → mesa); usa `3` apuntando a una mesa colocada para abrir `container.png` y el crafteo 3×3 (incluye horno).
 - Render 3D M3G con sectores de 16 × 8 × 16 bloques y un atlas compartido.
 
@@ -61,7 +61,6 @@ El proyecto está configurado para Oracle Java ME SDK 3.2, CLDC 1.1, MIDP 2.0 y 
 Si la plataforma SDK 3.2 no aparece en NetBeans, regístrala en **Tools > Java Platforms** y selecciona el dispositivo y la API opcional **JSR-184** en las propiedades del proyecto. El proyecto usa Java 1.3 y pre-verificación CLDC durante la compilación. Los PNG se guardan en `resources/mecraft/` y se empaquetan bajo `/mecraft/` en el JAR.
 
 Para instalar manualmente, transfiere ambos archivos de `dist/` al teléfono o abre `MeCraft.jad` en el emulador Java ME.
-
 
 
 

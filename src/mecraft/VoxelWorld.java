@@ -323,4 +323,3 @@ final class VoxelWorld {
         return false;
     }
 }
-

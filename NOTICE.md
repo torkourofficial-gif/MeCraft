@@ -6,4 +6,3 @@ Los PNG de este repositorio se conservan sin modificar. Su titularidad y licenci
 
 El código de MeCraft en `src/mecraft/` es una implementación original del demake para MIDP/M3G. Confirma los derechos/licencias de las texturas antes de redistribuir un `.jar` que las incluya.
 
-

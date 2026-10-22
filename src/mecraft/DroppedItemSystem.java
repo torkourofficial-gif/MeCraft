@@ -235,4 +235,3 @@ final class DroppedItemSystem {
         return ((random >>> 8) & 0xFFFF) / 65535.0f;
     }
 }
-

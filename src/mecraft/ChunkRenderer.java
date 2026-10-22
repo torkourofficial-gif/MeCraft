@@ -30,6 +30,7 @@ final class ChunkRenderer {
     private final Transform cameraTransform = new Transform();
     private final Transform handTransform = new Transform();
     final Group cameraPivot = new Group();
+    private final Group cameraEffectPivot = new Group();
     private final Group handPivot = new Group();
     private final Group heldItemOffset = new Group();
     private final Group heldItemYaw = new Group();
@@ -86,8 +87,9 @@ final class ChunkRenderer {
         droppedItems = new DroppedItemSystem(atlas);
 
         camera.setPerspective(68.0f, (float)width / (float)height, 0.1f, 38.0f);
-        cameraPivot.addChild(camera);
-        cameraPivot.addChild(handPivot);
+        cameraPivot.addChild(cameraEffectPivot);
+        cameraEffectPivot.addChild(camera);
+        cameraEffectPivot.addChild(handPivot);
         scene.addChild(terrain);
         scene.addChild(particles.mesh);
         scene.addChild(droppedItems.mesh);
@@ -128,6 +130,11 @@ final class ChunkRenderer {
         cameraPivot.setOrientation(world.yaw + 180.0f, 0.0f, 1.0f, 0.0f);
         camera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
         handPivot.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
+    }
+
+    /** Rotate the full first-person view during the Indev hurt-camera pulse. */
+    void setHurtCameraRoll(float degrees) {
+        cameraEffectPivot.setOrientation(degrees, 0.0f, 0.0f, 1.0f);
     }
 
     /** Render the first-person hand and held block in a final overlay pass. */
@@ -590,5 +597,4 @@ final class ChunkRenderer {
 
     }
 }
-
 

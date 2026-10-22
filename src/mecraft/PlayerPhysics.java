@@ -54,7 +54,7 @@ final class PlayerPhysics {
         if (movedY != requestedY) motionY = 0.0f;
         if (onGround) {
             boolean landedInWater = isInWater(world);
-            int damage = fallDistance > 3.0f ? (int)(fallDistance - 3.0f) : 0;
+            int damage = fallDistance > 3.0f ? (int)Math.ceil(fallDistance - 3.0f) : 0;
             fallDistance = 0.0f;
             if (inWater || landedInWater) damage = 0;
             moveHorizontally(world);
@@ -249,4 +249,3 @@ final class PlayerPhysics {
         return value < i ? i - 1 : i;
     }
 }
-
