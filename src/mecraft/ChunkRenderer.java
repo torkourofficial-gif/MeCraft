@@ -36,6 +36,16 @@ final class ChunkRenderer {
     private final Group heldItemYaw = new Group();
     private final Group heldItemRoll = new Group();
     private final Group heldItemPitch = new Group();
+    private final Group itemSpriteBaseYaw = new Group();
+    private final Group itemSpriteSwingYaw = new Group();
+    private final Group itemSpriteSwingRoll = new Group();
+    private final Group itemSpriteSwingPitch = new Group();
+    private final Group itemSpriteModelScale = new Group();
+    private final Group itemSpriteOffset = new Group();
+    private final Group itemSpriteIconScale = new Group();
+    private final Group itemSpriteIconYaw = new Group();
+    private final Group itemSpriteIconRoll = new Group();
+    private final Group itemSpriteOrigin = new Group();
     private final Group armSwingOffset = new Group();
     private final Group armBase = new Group();
     private final Group armSwingYaw = new Group();
@@ -50,7 +60,7 @@ final class ChunkRenderer {
     private final Mesh handMesh;
     private final Mesh itemSpriteMesh;
     private VertexArray itemSpriteTexCoordArray;
-    private final short[] itemSpriteUV = new short[8];
+    private final short[] itemSpriteUV;
     private final Mesh[][] heldItemMeshes = new Mesh[Block.COUNT][];
     private final ParticleSystem particles;
     private final DroppedItemSystem droppedItems;
@@ -78,7 +88,10 @@ final class ChunkRenderer {
         itemAtlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         itemAtlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         itemSpriteAppearance = createFirstPersonAppearance(itemAtlas);
-        itemSpriteMesh = makeItemSpriteMesh();
+        ItemSpriteData itemData = makeItemSpriteMesh();
+        itemSpriteMesh = itemData.mesh;
+        itemSpriteTexCoordArray = itemData.texCoords;
+        itemSpriteUV = itemData.uv;
         handAppearance = createHandAppearance();
         handMesh = makeHandMesh();
         armBase.setTranslation(handBaseX(width, height), -0.60f, -0.72f);
@@ -92,7 +105,23 @@ final class ChunkRenderer {
         heldItemOffset.addChild(heldItemYaw);
         heldItemYaw.addChild(heldItemRoll);
         heldItemRoll.addChild(heldItemPitch);
-        heldItemPitch.addChild(itemSpriteMesh);
+        heldItemOffset.addChild(itemSpriteBaseYaw);
+        itemSpriteBaseYaw.addChild(itemSpriteSwingYaw);
+        itemSpriteSwingYaw.addChild(itemSpriteSwingRoll);
+        itemSpriteSwingRoll.addChild(itemSpriteSwingPitch);
+        itemSpriteSwingPitch.addChild(itemSpriteModelScale);
+        itemSpriteModelScale.addChild(itemSpriteOffset);
+        itemSpriteOffset.addChild(itemSpriteIconScale);
+        itemSpriteIconScale.addChild(itemSpriteIconYaw);
+        itemSpriteIconYaw.addChild(itemSpriteIconRoll);
+        itemSpriteIconRoll.addChild(itemSpriteOrigin);
+        itemSpriteOrigin.addChild(itemSpriteMesh);
+        itemSpriteModelScale.setScale(0.4f, 0.4f, 0.4f);
+        itemSpriteOffset.setTranslation(0.0f, -0.3f, 0.0f);
+        itemSpriteIconScale.setScale(1.5f, 1.5f, 1.5f);
+        itemSpriteIconYaw.setOrientation(50.0f, 0.0f, 1.0f, 0.0f);
+        itemSpriteIconRoll.setOrientation(335.0f, 0.0f, 0.0f, 1.0f);
+        itemSpriteOrigin.setTranslation(-15.0f / 16.0f, -1.0f / 16.0f, 0.0f);
         buildHeldItems();
         particles = new ParticleSystem(atlas);
         droppedItems = new DroppedItemSystem(atlas);
@@ -185,14 +214,10 @@ final class ChunkRenderer {
     private void setItemSprite(int itemId) {
         int tile = ItemCatalog.iconIndex(itemId);
         if (tile < 0) return;
-        int u0 = (tile & 15) * 16 + 1;
-        int v0 = (tile >> 4) * 16 + 1;
-        int u1 = u0 + 14, v1 = v0 + 14;
-        itemSpriteUV[0]=(short)u0; itemSpriteUV[1]=(short)v1;
-        itemSpriteUV[2]=(short)u0; itemSpriteUV[3]=(short)v0;
-        itemSpriteUV[4]=(short)u1; itemSpriteUV[5]=(short)v1;
-        itemSpriteUV[6]=(short)u1; itemSpriteUV[7]=(short)v0;
-        itemSpriteTexCoordArray.set(0, 4, itemSpriteUV);
+        int u0 = (tile & 15) * 16;
+        int v0 = (tile >> 4) * 16;
+        fillItemSpriteUV(u0, v0);
+        itemSpriteTexCoordArray.set(0, itemSpriteUV.length / 2, itemSpriteUV);
     }
 
     void swingHand() {
@@ -238,20 +263,28 @@ final class ChunkRenderer {
         }
 
         if (visibleHeldItem > 0) {
-            // ItemRenderer.renderItemInFirstPerson: translate, rotate Y 45,
-            // then apply its separate Y/Z/X swing rotations before scaling.
             float squaredProgress = progress * progress;
             float itemYaw = (float)Math.sin(squaredProgress * Math.PI) * -20.0f;
             float itemRoll = sinRoot * -20.0f;
             float itemPitch = sinRoot * -80.0f;
-            float swingX = handSwinging ? -sinRoot * 0.4f : 0.0f;
-            float swingY = handSwinging ? upDown * 0.2f : 0.0f;
-            float swingZ = handSwinging ? -sinLinear * 0.2f : 0.0f;
-            heldItemOffset.setTranslation(0.64f * handHorizontalScale + swingX,
-                    -0.60f + swingY, -0.72f + swingZ);
-            heldItemYaw.setOrientation(45.0f + itemYaw, 0.0f, 1.0f, 0.0f);
-            heldItemRoll.setOrientation(itemRoll, 0.0f, 0.0f, 1.0f);
-            heldItemPitch.setOrientation(itemPitch, 1.0f, 0.0f, 0.0f);
+            boolean tool = ItemCatalog.isTool(visibleHeldItem) || visibleHeldItem >= ItemCatalog.STICK;
+            if (tool) {
+                float swingX = handSwinging ? -sinRoot * 0.4f : 0.0f;
+                float swingY = handSwinging ? upDown * 0.2f : 0.0f;
+                float swingZ = handSwinging ? -sinLinear * 0.2f : 0.0f;
+                heldItemOffset.setTranslation(0.56f * handHorizontalScale + swingX,
+                        -0.52f + swingY, -0.72f + swingZ);
+                itemSpriteBaseYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
+                itemSpriteSwingYaw.setOrientation(itemYaw, 0.0f, 1.0f, 0.0f);
+                itemSpriteSwingRoll.setOrientation(itemRoll, 0.0f, 0.0f, 1.0f);
+                itemSpriteSwingPitch.setOrientation(itemPitch, 1.0f, 0.0f, 0.0f);
+            } else {
+                heldItemOffset.setTranslation(0.64f * handHorizontalScale,
+                        -0.60f, -0.72f);
+                heldItemYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
+                heldItemRoll.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
+                heldItemPitch.setOrientation(0.0f, 1.0f, 0.0f, 0.0f);
+            }
         } else {
             setRestHeldItemPose();
         }
@@ -298,20 +331,122 @@ final class ChunkRenderer {
         }
     }
 
-    /** A single reusable first-person quad, textured from Indev's items.png. */
-    private Mesh makeItemSpriteMesh() {
-        short[] p = new short[] { -288,-288,0, -288,288,0, 288,-288,0, 288,288,0 };
-        short[] uv = new short[8];
-        VertexArray positionArray = new VertexArray(4, 3, 2);
-        positionArray.set(0, 4, p);
-        itemSpriteTexCoordArray = new VertexArray(4, 2, 2);
-        itemSpriteTexCoordArray.set(0, 4, uv);
+    /** Build Indev's 1/16-thick, front/back and extruded first-person icon. */
+    private ItemSpriteData makeItemSpriteMesh() {
+        final int strips = 2 + 16 * 4;
+        final int verticesCount = strips * 4;
+        short[] p = new short[verticesCount * 3];
+        short[] uv = new short[verticesCount * 2];
+        int vertex = 0;
+        // Indev emits the front and back icon quads first.
+        vertex = itemSpriteFace(p, uv, vertex, 0,0,0, 1024,0,0, 1024,1024,0, 0,1024,0,
+                255,0, 0,0, 0,0, 0,0);
+        // Rewrite UVs after the geometry is built; temporary UV arguments above are ignored.
+        vertex = itemSpriteFace(p, uv, vertex, 0,1024,-64, 1024,1024,-64,
+                1024,0,-64, 0,0,-64, 0,0, 0,0, 0,0, 0,0);
+        // Left/right edge strips and the top/bottom strips use the icon's edge pixels.
+        for (int i = 0; i < 16; i++) {
+            int y0 = i * 64, y1 = y0 + 64;
+            vertex = itemSpriteFace(p, uv, vertex,
+                    0,y0,-64, 0,y0,0, 0,y1,0, 0,y1,-64,
+                    0,0,0,0,0,0,0,0);
+        }
+        for (int i = 0; i < 16; i++) {
+            int y0 = i * 64, y1 = y0 + 64;
+            vertex = itemSpriteFace(p, uv, vertex,
+                    1024,y1,-64, 1024,y1,0, 1024,y0,0, 1024,y0,-64,
+                    0,0,0,0,0,0,0,0);
+        }
+        for (int i = 0; i < 16; i++) {
+            int x0 = i * 64, x1 = x0 + 64;
+            vertex = itemSpriteFace(p, uv, vertex,
+                    x0,0,0, x1,0,0, x1,0,-64, x0,0,-64,
+                    0,0,0,0,0,0,0,0);
+        }
+        for (int i = 0; i < 16; i++) {
+            int x0 = i * 64, x1 = x0 + 64;
+            vertex = itemSpriteFace(p, uv, vertex,
+                    x1,1024,0, x0,1024,0, x0,1024,-64, x1,1024,-64,
+                    0,0,0,0,0,0,0,0);
+        }
+        itemSpriteTexCoordArray = new VertexArray(verticesCount, 2, 2);
+        itemSpriteTexCoordArray.set(0, verticesCount, uv);
         VertexBuffer buffer = new VertexBuffer();
+        VertexArray positionArray = new VertexArray(verticesCount, 3, 2);
+        positionArray.set(0, verticesCount, p);
         buffer.setPositions(positionArray, 1.0f / 1024.0f, null);
         buffer.setTexCoords(0, itemSpriteTexCoordArray, 1.0f / 256.0f, null);
-        Mesh mesh = new Mesh(buffer, new TriangleStripArray(0, new int[] { 4 }), itemSpriteAppearance);
+        int[] stripLengths = new int[strips];
+        for (int i = 0; i < strips; i++) stripLengths[i] = 4;
+        Mesh mesh = new Mesh(buffer, new TriangleStripArray(0, stripLengths), itemSpriteAppearance);
         mesh.setRenderingEnable(false);
-        return mesh;
+        return new ItemSpriteData(mesh, itemSpriteTexCoordArray, uv);
+    }
+
+    /** Appends one quad in Indev's 1/1024 icon-model units. */
+    private int itemSpriteFace(short[] positions, short[] texCoords, int vertex,
+            int x0,int y0,int z0, int x1,int y1,int z1,
+            int x2,int y2,int z2, int x3,int y3,int z3,
+            int u0,int v0,int u1,int v1,int u2,int v2,int u3,int v3) {
+        int[] xyz = new int[] {x0,y0,z0,x1,y1,z1,x2,y2,z2,x3,y3,z3};
+        int[] uv = new int[] {u0,v0,u1,v1,u2,v2,u3,v3};
+        for (int i = 0; i < 4; i++) {
+            positions[vertex * 3] = (short)xyz[i * 3];
+            positions[vertex * 3 + 1] = (short)xyz[i * 3 + 1];
+            positions[vertex * 3 + 2] = (short)xyz[i * 3 + 2];
+            texCoords[vertex * 2] = (short)uv[i * 2];
+            texCoords[vertex * 2 + 1] = (short)uv[i * 2 + 1];
+            vertex++;
+        }
+        return vertex;
+    }
+
+    private void fillItemSpriteUV(int tileU, int tileV) {
+        // Indev's front quad maps right-to-left. Its 16 side strips sample the
+        // exact border row/column of the 16x16 icon, extruding those pixels.
+        int at = 0;
+        at = writeSpriteUV(at, tileU + 16,tileV + 16, tileU,tileV + 16,
+                tileU,tileV, tileU + 16,tileV);
+        at = writeSpriteUV(at, tileU + 16,tileV, tileU,tileV,
+                tileU,tileV + 16, tileU + 16,tileV + 16);
+        for (int i = 0; i < 16; i++) {
+            int v0 = tileV + 16 - i, v1 = v0 - 1;
+            at = writeSpriteUV(at, tileU + 16,v0, tileU + 16,v0,
+                    tileU + 16,v1, tileU + 16,v1);
+        }
+        for (int i = 0; i < 16; i++) {
+            int vAtY1 = tileV + 15 - i, vAtY0 = vAtY1 + 1;
+            at = writeSpriteUV(at, tileU,vAtY1, tileU,vAtY1,
+                    tileU,vAtY0, tileU,vAtY0);
+        }
+        for (int i = 0; i < 16; i++) {
+            int uAtX0 = tileU + 16 - i, uAtX1 = uAtX0 - 1;
+            at = writeSpriteUV(at, uAtX0,tileV + 16, uAtX1,tileV + 16,
+                    uAtX1,tileV + 16, uAtX0,tileV + 16);
+        }
+        for (int i = 0; i < 16; i++) {
+            int uAtX0 = tileU + 16 - i, uAtX1 = uAtX0 - 1;
+            at = writeSpriteUV(at, uAtX1,tileV, uAtX0,tileV,
+                    uAtX0,tileV, uAtX1,tileV);
+        }
+    }
+
+    private int writeSpriteUV(int at, int u0,int v0, int u1,int v1,
+            int u2,int v2, int u3,int v3) {
+        itemSpriteUV[at++] = (short)u0; itemSpriteUV[at++] = (short)v0;
+        itemSpriteUV[at++] = (short)u1; itemSpriteUV[at++] = (short)v1;
+        itemSpriteUV[at++] = (short)u2; itemSpriteUV[at++] = (short)v2;
+        itemSpriteUV[at++] = (short)u3; itemSpriteUV[at++] = (short)v3;
+        return at;
+    }
+
+    private static final class ItemSpriteData {
+        final Mesh mesh;
+        final VertexArray texCoords;
+        final short[] uv;
+        ItemSpriteData(Mesh mesh, VertexArray texCoords, short[] uv) {
+            this.mesh = mesh; this.texCoords = texCoords; this.uv = uv;
+        }
     }
 
     private void setMeshesVisible(Mesh[] meshes, boolean visible) {
