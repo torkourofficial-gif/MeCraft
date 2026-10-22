@@ -246,7 +246,7 @@ final class ChunkRenderer {
             -3,-2,-2, -3,-2,2, 1,-2,-2, 1,-2,2
         };
         final float inv16 = 1.0f / 16.0f;
-        final float toShort = 1024.0f;
+        final float positionScale = 1024.0f;
         final float sinY = (float)Math.sin(-135.0 * Math.PI / 180.0);
         final float cosY = (float)Math.cos(-135.0 * Math.PI / 180.0);
         final float sinX = (float)Math.sin(200.0 * Math.PI / 180.0);
@@ -266,17 +266,26 @@ final class ChunkRenderer {
             float finalY = rotatedX * sinZ + rotatedY * cosZ - 0.3f;
             finalZ += 0.1f;
 
-            p[i * 3] = (short)Math.round(finalX * toShort);
-            p[i * 3 + 1] = (short)Math.round(finalY * toShort);
-            p[i * 3 + 2] = (short)Math.round(finalZ * toShort);
+            p[i * 3] = quantizePosition(finalX, positionScale);
+            p[i * 3 + 1] = quantizePosition(finalY, positionScale);
+            p[i * 3 + 2] = quantizePosition(finalZ, positionScale);
         }
         int[] strips = new int[] { 4,4,4,4,4,4 };
         VertexArray positions = new VertexArray(24, 3, 2);
         positions.set(0, 24, p);
         VertexBuffer vertices = new VertexBuffer();
-        vertices.setPositions(positions, 1.0f / toShort, null);
+        vertices.setPositions(positions, 1.0f / positionScale, null);
         TriangleStripArray triangles = new TriangleStripArray(0, strips);
         return new Mesh(vertices, triangles, handAppearance);
+    }
+
+    /** Quantize a model-space float without relying on Math.round in CLDC. */
+    private short quantizePosition(float value, float scale) {
+        float scaled = value * scale;
+        int rounded = (int)(scaled >= 0.0f ? scaled + 0.5f : scaled - 0.5f);
+        if (rounded > 32767) rounded = 32767;
+        if (rounded < -32768) rounded = -32768;
+        return (short)rounded;
     }
 
     void spawnBlockDestroy(int x, int y, int z, int tile) {
