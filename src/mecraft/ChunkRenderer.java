@@ -267,11 +267,10 @@ final class ChunkRenderer {
             float itemYaw = (float)Math.sin(squaredProgress * Math.PI) * -20.0f;
             float itemRoll = sinRoot * -20.0f;
             float itemPitch = sinRoot * -80.0f;
-            boolean tool = ItemCatalog.isTool(visibleHeldItem) || visibleHeldItem >= ItemCatalog.STICK;
-            if (tool) {
-                float swingX = handSwinging ? -sinRoot * 0.4f : 0.0f;
-                float swingY = handSwinging ? upDown * 0.2f : 0.0f;
-                float swingZ = handSwinging ? -sinLinear * 0.2f : 0.0f;
+            float swingX = handSwinging ? -sinRoot * 0.4f : 0.0f;
+            float swingY = handSwinging ? upDown * 0.2f : 0.0f;
+            float swingZ = handSwinging ? -sinLinear * 0.2f : 0.0f;
+            if (visibleHeldItem >= ItemCatalog.STICK) {
                 heldItemOffset.setTranslation(0.56f * handHorizontalScale + swingX,
                         -0.52f + swingY, -0.72f + swingZ);
                 itemSpriteBaseYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
@@ -279,11 +278,13 @@ final class ChunkRenderer {
                 itemSpriteSwingRoll.setOrientation(itemRoll, 0.0f, 0.0f, 1.0f);
                 itemSpriteSwingPitch.setOrientation(itemPitch, 1.0f, 0.0f, 0.0f);
             } else {
-                heldItemOffset.setTranslation(0.64f * handHorizontalScale,
-                        -0.60f, -0.72f);
-                heldItemYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
-                heldItemRoll.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
-                heldItemPitch.setOrientation(0.0f, 1.0f, 0.0f, 0.0f);
+                // Indev applies the same held-item swing to block models before
+                // scaling them and calling renderBlockOnInventory.
+                heldItemOffset.setTranslation(0.56f * handHorizontalScale + swingX,
+                        -0.52f + swingY, -0.72f + swingZ);
+                heldItemYaw.setOrientation(45.0f + itemYaw, 0.0f, 1.0f, 0.0f);
+                heldItemRoll.setOrientation(itemRoll, 0.0f, 0.0f, 1.0f);
+                heldItemPitch.setOrientation(itemPitch, 1.0f, 0.0f, 0.0f);
             }
         } else {
             setRestHeldItemPose();
@@ -488,7 +489,12 @@ final class ChunkRenderer {
         CompositingMode compositing = new CompositingMode();
         compositing.setDepthTestEnable(false);
         compositing.setDepthWriteEnable(false);
-        if (alphaBlending) compositing.setBlending(CompositingMode.ALPHA);
+        if (alphaBlending) {
+            // The atlas uses binary transparent pixels. The threshold also
+            // cuts those pixels out on M3G implementations with weak blending.
+            compositing.setAlphaThreshold(0.5f);
+            compositing.setBlending(CompositingMode.ALPHA);
+        }
         appearance.setCompositingMode(compositing);
         return appearance;
     }
