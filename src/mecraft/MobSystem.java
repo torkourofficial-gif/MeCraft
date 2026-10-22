@@ -23,19 +23,22 @@ final class MobSystem {
     private static final int MOB_COUNT = 4;
 
     private final Mob[] mobs = new Mob[MOB_COUNT];
+    private final DroppedItemSystem drops;
     private final Random random = new Random(1L);
     private int worldSeed = Integer.MIN_VALUE;
     private int tick;
     private int attackCooldown;
     private boolean zombiesNightActive;
 
-    MobSystem(Group scene) throws IOException {
+    MobSystem(Group scene, DroppedItemSystem drops) throws IOException {
+        this.drops = drops;
         Appearance[] skins = new Appearance[] {
             skin("/mecraft/pig.png"), skin("/mecraft/sheep.png"), skin("/mecraft/zombie.png")
         };
+        Appearance sheepFur = skin("/mecraft/sheep_fur.png");
         for (int i = 0; i < mobs.length; i++) {
             int type = i == 0 ? PIG : (i == 1 ? SHEEP : ZOMBIE);
-            mobs[i] = new Mob(type, skins[type]);
+            mobs[i] = new Mob(type, skins[type], type == SHEEP ? sheepFur : null);
             mobs[i].root.setRenderingEnable(false);
             scene.addChild(mobs[i].root);
         }
@@ -53,6 +56,7 @@ final class MobSystem {
             if (!mob.alive || (mob.type == ZOMBIE && world.mode != 0)) continue;
             mob.age++;
             mob.chasing = false;
+            if (mob.attackDelay > 0) mob.attackDelay--;
             if (mob.type == ZOMBIE) {
                 float dx = world.playerX - mob.x;
                 float dz = world.playerZ - mob.z;
@@ -60,18 +64,17 @@ final class MobSystem {
                 if (distanceSquared < 100.0f) {
                     mob.chasing = true;
                     mob.targetYaw = yawTo(dx, dz);
-                    if (distanceSquared < 0.85f * 0.85f &&
+                    if (distanceSquared < 2.5f * 2.5f &&
                         world.playerY < mob.y + 1.8f && world.playerY + 1.8f > mob.y) {
                         if (mob.attackDelay <= 0) {
                             mob.attackDelay = 20;
-                            playerDamage = 2;
+                            playerDamage = 5;
                         }
                     }
                 } else wander(mob, 90);
             } else {
                 wander(mob, 58);
             }
-            if (mob.attackDelay > 0) mob.attackDelay--;
             animate(mob);
             turn(mob);
             move(mob, world);
@@ -81,8 +84,9 @@ final class MobSystem {
         return playerDamage;
     }
 
-    /** Hit a mob on the camera ray before continuing to mine a block. */
-    boolean hit(VoxelWorld world, float pitch, int damage) {
+    /** Returns 1 for a hit, 0 when the target is still on attack cooldown, or -1 for no target. */
+    int hit(VoxelWorld world, float pitch, int damage) {
+        if (world.mode != 0) return -1;
         if (worldSeed != world.seed) reset(world);
         float yaw = world.yaw * (float)Math.PI / 180.0f;
         float pitchRadians = pitch * (float)Math.PI / 180.0f;
@@ -97,33 +101,41 @@ final class MobSystem {
         for (int i = 0; i < mobs.length; i++) {
             Mob mob = mobs[i];
             if (!mob.alive || (mob.type == ZOMBIE && world.mode != 0)) continue;
-            float centerY = mob.y + (mob.type == ZOMBIE ? 0.9f : 0.7f);
-            float dx = mob.x - originX;
-            float dy = centerY - originY;
-            float dz = mob.z - originZ;
-            float along = dx * dirX + dy * dirY + dz * dirZ;
-            if (along < 0.0f || along > closestDistance) continue;
-            float ex = dx - dirX * along, ey = dy - dirY * along, ez = dz - dirZ * along;
-            float radius = mob.type == ZOMBIE ? 0.48f : 0.58f;
-            if (ex * ex + ey * ey + ez * ez <= radius * radius) {
+            float height = mob.type == ZOMBIE ? 1.8f : (mob.type == PIG ? 0.9f : 1.3f);
+            float width = mob.type == ZOMBIE ? 0.6f : 0.9f;
+            float along = rayBox(originX, originY, originZ, dirX, dirY, dirZ,
+                    mob.x - width * 0.5f, mob.y, mob.z - width * 0.5f,
+                    mob.x + width * 0.5f, mob.y + height, mob.z + width * 0.5f);
+            if (along >= 0.0f && along <= closestDistance) {
                 closest = i;
                 closestDistance = along;
             }
         }
-        if (closest < 0) return false;
-        if (blocked(world, originX, originY, originZ, dirX, dirY, dirZ, closestDistance)) return false;
-        if (attackCooldown > 0) return true;
+        if (closest < 0) return -1;
+        if (blocked(world, originX, originY, originZ, dirX, dirY, dirZ, closestDistance)) return -1;
+        if (attackCooldown > 0) return 0;
         attackCooldown = 8;
         Mob target = mobs[closest];
+        if (target.type == SHEEP && !target.sheared) {
+            target.setSheared(true);
+            int woolCount = 1 + random.nextInt(3);
+            for (int i = 0; i < woolCount; i++)
+                drops.spawn(Block.WOOL, floor(target.x), floor(target.y), floor(target.z));
+        }
         target.health -= damage;
         if (target.health <= 0) {
+            int drop = target.type == PIG ? ItemCatalog.PORK_RAW :
+                       (target.type == ZOMBIE ? ItemCatalog.FEATHER : 0);
+            int count = drop == 0 ? 0 : random.nextInt(3);
+            for (int i = 0; i < count; i++)
+                drops.spawn(drop, floor(target.x), floor(target.y), floor(target.z));
             target.alive = false;
             target.root.setRenderingEnable(false);
         } else {
             target.fleeTicks = 35;
             target.targetYaw = yawTo(target.x - world.playerX, target.z - world.playerZ);
         }
-        return true;
+        return 1;
     }
 
     private void reset(VoxelWorld world) {
@@ -134,7 +146,8 @@ final class MobSystem {
         random.setSeed(world.seed ^ 0x51ED270B);
         for (int i = 0; i < mobs.length; i++) {
             Mob mob = mobs[i];
-            mob.health = mob.type == ZOMBIE ? 20 : (mob.type == PIG ? 10 : 8);
+            mob.health = mob.type == ZOMBIE ? 20 : 10;
+            mob.setSheared(false);
             mob.alive = mob.type != ZOMBIE;
             mob.root.setRenderingEnable(mob.alive);
             int attempts = 0;
@@ -213,6 +226,7 @@ final class MobSystem {
         mob.age = random.nextInt(100);
         mob.nextWander = tick + 20 + random.nextInt(100);
         mob.health = 20;
+        mob.setSheared(false);
         mob.attackDelay = 0;
         mob.fleeTicks = 0;
         mob.walkTicks = 0;
@@ -301,12 +315,14 @@ final class MobSystem {
         else if (mob.fleeTicks > 0 || mob.walkTicks > 0) walk = 0.5f;
         if (mob.walkTicks > 0) mob.walkTicks--;
         if (mob.type == ZOMBIE) {
-            mob.legs[0].setOrientation((float)Math.cos(phase) * 35.0f * walk, 1, 0, 0);
-            mob.legs[1].setOrientation((float)Math.cos(phase + Math.PI) * 35.0f * walk, 1, 0, 0);
+            // ModelBiped.animate() uses a 1.4 radian stride (about 80 degrees).
+            mob.legs[0].setOrientation((float)Math.cos(phase) * 80.0f * walk, 1, 0, 0);
+            mob.legs[1].setOrientation((float)Math.cos(phase + Math.PI) * 80.0f * walk, 1, 0, 0);
             mob.arms[0].setOrientation(-88.0f + (float)Math.sin(phase) * 5.0f, 1, 0, 0);
             mob.arms[1].setOrientation(-88.0f + (float)Math.sin(phase + Math.PI) * 5.0f, 1, 0, 0);
         } else {
-            float stride = (float)Math.cos(phase) * 28.0f * walk;
+            // ModelQuadruped.animate() also uses a 1.4 radian stride.
+            float stride = (float)Math.cos(phase) * 80.0f * walk;
             mob.legs[0].setOrientation(stride, 1, 0, 0);
             mob.legs[1].setOrientation(-stride, 1, 0, 0);
             mob.legs[2].setOrientation(-stride, 1, 0, 0);
@@ -348,6 +364,41 @@ final class MobSystem {
         return false;
     }
 
+    /** Returns the first ray/AABB intersection, matching the mobs' Indev hit boxes. */
+    private float rayBox(float ox, float oy, float oz, float dx, float dy, float dz,
+            float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
+        float near = 0.0f;
+        float far = 4.0f;
+        if (dx > -0.00001f && dx < 0.00001f) {
+            if (ox < minX || ox > maxX) return -1.0f;
+        } else {
+            float a = (minX - ox) / dx, b = (maxX - ox) / dx;
+            if (a > b) { float swap = a; a = b; b = swap; }
+            if (a > near) near = a;
+            if (b < far) far = b;
+            if (near > far) return -1.0f;
+        }
+        if (dy > -0.00001f && dy < 0.00001f) {
+            if (oy < minY || oy > maxY) return -1.0f;
+        } else {
+            float a = (minY - oy) / dy, b = (maxY - oy) / dy;
+            if (a > b) { float swap = a; a = b; b = swap; }
+            if (a > near) near = a;
+            if (b < far) far = b;
+            if (near > far) return -1.0f;
+        }
+        if (dz > -0.00001f && dz < 0.00001f) {
+            if (oz < minZ || oz > maxZ) return -1.0f;
+        } else {
+            float a = (minZ - oz) / dz, b = (maxZ - oz) / dz;
+            if (a > b) { float swap = a; a = b; b = swap; }
+            if (a > near) near = a;
+            if (b < far) far = b;
+            if (near > far) return -1.0f;
+        }
+        return near;
+    }
+
     private int floor(float value) {
         int result = (int)value;
         return value < result ? result - 1 : result;
@@ -376,6 +427,7 @@ final class MobSystem {
         final Group head = new Group();
         final Group[] legs = new Group[4];
         final Group[] arms = new Group[2];
+        final Group[] fleece = new Group[6];
         private final Appearance skin;
         int health;
         int age;
@@ -384,17 +436,18 @@ final class MobSystem {
         int nextWander;
         boolean alive;
         boolean chasing;
+        boolean sheared;
         int walkTicks;
         float x, y, z, yaw, targetYaw;
 
-        Mob(int type, Appearance appearance) {
+        Mob(int type, Appearance appearance, Appearance fur) {
             this.type = type;
             this.skin = appearance;
             if (type == ZOMBIE) buildZombie(appearance);
-            else buildQuadruped(appearance, type == PIG);
+            else buildQuadruped(appearance, type == PIG, fur);
         }
 
-        private void buildQuadruped(Appearance appearance, boolean pig) {
+        private void buildQuadruped(Appearance appearance, boolean pig, Appearance fur) {
             if (pig) {
                 addPart(root, 28, 8, 10, 16, 8, 10, 16, 8,
                         0.0f, 0.625f, 0.0f, 90.0f, 1, 0, 0);
@@ -402,7 +455,7 @@ final class MobSystem {
                         0.0f, 0.0f, 0.0f, 0, 0, 1, 0);
                 head.setTranslation(0.0f, 0.75f, -0.625f);
                 root.addChild(head);
-                addLegs(6, 0.375f, 0.1875f);
+                addLegs(6, 0.375f, 0.1875f, null);
             } else {
                 addPart(root, 28, 8, 8, 16, 6, 8, 16, 6,
                         0.0f, 0.9375f, 0.0f, 90.0f, 1, 0, 0);
@@ -410,11 +463,20 @@ final class MobSystem {
                         0.0f, 0.0f, 0.0f, 0, 0, 1, 0);
                 head.setTranslation(0.0f, 1.1875f, -0.625f);
                 root.addChild(head);
-                addLegs(12, 0.75f, 0.1875f);
+                // Indev renders sheep fleece as a second, inflated model pass.
+                fleece[0] = new Group();
+                head.addChild(fleece[0]);
+                addPart(fleece[0], 0, 0, 8, 8, 8, 6, 6, 6,
+                        0.0f, 0.0f, 0.0f, 0, 0, 1, 0, fur);
+                fleece[1] = new Group();
+                root.addChild(fleece[1]);
+                addPart(fleece[1], 28, 8, 12, 20, 10, 8, 16, 6,
+                        0.0f, 0.9375f, 0.0f, 90.0f, 1, 0, 0, fur);
+                addLegs(12, 0.75f, 0.1875f, fur);
             }
         }
 
-        private void addLegs(int length, float pivotY, float halfWidth) {
+        private void addLegs(int length, float pivotY, float halfWidth, Appearance fur) {
             for (int i = 0; i < 4; i++) {
                 Group leg = new Group();
                 float x = (i & 1) == 0 ? -halfWidth : halfWidth;
@@ -423,7 +485,21 @@ final class MobSystem {
                 root.addChild(leg);
                 addPart(leg, 0, 16, 4, length, 4, 4, length, 4,
                         0.0f, -length / 32.0f, 0.0f, 0, 0, 1, 0);
+                if (fur != null)
+                    {
+                        fleece[2 + i] = new Group();
+                        leg.addChild(fleece[2 + i]);
+                        addPart(fleece[2 + i], 0, 16, 5, 7, 5, 4, 6, 4,
+                                0.0f, -6.0f / 32.0f, 0.0f, 0, 0, 1, 0, fur);
+                    }
                 legs[i] = leg;
+            }
+        }
+
+        void setSheared(boolean value) {
+            sheared = value;
+            for (int i = 0; i < fleece.length; i++) {
+                if (fleece[i] != null) fleece[i].setRenderingEnable(!value);
             }
         }
 
@@ -456,11 +532,19 @@ final class MobSystem {
         private void addPart(Group parent, int u, int v, int width, int height, int depth,
                 int layoutWidth, int layoutHeight, int layoutDepth,
                 float x, float y, float z, float angle, float ax, float ay, float az) {
+            addPart(parent, u, v, width, height, depth, layoutWidth, layoutHeight, layoutDepth,
+                    x, y, z, angle, ax, ay, az, skin);
+        }
+
+        private void addPart(Group parent, int u, int v, int width, int height, int depth,
+                int layoutWidth, int layoutHeight, int layoutDepth,
+                float x, float y, float z, float angle, float ax, float ay, float az,
+                Appearance appearance) {
             Group part = new Group();
             part.setTranslation(x, y, z);
             if (angle != 0.0f) part.setOrientation(angle, ax, ay, az);
             part.addChild(makeBox(u, v, width, height, depth,
-                    layoutWidth, layoutHeight, layoutDepth, skin));
+                    layoutWidth, layoutHeight, layoutDepth, appearance));
             parent.addChild(part);
         }
     }
@@ -494,7 +578,8 @@ final class MobSystem {
         for (int face = 0; face < 6; face++) {
             int[] r = rects[face];
             int[] order = faces[face];
-            int[] us = {r[0], r[2], r[2], r[0]};
+            // TexturedQuad reverses U on its first two corners; preserve that Indev face mapping.
+            int[] us = {r[2], r[0], r[0], r[2]};
             int[] vs = {r[1], r[1], r[3], r[3]};
             for (int q = 0; q < 4; q++) {
                 float[] p = points[order[q]];
@@ -502,7 +587,8 @@ final class MobSystem {
                 positions[at * 3 + 1] = (short)(p[1] * 64.0f);
                 positions[at * 3 + 2] = (short)(p[2] * 64.0f);
                 texCoords[at * 2] = (short)(us[q] * 16);
-                texCoords[at * 2 + 1] = (short)(vs[q] * 16);
+                // The mob atlases are 64x32, so V needs twice U's fixed-point scale.
+                texCoords[at * 2 + 1] = (short)(vs[q] * 32);
                 at++;
             }
         }

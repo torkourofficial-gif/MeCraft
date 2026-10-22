@@ -24,6 +24,7 @@ final class VoxelWorld {
     private static final int MCF6_BLOCK_COUNT = 15;
     private static final int MCF6_ITEM_COUNT = 45;
     private static final int MCF7_ITEM_COUNT = 47;
+    private static final int MCF8_ITEM_COUNT = 48;
     static final int DAY_LENGTH = 24000;
 
     final byte[] blocks = new byte[BLOCK_COUNT];
@@ -320,7 +321,7 @@ final class VoxelWorld {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(blocks.length * 2 + 64);
             DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(0x4D434638); // MCF8: torch block and Indev day clock
+            out.writeInt(0x4D434639); // MCF9: wool and mob-drop items
             out.writeInt(seed);
             out.writeByte(mode);
             out.writeByte(selectedSlot);
@@ -362,30 +363,35 @@ final class VoxelWorld {
             int format = in.readInt();
             if (format != 0x4D434631 && format != 0x4D434632 && format != 0x4D434633 &&
                 format != 0x4D434634 && format != 0x4D434635 && format != 0x4D434636 &&
-                format != 0x4D434637 && format != 0x4D434638) return null;
+                format != 0x4D434637 && format != 0x4D434638 && format != 0x4D434639) return null;
             int seed = in.readInt();
             VoxelWorld world = new VoxelWorld(seed, in.readByte());
             world.selectedSlot = in.readByte();
             if (format == 0x4D434635 || format == 0x4D434636 || format == 0x4D434637 ||
-                format == 0x4D434638) {
-                int inventoryLength = format == 0x4D434638 ? world.inventory.length :
-                                      (format == 0x4D434637 ? MCF7_ITEM_COUNT : MCF6_ITEM_COUNT);
+                format == 0x4D434638 || format == 0x4D434639) {
+                int inventoryLength = format == 0x4D434639 ? world.inventory.length :
+                                      (format == 0x4D434638 ? MCF8_ITEM_COUNT :
+                                       (format == 0x4D434637 ? MCF7_ITEM_COUNT : MCF6_ITEM_COUNT));
                 for (int i = 0; i < inventoryLength; i++) {
-                    int newId = format == 0x4D434638 ? i :
-                                (format == 0x4D434637 ? (i < 17 ? i : i + 1) :
-                                 (i < MCF6_BLOCK_COUNT ? i : i + 2));
+                    int newId = format == 0x4D434639 ? i :
+                                (format == 0x4D434638 ? (i < 18 ? i : i + 1) :
+                                 (format == 0x4D434637 ? (i < 17 ? i : i + 2) :
+                                  (i < MCF6_BLOCK_COUNT ? i : i + 4)));
                     world.inventory[newId] = in.readUnsignedByte();
                 }
                 for (int i = 0; i < world.hotbar.length; i++) {
                     int id = in.readUnsignedByte();
-                    if (format == 0x4D434637 && id >= 17) id++;
-                    else if (format != 0x4D434637 && format != 0x4D434638 && id >= MCF6_BLOCK_COUNT) id += 2;
+                    if (format == 0x4D434638 && id >= 18) id++;
+                    else if (format == 0x4D434637 && id >= 17) id += 2;
+                    else if (format != 0x4D434637 && format != 0x4D434638 &&
+                             format != 0x4D434639 && id >= MCF6_BLOCK_COUNT) id += 4;
                     world.hotbar[i] = id > Block.AIR && id < ItemCatalog.COUNT ? id : Block.DIRT;
                 }
                 for (int i = 0; i < inventoryLength; i++) {
-                    int newId = format == 0x4D434638 ? i :
-                                (format == 0x4D434637 ? (i < 17 ? i : i + 1) :
-                                 (i < MCF6_BLOCK_COUNT ? i : i + 2));
+                    int newId = format == 0x4D434639 ? i :
+                                (format == 0x4D434638 ? (i < 18 ? i : i + 1) :
+                                 (format == 0x4D434637 ? (i < 17 ? i : i + 2) :
+                                  (i < MCF6_BLOCK_COUNT ? i : i + 4)));
                     world.itemDamage[newId] = in.readUnsignedShort();
                 }
             } else if (format == 0x4D434633 || format == 0x4D434634) {
@@ -405,16 +411,17 @@ final class VoxelWorld {
             world.yaw = in.readFloat();
             if (format == 0x4D434632 || format == 0x4D434633 || format == 0x4D434634 ||
                 format == 0x4D434635 || format == 0x4D434636 || format == 0x4D434637 ||
-                format == 0x4D434638)
+                format == 0x4D434638 || format == 0x4D434639)
                 world.health = in.readUnsignedByte();
-            if (format == 0x4D434638) {
+            if (format == 0x4D434638 || format == 0x4D434639) {
                 world.dayTime = in.readUnsignedShort() % DAY_LENGTH;
             }
             in.readFully(world.blocks);
             if (format == 0x4D434634 || format == 0x4D434635 || format == 0x4D434636 ||
-                format == 0x4D434637 || format == 0x4D434638)
+                format == 0x4D434637 || format == 0x4D434638 || format == 0x4D434639)
                 in.readFully(world.waterLevels);
-            if (format != 0x4D434636 && format != 0x4D434637 && format != 0x4D434638)
+            if (format != 0x4D434636 && format != 0x4D434637 && format != 0x4D434638 &&
+                format != 0x4D434639)
                 world.migrateLegacyFurnaces();
             world.queueSavedFlowingWater();
             world.revision++;

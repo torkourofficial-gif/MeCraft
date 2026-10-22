@@ -20,14 +20,15 @@ final class Block {
     static final byte RED_FLOWER = 15;
     static final byte YELLOW_FLOWER = 16;
     static final byte TORCH = 17;
+    static final byte WOOL = 18;
 
     static final int LEGACY_COUNT = 14;
-    static final int COUNT = 18;
-    static final int[] TILE = new int[] { 0, 0, 2, 1, 18, 205, 20, 52, 17, 34, 33, 4, 59, 16, 2, 12, 13, 80 };
+    static final int COUNT = 19;
+    static final int[] TILE = new int[] { 0, 0, 2, 1, 18, 205, 20, 52, 17, 34, 33, 4, 59, 16, 2, 12, 13, 80, 78 };
     static final String[] NAME = new String[] {
         "Aire", "Césped", "Tierra", "Piedra", "Arena", "Agua",
         "Tronco", "Hojas", "Roca madre", "Carbón", "Hierro", "Tablones",
-        "Mesa de crafteo", "Piedra labrada", "Tierra de cultivo", "Flor roja", "Flor amarilla", "Antorcha"
+        "Mesa de crafteo", "Piedra labrada", "Tierra de cultivo", "Flor roja", "Flor amarilla", "Antorcha", "Lana"
     };
 
     private Block() { }
@@ -95,6 +96,7 @@ final class Block {
         if (id == STONE) return 15;
         if (id == LOG || id == PLANKS) return 20;
         if (id == CRAFTING_TABLE) return 25;
+        if (id == WOOL) return 8;
         if (id == COAL || id == IRON) return 30;
         if (id == COBBLESTONE) return 20;
         if (id == FARMLAND) return 6;

@@ -10,7 +10,7 @@ import javax.microedition.m3g.TriangleStripArray;
 import javax.microedition.m3g.VertexArray;
 import javax.microedition.m3g.VertexBuffer;
 
-/** Bounded Indev-style item entities sharing one textured mesh. */
+/** Bounded Indev-style item entities using a block mesh and a small item-sprite mesh. */
 final class DroppedItemSystem {
     private static final int CAPACITY = 24;
     private static final int VERTICES_PER_ITEM = 24;
@@ -33,6 +33,7 @@ final class DroppedItemSystem {
     };
 
     final Mesh mesh;
+    final Mesh spriteMesh;
     private final float[] x = new float[CAPACITY];
     private final float[] y = new float[CAPACITY];
     private final float[] z = new float[CAPACITY];
@@ -44,13 +45,17 @@ final class DroppedItemSystem {
     private final int[] pickupDelay = new int[CAPACITY];
     private final short[] positions = new short[VERTEX_COUNT * 3];
     private final short[] texCoords = new short[VERTEX_COUNT * 2];
+    private final short[] spritePositions = new short[VERTEX_COUNT * 3];
+    private final short[] spriteTexCoords = new short[VERTEX_COUNT * 2];
     private final VertexArray positionArray;
     private final VertexArray texCoordArray;
+    private final VertexArray spritePositionArray;
+    private final VertexArray spriteTexCoordArray;
     private int cursor;
     private int activeCount;
     private int random = 0x2468ACE1;
 
-    DroppedItemSystem(Texture2D atlas) {
+    DroppedItemSystem(Texture2D atlas, Texture2D itemAtlas) {
         positionArray = new VertexArray(VERTEX_COUNT, 3, 2);
         texCoordArray = new VertexArray(VERTEX_COUNT, 2, 2);
         positionArray.set(0, VERTEX_COUNT, positions);
@@ -77,13 +82,39 @@ final class DroppedItemSystem {
         appearance.setCompositingMode(compositing);
         mesh = new Mesh(buffer, triangles, appearance);
         mesh.setRenderingEnable(false);
+        spritePositionArray = new VertexArray(VERTEX_COUNT, 3, 2);
+        spritePositionArray.set(0, VERTEX_COUNT, spritePositions);
+        spriteTexCoordArray = new VertexArray(VERTEX_COUNT, 2, 2);
+        spriteTexCoordArray.set(0, VERTEX_COUNT, spriteTexCoords);
+        VertexBuffer spriteBuffer = new VertexBuffer();
+        spriteBuffer.setPositions(spritePositionArray, 1.0f / POSITION_SCALE, null);
+        spriteBuffer.setTexCoords(0, spriteTexCoordArray, 1.0f / 256.0f, null);
+        Appearance spriteAppearance = new Appearance();
+        spriteAppearance.setTexture(0, itemAtlas);
+        Material spriteMaterial = new Material();
+        spriteMaterial.setColor(Material.AMBIENT, 0xFFFFFFFF);
+        spriteMaterial.setColor(Material.DIFFUSE, 0xFFFFFFFF);
+        spriteAppearance.setMaterial(spriteMaterial);
+        PolygonMode spritePolygon = new PolygonMode();
+        spritePolygon.setCulling(PolygonMode.CULL_NONE);
+        spriteAppearance.setPolygonMode(spritePolygon);
+        CompositingMode spriteCompositing = new CompositingMode();
+        spriteCompositing.setAlphaThreshold(0.5f);
+        spriteCompositing.setBlending(CompositingMode.ALPHA);
+        spriteAppearance.setCompositingMode(spriteCompositing);
+        int[] spriteStrips = new int[CAPACITY * 6];
+        for (int i = 0; i < spriteStrips.length; i++) spriteStrips[i] = 4;
+        spriteMesh = new Mesh(spriteBuffer, new TriangleStripArray(0, spriteStrips), spriteAppearance);
+        spriteMesh.setRenderingEnable(false);
         for (int i = 0; i < CAPACITY; i++) writeItem(i);
         positionArray.set(0, VERTEX_COUNT, positions);
         texCoordArray.set(0, VERTEX_COUNT, texCoords);
+        spritePositionArray.set(0, VERTEX_COUNT, spritePositions);
+        spriteTexCoordArray.set(0, VERTEX_COUNT, spriteTexCoords);
     }
 
     void spawn(int id, int bx, int by, int bz) {
-        if (id <= Block.AIR || id >= Block.COUNT) return;
+        if (id <= Block.AIR || id >= ItemCatalog.COUNT) return;
         int slot = -1;
         for (int n = 0; n < CAPACITY; n++) {
             int candidate = (cursor + n) % CAPACITY;
@@ -104,12 +135,15 @@ final class DroppedItemSystem {
         vx[slot] = nextRandom() * 0.2f - 0.1f;
         vy[slot] = 0.2f;
         vz[slot] = nextRandom() * 0.2f - 0.1f;
-        writeTexture(slot, id);
+        if (id < Block.COUNT) writeTexture(slot, id);
+        else writeSpriteTexture(slot, id);
     }
 
     /** Returns one collected block ID, or -1 when nothing was collected. */
     int update(VoxelWorld world, int[] inventory) {
         int picked = -1;
+        boolean hasBlocks = false;
+        boolean hasSprites = false;
         for (int i = 0; i < CAPACITY; i++) {
             if (itemId[i] == 0) {
                 writeItem(i);
@@ -142,7 +176,7 @@ final class DroppedItemSystem {
             float dy = y[i] - (world.playerY + 0.9f);
             float dz = z[i] - world.playerZ;
             boolean inPickupRange = dx * dx + dy * dy + dz * dz <= PICKUP_RADIUS_SQUARED;
-            if (pickupDelay[i] == 0 && picked < 0 && inventory[id] < 64 && inPickupRange) {
+            if (pickupDelay[i] == 0 && picked < 0 && inventory[id] < ItemCatalog.maxStack(id) && inPickupRange) {
                 inventory[id]++;
                 itemId[i] = 0;
                 activeCount--;
@@ -151,9 +185,15 @@ final class DroppedItemSystem {
             } else {
                 writeItem(i);
             }
+            if (itemId[i] > 0) {
+                if (itemId[i] < Block.COUNT) hasBlocks = true;
+                else hasSprites = true;
+            }
         }
         positionArray.set(0, VERTEX_COUNT, positions);
-        mesh.setRenderingEnable(activeCount > 0);
+        spritePositionArray.set(0, VERTEX_COUNT, spritePositions);
+        mesh.setRenderingEnable(hasBlocks);
+        spriteMesh.setRenderingEnable(hasSprites);
         return picked;
     }
 
@@ -195,6 +235,7 @@ final class DroppedItemSystem {
         if (itemId[slot] == 0) {
             int at = baseVertex * 3;
             for (int i = 0; i < VERTICES_PER_ITEM * 3; i++) positions[at + i] = 0;
+            for (int i = 0; i < VERTICES_PER_ITEM * 3; i++) spritePositions[at + i] = 0;
             return;
         }
         float angle = (age[slot] * 4.0f) * (float)Math.PI / 180.0f;
@@ -205,6 +246,22 @@ final class DroppedItemSystem {
         int centerX = toShort(x[slot]);
         int centerYS = toShort(centerY);
         int centerZ = toShort(z[slot]);
+        if (itemId[slot] >= Block.COUNT) {
+            int blockAt = baseVertex * 3;
+            for (int i = 0; i < VERTICES_PER_ITEM * 3; i++) positions[blockAt + i] = 0;
+            int spriteAt = blockAt;
+            for (int v = 0; v < VERTICES_PER_ITEM; v++) {
+                int lx = v < 8 ? FLOWER_LOCAL[v * 3] : 0;
+                int ly = v < 8 ? FLOWER_LOCAL[v * 3 + 1] : 0;
+                int lz = v < 8 ? FLOWER_LOCAL[v * 3 + 2] : 0;
+                spritePositions[spriteAt++] = (short)(centerX + (int)(lx * cos + lz * sin));
+                spritePositions[spriteAt++] = (short)(centerYS + ly);
+                spritePositions[spriteAt++] = (short)(centerZ + (int)(-lx * sin + lz * cos));
+            }
+            return;
+        }
+        int spriteAt = baseVertex * 3;
+        for (int i = 0; i < VERTICES_PER_ITEM * 3; i++) spritePositions[spriteAt + i] = 0;
         int at = baseVertex * 3;
         for (int v = 0; v < VERTICES_PER_ITEM; v++) {
             int lx, ly, lz;
@@ -239,6 +296,21 @@ final class DroppedItemSystem {
             texCoords[at++] = (short)u1; texCoords[at++] = (short)v0;
         }
         texCoordArray.set(0, VERTEX_COUNT, texCoords);
+    }
+
+    private void writeSpriteTexture(int slot, int id) {
+        int icon = ItemCatalog.iconIndex(id);
+        if (icon < 0) return;
+        int at = slot * VERTICES_PER_ITEM * 2;
+        int u0 = (icon & 15) * 16, v0 = (icon >> 4) * 16;
+        int u1 = u0 + 16, v1 = v0 + 16;
+        for (int face = 0; face < 6; face++) {
+            spriteTexCoords[at++] = (short)u0; spriteTexCoords[at++] = (short)v1;
+            spriteTexCoords[at++] = (short)u0; spriteTexCoords[at++] = (short)v0;
+            spriteTexCoords[at++] = (short)u1; spriteTexCoords[at++] = (short)v1;
+            spriteTexCoords[at++] = (short)u1; spriteTexCoords[at++] = (short)v0;
+        }
+        spriteTexCoordArray.set(0, VERTEX_COUNT, spriteTexCoords);
     }
 
     private int toShort(float value) { return (int)(value * POSITION_SCALE); }

@@ -60,6 +60,7 @@ final class ChunkRenderer {
     private final int[] nearestTorchZ = new int[3];
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     private final Texture2D atlas;
+    private final Texture2D itemAtlas;
     private final Appearance blockAppearance;
     private final Appearance flowerAppearance;
     private final Appearance heldItemAppearance;
@@ -94,7 +95,7 @@ final class ChunkRenderer {
         flowerAppearance = createFlowerAppearance();
         heldItemAppearance = createFirstPersonAppearance(atlas, true);
         Image itemSource = Image.createImage("/mecraft/items.png");
-        Texture2D itemAtlas = new Texture2D(new Image2D(Image2D.RGBA, itemSource));
+        itemAtlas = new Texture2D(new Image2D(Image2D.RGBA, itemSource));
         itemAtlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         itemAtlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         itemSpriteAppearance = createFirstPersonAppearance(itemAtlas, true);
@@ -134,8 +135,8 @@ final class ChunkRenderer {
         itemSpriteOrigin.setTranslation(-15.0f / 16.0f, -1.0f / 16.0f, 0.0f);
         buildHeldItems();
         particles = new ParticleSystem(atlas);
-        droppedItems = new DroppedItemSystem(atlas);
-        mobs = new MobSystem(scene);
+        droppedItems = new DroppedItemSystem(atlas, itemAtlas);
+        mobs = new MobSystem(scene, droppedItems);
 
         camera.setPerspective(68.0f, (float)width / (float)height, 0.1f, 38.0f);
         cameraPivot.addChild(cameraEffectPivot);
@@ -144,6 +145,7 @@ final class ChunkRenderer {
         scene.addChild(terrain);
         scene.addChild(particles.mesh);
         scene.addChild(droppedItems.mesh);
+        scene.addChild(droppedItems.spriteMesh);
         scene.addChild(cameraPivot);
         scene.setActiveCamera(camera);
         sky.setColor(0xFF82B8E8);
@@ -664,7 +666,7 @@ final class ChunkRenderer {
         }
     }
 
-    boolean hitMob(VoxelWorld world, float pitch, int damage) {
+    int hitMob(VoxelWorld world, float pitch, int damage) {
         return mobs.hit(world, pitch, damage);
     }
 

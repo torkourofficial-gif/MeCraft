@@ -10,7 +10,9 @@ final class ItemCatalog {
     static final int DIAMOND = IRON_INGOT + 1;
     static final int GOLD_INGOT = IRON_INGOT + 2;
     static final int SEEDS = GOLD_INGOT + 1;
-    static final int COUNT = SEEDS + 1;
+    static final int PORK_RAW = SEEDS + 1;
+    static final int FEATHER = PORK_RAW + 1;
+    static final int COUNT = FEATHER + 1;
 
     static final int SWORD = 0;
     static final int SHOVEL = 1;
@@ -31,7 +33,7 @@ final class ItemCatalog {
         66,82,98,114,130,
         67,83,99,115,131,
         68,84,100,116,132,
-        23,55,39,9
+        23,55,39,9,87,24
     };
     private static final String[] MATERIAL_NAMES = new String[] {
         "madera", "piedra", "hierro", "diamante", "oro"
@@ -82,6 +84,8 @@ final class ItemCatalog {
         if (id == DIAMOND) return "Diamante";
         if (id == GOLD_INGOT) return "Lingote de oro";
         if (id == SEEDS) return "Semillas";
+        if (id == PORK_RAW) return "Cerdo crudo";
+        if (id == FEATHER) return "Pluma";
         if (id > 0 && id < Block.COUNT) return Block.NAME[id];
         return "Objeto";
     }

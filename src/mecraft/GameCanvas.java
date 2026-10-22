@@ -394,19 +394,39 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void mineTarget() {
         if (world != null) {
+            int mobHit = renderer.hitMob(world, cameraPitch, heldAttackDamage());
+            if (mobHit >= 0) {
+                if (mobHit > 0) onMobHit();
+                return;
+            }
             renderer.swingHand();
-            if (renderer.hitMob(world, cameraPitch, heldAttackDamage())) return;
             advanceMining(trace(5.0f));
         }
     }
 
     private int heldAttackDamage() {
         int item = hotbar[world.selectedSlot];
-        return ItemCatalog.isTool(item) && ItemCatalog.kind(item) == ItemCatalog.SWORD ? 4 : 2;
+        if (!ItemCatalog.isTool(item) || ItemCatalog.kind(item) != ItemCatalog.SWORD) return 1;
+        int tier = ItemCatalog.tier(item);
+        // Indev swords deal 4 base damage plus their material bonus; gold uses wood's bonus.
+        return 4 + (tier == ItemCatalog.GOLD ? 0 : tier);
+    }
+
+    private void onMobHit() {
+        renderer.swingHand();
+        int item = hotbar[world.selectedSlot];
+        if (ItemCatalog.isTool(item) && ItemCatalog.kind(item) == ItemCatalog.SWORD)
+            damageTool(item, 1);
     }
 
     private void updateMining() {
         if (world == null) return;
+        int mobHit = renderer.hitMob(world, cameraPitch, heldAttackDamage());
+        if (mobHit >= 0) {
+            if (mobHit > 0) onMobHit();
+            resetMining();
+            return;
+        }
         if (miningHitWait > 0) {
             miningHitWait--;
             return;
@@ -670,8 +690,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         else if (keyCode == KEY_NUM6) keys[6] = true;
         else if (keyCode == KEY_NUM1) {
             if (!keys[1] && renderer != null) {
+                int mobHit = renderer.hitMob(world, cameraPitch, heldAttackDamage());
+                if (mobHit >= 0) {
+                    if (mobHit > 0) onMobHit();
+                    keys[1] = true;
+                    return;
+                }
                 renderer.swingHand();
-                if (renderer.hitMob(world, cameraPitch, heldAttackDamage())) return;
             }
             keys[1] = true;
         }
