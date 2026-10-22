@@ -40,7 +40,7 @@ final class PlayerPhysics {
         }
 
         if (flying) {
-            motionY = jumping ? 0.24f : (descending ? -0.24f : 0.0f);
+            motionY = jumping ? 0.12f : (descending ? -0.12f : 0.0f);
             float requestedY = motionY;
             float movedY = clipY(world, world.playerX, world.playerY, world.playerZ, requestedY);
             world.playerY += movedY;
@@ -50,8 +50,8 @@ final class PlayerPhysics {
             float radians = world.yaw * (float)Math.PI / 180.0f;
             float sin = (float)Math.sin(radians);
             float cos = (float)Math.cos(radians);
-            motionX += (forward * sin - strafe * cos) * 0.10f;
-            motionZ += (forward * cos + strafe * sin) * 0.10f;
+            motionX += (forward * sin - strafe * cos) * 0.04f;
+            motionZ += (forward * cos + strafe * sin) * 0.04f;
             moveHorizontally(world);
             motionX *= 0.91f;
             motionZ *= 0.91f;

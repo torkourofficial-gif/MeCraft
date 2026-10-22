@@ -25,6 +25,14 @@ final class Block {
 
     static final int LEGACY_COUNT = 14;
     static final int DECORATIVE_START = 20;
+    /* Cells with image detail in the bundled 16x16 terrain atlas. A dot is
+       an empty/placeholder cell; these stay out of the creative palette. */
+    private static final String[] TEXTURED_TILE_ROWS = new String[] {
+        "#++#+####++.#+.+", "#+###########+..", "##############..", "#+############..",
+        "##++########....", "####++#++#######", "####++..........", "#..#............",
+        "#...............", "................", "................", "................",
+        ".............+++", "..............++", ".............+++", "++++++++++....++"
+    };
     private static final int[] EXISTING_TILES = new int[] {
         0,2,1,18,20,52,17,34,33,4,59,16,12,13,64,21,43,60,80,87
     };
@@ -32,12 +40,13 @@ final class Block {
     static final int COUNT = DECORATIVE_START + EXTRA_TILES.length;
     static final int[] TILE = makeTiles();
     static final String[] NAME = makeNames();
+    static final int[] CREATIVE_PALETTE = makeCreativePalette();
 
     private static int[] makeExtraTiles() {
         int[] temporary = new int[110];
         int count = 0;
         for (int tile = 0; tile < 80; tile++) {
-            if (!isAtlasBlockTile(tile)) continue;
+            if (!isAtlasBlockTile(tile) || !hasAtlasTexture(tile)) continue;
             if (tile == 8 || tile == 9 || tile == 10 || isExistingTile(tile)) continue;
             temporary[count++] = tile;
         }
@@ -46,11 +55,31 @@ final class Block {
                                             97,98,99,100,101,112,128 };
         for (int i = 0; i < lowerAtlasTiles.length; i++) {
             int tile = lowerAtlasTiles[i];
-            if (!isExistingTile(tile)) temporary[count++] = tile;
+            if (!isExistingTile(tile) && hasAtlasTexture(tile)) temporary[count++] = tile;
         }
         int[] result = new int[count];
         System.arraycopy(temporary, 0, result, 0, count);
         return result;
+    }
+
+    private static int[] makeCreativePalette() {
+        int[] temporary = new int[COUNT];
+        int count = 0;
+        // Keep the original gameplay blocks (except non-placeable world blocks).
+        for (int id = 1; id < DECORATIVE_START; id++) {
+            if (id != WATER && id != BEDROCK) temporary[count++] = id;
+        }
+        for (int id = DECORATIVE_START; id < COUNT; id++) {
+            if (hasAtlasTexture(TILE[id])) temporary[count++] = id;
+        }
+        int[] palette = new int[count];
+        System.arraycopy(temporary, 0, palette, 0, count);
+        return palette;
+    }
+
+    private static boolean hasAtlasTexture(int tile) {
+        if (tile < 0 || tile >= 256) return false;
+        return TEXTURED_TILE_ROWS[tile >> 4].charAt(tile & 15) != '.';
     }
 
     private static boolean isAtlasBlockTile(int tile) {

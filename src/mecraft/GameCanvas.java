@@ -457,6 +457,17 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         int x = target[0], y = target[1], z = target[2];
         byte id = world.get(x, y, z);
         if (id == Block.AIR || id == Block.BEDROCK || id == Block.WATER) { resetMining(); return; }
+        // Indev TNT is primed by the attack; it never drops or breaks as a
+        // regular block. Replace it with the fuse entity immediately.
+        if (id == Block.TNT) {
+            renderer.spawnPrimedTnt(x, y, z, 80);
+            world.set(x, y, z, Block.AIR);
+            renderer.swingHand();
+            renderer.sync(world);
+            resetMining();
+            miningHitWait = 5;
+            return;
+        }
         if (x != miningX || y != miningY || z != miningZ) {
             miningX = x; miningY = y; miningZ = z; miningDamage = 0.0f;
             return;
@@ -471,7 +482,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             if (world.mode == 0 && Block.dropsItem(id) && canHarvest)
                 renderer.spawnDroppedItem(Block.dropId(id), x, y, z);
             renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
-            if (id == Block.TNT) renderer.spawnPrimedTnt(x, y, z, 80);
             renderer.swingHand();
             world.set(x, y, z, Block.AIR);
             if (world.mode == 0) damageTool(heldItem, ItemCatalog.durabilityCost(heldItem));
@@ -811,14 +821,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void moveCreativeSelection(int delta) {
-        int count = Block.COUNT - 1;
+        int count = Block.CREATIVE_PALETTE.length;
         creativeSelection = (creativeSelection + delta) % count;
         if (creativeSelection < 0) creativeSelection += count;
         repaint();
     }
 
     private void selectCreativeBlock() {
-        int block = creativeSelection + 1;
+        int block = Block.CREATIVE_PALETTE[creativeSelection];
         if (block <= Block.AIR || block >= Block.COUNT) return;
         hotbar[world.selectedSlot] = block;
         inventory[block] = ItemCatalog.maxStack(block);
@@ -1250,15 +1260,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             g.setColor(40, 40, 40); g.drawRect(left, top, panelW - 1, panelH - 1);
         }
         int first = creativeSelection / pageSize * pageSize;
-        int pageCount = (Block.COUNT - 2) / pageSize + 1;
+        int pageCount = (Block.CREATIVE_PALETTE.length + pageSize - 1) / pageSize;
         g.setColor(35, 35, 35);
         g.drawString("Bloques creativos", w / 2, top + 3, Graphics.TOP | Graphics.HCENTER);
         for (int cell = 0; cell < pageSize; cell++) {
-            int block = first + cell + 1;
-            if (block >= Block.COUNT) break;
+            int paletteIndex = first + cell;
+            if (paletteIndex >= Block.CREATIVE_PALETTE.length) break;
+            int block = Block.CREATIVE_PALETTE[paletteIndex];
             int x = left + 7 + (cell % 9) * 18;
             int y = top + 23 + (cell / 9) * 18;
-            if (block - 1 == creativeSelection) {
+            if (paletteIndex == creativeSelection) {
                 g.setColor(255, 255, 255);
                 g.fillRect(x - 1, y - 1, 18, 18);
                 g.setColor(90, 90, 90);
@@ -1271,7 +1282,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             int y = top + 199;
             drawInventoryCell(g, hotbar[slot], x, y);
         }
-        int selectedBlock = creativeSelection + 1;
+        int selectedBlock = Block.CREATIVE_PALETTE[creativeSelection];
         g.setColor(35, 35, 35);
         String name = selectedBlock < Block.COUNT ? Block.NAME[selectedBlock] : "";
         if (name.length() > 16) name = name.substring(0, 16);
