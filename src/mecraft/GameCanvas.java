@@ -61,8 +61,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private int pauseSelection;
     private boolean selectCommandAttached = true;
     private boolean hasSavedWorld;
-    private float verticalVelocity;
-    private float fallDistance;
+    private final PlayerPhysics playerPhysics = new PlayerPhysics();
+    private boolean jumpHeld;
     private float cameraPitch = -5.0f;
     private boolean lookUp, lookDown, lookLeft, lookRight;
     private VoxelWorld world;
@@ -142,48 +142,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (cameraPitch < -80.0f) cameraPitch = -80.0f;
         renderer.updateHandAnimation();
 
+        world.updateFluids();
         float forward = 0.0f;
         float strafe = 0.0f;
         if (keys[2]) forward += 1.0f;
         if (keys[8]) forward -= 1.0f;
         if (keys[6]) strafe += 1.0f;
         if (keys[4]) strafe -= 1.0f;
-        if (forward != 0.0f || strafe != 0.0f) {
-            float length = (float)Math.sqrt(forward * forward + strafe * strafe);
-            float speed = world.mode == 1 ? 0.145f : 0.105f;
-            forward = forward / length * speed;
-            strafe = strafe / length * speed;
-            double radians = world.yaw * Math.PI / 180.0;
-            float dx = (float)Math.sin(radians) * forward - (float)Math.cos(radians) * strafe;
-            float dz = (float)Math.cos(radians) * forward + (float)Math.sin(radians) * strafe;
-            tryMove(dx, dz);
-        }
-
-        verticalVelocity -= 0.012f;
-        if (verticalVelocity < -0.22f) verticalVelocity = -0.22f;
-        float nextY = world.playerY + verticalVelocity;
-        if (verticalVelocity < 0.0f) fallDistance -= verticalVelocity;
-        if (verticalVelocity < 0.0f && collides(world.playerX, nextY, world.playerZ)) {
-            if (world.mode == 0 && fallDistance > 3.0f) {
-                int damage = (int)(fallDistance - 3.0f);
-                world.health -= damage;
-                if (world.health < 0) world.health = 0;
-                if (world.health == 0) respawn();
-            }
-            fallDistance = 0.0f;
-            verticalVelocity = 0.0f;
-            world.playerY = floorBlock(world.playerY);
-        } else if (verticalVelocity > 0.0f && collides(world.playerX, nextY, world.playerZ)) {
-            verticalVelocity = 0.0f;
-        } else {
-            world.playerY = nextY;
-        }
-        if (world.playerY < 1.0f) {
-            world.playerX = VoxelWorld.WIDTH / 2 + 0.5f;
-            world.playerZ = VoxelWorld.DEPTH / 2 + 0.5f;
-            world.playerY = world.surfaceY(VoxelWorld.WIDTH / 2, VoxelWorld.DEPTH / 2) + 1.0f;
-            verticalVelocity = 0.0f;
-            fallDistance = 0.0f;
+        int fallDamage = playerPhysics.update(world, forward, strafe, jumpHeld);
+        if (fallDamage > 0 && world.mode == 0) {
+            world.health -= fallDamage;
+            if (world.health < 0) world.health = 0;
+            if (world.health == 0) respawn();
         }
         int pickedItem = renderer.updateDroppedItems(world, inventory);
         if (pickedItem == Block.CRAFTING_TABLE || pickedItem == Block.FURNACE) ensureHotbarItem(pickedItem);
@@ -192,39 +162,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         renderer.updateParticles(world, world.yaw, cameraPitch);
     }
 
-    private void tryMove(float dx, float dz) {
-        float nx = world.playerX + dx;
-        if (nx > 1.0f && nx < VoxelWorld.WIDTH - 1.0f && !collides(nx, world.playerY, world.playerZ)) world.playerX = nx;
-        float nz = world.playerZ + dz;
-        if (nz > 1.0f && nz < VoxelWorld.DEPTH - 1.0f && !collides(world.playerX, world.playerY, nz)) world.playerZ = nz;
-    }
-
-    private boolean collides(float x, float y, float z) {
-        int minX = floorBlock(x - PLAYER_RADIUS + 0.001f);
-        int maxX = floorBlock(x + PLAYER_RADIUS - 0.001f);
-        int minZ = floorBlock(z - PLAYER_RADIUS + 0.001f);
-        int maxZ = floorBlock(z + PLAYER_RADIUS - 0.001f);
-        int minY = floorBlock(y + 0.001f);
-        int maxY = floorBlock(y + PLAYER_HEIGHT - 0.001f);
-        for (int by = minY; by <= maxY; by++) {
-            if (Block.solid(world.get(minX, by, minZ)) || Block.solid(world.get(maxX, by, minZ)) ||
-                Block.solid(world.get(minX, by, maxZ)) || Block.solid(world.get(maxX, by, maxZ))) return true;
-        }
-        return false;
-    }
-
-    private void jump() {
-        if (state != PLAYING || verticalVelocity != 0.0f) return;
-        if (collides(world.playerX, world.playerY - 0.01f, world.playerZ)) verticalVelocity = 0.20f;
-    }
-
     private void respawn() {
         world.playerX = VoxelWorld.WIDTH / 2 + 0.5f;
         world.playerZ = VoxelWorld.DEPTH / 2 + 0.5f;
         world.playerY = world.surfaceY(VoxelWorld.WIDTH / 2, VoxelWorld.DEPTH / 2) + 1.0f;
         world.health = 20;
-        verticalVelocity = 0.0f;
-        fallDistance = 0.0f;
+        playerPhysics.reset();
     }
 
     private void startNewWorld(int mode) {
@@ -238,7 +181,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             }
             world = new VoxelWorld((int)(System.currentTimeMillis() ^ System.currentTimeMillis() >>> 32), mode);
             copyHotbarFromWorld();
-            fallDistance = 0.0f;
+            playerPhysics.reset();
             resetInventory(mode);
             copyInventoryToWorld();
             stage = "cargando /textures.png y creando escena M3G";
@@ -273,7 +216,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             if (renderer != null) { renderer = null; System.gc(); }
             world = saved;
             world.health = clamp(world.health, 0, 20);
-            fallDistance = 0.0f;
+            playerPhysics.reset();
             copyHotbarFromWorld();
             resetInventory(world.mode);
             for (int i = 0; i < inventory.length; i++) inventory[i] = world.inventory[i];
@@ -411,10 +354,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             miningX = x; miningY = y; miningZ = z; miningDamage = 0.0f;
             return;
         }
-        boolean grounded = verticalVelocity == 0.0f &&
-            collides(world.playerX, world.playerY - 0.01f, world.playerZ);
-        boolean submerged = world.get(floorBlock(world.playerX),
-            floorBlock(world.playerY + 0.9f), floorBlock(world.playerZ)) == Block.WATER;
+        boolean grounded = playerPhysics.isOnGround();
+        boolean submerged = playerPhysics.isInWater(world);
         if (world.mode == 1) miningDamage = 1.0f;
         else miningDamage += Block.breakStrength(id, grounded, submerged);
         if (miningDamage >= 1.0f) {
@@ -624,7 +565,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             else if (action == LEFT) lookLeft = true;
             else if (action == RIGHT) lookRight = true;
         }
-        if (keyCode == KEY_NUM5) jump();
+        if (keyCode == KEY_NUM5) jumpHeld = true;
         if (keyCode == KEY_NUM3) placeBlock();
         if (keyCode == KEY_NUM7) cycleSlot(-1);
         if (keyCode == KEY_NUM9) cycleSlot(1);
@@ -632,6 +573,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     public synchronized void keyReleased(int keyCode) {
+        if (keyCode == KEY_NUM5) jumpHeld = false;
         if (keyCode == KEY_NUM1) cancelMining();
         else if (keyCode == KEY_NUM2) keys[2] = false;
         else if (keyCode == KEY_NUM8) keys[8] = false;
@@ -740,6 +682,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void clearKeys() {
         for (int i = 0; i < keys.length; i++) keys[i] = false;
+        jumpHeld = false;
         lookUp = lookDown = lookLeft = lookRight = false;
         resetMining();
         miningHitWait = 0;
