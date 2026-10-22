@@ -22,7 +22,11 @@ final class VoxelWorld {
     static final int CHUNKS_Z = DEPTH / CHUNK_XZ;
 
     final byte[] blocks = new byte[WIDTH * HEIGHT * DEPTH];
-    final int[] inventory = new int[9];
+    final int[] inventory = new int[Block.COUNT];
+    final int[] hotbar = new int[] {
+        Block.DIRT, Block.STONE, Block.LOG, Block.SAND, Block.PLANKS,
+        Block.LEAVES, Block.COAL, Block.IRON, Block.GRASS
+    };
     int seed;
     int mode;
     int selectedSlot;
@@ -142,11 +146,12 @@ final class VoxelWorld {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(blocks.length + 40);
             DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(0x4D434632); // MCF2
+            out.writeInt(0x4D434633); // MCF3: counts by block id and hotbar item ids
             out.writeInt(seed);
             out.writeByte(mode);
             out.writeByte(selectedSlot);
             for (int i = 0; i < inventory.length; i++) out.writeByte(inventory[i]);
+            for (int i = 0; i < hotbar.length; i++) out.writeByte(hotbar[i]);
             out.writeFloat(playerX);
             out.writeFloat(playerY);
             out.writeFloat(playerZ);
@@ -178,16 +183,26 @@ final class VoxelWorld {
             byte[] data = store.getRecord(1);
             DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
             int format = in.readInt();
-            if (format != 0x4D434631 && format != 0x4D434632) return null;
+            if (format != 0x4D434631 && format != 0x4D434632 && format != 0x4D434633) return null;
             int seed = in.readInt();
             VoxelWorld world = new VoxelWorld(seed, in.readByte());
             world.selectedSlot = in.readByte();
-            for (int i = 0; i < world.inventory.length; i++) world.inventory[i] = in.readUnsignedByte();
+            if (format == 0x4D434633) {
+                for (int i = 0; i < world.inventory.length; i++) world.inventory[i] = in.readUnsignedByte();
+                for (int i = 0; i < world.hotbar.length; i++) {
+                    int id = in.readUnsignedByte();
+                    world.hotbar[i] = id > Block.AIR && id < Block.COUNT ? id : Block.DIRT;
+                }
+            } else {
+                int[] oldHotbar = new int[] { Block.DIRT, Block.STONE, Block.LOG, Block.SAND,
+                    Block.PLANKS, Block.LEAVES, Block.COAL, Block.IRON, Block.GRASS };
+                for (int i = 0; i < oldHotbar.length; i++) world.inventory[oldHotbar[i]] = in.readUnsignedByte();
+            }
             world.playerX = in.readFloat();
             world.playerY = in.readFloat();
             world.playerZ = in.readFloat();
             world.yaw = in.readFloat();
-            if (format == 0x4D434632) world.health = in.readUnsignedByte();
+            if (format == 0x4D434632 || format == 0x4D434633) world.health = in.readUnsignedByte();
             in.readFully(world.blocks);
             world.revision++;
             return world;
@@ -207,4 +222,3 @@ final class VoxelWorld {
         return false;
     }
 }
-

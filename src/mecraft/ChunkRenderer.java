@@ -162,7 +162,7 @@ final class ChunkRenderer {
                     if (id == Block.AIR) continue;
                     int tile = Block.sideTile(id);
                     if (Block.faceVisible(id, world.get(x, y + 1, z))) {
-                    add(builders, (id == Block.GRASS || id == Block.LOG) ? Block.topTile(id) : tile,
+                    add(builders, (id == Block.GRASS || id == Block.LOG || id == Block.CRAFTING_TABLE || id == Block.FURNACE) ? Block.topTile(id) : tile,
                             x - x0, y - y0, z - z0, 0);
                     }
                     if (Block.faceVisible(id, world.get(x - 1, y, z)))
@@ -305,5 +305,4 @@ final class ChunkRenderer {
 
     }
 }
-
 

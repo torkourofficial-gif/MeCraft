@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 10211)
+Total output lines: 943
+
 package mecraft;
 
 import java.io.IOException;
@@ -16,6 +19,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private static final int PLAYING = 1;
     private static final int PAUSED = 2;
     private static final int ERROR = 3;
+    private static final int INVENTORY = 4;
+    private static final int WORKBENCH = 5;
     private static final int MENU_CONTINUE = 0;
     private static final int MENU_SURVIVAL = 1;
     private static final int MENU_CREATIVE = 2;
@@ -32,12 +37,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         Block.DIRT, Block.STONE, Block.LOG, Block.SAND, Block.PLANKS,
         Block.LEAVES, Block.COAL, Block.IRON, Block.GRASS
     };
-    private final int[] inventory = new int[hotbar.length];
+    private final int[] inventory = new int[Block.COUNT];
     private final Command mineCommand = new Command("Romper", Command.SCREEN, 1);
     private final Command placeCommand = new Command("Colocar", Command.SCREEN, 2);
     private final Command pauseCommand = new Command("Pausa", Command.SCREEN, 3);
     private final Command selectCommand = new Command("Elegir", Command.OK, 1);
     private final Command exitCommand = new Command("Salir", Command.EXIT, 9);
+    private final Command craftingCommand = new Command("Cerrar", Command.BACK, 4);
 
     private volatile boolean running;
     private volatile boolean visible;
@@ -55,10 +61,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private Image title;
     private Image guiTexture;
     private Image iconsTexture;
+    private Image containerTexture;
     private final Image[] blockIcons = new Image[Block.COUNT];
     private String errorMessage;
     private boolean diagnosticError;
     private int diagnosticScroll;
+    private int recipeSelection;
 
     GameCanvas(MeCraft app) {
         this.app = app;
@@ -210,6 +218,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 System.gc();
             }
             world = new VoxelWorld((int)(System.currentTimeMillis() ^ System.currentTimeMillis() >>> 32), mode);
+            copyHotbarFromWorld();
             fallDistance = 0.0f;
             resetInventory(mode);
             copyInventoryToWorld();
@@ -246,9 +255,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             world = saved;
             world.health = clamp(world.health, 0, 20);
             fallDistance = 0.0f;
+            copyHotbarFromWorld();
             resetInventory(world.mode);
             for (int i = 0; i < inventory.length; i++) inventory[i] = world.inventory[i];
-            world.selectedSlot = clamp(world.selectedSlot, 0, inventory.length - 1);
+            world.selectedSlot = clamp(world.selectedSlot, 0, hotbar.length - 1);
             stage = "cargando /textures.png y creando escena M3G";
             renderer = new ChunkRenderer(getWidth(), getHeight());
             stage = "construyendo mallas M3G del mundo guardado";
@@ -269,12 +279,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void resetInventory(int mode) {
         for (int i = 0; i < inventory.length; i++) inventory[i] = mode == 1 ? 64 : 0;
-        if (mode == 0) {
-            inventory[0] = 16;
-            inventory[2] = 4;
-            inventory[3] = 8;
-            inventory[4] = 8;
-        }
     }
 
     private void showError(String message) {
@@ -346,6 +350,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private void copyInventoryToWorld() {
         if (world == null) return;
         for (int i = 0; i < inventory.length; i++) world.inventory[i] = inventory[i];
+        for (int i = 0; i < hotbar.length; i++) world.hotbar[i] = hotbar[i];
+    }
+
+    private void copyHotbarFromWorld() {
+        if (world == null) return;
+        for (int i = 0; i < hotbar.length; i++) hotbar[i] = world.hotbar[i];
     }
 
     private void saveIfNeeded() {
@@ -363,8 +373,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         byte id = world.get(target[0], target[1], target[2]);
         if (id == Block.AIR || id == Block.BEDROCK || id == Block.WATER) return;
         if (world.mode == 0) {
-            int slot = findSlot(id);
-            if (slot >= 0 && inventory[slot] < 64) inventory[slot]++;
+            if (inventory[id] >= 64) return;
+            inventory[id]++;
+            if ((id == Block.CRAFTING_TABLE || id == Block.FURNACE) && !hasHotbarItem(id)) hotbar[8] = id;
         }
         renderer.spawnBlockDestroy(target[0], target[1], target[2], Block.sideTile(id));
         world.set(target[0], target[1], target[2], Block.AIR);
@@ -374,6 +385,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private void placeBlock() {
         if (world == null) return;
         int[] target = trace(5.0f);
+        if (target != null && world.get(target[0], target[1], target[2]) == Block.CRAFTING_TABLE) {
+            openCrafting(true);
+            return;
+        }
         if (target == null || target[3] == Integer.MIN_VALUE) return;
         int x = target[0] + target[3];
         int y = target[1] + target[4];
@@ -384,11 +399,60 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             z + 1.0f > pz - PLAYER_RADIUS && z < pz + PLAYER_RADIUS &&
             y + 1.0f > py && y < py + PLAYER_HEIGHT) return;
         int slot = world.selectedSlot;
-        if (world.mode == 0 && inventory[slot] <= 0) return;
+        int block = hotbar[slot];
+        if (world.mode == 0 && inventory[block] <= 0) return;
         if (world.get(x, y, z) != Block.AIR && world.get(x, y, z) != Block.WATER) return;
-        if (!world.set(x, y, z, (byte)hotbar[slot])) return;
-        if (world.mode == 0) inventory[slot]--;
+        if (!world.set(x, y, z, (byte)block)) return;
+        if (world.mode == 0) {
+            inventory[block]--;
+            if ((block == Block.CRAFTING_TABLE || block == Block.FURNACE) && inventory[block] == 0) hotbar[8] = Block.GRASS;
+        }
         renderer.sync(world);
+    }
+
+    private void openCrafting(boolean workbench) {
+        if (state != PLAYING || world == null || (world.mode == 1 && !workbench)) return;
+        state = workbench ? WORKBENCH : INVENTORY;
+        recipeSelection = 0;
+        clearKeys();
+        removeCommand(mineCommand);
+        removeCommand(placeCommand);
+        removeCommand(pauseCommand);
+        addCommand(craftingCommand);
+        repaint();
+    }
+
+    private void closeCrafting() {
+        if (state != INVENTORY && state != WORKBENCH) return;
+        state = PLAYING;
+        removeCommand(craftingCommand);
+        addCommand(mineCommand);
+        addCommand(placeCommand);
+        addCommand(pauseCommand);
+        repaint();
+    }
+
+    private void craftSelected() {
+        boolean workbench = state == WORKBENCH;
+        if (state != INVENTORY && !workbench) return;
+        int recipeCount = Crafting.count(workbench);
+        if (recipeSelection < 0 || recipeSelection >= recipeCount) return;
+        if (!Crafting.craft(recipeSelection, inventory, world.mode == 1)) return;
+        int output = Crafting.OUTPUT[recipeSelection];
+        if (output == Block.CRAFTING_TABLE || output == Block.FURNACE) {
+            hotbar[8] = output;
+            world.selectedSlot = 8;
+        }
+        copyInventoryToWorld();
+        repaint();
+    }
+
+    private void moveRecipeSelection(int delta) {
+        int count = Crafting.count(state == WORKBENCH);
+        recipeSelection += delta;
+        if (recipeSelection < 0) recipeSelection = count - 1;
+        if (recipeSelection >= count) recipeSelection = 0;
+        repaint();
     }
 
     /** Short ray march; returns hit voxel and the previous empty voxel offset. */
@@ -416,9 +480,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         return null;
     }
 
-    private int findSlot(byte id) {
-        for (int i = 0; i < hotbar.length; i++) if (hotbar[i] == id) return i;
-        return -1;
+    private boolean hasHotbarItem(int id) {
+        for (int i = 0; i < hotbar.length; i++) if (hotbar[i] == id) return true;
+        return false;
     }
 
     /** Java ME compatible floor conversion, including negative coordinates. */
@@ -435,24 +499,19 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 repaint();
             } else if (action == DOWN || keyCode == KEY_NUM8) {
                 int max = Math.max(12, getWidth() / Math.max(5, Font.getDefaultFont().charWidth('M')));
-                int total = wrappedLineCount(errorMessage, max);
-                int visible = Math.max(1, (getHeight() - 58) / (Font.getDefaultFont().getHeight() + 2));
-                if (diagnosticScroll < total - visible) diagnosticScroll++;
-                repaint();
-            } else if (action == FIRE || keyCode == KEY_NUM5 || keyCode == KEY_NUM0) {
-                backToMenu();
-            }
-            return;
-        }
-        if (state == MENU || state == PAUSED || state == ERROR) {
+                int total = wrappedLineCount(errorMessage, m…211 tokens truncated…= WORKBENCH) {
             int action = gameAction(keyCode);
-            if (action == UP || keyCode == KEY_NUM2) moveSelection(-1);
-            else if (action == DOWN || keyCode == KEY_NUM8) moveSelection(1);
-            else if (action == FIRE || keyCode == KEY_NUM5) activateSelection();
-            else if (keyCode == KEY_NUM0) backToMenu();
+            if (keyCode == KEY_POUND || keyCode == KEY_NUM0) closeCrafting();
+            else if (keyCode == KEY_NUM2 || action == UP) moveRecipeSelection(-1);
+            else if (keyCode == KEY_NUM8 || action == DOWN) moveRecipeSelection(1);
+            else if (keyCode == KEY_NUM5 || action == FIRE) craftSelected();
             return;
         }
         if (state != PLAYING) return;
+        if (keyCode == KEY_POUND) {
+            openCrafting(false);
+            return;
+        }
         if (keyCode == KEY_NUM2) keys[2] = true;
         else if (keyCode == KEY_NUM8) keys[8] = true;
         else if (keyCode == KEY_NUM4) keys[4] = true;
@@ -507,7 +566,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             else if (menuSelection == MENU_SURVIVAL) startNewWorld(0);
             else if (menuSelection == MENU_CREATIVE) startNewWorld(1);
             else if (menuSelection == MENU_CONTROLS) {
-                errorMessage = "Controles: cruceta mira alrededor; 2/8 avanzar y retroceder; 4/6 desplazarse; 5 saltar; 1 romper; 3 colocar; 7/9 elegir bloque; * pausa.";
+                errorMessage = "Controles: cruceta mira; 2/8 avanzar; 4/6 desplazarse; 5 saltar/crear; 1 romper; 3 colocar o usar mesa; # inventario 2x2; 7/9 bloque; * pausa.";
                 state = ERROR;
             }
             else if (menuSelection == MENU_EXIT) app.closeGame();
@@ -552,13 +611,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private void loadHudTextures() {
         try { guiTexture = Image.createImage("/mecraft/gui.png"); } catch (IOException ignored) { guiTexture = null; }
         try { iconsTexture = Image.createImage("/mecraft/icons.png"); } catch (IOException ignored) { iconsTexture = null; }
+        try { containerTexture = Image.createImage("/mecraft/container.png"); } catch (IOException ignored) { containerTexture = null; }
         Image source = null;
         try {
             source = Image.createImage("/mecraft/gui_blocks.png");
             int[] sourcePixels = new int[48 * 48];
             int[] iconPixels = new int[16 * 16];
-            for (int i = 0; i < hotbar.length; i++) {
-                int block = hotbar[i];
+            for (int block = 1; block < Block.COUNT; block++) {
                 int tile = Block.inventoryIconTile((byte)block);
                 source.getRGB(sourcePixels, 0, 48, (tile % 10) * 48, (tile / 10) * 48, 48, 48);
                 for (int y = 0; y < 16; y++) {
@@ -588,10 +647,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     public synchronized void commandAction(Command command, javax.microedition.lcdui.Displayable displayable) {
         if (command == exitCommand) {
-            if (state == PLAYING) openPause(); else app.closeGame();
+            if (state == PLAYING) openPause();
+            else if (state == INVENTORY || state == WORKBENCH) closeCrafting();
+            else app.closeGame();
         } else if (command == selectCommand) {
             if (state == MENU) activateSelection(); else backToMenu();
-        } else if (command == mineCommand) mineTarget();
+        } else if (command == craftingCommand) closeCrafting();
+        else if (command == mineCommand) mineTarget();
         else if (command == placeCommand) placeBlock();
         else if (command == pauseCommand) openPause();
     }
@@ -601,7 +663,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     protected synchronized void paint(Graphics g) {
-        if (state == PLAYING || state == PAUSED) {
+        if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH) {
             String stage = "actualizando mallas M3G";
             try {
                 renderer.sync(world);
@@ -617,8 +679,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 }
                 finally { graphics3D.releaseTarget(); }
                 stage = "dibujando HUD 2D";
-                drawHud(g);
+                if (state == PLAYING || state == PAUSED) drawHud(g);
                 if (state == PAUSED) drawPause(g);
+                if (state == INVENTORY || state == WORKBENCH) drawCrafting(g, state == WORKBENCH);
             } catch (OutOfMemoryError exhausted) {
                 showError("M3G agotó el heap. El diseño apunta a móviles con heap total de 4 MiB o más.");
                 drawError(g);
@@ -681,9 +744,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 g.setColor(blockColor(id));
                 g.fillRect(x + 2, y + 4, 14, 14);
             }
-            if (world.mode == 0 && inventory[i] > 0) {
+            if (world.mode == 0 && inventory[id] > 0) {
                 g.setColor(255, 255, 255);
-                g.drawString(Integer.toString(inventory[i]), x + 17, y + 20, Graphics.RIGHT | Graphics.BOTTOM);
+                g.drawString(Integer.toString(inventory[id]), x + 17, y + 20, Graphics.RIGHT | Graphics.BOTTOM);
             }
         }
         g.drawString(world.mode == 0 ? "Supervivencia" : "Creativo", 3, 2, Graphics.TOP | Graphics.LEFT);
@@ -715,7 +778,100 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (id == Block.LEAVES) return 0x4F813B;
         if (id == Block.COAL) return 0x414141;
         if (id == Block.IRON) return 0xB8A98A;
+        if (id == Block.CRAFTING_TABLE) return 0x9B6534;
+        if (id == Block.FURNACE) return 0x696969;
         return 0x777777;
+    }
+
+    private void drawCrafting(Graphics g, boolean workbench) {
+        int w = getWidth(), h = getHeight();
+        int count = Crafting.count(workbench);
+        int selected = clamp(recipeSelection, 0, count - 1);
+        int output = Crafting.OUTPUT[selected];
+        boolean canCraft = Crafting.canCraft(selected, inventory, world.mode == 1);
+        if (workbench && containerTexture != null) {
+            int left = (w - containerTexture.getWidth()) / 2;
+            int top = (h - containerTexture.getHeight()) / 2;
+            g.drawImage(containerTexture, left, top, Graphics.TOP | Graphics.LEFT);
+            g.setColor(35, 35, 35);
+            g.drawString("Mesa de crafteo", left + 84, top + 7, Graphics.TOP | Graphics.LEFT);
+            drawRecipeGrid(g, left + 7, top + 29, 18, 3, selected);
+            g.setColor(55, 55, 55);
+            g.drawString("Recetas 3x3", left + 73, top + 30, Graphics.TOP | Graphics.LEFT);
+            for (int i = 0; i < count; i++) {
+                int y = top + 49 + i * 20;
+                drawRecipeRow(g, left + 73, y, i, selected, workbench);
+            }
+            drawIcon(g, output, left + 142, top + 84);
+            g.setColor(30, 30, 30);
+            g.drawString("x" + Crafting.OUTPUT_COUNT[selected], left + 158, top + 87, Graphics.TOP | Graphics.LEFT);
+            for (int i = 0; i < hotbar.length; i++) {
+                int x = left + 8 + i * 18;
+                drawIcon(g, hotbar[i], x, top + 143);
+                int amount = inventory[hotbar[i]];
+                if (amount > 0) {
+                    g.setColor(255, 255, 255);
+                    g.drawString(Integer.toString(amount), x + 17, top + 157, Graphics.RIGHT | Graphics.TOP);
+                }
+            }
+        } else {
+            int panelW = Math.min(220, w - 12), panelH = 166;
+            int left = (w - panelW) / 2, top = (h - panelH) / 2;
+            g.setColor(30, 30, 30); g.fillRect(left, top, panelW, panelH);
+            g.setColor(195, 195, 195); g.drawRect(left, top, panelW - 1, panelH - 1);
+            g.setColor(255, 255, 255);
+            g.drawString("Inventario  |  crafteo 2x2", w / 2, top + 7, Graphics.TOP | Graphics.HCENTER);
+            drawRecipeGrid(g, left + 12, top + 34, 22, 2, selected);
+            g.setColor(220, 220, 220);
+            g.drawString("=>", left + 67, top + 54, Graphics.TOP | Graphics.LEFT);
+            drawIcon(g, output, left + 91, top + 51);
+            for (int i = 0; i < count; i++) drawRecipeRow(g, left + 116, top + 38 + i * 27,
+                                                            i, selected, false);
+            g.setColor(canCraft ? 255 : 180, canCraft ? 230 : 180, canCraft ? 100 : 180);
+            g.drawString(canCraft ? "5 crear" : "Faltan materiales", w / 2, top + 116,
+                         Graphics.TOP | Graphics.HCENTER);
+            g.setColor(220, 220, 220);
+            g.drawString("# cerrar  |  2/8 elegir", w / 2, top + 138, Graphics.TOP | Graphics.HCENTER);
+        }
+        if (workbench) {
+            g.setColor(canCraft ? 20 : 120, canCraft ? 100 : 30, canCraft ? 20 : 30);
+            g.drawString(canCraft ? "5 crear" : "Faltan materiales", w / 2, h - 18,
+                         Graphics.BOTTOM | Graphics.HCENTER);
+            g.setColor(255, 255, 255);
+            g.drawString("# cerrar  |  2/8 elegir", w / 2, h - 3,
+                         Graphics.BOTTOM | Graphics.HCENTER);
+        }
+    }
+
+    private void drawRecipeGrid(Graphics g, int x, int y, int cell, int size, int recipe) {
+        int rows = recipe == Crafting.STONE_TO_FURNACE ? 3 : size;
+        for (int row = 0; row < rows; row++) {
+            for (int col = 0; col < rows; col++) {
+                int sx = x + col * cell, sy = y + row * cell;
+                g.setColor(90, 90, 90); g.fillRect(sx, sy, cell - 1, cell - 1);
+                g.setColor(35, 35, 35); g.drawRect(sx, sy, cell - 1, cell - 1);
+                boolean ingredient = recipe == Crafting.LOG_TO_PLANKS ? row == 0 && col == 0 :
+                    recipe == Crafting.PLANKS_TO_TABLE ? true : row != 1 || col != 1;
+                if (ingredient) drawIcon(g, Crafting.INGREDIENTS[recipe * 4], sx + 1, sy + 1);
+            }
+        }
+    }
+
+    private void drawRecipeRow(Graphics g, int x, int y, int recipe, int selected, boolean workbench) {
+        boolean available = Crafting.canCraft(recipe, inventory, world.mode == 1);
+        g.setColor(recipe == selected ? 255 : (available ? 245 : 135),
+                   recipe == selected ? 225 : (available ? 245 : 135),
+                   recipe == selected ? 80 : (available ? 245 : 135));
+        String marker = recipe == selected ? "> " : "  ";
+        g.drawString(marker + Crafting.NAME[recipe], x, y, Graphics.TOP | Graphics.LEFT);
+    }
+
+    private void drawIcon(Graphics g, int id, int x, int y) {
+        if (id > 0 && id < blockIcons.length && blockIcons[id] != null) {
+            g.drawImage(blockIcons[id], x, y, Graphics.TOP | Graphics.LEFT);
+        } else {
+            g.setColor(blockColor(id)); g.fillRect(x + 2, y + 2, 12, 12);
+        }
     }
 
     private void drawPause(Graphics g) {
@@ -769,5 +925,4 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         return value;
     }
 }
-
 

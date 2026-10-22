@@ -14,12 +14,15 @@ final class Block {
     static final byte COAL = 9;
     static final byte IRON = 10;
     static final byte PLANKS = 11;
+    static final byte CRAFTING_TABLE = 12;
+    static final byte FURNACE = 13;
 
-    static final int COUNT = 12;
-    static final int[] TILE = new int[] { 0, 0, 2, 1, 18, 205, 20, 52, 17, 34, 33, 4 };
+    static final int COUNT = 14;
+    static final int[] TILE = new int[] { 0, 0, 2, 1, 18, 205, 20, 52, 17, 34, 33, 4, 44, 45 };
     static final String[] NAME = new String[] {
         "Aire", "Césped", "Tierra", "Piedra", "Arena", "Agua",
-        "Tronco", "Hojas", "Roca madre", "Carbón", "Hierro", "Tablones"
+        "Tronco", "Hojas", "Roca madre", "Carbón", "Hierro", "Tablones",
+        "Mesa de crafteo", "Horno"
     };
 
     private Block() { }
@@ -38,12 +41,16 @@ final class Block {
     static int topTile(byte id) {
         if (id == GRASS) return 0;
         if (id == LOG) return 21;
+        if (id == CRAFTING_TABLE) return 43;
+        if (id == FURNACE) return 61;
         return TILE[id & 255];
     }
 
     static int sideTile(byte id) {
         if (id == GRASS) return 3;
         if (id == LOG) return 20;
+        if (id == CRAFTING_TABLE) return 44;
+        if (id == FURNACE) return 45;
         return TILE[id & 255];
     }
 
@@ -59,8 +66,9 @@ final class Block {
             case COAL: return 38;
             case IRON: return 39;
             case PLANKS: return 5;
+            case CRAFTING_TABLE: return 72;
+            case FURNACE: return 73;
             default: return 7;
         }
     }
 }
-

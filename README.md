@@ -7,13 +7,14 @@ Referencia consultada: [EaglerPorts/in-20100223](https://github.com/EaglerPorts/
 ## Estado jugable
 
 - Mundo de isla procedural de 48 × 24 × 48 bloques, con costa, agua, árboles, carbón, hierro y roca madre.
-- Modo supervivencia con inventario y modo creativo con bloques ilimitados.
+- Modo supervivencia empieza con el inventario vacío; los bloques rotos se recogen, y modo creativo tiene bloques ilimitados.
 - Cámara en primera persona, movimiento, colisión, gravedad y salto.
 - Romper/colocar bloques, partículas de rotura, seleccionar la barra rápida y guardar la partida en RMS.
 - HUD con la barra de `gui.png`, corazones de `icons.png` y sprites de bloque de `gui_blocks.png`; la vida y el daño por caída solo se aplican en supervivencia.
+- Crafteo por recetas: `#` abre el inventario 2×2 (tronco → 4 tablones, 4 tablones → mesa); usa `3` apuntando a una mesa colocada para abrir `container.png` y el crafteo 3×3 (incluye horno).
 - Render 3D M3G con sectores de 16 × 8 × 16 bloques y un atlas compartido.
 
-Es un demake inicial, no una reproducción completa de Indev: todavía no incluye crafteo, criaturas, día/noche ni los demás tipos de mundo de Indev.
+Es un demake inicial, no una reproducción completa de Indev: todavía no incluye criaturas, día/noche ni los demás tipos de mundo de Indev.
 
 ## Controles
 
@@ -22,11 +23,14 @@ Es un demake inicial, no una reproducción completa de Indev: todavía no incluy
 | Cruceta | Mirar arriba, abajo, izquierda y derecha |
 | 2 / 8 | Avanzar / retroceder |
 | 4 / 6 | Desplazarse a la izquierda / derecha |
-| 5 | Saltar / confirmar en menús |
+| 5 | Saltar / crear la receta elegida |
 | 1 | Romper el bloque apuntado |
-| 3 | Colocar el bloque seleccionado |
+| 3 | Colocar bloque; si apuntas a una mesa de crafteo, abrir su interfaz |
+| # | Abrir/cerrar el inventario y crafteo 2×2 |
 | 7 / 9 | Cambiar bloque seleccionado |
 | * | Pausar, guardar o regresar al menú |
+
+En las pantallas de crafteo, usa `2`/`8` para elegir una receta, `5` para crearla y `#` para volver al juego.
 
 El jugador mide 0,6 × 1,8 bloques y la cámara está a 1,62 bloques sobre sus pies, igual que las medidas clásicas de Indev.
 
@@ -56,7 +60,6 @@ El proyecto está configurado para Oracle Java ME SDK 3.2, CLDC 1.1, MIDP 2.0 y 
 Si la plataforma SDK 3.2 no aparece en NetBeans, regístrala en **Tools > Java Platforms** y selecciona el dispositivo y la API opcional **JSR-184** en las propiedades del proyecto. El proyecto usa Java 1.3 y pre-verificación CLDC durante la compilación. Los PNG se guardan en `resources/mecraft/` y se empaquetan bajo `/mecraft/` en el JAR.
 
 Para instalar manualmente, transfiere ambos archivos de `dist/` al teléfono o abre `MeCraft.jad` en el emulador Java ME.
-
 
 
 
