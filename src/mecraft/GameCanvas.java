@@ -7,6 +7,7 @@ import javax.microedition.lcdui.CommandListener;
 import javax.microedition.lcdui.Font;
 import javax.microedition.lcdui.Graphics;
 import javax.microedition.lcdui.Image;
+import javax.microedition.lcdui.game.Sprite;
 import javax.microedition.m3g.Graphics3D;
 
 /** Game loop, phone controls, M3G view and compact HUD. */
@@ -46,11 +47,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private boolean selectCommandAttached = true;
     private boolean hasSavedWorld;
     private float verticalVelocity;
+    private float fallDistance;
     private float cameraPitch = -5.0f;
     private boolean lookUp, lookDown, lookLeft, lookRight;
     private VoxelWorld world;
     private ChunkRenderer renderer;
     private Image title;
+    private Image guiTexture;
+    private Image iconsTexture;
+    private final Image[] blockIcons = new Image[Block.COUNT];
     private String errorMessage;
     private boolean diagnosticError;
     private int diagnosticScroll;
@@ -60,6 +65,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         setFullScreenMode(true);
         setCommandListener(this);
         loadTitle();
+        loadHudTextures();
         hasSavedWorld = VoxelWorld.hasSave();
         menuSelection = hasSavedWorld ? MENU_CONTINUE : MENU_SURVIVAL;
         addCommand(selectCommand);
@@ -132,7 +138,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         verticalVelocity -= 0.012f;
         if (verticalVelocity < -0.22f) verticalVelocity = -0.22f;
         float nextY = world.playerY + verticalVelocity;
+        if (verticalVelocity < 0.0f) fallDistance -= verticalVelocity;
         if (verticalVelocity < 0.0f && collides(world.playerX, nextY, world.playerZ)) {
+            if (world.mode == 0 && fallDistance > 3.0f) {
+                int damage = (int)(fallDistance - 3.0f);
+                world.health -= damage;
+                if (world.health < 0) world.health = 0;
+                if (world.health == 0) respawn();
+            }
+            fallDistance = 0.0f;
             verticalVelocity = 0.0f;
             world.playerY = floorBlock(world.playerY);
         } else if (verticalVelocity > 0.0f && collides(world.playerX, nextY, world.playerZ)) {
@@ -145,6 +159,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             world.playerZ = VoxelWorld.DEPTH / 2 + 0.5f;
             world.playerY = world.surfaceY(VoxelWorld.WIDTH / 2, VoxelWorld.DEPTH / 2) + 1.0f;
             verticalVelocity = 0.0f;
+            fallDistance = 0.0f;
         }
         renderer.updateCamera(world, cameraPitch);
         renderer.updateParticles(world.yaw, cameraPitch);
@@ -176,6 +191,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (collides(world.playerX, world.playerY - 0.01f, world.playerZ)) verticalVelocity = 0.20f;
     }
 
+    private void respawn() {
+        world.playerX = VoxelWorld.WIDTH / 2 + 0.5f;
+        world.playerZ = VoxelWorld.DEPTH / 2 + 0.5f;
+        world.playerY = world.surfaceY(VoxelWorld.WIDTH / 2, VoxelWorld.DEPTH / 2) + 1.0f;
+        world.health = 20;
+        verticalVelocity = 0.0f;
+        fallDistance = 0.0f;
+    }
+
     private void startNewWorld(int mode) {
         String stage = "preparando mundo";
         try {
@@ -186,6 +210,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 System.gc();
             }
             world = new VoxelWorld((int)(System.currentTimeMillis() ^ System.currentTimeMillis() >>> 32), mode);
+            fallDistance = 0.0f;
             resetInventory(mode);
             copyInventoryToWorld();
             stage = "cargando /textures.png y creando escena M3G";
@@ -219,6 +244,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         try {
             if (renderer != null) { renderer = null; System.gc(); }
             world = saved;
+            world.health = clamp(world.health, 0, 20);
+            fallDistance = 0.0f;
             resetInventory(world.mode);
             for (int i = 0; i < inventory.length; i++) inventory[i] = world.inventory[i];
             world.selectedSlot = clamp(world.selectedSlot, 0, inventory.length - 1);
@@ -522,6 +549,30 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         try { title = Image.createImage("/mecraft/title.png"); } catch (IOException ignored) { title = null; }
     }
 
+    private void loadHudTextures() {
+        try { guiTexture = Image.createImage("/mecraft/gui.png"); } catch (IOException ignored) { guiTexture = null; }
+        try { iconsTexture = Image.createImage("/mecraft/icons.png"); } catch (IOException ignored) { iconsTexture = null; }
+        Image source = null;
+        try {
+            source = Image.createImage("/mecraft/gui_blocks.png");
+            int[] sourcePixels = new int[48 * 48];
+            int[] iconPixels = new int[16 * 16];
+            for (int i = 0; i < hotbar.length; i++) {
+                int block = hotbar[i];
+                int tile = Block.inventoryIconTile((byte)block);
+                source.getRGB(sourcePixels, 0, 48, (tile % 10) * 48, (tile / 10) * 48, 48, 48);
+                for (int y = 0; y < 16; y++) {
+                    for (int x = 0; x < 16; x++) iconPixels[y * 16 + x] = sourcePixels[(y * 3 + 1) * 48 + x * 3 + 1];
+                }
+                blockIcons[block] = Image.createRGBImage(iconPixels, 16, 16, true);
+            }
+        } catch (Throwable unavailableAtlas) {
+            for (int i = 0; i < blockIcons.length; i++) blockIcons[i] = null;
+        }
+        source = null;
+        System.gc();
+    }
+
     private void clearKeys() {
         for (int i = 0; i < keys.length; i++) keys[i] = false;
         lookUp = lookDown = lookLeft = lookRight = false;
@@ -613,35 +664,44 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         g.setColor(255, 255, 255);
         g.drawLine(centerX - 4, centerY, centerX + 4, centerY);
         g.drawLine(centerX, centerY - 4, centerX, centerY + 4);
-        drawHearts(g);
-        int cell = w / 9;
-        int barWidth = cell * 9;
-        int left = (w - barWidth) / 2;
-        int y = h - Font.getDefaultFont().getHeight() - 10;
+        if (world.mode == 0) drawHearts(g);
+        int left = w / 2 - 91;
+        int y = h - 22;
+        if (guiTexture != null && guiTexture.getWidth() >= 182 && guiTexture.getHeight() >= 44) {
+            g.drawRegion(guiTexture, 0, 0, 182, 22, Sprite.TRANS_NONE, left, y, Graphics.TOP | Graphics.LEFT);
+            g.drawRegion(guiTexture, 0, 22, 24, 22, Sprite.TRANS_NONE, left - 1 + world.selectedSlot * 20,
+                         y - 1, Graphics.TOP | Graphics.LEFT);
+        }
         for (int i = 0; i < 9; i++) {
-            int x = left + i * cell;
-            g.setColor(i == world.selectedSlot ? 243 : 38, i == world.selectedSlot ? 206 : 42, i == world.selectedSlot ? 76 : 48);
-            g.drawRect(x + 1, y, cell - 3, cell - 3);
+            int x = left + 2 + i * 20;
             int id = hotbar[i];
-            g.setColor(blockColor(id));
-            g.fillRect(x + 5, y + 4, Math.max(5, cell - 11), Math.max(5, cell - 11));
+            Image icon = blockIcons[id];
+            if (icon != null) g.drawImage(icon, x, y + 3, Graphics.TOP | Graphics.LEFT);
+            else {
+                g.setColor(blockColor(id));
+                g.fillRect(x + 2, y + 4, 14, 14);
+            }
             if (world.mode == 0 && inventory[i] > 0) {
                 g.setColor(255, 255, 255);
-                g.drawString(Integer.toString(inventory[i]), x + cell - 2, y + cell - 4, Graphics.RIGHT | Graphics.BOTTOM);
+                g.drawString(Integer.toString(inventory[i]), x + 17, y + 20, Graphics.RIGHT | Graphics.BOTTOM);
             }
         }
-        g.setColor(255, 255, 255);
-        g.drawString(Block.NAME[hotbar[world.selectedSlot]], w / 2, y - 2, Graphics.BOTTOM | Graphics.HCENTER);
         g.drawString(world.mode == 0 ? "Supervivencia" : "Creativo", 3, 2, Graphics.TOP | Graphics.LEFT);
-        g.drawString("2/8 mover  4/6 lado  5 salto  1 romper  3 poner", w / 2, h - 1, Graphics.BOTTOM | Graphics.HCENTER);
     }
 
     private void drawHearts(Graphics g) {
-        int y = 18;
+        int y = getHeight() - 32;
         for (int i = 0; i < 10; i++) {
-            int x = 5 + i * 9;
-            g.setColor(i < 8 ? 202 : 100, i < 8 ? 54 : 100, i < 8 ? 47 : 100);
-            g.fillArc(x, y, 7, 7, 0, 360);
+            int x = getWidth() / 2 - 91 + i * 8;
+            if (iconsTexture != null && iconsTexture.getWidth() >= 70 && iconsTexture.getHeight() >= 9) {
+                int healthInHeart = world.health - i * 2;
+                int tileX = healthInHeart >= 2 ? 52 : (healthInHeart == 1 ? 61 : 16);
+                g.drawRegion(iconsTexture, tileX, 0, 9, 9, Sprite.TRANS_NONE, x, y, Graphics.TOP | Graphics.LEFT);
+            } else {
+                g.setColor(world.health > i * 2 ? 202 : 100, world.health > i * 2 ? 54 : 100,
+                           world.health > i * 2 ? 47 : 100);
+                g.fillArc(x, y, 7, 7, 0, 360);
+            }
         }
     }
 

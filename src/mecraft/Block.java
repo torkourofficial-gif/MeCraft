@@ -46,4 +46,21 @@ final class Block {
         if (id == LOG) return 20;
         return TILE[id & 255];
     }
+
+    /** Sprite positions in the supplied 10-column gui_blocks.png atlas. */
+    static int inventoryIconTile(byte id) {
+        switch (id) {
+            case GRASS: return 9;
+            case DIRT: return 8;
+            case STONE: return 7;
+            case SAND: return 14;
+            case LOG: return 16;
+            case LEAVES: return 4;
+            case COAL: return 38;
+            case IRON: return 39;
+            case PLANKS: return 5;
+            default: return 7;
+        }
+    }
 }
+

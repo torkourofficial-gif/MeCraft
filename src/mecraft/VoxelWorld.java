@@ -26,6 +26,7 @@ final class VoxelWorld {
     int seed;
     int mode;
     int selectedSlot;
+    int health = 20;
     float playerX;
     float playerY;
     float playerZ;
@@ -141,7 +142,7 @@ final class VoxelWorld {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(blocks.length + 40);
             DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(0x4D434631); // MCF1
+            out.writeInt(0x4D434632); // MCF2
             out.writeInt(seed);
             out.writeByte(mode);
             out.writeByte(selectedSlot);
@@ -150,6 +151,7 @@ final class VoxelWorld {
             out.writeFloat(playerY);
             out.writeFloat(playerZ);
             out.writeFloat(yaw);
+            out.writeByte(health);
             out.write(blocks);
             out.flush();
             byte[] data = bytes.toByteArray();
@@ -175,7 +177,8 @@ final class VoxelWorld {
             if (store.getNumRecords() == 0) return null;
             byte[] data = store.getRecord(1);
             DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
-            if (in.readInt() != 0x4D434631) return null;
+            int format = in.readInt();
+            if (format != 0x4D434631 && format != 0x4D434632) return null;
             int seed = in.readInt();
             VoxelWorld world = new VoxelWorld(seed, in.readByte());
             world.selectedSlot = in.readByte();
@@ -184,6 +187,7 @@ final class VoxelWorld {
             world.playerY = in.readFloat();
             world.playerZ = in.readFloat();
             world.yaw = in.readFloat();
+            if (format == 0x4D434632) world.health = in.readUnsignedByte();
             in.readFully(world.blocks);
             world.revision++;
             return world;

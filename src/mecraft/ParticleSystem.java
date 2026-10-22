@@ -38,6 +38,13 @@ final class ParticleSystem {
 
     ParticleSystem(Texture2D atlas) {
         positionArray = new VertexArray(VERTICES, 3, 2);
+        for (int i = 0; i < CAPACITY; i++) {
+            int at = i * 12;
+            positions[at] = 0; positions[at + 1] = 0; positions[at + 2] = 0;
+            positions[at + 3] = (short)(48 * SCALE); positions[at + 4] = 0; positions[at + 5] = 0;
+            positions[at + 6] = 0; positions[at + 7] = (short)(24 * SCALE); positions[at + 8] = (short)(48 * SCALE);
+            positions[at + 9] = (short)(48 * SCALE); positions[at + 10] = (short)(24 * SCALE); positions[at + 11] = (short)(48 * SCALE);
+        }
         positionArray.set(0, VERTICES, positions);
         texCoordArray = new VertexArray(VERTICES, 2, 2);
         texCoordArray.set(0, VERTICES, texCoords);
@@ -85,7 +92,7 @@ final class ParticleSystem {
                     vx[i] = (rx - 0.5f) * 0.12f + (nextRandom() - 0.5f) * 0.035f;
                     vy[i] = (ry - 0.5f) * 0.12f + 0.025f + nextRandom() * 0.045f;
                     vz[i] = (rz - 0.5f) * 0.12f + (nextRandom() - 0.5f) * 0.035f;
-                    size[i] = 0.035f + nextRandom() * 0.035f;
+                    size[i] = 0.09f + nextRandom() * 0.045f;
                     age[i] = 0;
                     lifetime[i] = 18 + (int)(nextRandom() * 20.0f);
                     tile[i] = blockTile;

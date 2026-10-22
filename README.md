@@ -9,7 +9,8 @@ Referencia consultada: [EaglerPorts/in-20100223](https://github.com/EaglerPorts/
 - Mundo de isla procedural de 48 × 24 × 48 bloques, con costa, agua, árboles, carbón, hierro y roca madre.
 - Modo supervivencia con inventario y modo creativo con bloques ilimitados.
 - Cámara en primera persona, movimiento, colisión, gravedad y salto.
-- Romper/colocar bloques, seleccionar la barra rápida y guardar la partida en RMS.
+- Romper/colocar bloques, partículas de rotura, seleccionar la barra rápida y guardar la partida en RMS.
+- HUD con la barra de `gui.png`, corazones de `icons.png` y sprites de bloque de `gui_blocks.png`; la vida y el daño por caída solo se aplican en supervivencia.
 - Render 3D M3G con sectores de 16 × 8 × 16 bloques y un atlas compartido.
 
 Es un demake inicial, no una reproducción completa de Indev: todavía no incluye crafteo, criaturas, día/noche ni los demás tipos de mundo de Indev.
