@@ -65,6 +65,7 @@ final class ChunkRenderer {
     private final Mesh[][] heldItemMeshes = new Mesh[Block.COUNT][];
     private final ParticleSystem particles;
     private final DroppedItemSystem droppedItems;
+    private final MobSystem mobs;
     private int visibleHeldItem = -1;
     private int handSwingTicks = 8;
     private boolean handSwinging;
@@ -127,6 +128,7 @@ final class ChunkRenderer {
         buildHeldItems();
         particles = new ParticleSystem(atlas);
         droppedItems = new DroppedItemSystem(atlas);
+        mobs = new MobSystem(scene);
 
         camera.setPerspective(68.0f, (float)width / (float)height, 0.1f, 38.0f);
         cameraPivot.addChild(cameraEffectPivot);
@@ -582,6 +584,14 @@ final class ChunkRenderer {
 
     int updateDroppedItems(VoxelWorld world, int[] inventory) {
         return droppedItems.update(world, inventory);
+    }
+
+    int updateMobs(VoxelWorld world) {
+        return mobs.update(world);
+    }
+
+    boolean hitMob(VoxelWorld world, float pitch, int damage) {
+        return mobs.hit(world, pitch, damage);
     }
 
     void sync(VoxelWorld world) {

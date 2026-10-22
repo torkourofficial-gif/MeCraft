@@ -160,6 +160,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (keys[4]) strafe -= 1.0f;
         int fallDamage = playerPhysics.update(world, forward, strafe, jumpHeld);
         if (world.mode == 0 && fallDamage > 0) damagePlayer(fallDamage);
+        int mobDamage = renderer.updateMobs(world);
+        if (world.mode == 0 && mobDamage > 0) damagePlayer(mobDamage);
         tickAirAndHurt();
         int pickedItem = renderer.updateDroppedItems(world, inventory);
         if (pickedItem > Block.AIR) ensureHotbarItem(pickedItem);
@@ -390,8 +392,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private void mineTarget() {
         if (world != null) {
             renderer.swingHand();
+            if (renderer.hitMob(world, cameraPitch, heldAttackDamage())) return;
             advanceMining(trace(5.0f));
         }
+    }
+
+    private int heldAttackDamage() {
+        int item = hotbar[world.selectedSlot];
+        return ItemCatalog.isTool(item) && ItemCatalog.kind(item) == ItemCatalog.SWORD ? 4 : 2;
     }
 
     private void updateMining() {
@@ -657,7 +665,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         else if (keyCode == KEY_NUM4) keys[4] = true;
         else if (keyCode == KEY_NUM6) keys[6] = true;
         else if (keyCode == KEY_NUM1) {
-            if (!keys[1] && renderer != null) renderer.swingHand();
+            if (!keys[1] && renderer != null) {
+                renderer.swingHand();
+                if (renderer.hitMob(world, cameraPitch, heldAttackDamage())) return;
+            }
             keys[1] = true;
         }
         else {

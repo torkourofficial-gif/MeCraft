@@ -12,9 +12,10 @@ Referencia consultada: [EaglerPorts/in-20100223](https://github.com/EaglerPorts/
 - Romper/colocar bloques, partículas de rotura, daño progresivo con grietas sobre la cara apuntada, seleccionar la barra rápida y guardar la partida en RMS.
 - HUD con la barra de `gui.png`, corazones y burbujas de `icons.png` y sprites de bloque de `gui_blocks.png`; al sumergir la cámara aparece un filtro azul, el oxígeno se agota y provoca ahogamiento, y tanto la caída como el ahogamiento activan la animación de daño de Indev. La vida y estos daños solo se aplican en supervivencia.
 - Crafteo por recetas: `#` abre el inventario 2×2 (tronco → 4 tablones, tablones → mesa y palos); usa `3` apuntando a una mesa para abrir `container.png`, centrado, con una lista desplazable de recetas y las no disponibles atenuadas. En la mesa se crean herramientas de madera, piedra, hierro, diamante y oro. El horno fue retirado.
-- Render 3D M3G con sectores de 16 × 8 × 16 bloques y un atlas compartido.
+- Criaturas 3D con las texturas locales de cerdo, oveja y zombi; los animales deambulan, huyen al recibir golpes y los zombis persiguen y dañan al jugador en supervivencia. `1` golpea a una criatura apuntada antes de intentar romper un bloque.
+- Render 3D M3G con sectores de 16 × 8 × 16 bloques y un grupo fijo de cuatro criaturas para limitar memoria y geometría.
 
-Es un demake inicial, no una reproducción completa de Indev: todavía no incluye criaturas, día/noche ni los demás tipos de mundo de Indev.
+Es un demake inicial, no una reproducción completa de Indev: todavía no incluye ciclo de día/noche ni los demás tipos de mundo de Indev. Las criaturas adaptan los modelos y la conducta básica de Indev; no implementan todavía la ruta de drops de animales.
 
 ## Controles
 
@@ -24,7 +25,7 @@ Es un demake inicial, no una reproducción completa de Indev: todavía no incluy
 | 2 / 8 | Avanzar / retroceder |
 | 4 / 6 | Desplazarse a la izquierda / derecha |
 | 5 | Saltar / crear la receta elegida |
-| 1 (mantener) | Romper el bloque apuntado; aparecen grietas según el daño |
+| 1 (mantener) | Golpear la criatura apuntada o romper el bloque; aparecen grietas según el daño |
 | 3 | Colocar bloque; si apuntas a una mesa de crafteo, abrir su interfaz |
 | # | Abrir/cerrar el inventario y crafteo 2×2 |
 | 7 / 9 | Cambiar bloque seleccionado |
@@ -47,6 +48,7 @@ El objetivo es ejecutarse en un heap Java de **4 MiB o más**. Las decisiones pa
 - Geometría cuantizada a `short`, una apariencia compartida y arreglos temporales de CPU descartables después de construir cada sector.
 - Al editar un bloque se reconstruye su sector y, solo si cae en un borde, los sectores vecinos.
 - Las partículas de rotura reproducen la cuadrícula 4 × 4 × 4 de Indev con 64 ranuras fijas y una sola malla; cada fragmento reutiliza un recorte del atlas y no crea objetos durante la actualización.
+- Cuatro criaturas como máximo, con tres texturas de 64 × 32 píxeles compartidas por especie y modelos M3G construidos una vez al crear el renderizador.
 - Se libera la imagen de título al entrar al mundo.
 - RMS guarda un registro del tamaño aproximado del mundo; algunos teléfonos pueden imponer un límite menor al tamaño de registro.
 
