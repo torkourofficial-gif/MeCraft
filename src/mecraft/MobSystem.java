@@ -32,13 +32,14 @@ final class MobSystem {
 
     MobSystem(Group scene, DroppedItemSystem drops) throws IOException {
         this.drops = drops;
-        Appearance[] skins = new Appearance[] {
-            skin("pig.png"), skin("sheep.png"), skin("zombie.png")
+        Texture2D[] skinTextures = new Texture2D[] {
+            texture("pig.png"), texture("sheep.png"), texture("zombie.png")
         };
-        Appearance sheepFur = skin("sheep_fur.png");
+        Texture2D fleeceTexture = texture("sheep_fur.png");
         for (int i = 0; i < mobs.length; i++) {
             int type = i == 0 ? PIG : (i == 1 ? SHEEP : ZOMBIE);
-            mobs[i] = new Mob(type, skins[type], type == SHEEP ? sheepFur : null);
+            Appearance fleece = type == SHEEP ? skin(fleeceTexture) : null;
+            mobs[i] = new Mob(type, skin(skinTextures[type]), fleece);
             mobs[i].root.setRenderingEnable(false);
             scene.addChild(mobs[i].root);
         }
@@ -55,6 +56,7 @@ final class MobSystem {
             Mob mob = mobs[i];
             if (!mob.alive || (mob.type == ZOMBIE && world.mode != 0)) continue;
             mob.age++;
+            if (mob.hurtTicks > 0 && --mob.hurtTicks == 0) mob.setHurt(false);
             mob.chasing = false;
             if (mob.attackDelay > 0) mob.attackDelay--;
             if (mob.type == ZOMBIE) {
@@ -79,7 +81,7 @@ final class MobSystem {
             turn(mob);
             move(mob, world);
             mob.root.setTranslation(mob.x, mob.y, mob.z);
-            mob.root.setOrientation(mob.yaw, 0.0f, 1.0f, 0.0f);
+            mob.root.setOrientation(modelYaw(mob.yaw), 0.0f, 1.0f, 0.0f);
         }
         return playerDamage;
     }
@@ -132,6 +134,9 @@ final class MobSystem {
             target.alive = false;
             target.root.setRenderingEnable(false);
         } else {
+            target.hurtTicks = 8;
+            target.setHurt(true);
+            target.verticalVelocity = 0.28f;
             target.fleeTicks = 35;
             target.targetYaw = yawTo(target.x - world.playerX, target.z - world.playerZ);
         }
@@ -147,6 +152,9 @@ final class MobSystem {
         for (int i = 0; i < mobs.length; i++) {
             Mob mob = mobs[i];
             mob.health = mob.type == ZOMBIE ? 20 : 10;
+            mob.hurtTicks = 0;
+            mob.verticalVelocity = 0.0f;
+            mob.setHurt(false);
             mob.setSheared(false);
             mob.alive = mob.type != ZOMBIE;
             mob.root.setRenderingEnable(mob.alive);
@@ -174,7 +182,7 @@ final class MobSystem {
             mob.walkTicks = 0;
             mob.chasing = false;
             mob.root.setTranslation(mob.x, mob.y, mob.z);
-            mob.root.setOrientation(mob.yaw, 0.0f, 1.0f, 0.0f);
+            mob.root.setOrientation(modelYaw(mob.yaw), 0.0f, 1.0f, 0.0f);
         }
     }
 
@@ -226,6 +234,9 @@ final class MobSystem {
         mob.age = random.nextInt(100);
         mob.nextWander = tick + 20 + random.nextInt(100);
         mob.health = 20;
+        mob.hurtTicks = 0;
+        mob.verticalVelocity = 0.0f;
+        mob.setHurt(false);
         mob.setSheared(false);
         mob.attackDelay = 0;
         mob.fleeTicks = 0;
@@ -233,7 +244,7 @@ final class MobSystem {
         mob.chasing = false;
         mob.alive = true;
         mob.root.setTranslation(mob.x, mob.y, mob.z);
-        mob.root.setOrientation(mob.yaw, 0.0f, 1.0f, 0.0f);
+        mob.root.setOrientation(modelYaw(mob.yaw), 0.0f, 1.0f, 0.0f);
         mob.root.setRenderingEnable(true);
     }
 
@@ -289,14 +300,16 @@ final class MobSystem {
         else mob.targetYaw += 75.0f;
         if (canMove(world, mob, mob.x, nz)) mob.z = nz;
         else mob.targetYaw -= 140.0f;
-        int groundY = (int)mob.y - 1;
-        if (!Block.solid(world.get((int)mob.x, groundY, (int)mob.z))) {
-            float fall = mob.y - 0.08f;
-            if (Block.solid(world.get((int)mob.x, (int)fall - 1, (int)mob.z)))
-                mob.y = (int)fall;
-            else mob.y = fall;
+        float ground = world.surfaceY(floor(mob.x), floor(mob.z)) + 1.0f;
+        if (mob.verticalVelocity != 0.0f || mob.y > ground) {
+            mob.y += mob.verticalVelocity;
+            mob.verticalVelocity -= 0.04f;
+            if (mob.y <= ground) {
+                mob.y = ground;
+                mob.verticalVelocity = 0.0f;
+            }
         } else {
-            mob.y = groundY + 1.0f;
+            mob.y = ground;
         }
     }
 
@@ -318,8 +331,8 @@ final class MobSystem {
             // ModelBiped.animate() uses a 1.4 radian stride (about 80 degrees).
             mob.legs[0].setOrientation((float)Math.cos(phase) * 80.0f * walk, 1, 0, 0);
             mob.legs[1].setOrientation((float)Math.cos(phase + Math.PI) * 80.0f * walk, 1, 0, 0);
-            mob.arms[0].setOrientation(-88.0f + (float)Math.sin(phase) * 5.0f, 1, 0, 0);
-            mob.arms[1].setOrientation(-88.0f + (float)Math.sin(phase + Math.PI) * 5.0f, 1, 0, 0);
+            mob.arms[0].setOrientation(88.0f + (float)Math.sin(phase) * 5.0f, 1, 0, 0);
+            mob.arms[1].setOrientation(88.0f + (float)Math.sin(phase + Math.PI) * 5.0f, 1, 0, 0);
         } else {
             // ModelQuadruped.animate() also uses a 1.4 radian stride.
             float stride = (float)Math.cos(phase) * 80.0f * walk;
@@ -331,11 +344,15 @@ final class MobSystem {
         }
     }
 
-    private Appearance skin(String resource) throws IOException {
+    private Texture2D texture(String resource) throws IOException {
         Image image = GameAssets.image(resource);
         Texture2D texture = new Texture2D(new Image2D(Image2D.RGBA, image));
         texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
+        return texture;
+    }
+
+    private Appearance skin(Texture2D texture) {
         Appearance appearance = new Appearance();
         appearance.setTexture(0, texture);
         Material material = new Material();
@@ -408,6 +425,12 @@ final class MobSystem {
         return value < min ? min : (value > max ? max : value);
     }
 
+    /** Model heads face -Z while mob movement yaw describes its travel vector. */
+    private float modelYaw(float movementYaw) {
+        float angle = movementYaw + 180.0f;
+        return angle >= 360.0f ? angle - 360.0f : angle;
+    }
+
     /** CLDC-compatible octant interpolation for atan2(dx, dz), in degrees. */
     private float yawTo(float dx, float dz) {
         float ax = dx < 0.0f ? -dx : dx;
@@ -428,7 +451,8 @@ final class MobSystem {
         final Group[] legs = new Group[4];
         final Group[] arms = new Group[2];
         final Group[] fleece = new Group[6];
-        private final Appearance skin;
+        private final Material skinMaterial;
+        private final Material furMaterial;
         int health;
         int age;
         int attackDelay;
@@ -438,13 +462,26 @@ final class MobSystem {
         boolean chasing;
         boolean sheared;
         int walkTicks;
+        int hurtTicks;
+        float verticalVelocity;
         float x, y, z, yaw, targetYaw;
 
         Mob(int type, Appearance appearance, Appearance fur) {
             this.type = type;
-            this.skin = appearance;
+            this.skinMaterial = appearance.getMaterial();
+            this.furMaterial = fur == null ? null : fur.getMaterial();
             if (type == ZOMBIE) buildZombie(appearance);
             else buildQuadruped(appearance, type == PIG, fur);
+        }
+
+        void setHurt(boolean hurt) {
+            int tint = hurt ? 0xFFFF5555 : 0xFFFFFFFF;
+            skinMaterial.setColor(Material.AMBIENT, tint);
+            skinMaterial.setColor(Material.DIFFUSE, tint);
+            if (furMaterial != null) {
+                furMaterial.setColor(Material.AMBIENT, tint);
+                furMaterial.setColor(Material.DIFFUSE, tint);
+            }
         }
 
         private void buildQuadruped(Appearance appearance, boolean pig, Appearance fur) {
@@ -480,7 +517,8 @@ final class MobSystem {
             for (int i = 0; i < 4; i++) {
                 Group leg = new Group();
                 float x = (i & 1) == 0 ? -halfWidth : halfWidth;
-                float z = i < 2 ? 0.4375f : -0.3125f;
+                // The model faces -Z; front legs belong beside the head.
+                float z = i < 2 ? -0.3125f : 0.4375f;
                 leg.setTranslation(x, pivotY, z);
                 root.addChild(leg);
                 addPart(leg, 0, 16, 4, length, 4, 4, length, 4,
@@ -557,8 +595,8 @@ final class MobSystem {
         float y0 = -height * 0.5f, y1 = height * 0.5f;
         float z0 = -depth * 0.5f, z1 = depth * 0.5f;
         int[][] faces = new int[][] {
-            {3,7,5,1}, {6,2,0,4}, {0,1,5,4},
-            {6,7,3,2}, {3,2,0,1}, {6,7,5,4}
+            {3,7,5,1}, {6,2,0,4}, {6,7,3,2},
+            {0,1,5,4}, {3,2,0,1}, {6,7,5,4}
         };
         float[][] points = new float[][] {
             {x0,y0,z0},{x1,y0,z0},{x0,y1,z0},{x1,y1,z0},
