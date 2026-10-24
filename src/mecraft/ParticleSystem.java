@@ -155,7 +155,7 @@ final class ParticleSystem {
                 boolean onGround = false;
                 if (!deathDust[i]) {
                     int belowY = floorInt(y[i] - size[i]);
-                    if (Block.solid(world.get(floorInt(x[i]), belowY, floorInt(z[i])))) {
+                    if (world.isSolidAt(floorInt(x[i]), belowY, floorInt(z[i]))) {
                         y[i] = belowY + 1.0f + size[i];
                         vy[i] = 0.0f;
                         onGround = true;
@@ -239,3 +239,4 @@ final class ParticleSystem {
         return ((random >>> 8) & 0xFFFF) / 65535.0f;
     }
 }
+
