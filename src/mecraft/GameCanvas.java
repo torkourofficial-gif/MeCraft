@@ -574,6 +574,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
             renderer.swingHand();
             world.set(x, y, z, Block.AIR);
+            if (y + 1 < VoxelWorld.HEIGHT &&
+                world.get(x, y + 1, z) == Block.DOOR && !Block.solid(world.get(x, y, z))) {
+                if (world.mode == 0) renderer.spawnDroppedItem(Block.DOOR, x, y + 1, z);
+                world.removeDoor(x, y + 1, z);
+            }
             if (world.mode == 0) damageTool(heldItem, ItemCatalog.durabilityCost(heldItem));
             renderer.sync(world);
             resetMining();
