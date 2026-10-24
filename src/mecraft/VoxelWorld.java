@@ -99,6 +99,58 @@ final class VoxelWorld {
         return setBlock(x, y, z, id, 0);
     }
 
+    int doorMetadata(int x, int y, int z) {
+        if (get(x, y, z) != Block.DOOR) return 0;
+        return waterLevels[index(x, y, z)] & 15;
+    }
+
+    boolean placeDoor(int x, int y, int z, int orientation) {
+        if (y <= 0 || y + 1 >= HEIGHT || !Block.solid(get(x, y - 1, z)) ||
+            !Block.replaceable(get(x, y, z)) || !Block.replaceable(get(x, y + 1, z))) return false;
+        if (!setBlock(x, y, z, Block.DOOR, 0)) return false;
+        if (!setBlock(x, y + 1, z, Block.DOOR, 0)) {
+            setBlock(x, y, z, Block.AIR, 0);
+            return false;
+        }
+        int metadata = orientation & 7;
+        waterLevels[index(x, y, z)] = (byte)metadata;
+        waterLevels[index(x, y + 1, z)] = (byte)(metadata | 8);
+        fullRebuild = true;
+        revision++;
+        changedX = x; changedY = y; changedZ = z;
+        return true;
+    }
+
+    boolean toggleDoor(int x, int y, int z) {
+        if (get(x, y, z) != Block.DOOR) return false;
+        int metadata = doorMetadata(x, y, z);
+        if ((metadata & 8) != 0) { y--; metadata = doorMetadata(x, y, z); }
+        if (get(x, y, z) != Block.DOOR || get(x, y + 1, z) != Block.DOOR) return false;
+        metadata ^= 4;
+        waterLevels[index(x, y, z)] = (byte)metadata;
+        waterLevels[index(x, y + 1, z)] = (byte)(metadata | 8);
+        fullRebuild = true;
+        revision++;
+        changedX = x; changedY = y; changedZ = z;
+        return true;
+    }
+
+    boolean removeDoor(int x, int y, int z) {
+        if (get(x, y, z) != Block.DOOR) return false;
+        if ((doorMetadata(x, y, z) & 8) != 0) y--;
+        if (get(x, y, z) != Block.DOOR) return false;
+        setBlock(x, y, z, Block.AIR, 0);
+        if (y + 1 < HEIGHT && get(x, y + 1, z) == Block.DOOR)
+            setBlock(x, y + 1, z, Block.AIR, 0);
+        fullRebuild = true;
+        return true;
+    }
+
+    boolean isSolidAt(int x, int y, int z) {
+        byte id = get(x, y, z);
+        return id == Block.DOOR ? (doorMetadata(x, y, z) & 4) == 0 : Block.solid(id);
+    }
+
     /** Indev's shell ray blast, scaled to TNT radius 4 and stored in a reusable bitset. */
     void explode(float x, float y, float z, float radius, DroppedItemSystem drops) {
         for (int i = 0; i < explosionBits.length; i++) explosionBits[i] = 0;
@@ -142,6 +194,11 @@ final class VoxelWorld {
                     byte id = get(bx, by, bz);
                     if (id == Block.AIR) continue;
                     if (id == Block.TNT) drops.spawnPrimedTnt(bx, by, bz, 10 + randomInt(20));
+                    else if (id == Block.DOOR) {
+                        if (randomFloat() < 0.3f) drops.spawn(Block.DOOR, bx, by, bz);
+                        removeDoor(bx, by, bz);
+                        continue;
+                    }
                     else if (Block.dropsItem(id) && randomFloat() < 0.3f)
                         drops.spawn(Block.dropId(id), bx, by, bz);
                     set(bx, by, bz, Block.AIR);
@@ -652,3 +709,4 @@ final class VoxelWorld {
         return result;
     }
 }
+
