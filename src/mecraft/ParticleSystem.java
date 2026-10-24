@@ -29,6 +29,7 @@ final class ParticleSystem {
     private final int[] tile = new int[CAPACITY];
     private final int[] tileOffsetX = new int[CAPACITY];
     private final int[] tileOffsetY = new int[CAPACITY];
+    private final boolean[] deathDust = new boolean[CAPACITY];
     private final short[] positions = new short[VERTICES * 3];
     private final short[] texCoords = new short[VERTICES * 2];
     private final byte[] colors = new byte[VERTICES * 4];
@@ -106,9 +107,32 @@ final class ParticleSystem {
                     tile[i] = blockTile;
                     tileOffsetX[i] = (int)(nextRandom() * 4.0f);
                     tileOffsetY[i] = (int)(nextRandom() * 4.0f);
+                    deathDust[i] = false;
                     setParticleColor(i, 255);
                 }
             }
+        }
+    }
+
+    /** Small brown puffs emitted after a mob finishes its death fall. */
+    void spawnMobDeath(float px, float py, float pz) {
+        for (int n = 0; n < 16; n++) {
+            int i = cursor++;
+            if (cursor == CAPACITY) cursor = 0;
+            x[i] = px + (nextRandom() - 0.5f) * 0.42f;
+            y[i] = py + 0.2f + nextRandom() * 0.9f;
+            z[i] = pz + (nextRandom() - 0.5f) * 0.42f;
+            vx[i] = (nextRandom() - 0.5f) * 0.025f;
+            vy[i] = 0.012f + nextRandom() * 0.018f;
+            vz[i] = (nextRandom() - 0.5f) * 0.025f;
+            size[i] = 0.045f + nextRandom() * 0.035f;
+            age[i] = 0;
+            lifetime[i] = 14 + (int)(nextRandom() * 9.0f);
+            tile[i] = Block.sideTile(Block.DIRT);
+            tileOffsetX[i] = (int)(nextRandom() * 12.0f);
+            tileOffsetY[i] = (int)(nextRandom() * 12.0f);
+            deathDust[i] = true;
+            setParticleColor(i, 165, 132, 91, 230);
         }
     }
 
@@ -123,22 +147,28 @@ final class ParticleSystem {
         for (int i = 0; i < CAPACITY; i++) {
             if (age[i] < lifetime[i]) {
                 age[i]++;
-                vy[i] -= 0.04f;
+                if (deathDust[i]) vy[i] += 0.001f;
+                else vy[i] -= 0.04f;
                 x[i] += vx[i];
                 y[i] += vy[i];
                 z[i] += vz[i];
                 boolean onGround = false;
-                int belowY = floorInt(y[i] - size[i]);
-                if (Block.solid(world.get(floorInt(x[i]), belowY, floorInt(z[i])))) {
-                    y[i] = belowY + 1.0f + size[i];
-                    vy[i] = 0.0f;
-                    onGround = true;
+                if (!deathDust[i]) {
+                    int belowY = floorInt(y[i] - size[i]);
+                    if (Block.solid(world.get(floorInt(x[i]), belowY, floorInt(z[i])))) {
+                        y[i] = belowY + 1.0f + size[i];
+                        vy[i] = 0.0f;
+                        onGround = true;
+                    }
                 }
-                vx[i] *= 0.98f;
-                vy[i] *= 0.98f;
-                vz[i] *= 0.98f;
+                vx[i] *= deathDust[i] ? 0.92f : 0.98f;
+                vy[i] *= deathDust[i] ? 0.96f : 0.98f;
+                vz[i] *= deathDust[i] ? 0.92f : 0.98f;
                 if (onGround) { vx[i] *= 0.7f; vz[i] *= 0.7f; }
-                setParticleColor(i, 255);
+                if (deathDust[i]) {
+                    int alpha = 230 - age[i] * 230 / lifetime[i];
+                    setParticleColor(i, 165, 132, 91, alpha);
+                } else setParticleColor(i, 255);
             } else {
                 setParticleColor(i, 0);
             }
@@ -191,11 +221,15 @@ final class ParticleSystem {
     }
 
     private void setParticleColor(int particle, int alpha) {
+        setParticleColor(particle, 153, 153, 153, alpha);
+    }
+
+    private void setParticleColor(int particle, int red, int green, int blue, int alpha) {
         int at = particle * 16;
         for (int v = 0; v < 4; v++) {
-            colors[at++] = (byte)153;
-            colors[at++] = (byte)153;
-            colors[at++] = (byte)153;
+            colors[at++] = (byte)red;
+            colors[at++] = (byte)green;
+            colors[at++] = (byte)blue;
             colors[at++] = (byte)alpha;
         }
     }

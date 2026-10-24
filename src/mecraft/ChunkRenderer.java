@@ -143,7 +143,7 @@ final class ChunkRenderer {
         buildHeldItems();
         particles = new ParticleSystem(atlas);
         droppedItems = new DroppedItemSystem(atlas, itemAtlas);
-        mobs = new MobSystem(scene, droppedItems);
+        mobs = new MobSystem(scene, droppedItems, particles);
 
         camera.setPerspective(68.0f, (float)width / (float)height, 0.1f, CAMERA_FAR);
         cameraPivot.addChild(cameraEffectPivot);

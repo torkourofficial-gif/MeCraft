@@ -591,6 +591,25 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         renderer.sync(world);
     }
 
+    /** Key 3 uses raw pork when selected; other items retain their place action. */
+    private void useSelectedItem() {
+        if (world == null) return;
+        int selected = hotbar[world.selectedSlot];
+        if (world.mode == 0 && selected == ItemCatalog.PORK_RAW) {
+            if (inventory[selected] > 0 && world.health < 20) {
+                world.health += 3;
+                if (world.health > 20) world.health = 20;
+                inventory[selected]--;
+                if (inventory[selected] == 0) restoreHotbarItem(selected);
+                if (renderer != null) renderer.swingHand();
+                copyInventoryToWorld();
+                repaint();
+            }
+            return;
+        }
+        placeBlock();
+    }
+
     private void openCrafting(boolean workbench) {
         if (state != PLAYING || world == null || (world.mode == 1 && !workbench)) return;
         state = workbench ? WORKBENCH : INVENTORY;
@@ -813,7 +832,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             jumpHeld = !(toggledFlight && !flying);
         }
         if (keyCode == KEY_NUM0 && world.mode == 1) descendHeld = true;
-        if (keyCode == KEY_NUM3) placeBlock();
+        if (keyCode == KEY_NUM3) useSelectedItem();
         if (keyCode == KEY_NUM7) cycleSlot(-1);
         if (keyCode == KEY_NUM9) cycleSlot(1);
         if (keyCode == KEY_STAR) openPause();

@@ -17,7 +17,7 @@ Referencia consultada: [EaglerPorts/in-20100223](https://github.com/EaglerPorts/
 - Romper/colocar bloques, partículas de rotura, daño progresivo con grietas sobre la cara apuntada, seleccionar la barra rápida y guardar la partida en RMS.
 - HUD con la barra de `gui.png`, corazones y burbujas de `icons.png` y sprites de bloque de `gui_blocks.png`; al sumergir la cámara aparece un filtro azul, el oxígeno se agota y provoca ahogamiento, y tanto la caída como el ahogamiento activan la animación de daño de Indev. La vida y estos daños solo se aplican en supervivencia.
 - Crafteo por recetas: `#` abre el inventario 2×2 (tronco → 4 tablones, tablones → mesa y palos); usa `3` apuntando a una mesa para abrir `container.png`, centrado, con una lista desplazable de recetas y las no disponibles atenuadas. En la mesa se crean herramientas de madera, piedra, hierro, diamante y oro. El horno fue retirado.
-- Criaturas 3D con modelos y UV adaptados a las skins Indev de 64 × 32, además de una capa de vellón separada para la oveja. Los animales deambulan, huyen al recibir golpes y los zombis aparecen al anochecer, persiguen y hacen 5 puntos de daño cada segundo en supervivencia; desaparecen al amanecer. `1` golpea a una criatura apuntada antes de intentar romper un bloque; la mano hace 1 punto y las espadas hacen daño según su material.
+- Criaturas 3D con modelos y UV adaptados a las skins Indev de 64 × 32, con todas las caras del cubo y una capa de vellón separada para la oveja. Los animales deambulan y huyen al recibir golpes; los zombis y esqueletos aparecen de noche, persiguen y hacen daño en supervivencia. A la luz del día se queman en cielo abierto con fuego animado tomado del atlas de Indev. Las criaturas caídas se inclinan durante su animación de muerte y después levantan polvo. `1` golpea a una criatura apuntada antes de intentar romper un bloque.
 - Drops de criaturas: la primera vez que golpeas una oveja esquilada deja 1–3 bloques de lana y pierde visualmente el vellón; al morir, cerdos y zombis pueden dejar 0–2 trozos de cerdo crudo o plumas. Los objetos usan el pool fijo de drops y se recogen dentro de 1,5 bloques.
 - Render 3D M3G con sectores de 16 × 8 × 16 bloques y un grupo fijo de seis criaturas para limitar memoria y geometría.
 
@@ -34,13 +34,15 @@ La generación actual calcula primero una altura por columna y después rellena 
 | 4 / 6 | Desplazarse a la izquierda / derecha |
 | 5 | Saltar / crear la receta elegida |
 | 1 (mantener) | Golpear la criatura apuntada o romper el bloque; aparecen grietas según el daño |
-| 3 | Colocar bloque; si apuntas a una mesa de crafteo, abrir su interfaz |
+| 3 | Comer cerdo crudo seleccionado; con otros objetos, colocar bloque o abrir la mesa apuntada |
 | # | Abrir/cerrar el inventario y crafteo 2×2 |
 | 7 / 9 | Cambiar bloque seleccionado |
 | * | Pausar, guardar o regresar al menú |
 
 En las pantallas de crafteo, usa `2`/`8` para elegir una receta, `5` para crearla y `#` para volver al juego.
 En supervivencia, las casillas vacías del acceso rápido no muestran bloques y `7`/`9` recorren también esas casillas. Las herramientas de un solo uso se gastan según el material; picos, palas y hachas aceleran los bloques que les corresponden, y solo el pico recoge piedra, adoquín y minerales. La piedra deja adoquín. La azada convierte tierra o césped expuestos en tierra de cultivo y puede producir semillas. La espada pierde dos puntos de durabilidad al romper un bloque. La rotura conserva las penalizaciones de Indev por estar en el aire o bajo el agua. Soltar `1` cancela el daño acumulado. En creativo los bloques se rompen al instante.
+
+El cerdo crudo cura 3 puntos de vida como en Indev; solo se consume si falta vida y el stack tiene tamaño uno.
 
 El jugador mide 0,6 × 1,8 bloques y la cámara está a 1,62 bloques sobre sus pies, igual que las medidas clásicas de Indev.
 

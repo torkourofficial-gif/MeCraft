@@ -61,6 +61,7 @@ final class ItemCatalog {
     }
 
     static int maxStack(int id) {
+        if (id == PORK_RAW) return 1;
         return isTool(id) ? 1 : 64;
     }
 
