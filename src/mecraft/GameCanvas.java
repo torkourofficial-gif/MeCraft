@@ -274,20 +274,26 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void activateGameOverSelection() {
-        // Indev's game-over screen offers a new level or loading another one.
-        // Here the equivalent first action respawns in this saved world.
+        // Indev offers to generate a new level or load a saved one from here.
+        // Keep this world's progress by saving it in its respawned state first.
+        int mode = world == null ? 0 : world.mode;
         respawn();
+        saveIfNeeded();
+        renderer = null;
+        world = null;
+        System.gc();
         if (gameOverSelection == 0) {
-            state = PLAYING;
-            removeSelectCommand();
-            addCommand(mineCommand);
-            addCommand(placeCommand);
-            addCommand(pauseCommand);
-            repaint();
+            newWorldName = "Mundo " + (savedWorlds.length + 1);
+            newWorldMode = mode;
+            createSelection = 0;
+            state = WORLD_CREATE;
         } else {
-            saveIfNeeded();
-            backToMainMenu();
+            refreshWorldList();
+            worldSelection = 0;
+            state = WORLD_SELECT;
         }
+        clearKeys();
+        repaint();
     }
 
     private void startNewWorld(int mode, String name) {
@@ -1155,15 +1161,26 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         try { containerTexture = GameAssets.image("container.png"); } catch (IOException ignored) { containerTexture = null; }
         int[] blueTintPixels = new int[16 * 16];
         int[] hurtTintPixels = new int[16 * 16];
-        int[] deathTintPixels = new int[16 * 16];
+        int deathHeight = getHeight() > 0 ? getHeight() : 320;
+        int[] deathTintPixels = new int[16 * deathHeight];
         for (int i = 0; i < blueTintPixels.length; i++) {
             blueTintPixels[i] = 0x500035A0;
             hurtTintPixels[i] = 0x503F0000;
-            deathTintPixels[i] = 0x99000000;
+        }
+        int deathTop = 0x60500000;
+        int deathBottom = 0xA0803030;
+        for (int y = 0; y < deathHeight; y++) {
+            int step = deathHeight <= 1 ? 0 : y * 255 / (deathHeight - 1);
+            int a = ((deathTop >>> 24) * (255 - step) + (deathBottom >>> 24) * step) / 255;
+            int r = ((deathTop >> 16 & 255) * (255 - step) + (deathBottom >> 16 & 255) * step) / 255;
+            int green = ((deathTop >> 8 & 255) * (255 - step) + (deathBottom >> 8 & 255) * step) / 255;
+            int b = ((deathTop & 255) * (255 - step) + (deathBottom & 255) * step) / 255;
+            int color = a << 24 | r << 16 | green << 8 | b;
+            for (int x = 0; x < 16; x++) deathTintPixels[y * 16 + x] = color;
         }
         try { waterTint = Image.createRGBImage(blueTintPixels, 16, 16, true); } catch (Throwable ignored) { waterTint = null; }
         try { hurtTint = Image.createRGBImage(hurtTintPixels, 16, 16, true); } catch (Throwable ignored) { hurtTint = null; }
-        try { deathTint = Image.createRGBImage(deathTintPixels, 16, 16, true); } catch (Throwable ignored) { deathTint = null; }
+        try { deathTint = Image.createRGBImage(deathTintPixels, 16, deathHeight, true); } catch (Throwable ignored) { deathTint = null; }
         blueTintPixels = null;
         hurtTintPixels = null;
         deathTintPixels = null;
@@ -1308,7 +1325,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 }
                 if (state == PAUSED) drawPause(g);
                 if (state == GAME_OVER) {
-                    drawTint(g, deathTint);
+                    drawDeathGradient(g);
                     drawGameOver(g);
                 }
                 if (state == INVENTORY || state == WORKBENCH) drawCrafting(g, state == WORKBENCH);
@@ -1838,17 +1855,59 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void drawGameOver(Graphics g) {
         int w = getWidth(), h = getHeight();
+        Font oldFont = g.getFont();
+        g.setFont(Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_LARGE));
         g.setColor(255, 255, 255);
-        g.drawString("¡Has muerto!", w / 2, h / 4,
+        g.drawString("Game over!", w / 2, h / 4 - 20,
                 Graphics.HCENTER | Graphics.TOP);
-        g.setColor(255, 220, 80);
-        g.drawString("Puntuación: 0", w / 2, h / 4 + 25,
-                Graphics.HCENTER | Graphics.TOP);
-        drawMenuItem(g, "Reaparecer", h / 2, gameOverSelection == 0);
-        drawMenuItem(g, "Guardar y menú", h / 2 + 24, gameOverSelection == 1);
-        g.setColor(240, 224, 190);
-        g.drawString("2/8 elegir   5 aceptar", w / 2, h - 10,
-                Graphics.HCENTER | Graphics.BOTTOM);
+        g.setFont(oldFont);
+        String scorePrefix = "Score: ";
+        int scoreWidth = oldFont.stringWidth(scorePrefix + "0");
+        int scoreX = (w - scoreWidth) / 2;
+        int scoreY = h / 4 + 20;
+        g.setColor(255, 255, 255);
+        g.drawString(scorePrefix, scoreX, scoreY, Graphics.TOP | Graphics.LEFT);
+        g.setColor(255, 220, 55);
+        g.drawString("0", scoreX + oldFont.stringWidth(scorePrefix), scoreY,
+                Graphics.TOP | Graphics.LEFT);
+        drawGameOverButton(g, "Generate new level...", h / 4 + 72, gameOverSelection == 0);
+        drawGameOverButton(g, "Load level..", h / 4 + 96, gameOverSelection == 1);
+    }
+
+    /** Indev's Game over overlay: red gradient from 0x60500000 to 0xA0803030. */
+    private void drawDeathGradient(Graphics g) {
+        if (deathTint == null) {
+            g.setColor(112, 32, 32);
+            g.fillRect(0, 0, getWidth(), getHeight());
+            return;
+        }
+        int width = getWidth();
+        int height = Math.min(getHeight(), deathTint.getHeight());
+        for (int x = 0; x < width; x += deathTint.getWidth()) {
+            g.drawRegion(deathTint, 0, 0, deathTint.getWidth(), height,
+                    Sprite.TRANS_NONE, x, 0, Graphics.TOP | Graphics.LEFT);
+        }
+    }
+
+    /** Grey, inset button styling and positions follow GuiGameOver's 240x320 layout. */
+    private void drawGameOverButton(Graphics g, String label, int y, boolean selected) {
+        int width = Math.min(200, getWidth() - 16);
+        int x = (getWidth() - width) / 2;
+        int height = 20;
+        int fill = selected ? 0x808080 : 0x606060;
+        g.setColor(0, 0, 0);
+        g.fillRect(x, y, width, height);
+        g.setColor(0xA0A0A0);
+        g.drawLine(x, y, x + width - 1, y);
+        g.drawLine(x, y, x, y + height - 1);
+        g.setColor(fill);
+        g.fillRect(x + 1, y + 1, width - 2, height - 2);
+        g.setColor(0x404040);
+        g.drawLine(x + 1, y + height - 1, x + width - 1, y + height - 1);
+        g.drawLine(x + width - 1, y + 1, x + width - 1, y + height - 1);
+        g.setColor(255, 255, 255);
+        g.drawString(label, getWidth() / 2, y + (height - Font.getDefaultFont().getHeight()) / 2,
+                Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawError(Graphics g) {
@@ -1894,4 +1953,5 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         return value;
     }
 }
+
 
