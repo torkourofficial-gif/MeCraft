@@ -41,6 +41,14 @@ final class Block {
     static final int[] TILE = makeTiles();
     static final String[] NAME = makeNames();
     static final int[] CREATIVE_PALETTE = makeCreativePalette();
+    /** Uses the original wooden-door tile already present in the terrain atlas. */
+    static final byte DOOR = (byte)findTileBlock(97);
+
+    private static int findTileBlock(int tile) {
+        for (int i = DECORATIVE_START; i < TILE.length; i++)
+            if (TILE[i] == tile) return i;
+        return -1;
+    }
 
     private static int[] makeExtraTiles() {
         int[] temporary = new int[110];
@@ -113,8 +121,8 @@ final class Block {
         };
         System.arraycopy(basic, 0, result, 0, basic.length);
         for (int i = 0; i < EXTRA_TILES.length; i++) {
-            result[DECORATIVE_START + i] = new StringBuffer().append("Decoración ")
-                    .append(EXTRA_TILES[i]).toString();
+            result[DECORATIVE_START + i] = EXTRA_TILES[i] == 97 ? "Puerta de madera" :
+                    new StringBuffer().append("Decoración ").append(EXTRA_TILES[i]).toString();
         }
         return result;
     }
@@ -122,7 +130,7 @@ final class Block {
     private Block() { }
 
     static boolean solid(byte id) {
-        return id != AIR && id != WATER && !isFlower(id) && id != TORCH;
+        return id != AIR && id != WATER && id != DOOR && !isFlower(id) && id != TORCH;
     }
 
     static boolean isFlower(byte id) {
@@ -186,13 +194,14 @@ final class Block {
         if (id == CRAFTING_TABLE) return 25;
         if (id == WOOL) return 8;
         if (id == COAL || id == IRON) return 30;
+        if (id == DOOR) return 30;
         if (id == COBBLESTONE) return 20;
         if (id == FARMLAND) return 6;
         return 10;
     }
 
     static boolean faceVisible(byte current, byte neighbor) {
-        if (neighbor == AIR || isFlower(neighbor)) return true;
+        if (neighbor == AIR || isFlower(neighbor) || neighbor == DOOR) return true;
         if (neighbor == WATER) return current != WATER;
         if (neighbor == LEAVES) return current != LEAVES;
         return false;
@@ -209,6 +218,7 @@ final class Block {
     }
 
     static int sideTile(byte id) {
+        if (id == DOOR) return 97;
         if (id == TNT) return 8;
         if (isDecorative(id)) return TILE[id & 255];
         if (id == GRASS) return 3;
@@ -220,6 +230,7 @@ final class Block {
 
     /** Indev terrain tile for the renderer's face order: top, x-, x+, z-, z+, bottom. */
     static int faceTile(byte id, int face) {
+        if (id == DOOR) return face == 0 || face == 5 ? 81 : 97;
         if (face == 0) return topTile(id);
         if (id == TNT && face == 5) return 10;
         if (face == 5) {
@@ -233,7 +244,7 @@ final class Block {
     }
 
     static boolean isDecorative(byte id) {
-        return (id & 255) >= DECORATIVE_START && (id & 255) < COUNT;
+        return (id & 255) >= DECORATIVE_START && (id & 255) < COUNT && id != DOOR;
     }
 
     static int atlasTile(int id) {
@@ -241,3 +252,4 @@ final class Block {
     }
 
 }
+
