@@ -211,8 +211,8 @@ final class DroppedItemSystem {
             vx[i] *= 0.98f;
             vy[i] *= 0.98f;
             vz[i] *= 0.98f;
-            boolean onGround = Block.solid(world.get(floorBlock(x[i]),
-                floorBlock(y[i] - entityHalfSize - 0.01f), floorBlock(z[i])));
+            boolean onGround = world.isSolidAt(floorBlock(x[i]),
+                floorBlock(y[i] - entityHalfSize - 0.01f), floorBlock(z[i]));
             if (onGround) {
                 vx[i] *= 0.7f;
                 vz[i] *= 0.7f;
@@ -314,8 +314,8 @@ final class DroppedItemSystem {
         int minZ = floorBlock(pz - halfSize);
         int maxZ = floorBlock(pz + halfSize);
         for (int by = minY; by <= maxY; by++) {
-            if (Block.solid(world.get(minX, by, minZ)) || Block.solid(world.get(maxX, by, minZ)) ||
-                Block.solid(world.get(minX, by, maxZ)) || Block.solid(world.get(maxX, by, maxZ))) return true;
+            if (world.isSolidAt(minX, by, minZ) || world.isSolidAt(maxX, by, minZ) ||
+                world.isSolidAt(minX, by, maxZ) || world.isSolidAt(maxX, by, maxZ)) return true;
         }
         return false;
     }
@@ -439,4 +439,5 @@ final class DroppedItemSystem {
         return ((random >>> 8) & 0xFFFF) / 65535.0f;
     }
 }
+
 
