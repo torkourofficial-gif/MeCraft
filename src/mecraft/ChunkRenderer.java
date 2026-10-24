@@ -62,9 +62,10 @@ final class ChunkRenderer {
     private final int[] nearestTorchZ = new int[3];
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
+    private final Image terrainImage;
     private final Texture2D atlas;
     private final Texture2D itemAtlas;
-    private final Appearance blockAppearance;
+    private final Appearance[] tileAppearances = new Appearance[TILE_COUNT];
     private final Appearance flowerAppearance;
     private final Appearance heldItemAppearance;
     private final Appearance itemSpriteAppearance;
@@ -93,12 +94,11 @@ final class ChunkRenderer {
     ChunkRenderer(int width, int height) throws IOException {
         if (width <= 0) width = 1;
         if (height <= 0) height = 1;
-        Image source = GameAssets.terrain();
-        Image2D image = new Image2D(Image2D.RGBA, source);
+        terrainImage = GameAssets.terrain();
+        Image2D image = new Image2D(Image2D.RGBA, terrainImage);
         atlas = new Texture2D(image);
         atlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         atlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
-        blockAppearance = createBlockAppearance();
         flowerAppearance = createFlowerAppearance();
         heldItemAppearance = createFirstPersonAppearance(atlas, true);
         Image itemSource = GameAssets.image("items.png");
@@ -847,7 +847,7 @@ final class ChunkRenderer {
 
     private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {
         FaceBuilder[] builders = new FaceBuilder[TILE_COUNT];
-        FlowerBuilder[] flowers = new FlowerBuilder[1];
+        FlowerBuilder flowers = null;
         int x0 = cx * VoxelWorld.CHUNK_XZ;
         int y0 = cy * VoxelWorld.CHUNK_Y;
         int z0 = cz * VoxelWorld.CHUNK_XZ;
@@ -855,48 +855,107 @@ final class ChunkRenderer {
         int y1 = y0 + VoxelWorld.CHUNK_Y;
         int z1 = z0 + VoxelWorld.CHUNK_XZ;
 
+        // Crossed flowers do not form cube faces, so collect them separately.
         for (int y = y0; y < y1; y++) {
             for (int z = z0; z < z1; z++) {
                 for (int x = x0; x < x1; x++) {
                     byte id = world.get(x, y, z);
-                    if (id == Block.AIR) continue;
                     if (Block.isFlower(id)) {
-                        if (flowers[0] == null) flowers[0] = new FlowerBuilder();
-                        flowers[0].add(x - x0, y - y0, z - z0, Block.sideTile(id));
-                        continue;
+                        if (flowers == null) flowers = new FlowerBuilder();
+                        flowers.add(x - x0, y - y0, z - z0, Block.sideTile(id));
                     }
-                    if (Block.faceVisible(id, world.get(x, y + 1, z))) {
-                        add(builders, Block.faceTile(id, 0), x - x0, y - y0, z - z0, 0);
+                }
+            }
+        }
+
+        // Mine64-style greedy meshing: combine adjacent visible faces on each
+        // chunk plane when their atlas tile matches. Tile textures repeat, so
+        // the merged rectangles preserve the original per-block texture scale.
+        int[] mask = new int[VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ];
+        for (int face = 0; face < 6; face++) {
+            int slices = face == 0 || face == 5 ? VoxelWorld.CHUNK_Y : VoxelWorld.CHUNK_XZ;
+            int width = VoxelWorld.CHUNK_XZ;
+            int height = face == 0 || face == 5 ? VoxelWorld.CHUNK_XZ : VoxelWorld.CHUNK_Y;
+            for (int slice = 0; slice < slices; slice++) {
+                for (int b = 0; b < height; b++) {
+                    int row = b * width;
+                    for (int a = 0; a < width; a++) {
+                        int x, y, z;
+                        if (face == 0 || face == 5) {
+                            x = x0 + a; y = y0 + slice; z = z0 + b;
+                        } else if (face == 1 || face == 2) {
+                            x = x0 + slice; y = y0 + b; z = z0 + a;
+                        } else {
+                            x = x0 + a; y = y0 + b; z = z0 + slice;
+                        }
+                        byte id = world.get(x, y, z);
+                        int key = 0;
+                        if (id != Block.AIR && !Block.isFlower(id) && !(face == 5 && y == 0)) {
+                            int nx = x, ny = y, nz = z;
+                            if (face == 0) ny++;
+                            else if (face == 1) nx--;
+                            else if (face == 2) nx++;
+                            else if (face == 3) nz--;
+                            else if (face == 4) nz++;
+                            else ny--;
+                            if (Block.faceVisible(id, world.get(nx, ny, nz)))
+                                key = Block.faceTile(id, face) + 1;
+                        }
+                        mask[row + a] = key;
                     }
-                    if (Block.faceVisible(id, world.get(x - 1, y, z)))
-                        add(builders, Block.faceTile(id, 1), x - x0, y - y0, z - z0, 1);
-                    if (Block.faceVisible(id, world.get(x + 1, y, z)))
-                        add(builders, Block.faceTile(id, 2), x - x0, y - y0, z - z0, 2);
-                    if (Block.faceVisible(id, world.get(x, y, z - 1)))
-                        add(builders, Block.faceTile(id, 3), x - x0, y - y0, z - z0, 3);
-                    if (Block.faceVisible(id, world.get(x, y, z + 1)))
-                        add(builders, Block.faceTile(id, 4), x - x0, y - y0, z - z0, 4);
-                    if (y > 0 && Block.faceVisible(id, world.get(x, y - 1, z)))
-                        add(builders, Block.faceTile(id, 5), x - x0, y - y0, z - z0, 5);
+                }
+                for (int b = 0; b < height; b++) {
+                    for (int a = 0; a < width; ) {
+                        int key = mask[b * width + a];
+                        if (key == 0) { a++; continue; }
+                        int rectWidth = 1;
+                        while (a + rectWidth < width && mask[b * width + a + rectWidth] == key)
+                            rectWidth++;
+                        int rectHeight = 1;
+                        boolean extend = true;
+                        while (b + rectHeight < height && extend) {
+                            int nextRow = (b + rectHeight) * width + a;
+                            for (int k = 0; k < rectWidth; k++) {
+                                if (mask[nextRow + k] != key) { extend = false; break; }
+                            }
+                            if (extend) rectHeight++;
+                        }
+                        for (int clearY = 0; clearY < rectHeight; clearY++) {
+                            int clearRow = (b + clearY) * width + a;
+                            for (int clearX = 0; clearX < rectWidth; clearX++) mask[clearRow + clearX] = 0;
+                        }
+                        int x, y, z, faceWidth, faceHeight;
+                        if (face == 0 || face == 5) {
+                            x = a; y = slice; z = b;
+                            faceWidth = rectWidth; faceHeight = rectHeight;
+                        } else if (face == 1 || face == 2) {
+                            x = slice; y = b; z = a;
+                            faceWidth = rectWidth; faceHeight = rectHeight;
+                        } else {
+                            x = a; y = b; z = slice;
+                            faceWidth = rectWidth; faceHeight = rectHeight;
+                        }
+                        int tile = key - 1;
+                        if (builders[tile] == null) builders[tile] = new FaceBuilder(tile);
+                        builders[tile].addRect(x, y, z, faceWidth, faceHeight, face);
+                        a += rectWidth;
+                    }
                 }
             }
         }
 
         int count = 0;
         for (int i = 0; i < builders.length; i++) if (builders[i] != null) count++;
-        int flowerCount = 0;
-        for (int i = 0; i < flowers.length; i++) if (flowers[i] != null) flowerCount++;
+        int flowerCount = flowers == null ? 0 : 1;
         if (count + flowerCount == 0) return null;
         Mesh[] meshes = new Mesh[count + flowerCount];
         int at = 0;
         for (int i = 0; i < builders.length; i++) {
             if (builders[i] == null) continue;
-            meshes[at++] = makeMesh(builders[i]);
+            meshes[at++] = makeMesh(builders[i], tileAppearance(i), 1.0f / 16.0f);
             builders[i] = null;
         }
-        for (int i = 0; i < flowers.length; i++) {
-            if (flowers[i] != null) meshes[at++] = makeFlowerMesh(flowers[i], flowerAppearance);
-        }
+        if (flowers != null) meshes[at++] = makeFlowerMesh(flowers, flowerAppearance);
         Chunk chunk = new Chunk();
         chunk.meshes = meshes;
         int wx = x0, wy = y0, wz = z0;
@@ -909,11 +968,11 @@ final class ChunkRenderer {
         builders[tile].add(x, y, z, face);
     }
 
-    private Mesh makeMesh(FaceBuilder data) {
-        return makeMesh(data, blockAppearance);
+    private Mesh makeMesh(FaceBuilder data, Appearance appearance) {
+        return makeMesh(data, appearance, 1.0f / 256.0f);
     }
 
-    private Mesh makeMesh(FaceBuilder data, Appearance appearance) {
+    private Mesh makeMesh(FaceBuilder data, Appearance appearance, float textureScale) {
         int vertexCount = data.vertexCount;
         VertexArray positions = new VertexArray(vertexCount, 3, 2);
         positions.set(0, vertexCount, data.p);
@@ -924,7 +983,7 @@ final class ChunkRenderer {
 
         VertexBuffer vertices = new VertexBuffer();
         vertices.setPositions(positions, 1.0f, null);
-        vertices.setTexCoords(0, texCoords, 1.0f / 256.0f, null);
+        vertices.setTexCoords(0, texCoords, textureScale, null);
         vertices.setColors(colors);
         int[] strips = new int[data.faceCount];
         for (int i = 0; i < strips.length; i++) strips[i] = 4;
@@ -947,9 +1006,23 @@ final class ChunkRenderer {
         return new Mesh(vertices, new TriangleStripArray(0, strips), appearance);
     }
 
-    private Appearance createBlockAppearance() {
+    private Appearance tileAppearance(int tile) {
+        Appearance appearance = tileAppearances[tile];
+        if (appearance != null) return appearance;
+        int[] pixels = new int[16 * 16];
+        terrainImage.getRGB(pixels, 0, 16, (tile & 15) * 16, (tile >> 4) * 16, 16, 16);
+        Image tileImage = Image.createRGBImage(pixels, 16, 16, true);
+        Texture2D texture = new Texture2D(new Image2D(Image2D.RGBA, tileImage));
+        texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
+        texture.setWrapping(Texture2D.WRAP_REPEAT, Texture2D.WRAP_REPEAT);
+        appearance = createBlockAppearance(texture);
+        tileAppearances[tile] = appearance;
+        return appearance;
+    }
+
+    private Appearance createBlockAppearance(Texture2D texture) {
         Appearance appearance = new Appearance();
-        appearance.setTexture(0, atlas);
+        appearance.setTexture(0, texture);
         Material material = new Material();
         material.setColor(Material.AMBIENT, 0xFFFFFFFF);
         material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
@@ -1032,6 +1105,34 @@ final class ChunkRenderer {
 
         FaceBuilder(int tile) { this.tile = tile; }
 
+        /** Add one tiled rectangle produced by the chunk's greedy face scan. */
+        void addRect(int x, int y, int z, int width, int height, int face) {
+            ensure(vertexCount + 4);
+            int u0 = 1, v0 = 1;
+            int u1 = 1 + width * 16, v1 = 1 + height * 16;
+            int shade = face == 0 ? 255 : (face == 5 ? 135 : (face <= 2 ? 205 : 180));
+            if (face == 0) {
+                vertex(x,y+1,z, u0,v1,shade); vertex(x,y+1,z+height, u0,v0,shade);
+                vertex(x+width,y+1,z, u1,v1,shade); vertex(x+width,y+1,z+height, u1,v0,shade);
+            } else if (face == 1) {
+                vertex(x,y,z, u1,v1,shade); vertex(x,y,z+width, u0,v1,shade);
+                vertex(x,y+height,z, u1,v0,shade); vertex(x,y+height,z+width, u0,v0,shade);
+            } else if (face == 2) {
+                vertex(x+1,y,z, u0,v1,shade); vertex(x+1,y+height,z, u0,v0,shade);
+                vertex(x+1,y,z+width, u1,v1,shade); vertex(x+1,y+height,z+width, u1,v0,shade);
+            } else if (face == 3) {
+                vertex(x,y,z, u0,v1,shade); vertex(x,y+height,z, u0,v0,shade);
+                vertex(x+width,y,z, u1,v1,shade); vertex(x+width,y+height,z, u1,v0,shade);
+            } else if (face == 4) {
+                vertex(x,y,z+1, u1,v1,shade); vertex(x+width,y,z+1, u0,v1,shade);
+                vertex(x,y+height,z+1, u1,v0,shade); vertex(x+width,y+height,z+1, u0,v0,shade);
+            } else {
+                vertex(x,y,z, u0,v0,shade); vertex(x+width,y,z, u1,v0,shade);
+                vertex(x,y,z+height, u0,v1,shade); vertex(x+width,y,z+height, u1,v1,shade);
+            }
+            faceCount++;
+        }
+
         void add(int x, int y, int z, int face) {
             ensure(vertexCount + 4);
             int u0 = (tile & 15) * 16 + 1;
@@ -1088,5 +1189,6 @@ final class ChunkRenderer {
 
     }
 }
+
 
 
