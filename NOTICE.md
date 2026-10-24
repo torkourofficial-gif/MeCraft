@@ -4,7 +4,7 @@ MeCraft adapta a MIDP/M3G varias reglas consultadas en **Minecraft Indev 2010022
 
 Los PNG que ya estaban en este repositorio se conservan sin modificar. `src/mecraft/sheep_fur.png`, `src/mecraft/creeper.png` y `src/mecraft/skeleton.png` se añadieron sin modificar desde `resources/mob/` de [EaglerPorts/in-20100223](https://github.com/EaglerPorts/in-20100223). La titularidad y licencia de las texturas corresponden a sus autores originales; este aviso no concede derechos adicionales sobre esos assets.
 
-`src/mecraft/fire.png` es una adaptación de los gráficos de fuego del atlas `resources/terrain.png` de [EaglerPorts/in-20100223](https://github.com/EaglerPorts/in-20100223), recortada y con transparencia para el efecto animado de quemadura.
+`src/mecraft/fire.png` es una secuencia de fotogramas generada con la lógica de `TextureFlamesFX` de [EaglerPorts/in-20100223](https://github.com/EaglerPorts/in-20100223), que en Indev calcula la textura animada del fuego en vez de cargarla desde un PNG estático.
 
 El código de MeCraft en `src/mecraft/` es una implementación original del demake para MIDP/M3G. Confirma los derechos/licencias de las texturas antes de redistribuir un `.jar` que las incluya.
 

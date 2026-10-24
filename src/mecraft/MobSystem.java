@@ -245,7 +245,7 @@ final class MobSystem {
         }
         mob.fireTicks--;
         mob.fireMesh.setRenderingEnable(true);
-        mob.updateFireFrame((tick >> 2) & 1);
+        mob.updateFireFrame((tick >> 2) & 7);
         if (--mob.burnDamageTicks <= 0) {
             mob.burnDamageTicks = 20;
             mob.health--;
@@ -639,11 +639,10 @@ final class MobSystem {
         };
         VertexArray positionArray = new VertexArray(8, 3, 2);
         positionArray.set(0, 8, positions);
-        for (int i = 0; i < 8; i++) {
-            int v = 0;
-            setFireUV(uv, i * 2, (i & 1) == 0 ? 1024 : 0,
-                    (i == 0 || i == 1 || i == 4 || i == 5) ? v + 512 : v);
-        }
+        setFireUV(uv, 0, 1024, 128); setFireUV(uv, 2, 0, 128);
+        setFireUV(uv, 4, 1024, 0);   setFireUV(uv, 6, 0, 0);
+        setFireUV(uv, 8, 1024, 128); setFireUV(uv, 10, 0, 128);
+        setFireUV(uv, 12, 1024, 0);  setFireUV(uv, 14, 0, 0);
         texCoords.set(0, 8, uv);
         VertexBuffer vertices = new VertexBuffer();
         vertices.setPositions(positionArray, 1.0f / 64.0f, null);
@@ -786,8 +785,8 @@ final class MobSystem {
         void updateFireFrame(int frame) {
             if (frame == fireFrame) return;
             fireFrame = frame;
-            int v0 = frame * 512;
-            int v1 = v0 + 512;
+            int v0 = frame * 128;
+            int v1 = v0 + 128;
             short[] uv = fireTexCoords;
             setFireUV(uv, 0, 1024, v1); setFireUV(uv, 2, 0, v1);
             setFireUV(uv, 4, 1024, v0); setFireUV(uv, 6, 0, v0);
