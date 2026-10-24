@@ -20,12 +20,12 @@ import javax.microedition.m3g.VertexArray;
 import javax.microedition.m3g.VertexBuffer;
 import javax.microedition.m3g.World;
 
-/** Builds a bounded set of shared-texture chunk meshes for JSR-184. */
+/** Builds shared-texture chunk meshes on demand for the visible part of the world. */
 final class ChunkRenderer {
     static final int CACHE_SIZE = VoxelWorld.CHUNKS_X * VoxelWorld.CHUNKS_Y * VoxelWorld.CHUNKS_Z;
     private static final int TILE_COUNT = 256;
-    /** Hard scene cap: 12k triangles bounds terrain vertex buffers for a 4 MiB heap. */
-    static final int MAX_TERRAIN_POLYGONS = 12000;
+    private static final float CAMERA_FAR = 38.0f;
+    private static final float CHUNK_RADIUS = 12.0f;
 
     final World scene = new World();
     final Camera camera = new Camera();
@@ -61,6 +61,7 @@ final class ChunkRenderer {
     private final int[] nearestTorchY = new int[3];
     private final int[] nearestTorchZ = new int[3];
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
+    private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final Texture2D atlas;
     private final Texture2D itemAtlas;
     private final Appearance blockAppearance;
@@ -87,7 +88,7 @@ final class ChunkRenderer {
     private int builtRevision = -1;
     private int builtWidth;
     private int builtHeight;
-    private int terrainPolygons;
+    private float cameraPitch;
 
     ChunkRenderer(int width, int height) throws IOException {
         if (width <= 0) width = 1;
@@ -144,7 +145,7 @@ final class ChunkRenderer {
         droppedItems = new DroppedItemSystem(atlas, itemAtlas);
         mobs = new MobSystem(scene, droppedItems);
 
-        camera.setPerspective(68.0f, (float)width / (float)height, 0.1f, 38.0f);
+        camera.setPerspective(68.0f, (float)width / (float)height, 0.1f, CAMERA_FAR);
         cameraPivot.addChild(cameraEffectPivot);
         cameraEffectPivot.addChild(camera);
         cameraEffectPivot.addChild(handPivot);
@@ -191,6 +192,7 @@ final class ChunkRenderer {
     }
 
     void updateCamera(VoxelWorld world, float pitch) {
+        cameraPitch = pitch;
         cameraPivot.setTranslation(world.playerX, world.playerY + 1.62f, world.playerZ);
         // M3G cameras look down local -Z; 180 degrees makes yaw zero face +Z.
         cameraPivot.setOrientation(world.yaw + 180.0f, 0.0f, 1.0f, 0.0f);
@@ -759,6 +761,7 @@ final class ChunkRenderer {
             builtRevision = world.revision;
             world.fullRebuild = false;
         }
+        updateVisibleChunks(world);
     }
 
     private void rebuildChanged(VoxelWorld world) {
@@ -771,7 +774,9 @@ final class ChunkRenderer {
         if (y % VoxelWorld.CHUNK_Y == VoxelWorld.CHUNK_Y - 1) markDirty(dirty, x / VoxelWorld.CHUNK_XZ, y / VoxelWorld.CHUNK_Y + 1, z / VoxelWorld.CHUNK_XZ);
         if (z % VoxelWorld.CHUNK_XZ == 0) markDirty(dirty, x / VoxelWorld.CHUNK_XZ, y / VoxelWorld.CHUNK_Y, z / VoxelWorld.CHUNK_XZ - 1);
         if (z % VoxelWorld.CHUNK_XZ == VoxelWorld.CHUNK_XZ - 1) markDirty(dirty, x / VoxelWorld.CHUNK_XZ, y / VoxelWorld.CHUNK_Y, z / VoxelWorld.CHUNK_XZ + 1);
-        for (int i = 0; i < dirty.length; i++) if (dirty[i]) replaceChunk(world, i);
+        for (int i = 0; i < dirty.length; i++) {
+            if (dirty[i] && residentChunks[i]) replaceChunk(world, i);
+        }
     }
 
     private void markDirty(boolean[] dirty, int cx, int cy, int cz) {
@@ -781,42 +786,65 @@ final class ChunkRenderer {
     }
 
     private void replaceChunk(VoxelWorld world, int i) {
-        if (chunks[i] != null) {
-            terrainPolygons -= chunks[i].polygonCount;
-            for (int m = 0; m < chunks[i].meshes.length; m++) terrain.removeChild(chunks[i].meshes[m]);
-        }
+        removeChunk(i);
         int cx = i % VoxelWorld.CHUNKS_X;
         int cz = (i / VoxelWorld.CHUNKS_X) % VoxelWorld.CHUNKS_Z;
         int cy = i / (VoxelWorld.CHUNKS_X * VoxelWorld.CHUNKS_Z);
         chunks[i] = buildChunk(world, cx, cy, cz);
+        residentChunks[i] = true;
         if (chunks[i] != null) {
             for (int m = 0; m < chunks[i].meshes.length; m++) terrain.addChild(chunks[i].meshes[m]);
         }
     }
 
     private void rebuildWorld(VoxelWorld world) {
-        terrainPolygons = 0;
-        for (int i = 0; i < chunks.length; i++) {
-            if (chunks[i] != null) {
-                for (int m = 0; m < chunks[i].meshes.length; m++) terrain.removeChild(chunks[i].meshes[m]);
-                chunks[i] = null;
-            }
+        for (int i = 0; i < chunks.length; i++) removeChunk(i);
+    }
+
+    private void removeChunk(int i) {
+        if (chunks[i] != null) {
+            for (int m = 0; m < chunks[i].meshes.length; m++) terrain.removeChild(chunks[i].meshes[m]);
+            chunks[i] = null;
         }
+        residentChunks[i] = false;
+    }
+
+    /** Keep M3G buffers only for chunks intersecting the camera frustum. */
+    private void updateVisibleChunks(VoxelWorld world) {
+        float yaw = (float)(world.yaw * Math.PI / 180.0);
+        float pitch = (float)(cameraPitch * Math.PI / 180.0);
+        float sinYaw = (float)Math.sin(yaw), cosYaw = (float)Math.cos(yaw);
+        float sinPitch = (float)Math.sin(pitch), cosPitch = (float)Math.cos(pitch);
+        float forwardX = sinYaw * cosPitch, forwardY = sinPitch, forwardZ = cosYaw * cosPitch;
+        float rightX = cosYaw, rightZ = -sinYaw;
+        float upX = -sinYaw * sinPitch, upY = cosPitch, upZ = -cosYaw * sinPitch;
+        float aspect = builtHeight <= 0 ? 0.75f : (float)builtWidth / (float)builtHeight;
+        float tanVertical = (float)Math.tan(Math.PI * 34.0 / 180.0);
+        float tanHorizontal = tanVertical * aspect;
+        float eyeX = world.playerX, eyeY = world.playerY + 1.62f, eyeZ = world.playerZ;
+
         for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++) {
             for (int cz = 0; cz < VoxelWorld.CHUNKS_Z; cz++) {
                 for (int cx = 0; cx < VoxelWorld.CHUNKS_X; cx++) {
                     int i = (cy * VoxelWorld.CHUNKS_Z + cz) * VoxelWorld.CHUNKS_X + cx;
-                    chunks[i] = buildChunk(world, cx, cy, cz);
-                    if (chunks[i] != null) {
-                        for (int m = 0; m < chunks[i].meshes.length; m++) terrain.addChild(chunks[i].meshes[m]);
-                    }
+                    float dx = cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeX;
+                    float dy = cy * VoxelWorld.CHUNK_Y + VoxelWorld.CHUNK_Y * 0.5f - eyeY;
+                    float dz = cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
+                    float depth = dx * forwardX + dy * forwardY + dz * forwardZ;
+                    float horizontal = dx * rightX + dz * rightZ;
+                    float vertical = dx * upX + dy * upY + dz * upZ;
+                    boolean visible = depth + CHUNK_RADIUS >= 0.1f &&
+                        depth - CHUNK_RADIUS <= CAMERA_FAR &&
+                        Math.abs(horizontal) <= Math.max(0.0f, depth) * tanHorizontal + CHUNK_RADIUS &&
+                        Math.abs(vertical) <= Math.max(0.0f, depth) * tanVertical + CHUNK_RADIUS;
+                    if (visible && !residentChunks[i]) replaceChunk(world, i);
+                    else if (!visible && residentChunks[i]) removeChunk(i);
                 }
             }
         }
     }
 
     private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {
-        int polygonsBefore = terrainPolygons;
         FaceBuilder[] builders = new FaceBuilder[TILE_COUNT];
         FlowerBuilder[] flowers = new FlowerBuilder[1];
         int x0 = cx * VoxelWorld.CHUNK_XZ;
@@ -832,11 +860,8 @@ final class ChunkRenderer {
                     byte id = world.get(x, y, z);
                     if (id == Block.AIR) continue;
                     if (Block.isFlower(id)) {
-                        if (terrainPolygons + 4 <= MAX_TERRAIN_POLYGONS) {
-                            if (flowers[0] == null) flowers[0] = new FlowerBuilder();
-                            flowers[0].add(x - x0, y - y0, z - z0, Block.sideTile(id));
-                            terrainPolygons += 4;
-                        }
+                        if (flowers[0] == null) flowers[0] = new FlowerBuilder();
+                        flowers[0].add(x - x0, y - y0, z - z0, Block.sideTile(id));
                         continue;
                     }
                     if (Block.faceVisible(id, world.get(x, y + 1, z))) {
@@ -873,17 +898,14 @@ final class ChunkRenderer {
         }
         Chunk chunk = new Chunk();
         chunk.meshes = meshes;
-        chunk.polygonCount = terrainPolygons - polygonsBefore;
         int wx = x0, wy = y0, wz = z0;
         for (int i = 0; i < meshes.length; i++) meshes[i].setTranslation(wx, wy, wz);
         return chunk;
     }
 
     private void add(FaceBuilder[] builders, int tile, int x, int y, int z, int face) {
-        if (terrainPolygons + 2 > MAX_TERRAIN_POLYGONS) return;
         if (builders[tile] == null) builders[tile] = new FaceBuilder(tile);
         builders[tile].add(x, y, z, face);
-        terrainPolygons += 2;
     }
 
     private Mesh makeMesh(FaceBuilder data) {
@@ -957,7 +979,7 @@ final class ChunkRenderer {
         return appearance;
     }
 
-    private static final class Chunk { Mesh[] meshes; int polygonCount; }
+    private static final class Chunk { Mesh[] meshes; }
 
     /** Two crossed, alpha-cutout quads per flower, grouped by chunk and type. */
     private static final class FlowerBuilder {

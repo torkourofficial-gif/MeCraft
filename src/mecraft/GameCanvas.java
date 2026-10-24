@@ -274,10 +274,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             world.save();
             stage = "cargando /mecraft/textures.png y creando escena M3G";
             renderer = new ChunkRenderer(getWidth(), getHeight());
-            stage = "construyendo mallas M3G para el terreno";
-            renderer.sync(world);
             stage = "configurando cámara M3G";
             renderer.updateCamera(world, cameraPitch);
+            stage = "construyendo sectores visibles M3G";
+            renderer.sync(world);
             state = PLAYING;
             removeSelectCommand();
             addCommand(mineCommand);
@@ -315,10 +315,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             world.selectedSlot = clamp(world.selectedSlot, 0, hotbar.length - 1);
             stage = "cargando /mecraft/textures.png y creando escena M3G";
             renderer = new ChunkRenderer(getWidth(), getHeight());
-            stage = "construyendo mallas M3G del mundo guardado";
-            renderer.sync(world);
             stage = "configurando cámara M3G";
             renderer.updateCamera(world, cameraPitch);
+            stage = "construyendo sectores visibles M3G";
+            renderer.sync(world);
             state = PLAYING;
             removeSelectCommand();
             addCommand(mineCommand);

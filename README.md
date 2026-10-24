@@ -23,6 +23,8 @@ Referencia consultada: [EaglerPorts/in-20100223](https://github.com/EaglerPorts/
 
 Es un demake inicial, no una reproducción completa de Indev: todavía no incluye los demás tipos de mundo de Indev. El reloj, la curva de luz, las animaciones y el tile 80 de la antorcha siguen el código de referencia; las luces cercanas y la aparición nocturna se adaptan al tamaño pequeño del mundo y al límite de memoria de Java ME.
 
+La generación actual calcula primero una altura por columna y después rellena directamente el arreglo de bloques; mantiene esa altura temporal solo mientras coloca cuevas y vegetación. Como referencia de generación clásica, ClassiCube documenta las etapas de altura, capas, cuevas, agua y plantas. Su versión Dreamcast ejecuta el mismo cliente portable con KallistiOS y GLdc, no un generador exclusivo de Dreamcast ([algoritmo](https://github.com/ClassiCube/ClassiCube/wiki/Minecraft-Classic-map-generation-algorithm), [port Dreamcast](https://www.classicube.net/download/dreamcast)).
+
 ## Controles
 
 | Tecla | Acción |
@@ -50,10 +52,10 @@ El objetivo es ejecutarse en un heap Java de **4 MiB o más**. Las decisiones pa
 
 - 55 296 bytes para el mundo (un byte por bloque) y unos pocos bytes de estado/inventario.
 - Una sola imagen de terreno de 256 × 256 píxeles, cargada una vez y compartida por todas las mallas.
-- 27 sectores como máximo; no se crea un objeto de escena por bloque.
-- La escena de terreno tiene un tope de 12 000 triángulos; cada cara oculta se descarta antes de crear la malla.
+- 27 sectores de datos como máximo, pero las mallas M3G solo se crean para los sectores que intersectan la vista y el alcance de la cámara. Al girar o alejarse, las mallas fuera de vista se quitan de la escena y se liberan; vuelven a construirse desde los bytes del mundo al entrar en vista.
+- No hay un límite global de triángulos que recorte terreno. Se descartan caras ocultas antes de crear las mallas y los bloques visibles se agrupan por tile para compartir apariencia y reducir nodos.
 - Geometría cuantizada a `short`, una apariencia compartida y arreglos temporales de CPU descartables después de construir cada sector.
-- Al editar un bloque se reconstruye su sector y, solo si cae en un borde, los sectores vecinos.
+- Al editar un bloque se reconstruyen solo los sectores afectados que están cargados; los sectores fuera de vista se construyen con el bloque actualizado al volver a aparecer.
 - Las partículas de rotura reproducen la cuadrícula 4 × 4 × 4 de Indev con 64 ranuras fijas y una sola malla; cada fragmento reutiliza un recorte del atlas y no crea objetos durante la actualización.
 - Seis criaturas como máximo y texturas compartidas de 64 × 32 píxeles para las cinco especies; los modelos M3G se construyen una vez al crear el renderizador.
 - Se libera la imagen de título al entrar al mundo.
