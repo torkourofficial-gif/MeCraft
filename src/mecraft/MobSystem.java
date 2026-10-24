@@ -268,7 +268,7 @@ final class MobSystem {
     private boolean hasSkyExposure(VoxelWorld world, Mob mob) {
         int x = floor(mob.x), z = floor(mob.z);
         for (int y = floor(mob.y + 1.0f); y < VoxelWorld.HEIGHT; y++) {
-            if (Block.solid(world.get(x, y, z))) return false;
+            if (world.isSolidAt(x, y, z)) return false;
         }
         return true;
     }
@@ -509,8 +509,8 @@ final class MobSystem {
         int bx = (int)x, bz = (int)z;
         if (bx < 1 || bz < 1 || bx >= VoxelWorld.WIDTH - 1 || bz >= VoxelWorld.DEPTH - 1) return false;
         int feet = (int)mob.y;
-        if (Block.solid(world.get(bx, feet, bz)) || Block.solid(world.get(bx, feet + 1, bz))) return false;
-        return Block.solid(world.get(bx, feet - 1, bz));
+        if (world.isSolidAt(bx, feet, bz) || world.isSolidAt(bx, feet + 1, bz)) return false;
+        return world.isSolidAt(bx, feet - 1, bz);
     }
 
     private void animate(Mob mob) {
@@ -601,7 +601,7 @@ final class MobSystem {
             if (dx * dx + dy * dy + dz * dz < 0.30f * 0.30f) {
                 if (damage < 2) damage = 2;
                 arrow.active = false;
-            } else if (Block.solid(world.get(bx, by, bz)) || arrow.life > 70 ||
+            } else if (world.isSolidAt(bx, by, bz) || arrow.life > 70 ||
                     bx < 0 || bx >= VoxelWorld.WIDTH || bz < 0 || bz >= VoxelWorld.DEPTH || by < 0) {
                 arrow.active = false;
             }
@@ -671,8 +671,8 @@ final class MobSystem {
         int steps = (int)(distance * 8.0f);
         for (int i = 1; i < steps; i++) {
             float t = i / 8.0f;
-            if (Block.solid(world.get(floor(ox + dx * t), floor(oy + dy * t),
-                                      floor(oz + dz * t)))) return true;
+            if (world.isSolidAt(floor(ox + dx * t), floor(oy + dy * t),
+                                floor(oz + dz * t))) return true;
         }
         return false;
     }
