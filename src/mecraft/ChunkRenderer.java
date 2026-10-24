@@ -1086,7 +1086,7 @@ final class ChunkRenderer {
             int x0 = x * 256, x1 = x0 + 256;
             int y0 = y * 256, y1 = y0 + 256;
             int z0 = z * 256, z1 = z0 + 256;
-            int edge = 24; // 3/32 block, close to Alpha's 3/16 collision slab.
+            int edge = 48; // Alpha's 3/16-block door thickness.
             int tile = (metadata & 8) != 0 ? 81 : 97;
             int u0 = (tile & 15) * 16 + 1, v0 = (tile >> 4) * 16 + 1;
             int u1 = u0 + 14, v1 = v0 + 14;
