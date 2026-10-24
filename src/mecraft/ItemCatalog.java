@@ -145,7 +145,9 @@ final class ItemCatalog {
                                     block == Block.COAL || block == Block.IRON;
         if (kind == SHOVEL) return block == Block.GRASS || block == Block.DIRT ||
                                     block == Block.SAND || block == Block.FARMLAND;
-        if (kind == AXE) return block == Block.LOG || block == Block.PLANKS || block == Block.CRAFTING_TABLE;
+        if (kind == AXE) return block == Block.LOG || block == Block.PLANKS ||
+                                  block == Block.CRAFTING_TABLE || block == Block.DOOR;
         return kind == SWORD;
     }
 }
+
