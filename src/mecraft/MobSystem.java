@@ -991,8 +991,8 @@ final class MobSystem {
 
     private Mesh makeBox(int u, int v, float width, float height, float depth,
             int layoutWidth, int layoutHeight, int layoutDepth, Appearance appearance, boolean mirror) {
-        // One closed cuboid: six quads, four vertices per face, two triangles per quad.
-        int vertexCount = 24;
+        // Six closed quads, each written as two explicit triangles on one diagonal.
+        int vertexCount = 36;
         short[] positions = new short[vertexCount * 3];
         short[] texCoords = new short[vertexCount * 2];
         float x0 = -width * 0.5f, x1 = width * 0.5f;
@@ -1018,11 +1018,15 @@ final class MobSystem {
             {u + layoutDepth + layoutWidth + layoutDepth, v + layoutDepth,
                 u + layoutDepth + layoutWidth + layoutDepth + layoutWidth, v + layoutDepth + layoutHeight}
         };
+        // This diagonal shares corners 0 and 2; do not send a perimeter-ordered
+        // quad through one triangle strip, whose alternating winding leaves a gap.
+        int[] triangleCorners = {0, 1, 2, 0, 2, 3};
         int at = 0;
         for (int face = 0; face < 6; face++) {
             int[] r = rects[face];
-            for (int q = 0; q < 4; q++) {
-                int corner = mirror ? 3 - q : q;
+            for (int q = 0; q < 6; q++) {
+                int quadCorner = triangleCorners[q];
+                int corner = mirror ? 3 - quadCorner : quadCorner;
                 float[] p = faces[face][corner];
                 positions[at * 3] = (short)(p[0] * 64.0f);
                 positions[at * 3 + 1] = (short)(p[1] * 64.0f);
@@ -1042,7 +1046,7 @@ final class MobSystem {
         VertexBuffer vb = new VertexBuffer();
         vb.setPositions(pa, 1.0f / 1024.0f, null);
         vb.setTexCoords(0, ta, 1.0f / 1024.0f, null);
-        int[] strips = {4,4,4,4,4,4};
+        int[] strips = {3,3,3,3,3,3,3,3,3,3,3,3};
         return new Mesh(vb, new TriangleStripArray(0, strips), appearance);
     }
 
