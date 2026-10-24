@@ -542,6 +542,22 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             miningHitWait = 5;
             return;
         }
+        if (id == Block.DOOR) {
+            int meta = world.doorMetadata(x, y, z);
+            int lowerY = (meta & 8) != 0 ? y - 1 : y;
+            if (world.mode == 0)
+                renderer.spawnDroppedItem(Block.DOOR, x, lowerY, z);
+            renderer.spawnBlockDestroy(x, lowerY, z, 97);
+            renderer.swingHand();
+            world.removeDoor(x, y, z);
+            if (world.mode == 0)
+                damageTool(hotbar[world.selectedSlot],
+                        ItemCatalog.durabilityCost(hotbar[world.selectedSlot]));
+            renderer.sync(world);
+            resetMining();
+            miningHitWait = 5;
+            return;
+        }
         if (x != miningX || y != miningY || z != miningZ) {
             miningX = x; miningY = y; miningZ = z; miningDamage = 0.0f;
             return;
@@ -615,6 +631,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             openCrafting(true);
             return;
         }
+        if (target != null && world.get(target[0], target[1], target[2]) == Block.DOOR) {
+            if (world.toggleDoor(target[0], target[1], target[2])) {
+                renderer.swingHand();
+                renderer.sync(world);
+            }
+            return;
+        }
         if (target == null || target[3] == Integer.MIN_VALUE) return;
         int selectedItem = hotbar[world.selectedSlot];
         if (ItemCatalog.isTool(selectedItem) && ItemCatalog.kind(selectedItem) == ItemCatalog.HOE) {
@@ -626,6 +649,25 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         int y = target[1] + target[4];
         int z = target[2] + target[5];
         if (y <= 0 || y >= VoxelWorld.HEIGHT) return;
+        if (selectedItem == Block.DOOR) {
+            // Alpha ItemDoor only accepts the upper face and places a two-cell
+            // door on the supporting block.
+            if (target[4] != 1 || world.mode == 0 && inventory[Block.DOOR] <= 0) return;
+            int doorY = target[1] + 1;
+            int orientation = doorOrientation(x, doorY, z);
+            float px = world.playerX, py = world.playerY, pz = world.playerZ;
+            if (x + 1.0f > px - PLAYER_RADIUS && x < px + PLAYER_RADIUS &&
+                z + 1.0f > pz - PLAYER_RADIUS && z < pz + PLAYER_RADIUS &&
+                doorY + 2.0f > py && doorY < py + PLAYER_HEIGHT) return;
+            if (!world.placeDoor(x, doorY, z, orientation)) return;
+            renderer.swingHand();
+            if (world.mode == 0) {
+                inventory[Block.DOOR]--;
+                if (inventory[Block.DOOR] == 0) restoreHotbarItem(Block.DOOR);
+            }
+            renderer.sync(world);
+            return;
+        }
         if (selectedItem == Block.TORCH && !Block.solid(world.get(x, y - 1, z))) return;
         float px = world.playerX, py = world.playerY, pz = world.playerZ;
         if (x + 1.0f > px - PLAYER_RADIUS && x < px + PLAYER_RADIUS &&
@@ -642,6 +684,24 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             if (inventory[block] == 0) restoreHotbarItem(block);
         }
         renderer.sync(world);
+    }
+
+    /** Mirrors Alpha ItemDoor's yaw quadrant and nearby-wall hinge selection. */
+    private int doorOrientation(int x, int y, int z) {
+        int orientation = floorBlock((float)((world.yaw + 180.0f) * 4.0f / 360.0f) - 0.5f) & 3;
+        int sideX = orientation == 1 ? -1 : (orientation == 3 ? 1 : 0);
+        int sideZ = orientation == 0 ? 1 : (orientation == 2 ? -1 : 0);
+        int nearWalls = (Block.solid(world.get(x - sideX, y, z - sideZ)) ? 1 : 0) +
+                        (Block.solid(world.get(x - sideX, y + 1, z - sideZ)) ? 1 : 0);
+        int farWalls = (Block.solid(world.get(x + sideX, y, z + sideZ)) ? 1 : 0) +
+                       (Block.solid(world.get(x + sideX, y + 1, z + sideZ)) ? 1 : 0);
+        boolean nearDoor = world.get(x - sideX, y, z - sideZ) == Block.DOOR ||
+                           world.get(x - sideX, y + 1, z - sideZ) == Block.DOOR;
+        boolean farDoor = world.get(x + sideX, y, z + sideZ) == Block.DOOR ||
+                          world.get(x + sideX, y + 1, z + sideZ) == Block.DOOR;
+        boolean reverseHinge = nearDoor && !farDoor || farWalls > nearWalls;
+        if (reverseHinge) orientation = (orientation - 1) & 3 | 4;
+        return orientation;
     }
 
     /** Key 3 uses raw pork when selected; other items retain their place action. */
@@ -1673,11 +1733,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private int inventoryCellItem(int cell) {
         int visibleBlocks = 0;
-        for (int id = 1; id < Block.LEGACY_COUNT + 5; id++) {
+        for (int id = 1; id < Block.DECORATIVE_START; id++) {
             if (id == Block.WATER || id == Block.BEDROCK) continue;
             if (visibleBlocks++ == cell) return id;
         }
-        int item = Block.COUNT + cell - visibleBlocks;
+        if (cell == visibleBlocks) return Block.DOOR;
+        int item = Block.COUNT + cell - visibleBlocks - 1;
         return item < ItemCatalog.COUNT ? item : -1;
     }
 
@@ -1953,5 +2014,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         return value;
     }
 }
+
 
 
