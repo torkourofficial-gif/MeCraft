@@ -890,7 +890,7 @@ final class MobSystem {
         private void buildZombie(Appearance appearance, boolean zombieHead) {
             addPart(head, 0, 0, 8, 8.5f, 8, 8, 8, 8,
                     0.0f, 0.0f, 0.0f, 0, 0, 1, 0,
-                    0.0f, 0.234375f, 0.0f);
+                    0.0f, 0.25f, 0.0f);
             if (zombieHead) addPart(head, 32, 0, 9, 9, 9, 8, 8, 8,
                     0.0f, 0.0f, 0.0f, 0, 0, 1, 0,
                     0.0f, 0.25f, 0.0f);
@@ -1042,9 +1042,10 @@ final class MobSystem {
                 positions[at * 3] = (short)(p[0] * 64.0f);
                 positions[at * 3 + 1] = (short)(p[1] * 64.0f);
                 positions[at * 3 + 2] = (short)(p[2] * 64.0f);
-                // M3G's texture V direction is opposite the original atlas coordinates.
+                // M3G uses a top-left texture origin; ModelRenderer/TexturedQuad also
+                // assigns its first two corners to the top edge of each atlas face.
                 int uCoord = (corner == 0 || corner == 3) ? r[2] * 16 - 2 : r[0] * 16 + 2;
-                int vCoord = corner < 2 ? r[3] * 32 - 3 : r[1] * 32 + 3;
+                int vCoord = corner < 2 ? r[1] * 32 + 3 : r[3] * 32 - 3;
                 texCoords[at * 2] = (short)uCoord;
                 texCoords[at * 2 + 1] = (short)vCoord;
                 at++;
@@ -1062,3 +1063,4 @@ final class MobSystem {
     }
 
 }
+
