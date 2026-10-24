@@ -232,7 +232,7 @@ final class ChunkRenderer {
 
     private void setHeldVisualVisible(int itemId, boolean visible) {
         if (itemId <= Block.AIR) return;
-        if (Block.isDecorative((byte)itemId) || itemId == Block.TNT) {
+        if (Block.isDecorative((byte)itemId) || itemId == Block.TNT || itemId == Block.DOOR) {
             if (visible) setBlockMeshTile(itemId);
             if (heldCreativeBlockMesh != null) heldCreativeBlockMesh.setRenderingEnable(visible);
         } else if (itemId < Block.COUNT) {
@@ -863,6 +863,10 @@ final class ChunkRenderer {
                     if (Block.isFlower(id)) {
                         if (flowers == null) flowers = new FlowerBuilder();
                         flowers.add(x - x0, y - y0, z - z0, Block.sideTile(id));
+                    } else if (id == Block.DOOR) {
+                        if (flowers == null) flowers = new FlowerBuilder();
+                        flowers.addDoor(x - x0, y - y0, z - z0,
+                                world.doorMetadata(x, y, z));
                     }
                 }
             }
@@ -890,7 +894,8 @@ final class ChunkRenderer {
                         }
                         byte id = world.get(x, y, z);
                         int key = 0;
-                        if (id != Block.AIR && !Block.isFlower(id) && !(face == 5 && y == 0)) {
+                        if (id != Block.AIR && !Block.isFlower(id) && id != Block.DOOR &&
+                            !(face == 5 && y == 0)) {
                             int nx = x, ny = y, nz = z;
                             if (face == 0) ny++;
                             else if (face == 1) nx--;
@@ -1072,6 +1077,32 @@ final class ChunkRenderer {
             vertex(x1,y1,z1,u1,v0); vertex(x0,y1,z0,u0,v0);
             vertex(x0,y0,z1,u0,v1); vertex(x1,y0,z0,u1,v1);
             vertex(x1,y1,z0,u1,v0); vertex(x0,y1,z1,u0,v0);
+        }
+
+        /** Alpha's door is a two-sided thin panel, rotated by its 4-bit state. */
+        void addDoor(int x, int y, int z, int metadata) {
+            ensure(vertexCount + 4);
+            int state = (metadata & 4) != 0 ? metadata & 3 : (metadata - 1) & 3;
+            int x0 = x * 256, x1 = x0 + 256;
+            int y0 = y * 256, y1 = y0 + 256;
+            int z0 = z * 256, z1 = z0 + 256;
+            int edge = 24; // 3/32 block, close to Alpha's 3/16 collision slab.
+            int tile = (metadata & 8) != 0 ? 81 : 97;
+            int u0 = (tile & 15) * 16 + 1, v0 = (tile >> 4) * 16 + 1;
+            int u1 = u0 + 14, v1 = v0 + 14;
+            if (state == 0) {
+                vertex(x0,y0,z0+edge,u0,v1); vertex(x1,y0,z0+edge,u1,v1);
+                vertex(x1,y1,z0+edge,u1,v0); vertex(x0,y1,z0+edge,u0,v0);
+            } else if (state == 1) {
+                vertex(x1-edge,y0,z0,u0,v1); vertex(x1-edge,y0,z1,u1,v1);
+                vertex(x1-edge,y1,z1,u1,v0); vertex(x1-edge,y1,z0,u0,v0);
+            } else if (state == 2) {
+                vertex(x1,y0,z1-edge,u0,v1); vertex(x0,y0,z1-edge,u1,v1);
+                vertex(x0,y1,z1-edge,u1,v0); vertex(x1,y1,z1-edge,u0,v0);
+            } else {
+                vertex(x0+edge,y0,z1,u0,v1); vertex(x0+edge,y0,z0,u1,v1);
+                vertex(x0+edge,y1,z0,u1,v0); vertex(x0+edge,y1,z1,u0,v0);
+            }
         }
 
         private void vertex(int x, int y, int z, int u, int v) {
