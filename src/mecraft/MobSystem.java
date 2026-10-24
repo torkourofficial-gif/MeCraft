@@ -982,19 +982,22 @@ final class MobSystem {
 
     private Mesh makeBox(int u, int v, float width, float height, float depth,
             int layoutWidth, int layoutHeight, int layoutDepth, Appearance appearance, boolean mirror) {
-        short[] positions = new short[36 * 3];
-        short[] texCoords = new short[36 * 2];
+        // A cuboid is six independent quads (24 face vertices), triangulated as
+        // exactly two triangles per quad by M3G's four-vertex triangle strips.
+        short[] positions = new short[24 * 3];
+        short[] texCoords = new short[24 * 2];
         float x0 = -width * 0.5f, x1 = width * 0.5f;
         if (mirror) { float swap = x0; x0 = x1; x1 = swap; }
         float y0 = -height * 0.5f, y1 = height * 0.5f;
         float z0 = -depth * 0.5f, z1 = depth * 0.5f;
-        int[][] faces = new int[][] {
-            {5,1,2,6}, {0,4,7,3}, {5,4,0,1},
-            {2,3,7,6}, {1,0,3,2}, {4,5,6,7}
-        };
-        float[][] points = new float[][] {
-            {x0,y0,z0},{x1,y0,z0},{x1,y1,z0},{x0,y1,z0},
-            {x0,y0,z1},{x1,y0,z1},{x1,y1,z1},{x0,y1,z1}
+        // Hand-authored corners for +X, -X, -Y, +Y, -Z, +Z faces.
+        float[][][] faces = new float[][][] {
+            {{x1,y0,z1},{x1,y0,z0},{x1,y1,z0},{x1,y1,z1}},
+            {{x0,y0,z0},{x0,y0,z1},{x0,y1,z1},{x0,y1,z0}},
+            {{x1,y0,z1},{x0,y0,z1},{x0,y0,z0},{x1,y0,z0}},
+            {{x1,y1,z0},{x0,y1,z0},{x0,y1,z1},{x1,y1,z1}},
+            {{x1,y0,z0},{x0,y0,z0},{x0,y1,z0},{x1,y1,z0}},
+            {{x0,y0,z1},{x1,y0,z1},{x1,y1,z1},{x0,y1,z1}}
         };
         int[][] rects = new int[][] {
             {u + layoutDepth + layoutWidth, v + layoutDepth,
@@ -1006,16 +1009,12 @@ final class MobSystem {
             {u + layoutDepth + layoutWidth + layoutDepth, v + layoutDepth,
                 u + layoutDepth + layoutWidth + layoutDepth + layoutWidth, v + layoutDepth + layoutHeight}
         };
-        int[] triangleCorners = {0, 1, 2, 2, 1, 3};
         int at = 0;
         for (int face = 0; face < 6; face++) {
             int[] r = rects[face];
-            int[] order = faces[face];
-            // Two independent triangles per quad: (0,1,2) and (2,1,3).
-            for (int q = 0; q < 6; q++) {
-                int quadCorner = triangleCorners[q];
-                int corner = mirror ? 3 - quadCorner : quadCorner;
-                float[] p = points[order[corner]];
+            for (int q = 0; q < 4; q++) {
+                int corner = mirror ? 3 - q : q;
+                float[] p = faces[face][corner];
                 positions[at * 3] = (short)(p[0] * 64.0f);
                 positions[at * 3 + 1] = (short)(p[1] * 64.0f);
                 positions[at * 3 + 2] = (short)(p[2] * 64.0f);
@@ -1027,14 +1026,14 @@ final class MobSystem {
                 at++;
             }
         }
-        VertexArray pa = new VertexArray(36, 3, 2);
-        pa.set(0, 36, positions);
-        VertexArray ta = new VertexArray(36, 2, 2);
-        ta.set(0, 36, texCoords);
+        VertexArray pa = new VertexArray(24, 3, 2);
+        pa.set(0, 24, positions);
+        VertexArray ta = new VertexArray(24, 2, 2);
+        ta.set(0, 24, texCoords);
         VertexBuffer vb = new VertexBuffer();
         vb.setPositions(pa, 1.0f / 1024.0f, null);
         vb.setTexCoords(0, ta, 1.0f / 1024.0f, null);
-        int[] strips = {3,3,3,3,3,3,3,3,3,3,3,3};
+        int[] strips = {4,4,4,4,4,4};
         return new Mesh(vb, new TriangleStripArray(0, strips), appearance);
     }
 
