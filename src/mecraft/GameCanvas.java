@@ -24,9 +24,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private static final int CREATIVE_INVENTORY = 6;
     private static final int WORLD_SELECT = 7;
     private static final int WORLD_CREATE = 8;
+    private static final int SETTINGS = 9;
     private static final int MENU_SINGLEPLAYER = 0;
     private static final int MENU_CONTROLS = 1;
-    private static final int MENU_EXIT = 2;
+    private static final int MENU_SETTINGS = 2;
+    private static final int MENU_EXIT = 3;
     private static final float PLAYER_WIDTH = 0.6f;
     private static final float PLAYER_HEIGHT = 1.8f;
     private static final float PLAYER_RADIUS = PLAYER_WIDTH * 0.5f;
@@ -64,6 +66,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private volatile boolean visible;
     private volatile int state = MENU;
     private int menuSelection = MENU_SINGLEPLAYER;
+    private int frameSkip;
+    private int renderFrame;
     private int worldSelection;
     private int createSelection;
     private int newWorldMode;
@@ -148,7 +152,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         while (running) {
             long start = System.currentTimeMillis();
             if (visible && state == PLAYING) updateGame();
-            if (visible) repaint();
+            if (visible && (state != PLAYING || renderFrame++ % (frameSkip + 1) == 0)) repaint();
             long elapsed = System.currentTimeMillis() - start;
             long wait = 50L - elapsed;
             if (wait < 8L) wait = 8L;
@@ -728,6 +732,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             else if (keyCode == KEY_NUM0) { state = WORLD_SELECT; repaint(); }
             return;
         }
+        if (state == SETTINGS) {
+            int action = gameAction(keyCode);
+            if (keyCode == KEY_NUM4 || action == LEFT) changeFrameSkip(-1);
+            else if (keyCode == KEY_NUM6 || action == RIGHT) changeFrameSkip(1);
+            else if (keyCode == KEY_NUM5 || action == FIRE || keyCode == KEY_NUM0 || keyCode == KEY_POUND) {
+                state = MENU;
+                repaint();
+            }
+            return;
+        }
         if (state == MENU || state == PAUSED || state == ERROR) {
             int action = gameAction(keyCode);
             if (action == UP || keyCode == KEY_NUM2) moveSelection(-1);
@@ -824,12 +838,19 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void moveSelection(int delta) {
         if (state == MENU) {
-            menuSelection = (menuSelection + delta + 3) % 3;
+            menuSelection = (menuSelection + delta + 4) % 4;
         } else if (state == PAUSED) {
             pauseSelection += delta;
             if (pauseSelection < 0) pauseSelection = 2;
             if (pauseSelection > 2) pauseSelection = 0;
         }
+    }
+
+    private void changeFrameSkip(int delta) {
+        frameSkip += delta;
+        if (frameSkip < 0) frameSkip = 2;
+        if (frameSkip > 2) frameSkip = 0;
+        repaint();
     }
 
     private void openCreativeInventory() {
@@ -926,6 +947,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 errorMessage = "Controles: cruceta mira; 2/8 avanzar; 4/6 desplazarse; 5 saltar/crear; mantener 1 para romper; 3 colocar o usar mesa; # inventario 2x2; 7/9 bloque; * pausa.";
                 state = ERROR;
             }
+            else if (menuSelection == MENU_SETTINGS) { state = SETTINGS; repaint(); }
             else if (menuSelection == MENU_EXIT) app.closeGame();
         } else if (state == PAUSED) {
             if (pauseSelection == 0) { state = PLAYING; }
@@ -973,12 +995,19 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         } catch (Throwable ignored) { title = null; }
     }
 
-    /** Scale the original high-resolution logo to fit the 240px-wide menu. */
+    /** Preserve the logo's aspect ratio and scale it to the active device display. */
     private Image scaleMenuLogo(Image source) {
         final int cropX = 17, cropY = 66, cropWidth = 340, cropHeight = 102;
-        final int outputWidth = 140, outputHeight = 42;
         if (source.getWidth() < cropX + cropWidth || source.getHeight() < cropY + cropHeight)
             return source;
+        int outputWidth = Math.min(getWidth() * 3 / 5, getHeight() * 9 / 20);
+        if (outputWidth < 1) outputWidth = 1;
+        int outputHeight = outputWidth * cropHeight / cropWidth;
+        if (outputHeight > getHeight() / 5) {
+            outputHeight = getHeight() / 5;
+            outputWidth = outputHeight * cropWidth / cropHeight;
+        }
+        if (outputWidth < 1 || outputHeight < 1) return source;
         int[] pixels = new int[outputWidth * outputHeight];
         int[] upper = new int[cropWidth];
         int[] lower = new int[cropWidth];
@@ -1121,6 +1150,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             else if (state == CREATIVE_INVENTORY) closeCreativeInventory();
             else if (state == WORLD_CREATE) { state = WORLD_SELECT; repaint(); }
             else if (state == WORLD_SELECT) backToMainMenu();
+            else if (state == SETTINGS) { state = MENU; repaint(); }
             else app.closeGame();
         } else if (command == selectCommand) {
             if (state == MENU) activateSelection();
@@ -1138,6 +1168,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     protected synchronized void sizeChanged(int width, int height) {
         if (renderer != null) renderer.resize(width, height);
+        if (state == MENU && width > 0 && height > 0) loadTitle();
     }
 
     protected synchronized void paint(Graphics g) {
@@ -1179,23 +1210,42 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         } else if (state == ERROR) drawError(g);
         else if (state == WORLD_SELECT) drawWorldSelect(g);
         else if (state == WORLD_CREATE) drawWorldCreate(g);
+        else if (state == SETTINGS) drawSettings(g);
         else drawMenu(g);
     }
 
     private void drawMenu(Graphics g) {
         int w = getWidth(), h = getHeight();
         drawDirtBackground(g);
-        drawInsetPanel(g, 15, 120, w - 30, 142);
-        if (title != null) g.drawImage(title, w / 2, 38, Graphics.TOP | Graphics.HCENTER);
+        int panelY = Math.max(72, h * 3 / 8);
+        int itemStep = Math.max(24, Math.min(36, h / 9));
+        int panelHeight = itemStep * 4 + 24;
+        drawInsetPanel(g, 15, panelY, w - 30, panelHeight);
+        if (title != null) g.drawImage(title, w / 2, Math.max(8, panelY / 3 - title.getHeight() / 2), Graphics.TOP | Graphics.HCENTER);
         else {
             g.setColor(255, 255, 255);
-            g.drawString("MeCraft", w / 2, 48, Graphics.TOP | Graphics.HCENTER);
+            g.drawString("MeCraft", w / 2, Math.max(8, panelY / 3), Graphics.TOP | Graphics.HCENTER);
         }
-        drawMenuItem(g, "Un jugador", 148, menuSelection == MENU_SINGLEPLAYER);
-        drawMenuItem(g, "Controles", 184, menuSelection == MENU_CONTROLS);
-        drawMenuItem(g, "Salir", 220, menuSelection == MENU_EXIT);
+        drawMenuItem(g, "Un jugador", panelY + 12, menuSelection == MENU_SINGLEPLAYER);
+        drawMenuItem(g, "Controles", panelY + 12 + itemStep, menuSelection == MENU_CONTROLS);
+        drawMenuItem(g, "Ajustes", panelY + 12 + itemStep * 2, menuSelection == MENU_SETTINGS);
+        drawMenuItem(g, "Salir", panelY + 12 + itemStep * 3, menuSelection == MENU_EXIT);
         g.setColor(244, 230, 190);
         g.drawString("Indev  |  Java ME 3D", w / 2, h - 9, Graphics.BOTTOM | Graphics.HCENTER);
+    }
+
+    private void drawSettings(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        drawDirtBackground(g);
+        drawInsetPanel(g, 15, h / 3, w - 30, h / 3);
+        g.setColor(255, 244, 200);
+        g.drawString("Ajustes", w / 2, h / 3 + 14, Graphics.TOP | Graphics.HCENTER);
+        String value = frameSkip == 0 ? "Desactivado" : (frameSkip == 1 ? "1 de cada 2" : "2 de cada 3");
+        g.drawString("Frameskip", w / 2, h / 3 + 48, Graphics.TOP | Graphics.HCENTER);
+        g.drawString("<  " + value + "  >", w / 2, h / 3 + 68, Graphics.TOP | Graphics.HCENTER);
+        g.setColor(240, 224, 190);
+        g.drawString("4/6 cambiar   5 aceptar", w / 2, h * 2 / 3 - 24, Graphics.TOP | Graphics.HCENTER);
+        g.drawString("0 volver", w / 2, h * 2 / 3, Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawMenuItem(Graphics g, String label, int y, boolean selected) {

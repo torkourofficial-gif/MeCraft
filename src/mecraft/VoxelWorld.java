@@ -37,6 +37,8 @@ final class VoxelWorld {
     private static final int FLUID_QUEUE_SIZE = 2048;
     private final short[] fluidQueue = new short[FLUID_QUEUE_SIZE];
     private final byte[] fluidQueued = new byte[(BLOCK_COUNT + 7) / 8];
+    /** Temporary generation-only map; discarded before play to keep the heap small. */
+    private byte[] generationSurface;
     final int[] inventory = new int[ItemCatalog.COUNT];
     final int[] itemDamage = new int[ItemCatalog.COUNT];
     final int[] hotbar = new int[] {
@@ -270,6 +272,7 @@ final class VoxelWorld {
         Random random = new Random(seed);
         int centerX = WIDTH / 2;
         int centerZ = DEPTH / 2;
+        generationSurface = new byte[WIDTH * DEPTH];
         for (int z = 0; z < DEPTH; z++) {
             for (int x = 0; x < WIDTH; x++) {
                 int dx = x - centerX;
@@ -280,6 +283,7 @@ final class VoxelWorld {
                 int height = 10 + noise / 4 - Math.max(0, radial - 20) / 12;
                 if (height < 3) height = 3;
                 if (height > 17) height = 17;
+                generationSurface[z * WIDTH + x] = (byte)height;
                 boolean beach = height <= SEA_LEVEL + 1;
 
                 for (int y = 0; y <= height; y++) {
@@ -324,6 +328,7 @@ final class VoxelWorld {
         playerZ = centerZ + 0.5f;
         playerY = surfaceY(centerX, centerZ) + 1.0f;
         yaw = 0f;
+        generationSurface = null;
     }
 
     /** Carve a few short, low-cost tunnels below the island's surface. */
@@ -386,6 +391,9 @@ final class VoxelWorld {
     }
 
     int surfaceY(int x, int z) {
+        if (generationSurface != null && x >= 0 && x < WIDTH && z >= 0 && z < DEPTH) {
+            return generationSurface[z * WIDTH + x] & 255;
+        }
         for (int y = HEIGHT - 1; y >= 0; y--) {
             if (get(x, y, z) != Block.AIR && get(x, y, z) != Block.WATER) return y;
         }

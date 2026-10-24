@@ -19,7 +19,7 @@ Referencia consultada: [EaglerPorts/in-20100223](https://github.com/EaglerPorts/
 - Crafteo por recetas: `#` abre el inventario 2×2 (tronco → 4 tablones, tablones → mesa y palos); usa `3` apuntando a una mesa para abrir `container.png`, centrado, con una lista desplazable de recetas y las no disponibles atenuadas. En la mesa se crean herramientas de madera, piedra, hierro, diamante y oro. El horno fue retirado.
 - Criaturas 3D con modelos y UV adaptados a las skins Indev de 64 × 32, además de una capa de vellón separada para la oveja. Los animales deambulan, huyen al recibir golpes y los zombis aparecen al anochecer, persiguen y hacen 5 puntos de daño cada segundo en supervivencia; desaparecen al amanecer. `1` golpea a una criatura apuntada antes de intentar romper un bloque; la mano hace 1 punto y las espadas hacen daño según su material.
 - Drops de criaturas: la primera vez que golpeas una oveja esquilada deja 1–3 bloques de lana y pierde visualmente el vellón; al morir, cerdos y zombis pueden dejar 0–2 trozos de cerdo crudo o plumas. Los objetos usan el pool fijo de drops y se recogen dentro de 1,5 bloques.
-- Render 3D M3G con sectores de 16 × 8 × 16 bloques y un grupo fijo de cuatro criaturas para limitar memoria y geometría.
+- Render 3D M3G con sectores de 16 × 8 × 16 bloques y un grupo fijo de seis criaturas para limitar memoria y geometría.
 
 Es un demake inicial, no una reproducción completa de Indev: todavía no incluye los demás tipos de mundo de Indev. El reloj, la curva de luz, las animaciones y el tile 80 de la antorcha siguen el código de referencia; las luces cercanas y la aparición nocturna se adaptan al tamaño pequeño del mundo y al límite de memoria de Java ME.
 
@@ -51,10 +51,11 @@ El objetivo es ejecutarse en un heap Java de **4 MiB o más**. Las decisiones pa
 - 55 296 bytes para el mundo (un byte por bloque) y unos pocos bytes de estado/inventario.
 - Una sola imagen de terreno de 256 × 256 píxeles, cargada una vez y compartida por todas las mallas.
 - 27 sectores como máximo; no se crea un objeto de escena por bloque.
+- La escena de terreno tiene un tope de 12 000 triángulos; cada cara oculta se descarta antes de crear la malla.
 - Geometría cuantizada a `short`, una apariencia compartida y arreglos temporales de CPU descartables después de construir cada sector.
 - Al editar un bloque se reconstruye su sector y, solo si cae en un borde, los sectores vecinos.
 - Las partículas de rotura reproducen la cuadrícula 4 × 4 × 4 de Indev con 64 ranuras fijas y una sola malla; cada fragmento reutiliza un recorte del atlas y no crea objetos durante la actualización.
-- Cuatro criaturas como máximo, con tres texturas de 64 × 32 píxeles compartidas por especie y modelos M3G construidos una vez al crear el renderizador.
+- Seis criaturas como máximo y texturas compartidas de 64 × 32 píxeles para las cinco especies; los modelos M3G se construyen una vez al crear el renderizador.
 - Se libera la imagen de título al entrar al mundo.
 - RMS guarda un registro del tamaño aproximado del mundo; algunos teléfonos pueden imponer un límite menor al tamaño de registro.
 

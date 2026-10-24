@@ -24,6 +24,8 @@ import javax.microedition.m3g.World;
 final class ChunkRenderer {
     static final int CACHE_SIZE = VoxelWorld.CHUNKS_X * VoxelWorld.CHUNKS_Y * VoxelWorld.CHUNKS_Z;
     private static final int TILE_COUNT = 256;
+    /** Hard scene cap: 12k triangles bounds terrain vertex buffers for a 4 MiB heap. */
+    static final int MAX_TERRAIN_POLYGONS = 12000;
 
     final World scene = new World();
     final Camera camera = new Camera();
@@ -85,6 +87,7 @@ final class ChunkRenderer {
     private int builtRevision = -1;
     private int builtWidth;
     private int builtHeight;
+    private int terrainPolygons;
 
     ChunkRenderer(int width, int height) throws IOException {
         if (width <= 0) width = 1;
@@ -779,6 +782,7 @@ final class ChunkRenderer {
 
     private void replaceChunk(VoxelWorld world, int i) {
         if (chunks[i] != null) {
+            terrainPolygons -= chunks[i].polygonCount;
             for (int m = 0; m < chunks[i].meshes.length; m++) terrain.removeChild(chunks[i].meshes[m]);
         }
         int cx = i % VoxelWorld.CHUNKS_X;
@@ -791,6 +795,7 @@ final class ChunkRenderer {
     }
 
     private void rebuildWorld(VoxelWorld world) {
+        terrainPolygons = 0;
         for (int i = 0; i < chunks.length; i++) {
             if (chunks[i] != null) {
                 for (int m = 0; m < chunks[i].meshes.length; m++) terrain.removeChild(chunks[i].meshes[m]);
@@ -811,6 +816,7 @@ final class ChunkRenderer {
     }
 
     private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {
+        int polygonsBefore = terrainPolygons;
         FaceBuilder[] builders = new FaceBuilder[TILE_COUNT];
         FlowerBuilder[] flowers = new FlowerBuilder[1];
         int x0 = cx * VoxelWorld.CHUNK_XZ;
@@ -826,8 +832,11 @@ final class ChunkRenderer {
                     byte id = world.get(x, y, z);
                     if (id == Block.AIR) continue;
                     if (Block.isFlower(id)) {
-                        if (flowers[0] == null) flowers[0] = new FlowerBuilder();
-                        flowers[0].add(x - x0, y - y0, z - z0, Block.sideTile(id));
+                        if (terrainPolygons + 4 <= MAX_TERRAIN_POLYGONS) {
+                            if (flowers[0] == null) flowers[0] = new FlowerBuilder();
+                            flowers[0].add(x - x0, y - y0, z - z0, Block.sideTile(id));
+                            terrainPolygons += 4;
+                        }
                         continue;
                     }
                     if (Block.faceVisible(id, world.get(x, y + 1, z))) {
@@ -864,14 +873,17 @@ final class ChunkRenderer {
         }
         Chunk chunk = new Chunk();
         chunk.meshes = meshes;
+        chunk.polygonCount = terrainPolygons - polygonsBefore;
         int wx = x0, wy = y0, wz = z0;
         for (int i = 0; i < meshes.length; i++) meshes[i].setTranslation(wx, wy, wz);
         return chunk;
     }
 
     private void add(FaceBuilder[] builders, int tile, int x, int y, int z, int face) {
+        if (terrainPolygons + 2 > MAX_TERRAIN_POLYGONS) return;
         if (builders[tile] == null) builders[tile] = new FaceBuilder(tile);
         builders[tile].add(x, y, z, face);
+        terrainPolygons += 2;
     }
 
     private Mesh makeMesh(FaceBuilder data) {
@@ -945,7 +957,7 @@ final class ChunkRenderer {
         return appearance;
     }
 
-    private static final class Chunk { Mesh[] meshes; }
+    private static final class Chunk { Mesh[] meshes; int polygonCount; }
 
     /** Two crossed, alpha-cutout quads per flower, grouped by chunk and type. */
     private static final class FlowerBuilder {
