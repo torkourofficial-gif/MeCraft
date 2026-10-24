@@ -202,6 +202,11 @@ final class VoxelWorld {
                     else if (Block.dropsItem(id) && randomFloat() < 0.3f)
                         drops.spawn(Block.dropId(id), bx, by, bz);
                     set(bx, by, bz, Block.AIR);
+                    if (by + 1 < HEIGHT && get(bx, by + 1, bz) == Block.DOOR &&
+                        !Block.solid(get(bx, by, bz))) {
+                        if (randomFloat() < 0.3f) drops.spawn(Block.DOOR, bx, by + 1, bz);
+                        removeDoor(bx, by + 1, bz);
+                    }
                 }
             }
         }
