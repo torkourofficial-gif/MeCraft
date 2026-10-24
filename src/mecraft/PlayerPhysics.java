@@ -186,7 +186,16 @@ final class PlayerPhysics {
         for (int by = fromY; by <= toY; by++) {
             for (int bx = minX; bx <= maxX; bx++) {
                 for (int bz = minZ; bz <= maxZ; bz++) {
-                    if (!world.isSolidAt(bx, by, bz)) continue;
+                    byte block = world.get(bx, by, bz);
+                    if (block == Block.DOOR) {
+                        int state = world.doorState(bx, by, bz);
+                        float doorMinX = bx + (state == 1 ? 13.0f / 16.0f : 0.0f);
+                        float doorMaxX = bx + (state == 3 ? 3.0f / 16.0f : 1.0f);
+                        float doorMinZ = bz + (state == 2 ? 13.0f / 16.0f : 0.0f);
+                        float doorMaxZ = bz + (state == 0 ? 3.0f / 16.0f : 1.0f);
+                        if (x + RADIUS <= doorMinX || x - RADIUS >= doorMaxX ||
+                            z + RADIUS <= doorMinZ || z - RADIUS >= doorMaxZ) continue;
+                    } else if (!Block.solid(block)) continue;
                     if (dy > 0.0f && y + HEIGHT <= by) {
                         float gap = by - (y + HEIGHT);
                         if (dy > gap) dy = gap;
@@ -209,7 +218,25 @@ final class PlayerPhysics {
         for (int bx = fromX; bx <= toX; bx++) {
             for (int by = minY; by <= maxY; by++) {
                 for (int bz = minZ; bz <= maxZ; bz++) {
-                    if (!world.isSolidAt(bx, by, bz)) continue;
+                    byte block = world.get(bx, by, bz);
+                    if (block == Block.DOOR) {
+                        int state = world.doorState(bx, by, bz);
+                        float doorMinX = bx + (state == 1 ? 13.0f / 16.0f : 0.0f);
+                        float doorMaxX = bx + (state == 3 ? 3.0f / 16.0f : 1.0f);
+                        float doorMinZ = bz + (state == 2 ? 13.0f / 16.0f : 0.0f);
+                        float doorMaxZ = bz + (state == 0 ? 3.0f / 16.0f : 1.0f);
+                        if (y + HEIGHT <= by || y >= by + 1.0f ||
+                            z + RADIUS <= doorMinZ || z - RADIUS >= doorMaxZ) continue;
+                        if (dx > 0.0f && x + RADIUS <= doorMinX) {
+                            float gap = doorMinX - (x + RADIUS);
+                            if (dx > gap) dx = gap;
+                        } else if (dx < 0.0f && x - RADIUS >= doorMaxX) {
+                            float gap = doorMaxX - (x - RADIUS);
+                            if (dx < gap) dx = gap;
+                        }
+                        continue;
+                    }
+                    if (!Block.solid(block)) continue;
                     if (dx > 0.0f && x + RADIUS <= bx) {
                         float gap = bx - (x + RADIUS);
                         if (dx > gap) dx = gap;
@@ -232,7 +259,25 @@ final class PlayerPhysics {
         for (int bz = fromZ; bz <= toZ; bz++) {
             for (int by = minY; by <= maxY; by++) {
                 for (int bx = minX; bx <= maxX; bx++) {
-                    if (!world.isSolidAt(bx, by, bz)) continue;
+                    byte block = world.get(bx, by, bz);
+                    if (block == Block.DOOR) {
+                        int state = world.doorState(bx, by, bz);
+                        float doorMinX = bx + (state == 1 ? 13.0f / 16.0f : 0.0f);
+                        float doorMaxX = bx + (state == 3 ? 3.0f / 16.0f : 1.0f);
+                        float doorMinZ = bz + (state == 2 ? 13.0f / 16.0f : 0.0f);
+                        float doorMaxZ = bz + (state == 0 ? 3.0f / 16.0f : 1.0f);
+                        if (y + HEIGHT <= by || y >= by + 1.0f ||
+                            x + RADIUS <= doorMinX || x - RADIUS >= doorMaxX) continue;
+                        if (dz > 0.0f && z + RADIUS <= doorMinZ) {
+                            float gap = doorMinZ - (z + RADIUS);
+                            if (dz > gap) dz = gap;
+                        } else if (dz < 0.0f && z - RADIUS >= doorMaxZ) {
+                            float gap = doorMaxZ - (z - RADIUS);
+                            if (dz < gap) dz = gap;
+                        }
+                        continue;
+                    }
+                    if (!Block.solid(block)) continue;
                     if (dz > 0.0f && z + RADIUS <= bz) {
                         float gap = bz - (z + RADIUS);
                         if (dz > gap) dz = gap;
