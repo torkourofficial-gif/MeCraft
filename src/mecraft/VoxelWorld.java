@@ -104,6 +104,11 @@ final class VoxelWorld {
         return waterLevels[index(x, y, z)] & 15;
     }
 
+    int doorState(int x, int y, int z) {
+        int metadata = doorMetadata(x, y, z);
+        return (metadata & 4) != 0 ? metadata & 3 : (metadata - 1) & 3;
+    }
+
     boolean placeDoor(int x, int y, int z, int orientation) {
         if (y <= 0 || y + 1 >= HEIGHT || !Block.solid(get(x, y - 1, z)) ||
             !Block.replaceable(get(x, y, z)) || !Block.replaceable(get(x, y + 1, z))) return false;
