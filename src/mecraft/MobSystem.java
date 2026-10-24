@@ -25,8 +25,8 @@ final class MobSystem {
     private static final int MOB_COUNT = 6;
     private static final int FIRE_FRAME_COUNT = 8;
     private static final int FIRE_FRAME_UV_HEIGHT = 32;
-    // Temporary diagnostic: include a reverse-wound copy of every cuboid face.
-    private static final boolean DEBUG_DOUBLE_SIDED_MOB_FACES = true;
+    // Small overlaps at moving joints prevent visible seams between closed cuboids.
+    private static final float JOINT_OVERLAP = 0.5f;
 
     private final Mob[] mobs = new Mob[MOB_COUNT];
     private final Arrow[] arrows = new Arrow[3];
@@ -526,8 +526,8 @@ final class MobSystem {
             mob.armsPitch[1].setOrientation(90.0f + armPitch, 1, 0, 0);
             mob.arms[0].setOrientation(0.1f * 57.29578f, 0, 1, 0);
             mob.arms[1].setOrientation(-0.1f * 57.29578f, 0, 1, 0);
-            mob.armsRoll[0].setOrientation(-armRoll, 0, 0, 1);
-            mob.armsRoll[1].setOrientation(armRoll, 0, 0, 1);
+            mob.armsRoll[0].setOrientation(armRoll, 0, 0, 1);
+            mob.armsRoll[1].setOrientation(-armRoll, 0, 0, 1);
         } else {
             // ModelQuadruped.animate() also uses a 1.4 radian stride.
             float stride = (float)Math.cos(phase) * 80.214f * walk;
@@ -834,12 +834,12 @@ final class MobSystem {
                 // Indev renders sheep fleece as a second, inflated model pass.
                 fleece[0] = new Group();
                 head.addChild(fleece[0]);
-                addPart(fleece[0], 0, 0, 7.2f, 7.2f, 9.2f, 6, 6, 8,
+                addPart(fleece[0], 0, 0, 7.2f, 7.2f, 7.2f, 6, 6, 6,
                         0.0f, 0.0f, 0.0f, 0, 0, 1, 0, fur,
-                        0.0f, 0.0625f, -0.125f);
+                        0.0f, 0.0625f, -0.0625f);
                 fleece[1] = new Group();
                 pose.addChild(fleece[1]);
-                addPart(fleece[1], 28, 8, 9, 17, 7, 8, 16, 6,
+                addPart(fleece[1], 28, 8, 11.5f, 19.5f, 9.5f, 8, 16, 6,
                         0.0f, 1.1875f, 0.125f, -90.0f, 1, 0, 0, fur,
                         0.0f, 0.125f, -0.25f);
                 addLegs(12, 0.75f, 0.1875f, fur);
@@ -854,14 +854,16 @@ final class MobSystem {
                 float z = i < 2 ? 0.4375f : -0.3125f;
                 leg.setTranslation(x, pivotY, z);
                 pose.addChild(leg);
-                addPart(leg, 0, 16, 4, length, 4, 4, length, 4,
-                        0.0f, -length / 32.0f, 0.0f, 0, 0, 1, 0);
+                float joinedLength = length + JOINT_OVERLAP;
+                float joinedCenterY = -(length - JOINT_OVERLAP) / 32.0f;
+                addPart(leg, 0, 16, 4, joinedLength, 4, 4, length, 4,
+                        0.0f, joinedCenterY, 0.0f, 0, 0, 1, 0);
                 if (fur != null) {
                     fleece[2 + i] = new Group();
                     leg.addChild(fleece[2 + i]);
-                    // Indev's wool pass inflates the full 4x12x4 sheep leg by 0.5 px.
-                    addPart(fleece[2 + i], 0, 16, 5, 13, 5, 4, 12, 4,
-                            0.0f, -0.375f, 0.0f, 0, 0, 1, 0, fur);
+                    // Indev's separate wool model covers the upper 6 px of each leg.
+                    addPart(fleece[2 + i], 0, 16, 5, 7, 5, 4, 6, 4,
+                            0.0f, -0.1875f, 0.0f, 0, 0, 1, 0, fur);
                 }
                 legs[i] = leg;
             }
@@ -875,9 +877,9 @@ final class MobSystem {
         }
 
         private void buildZombie(Appearance appearance, boolean zombieHead) {
-            addPart(head, 0, 0, 8, 8, 8, 8, 8, 8,
+            addPart(head, 0, 0, 8, 8.5f, 8, 8, 8, 8,
                     0.0f, 0.0f, 0.0f, 0, 0, 1, 0,
-                    0.0f, 0.25f, 0.0f);
+                    0.0f, 0.234375f, 0.0f);
             if (zombieHead) addPart(head, 32, 0, 9, 9, 9, 8, 8, 8,
                     0.0f, 0.0f, 0.0f, 0, 0, 1, 0,
                     0.0f, 0.25f, 0.0f);
@@ -897,8 +899,10 @@ final class MobSystem {
                 arm.addChild(armPitch);
                 armPitch.addChild(armRoll);
                 int limbWidth = zombieHead ? 4 : 2;
-                addPart(armRoll, 40, 16, limbWidth, 12, limbWidth, limbWidth, 12, limbWidth,
-                        side * 0.0625f, -0.25f, 0.0f, 0, 0, 1, 0,
+                float armWidth = limbWidth + JOINT_OVERLAP;
+                float armCenterX = zombieHead ? side * 0.0625f : 0.0f;
+                addPart(armRoll, 40, 16, armWidth, 12, limbWidth, limbWidth, 12, limbWidth,
+                        armCenterX, -0.25f, 0.0f, 0, 0, 1, 0,
                         skin, 0.0f, 0.0f, 0.0f, i == 1);
                 arms[i] = arm;
                 armsPitch[i] = armPitch;
@@ -908,8 +912,10 @@ final class MobSystem {
                 leg.setTranslation(side * 0.125f, 0.75f, 0.0f);
                 pose.addChild(leg);
                 int legWidth = zombieHead ? 4 : 2;
-                addPart(leg, 0, 16, legWidth, 12, legWidth, legWidth, 12, legWidth,
-                        0.0f, -0.375f, 0.0f, 0, 0, 1, 0,
+                float legLength = 12.0f + JOINT_OVERLAP;
+                addPart(leg, 0, 16, legWidth + JOINT_OVERLAP, legLength,
+                        legWidth + JOINT_OVERLAP, legWidth, 12, legWidth,
+                        0.0f, -(12.0f - JOINT_OVERLAP) / 32.0f, 0.0f, 0, 0, 1, 0,
                         skin, 0.0f, 0.0f, 0.0f, i == 1);
                 legs[i] = leg;
             }
@@ -919,18 +925,19 @@ final class MobSystem {
             addPart(pose, 16, 16, 8, 12, 4, 8, 12, 4,
                     0.0f, 1.25f, 0.0f, 0, 0, 1, 0,
                     0.0f, -0.375f, 0.0f);
-            addPart(head, 0, 0, 8, 8, 8, 8, 8, 8,
-                    0.0f, 0.0f, 0.0f, 0, 0, 1, 0);
+            addPart(head, 0, 0, 8, 8.5f, 8, 8, 8, 8,
+                    0.0f, 0.0f, 0.0f, 0, 0, 1, 0,
+                    0.0f, -0.015625f, 0.0f);
             head.setTranslation(0.0f, 1.5f, 0.0f);
             pose.addChild(head);
             for (int i = 0; i < 4; i++) {
                 Group leg = new Group();
                 float x = (i & 1) == 0 ? 0.125f : -0.125f;
-                float z = i < 2 ? -0.25f : 0.25f;
+                float z = i < 2 ? 0.25f : -0.25f;
                 leg.setTranslation(x, 0.5f, z);
                 pose.addChild(leg);
-                addPart(leg, 0, 16, 4, 6, 4, 4, 6, 4,
-                        0.0f, -0.1875f, 0.0f, 0, 0, 1, 0);
+                addPart(leg, 0, 16, 4, 6.5f, 4, 4, 6, 4,
+                        0.0f, -0.171875f, 0.0f, 0, 0, 1, 0);
                 legs[i] = leg;
             }
         }
@@ -984,10 +991,8 @@ final class MobSystem {
 
     private Mesh makeBox(int u, int v, float width, float height, float depth,
             int layoutWidth, int layoutHeight, int layoutDepth, Appearance appearance, boolean mirror) {
-        // A cuboid uses six quads. The diagnostic copy reverses winding so its
-        // inner-facing side stays visible even on devices that mishandle CULL_NONE.
-        int sideCount = DEBUG_DOUBLE_SIDED_MOB_FACES ? 2 : 1;
-        int vertexCount = 24 * sideCount;
+        // One closed cuboid: six quads, four vertices per face, two triangles per quad.
+        int vertexCount = 24;
         short[] positions = new short[vertexCount * 3];
         short[] texCoords = new short[vertexCount * 2];
         float x0 = -width * 0.5f, x1 = width * 0.5f;
@@ -1016,22 +1021,18 @@ final class MobSystem {
         int at = 0;
         for (int face = 0; face < 6; face++) {
             int[] r = rects[face];
-            for (int side = 0; side < sideCount; side++) {
-                for (int q = 0; q < 4; q++) {
-                    // Reversing q flips winding while keeping each copy's UV attached.
-                    boolean reverse = mirror ^ (side != 0);
-                    int corner = reverse ? 3 - q : q;
-                    float[] p = faces[face][corner];
-                    positions[at * 3] = (short)(p[0] * 64.0f);
-                    positions[at * 3 + 1] = (short)(p[1] * 64.0f);
-                    positions[at * 3 + 2] = (short)(p[2] * 64.0f);
-                    // M3G's texture V direction is opposite the original atlas coordinates.
-                    int uCoord = (corner == 0 || corner == 3) ? r[2] * 16 - 2 : r[0] * 16 + 2;
-                    int vCoord = corner < 2 ? r[3] * 32 - 3 : r[1] * 32 + 3;
-                    texCoords[at * 2] = (short)uCoord;
-                    texCoords[at * 2 + 1] = (short)vCoord;
-                    at++;
-                }
+            for (int q = 0; q < 4; q++) {
+                int corner = mirror ? 3 - q : q;
+                float[] p = faces[face][corner];
+                positions[at * 3] = (short)(p[0] * 64.0f);
+                positions[at * 3 + 1] = (short)(p[1] * 64.0f);
+                positions[at * 3 + 2] = (short)(p[2] * 64.0f);
+                // M3G's texture V direction is opposite the original atlas coordinates.
+                int uCoord = (corner == 0 || corner == 3) ? r[2] * 16 - 2 : r[0] * 16 + 2;
+                int vCoord = corner < 2 ? r[3] * 32 - 3 : r[1] * 32 + 3;
+                texCoords[at * 2] = (short)uCoord;
+                texCoords[at * 2 + 1] = (short)vCoord;
+                at++;
             }
         }
         VertexArray pa = new VertexArray(vertexCount, 3, 2);
@@ -1041,9 +1042,7 @@ final class MobSystem {
         VertexBuffer vb = new VertexBuffer();
         vb.setPositions(pa, 1.0f / 1024.0f, null);
         vb.setTexCoords(0, ta, 1.0f / 1024.0f, null);
-        int[] strips = DEBUG_DOUBLE_SIDED_MOB_FACES
-                ? new int[] {4,4,4,4,4,4,4,4,4,4,4,4}
-                : new int[] {4,4,4,4,4,4};
+        int[] strips = {4,4,4,4,4,4};
         return new Mesh(vb, new TriangleStripArray(0, strips), appearance);
     }
 
