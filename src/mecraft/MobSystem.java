@@ -515,8 +515,9 @@ final class MobSystem {
         if (mob.walkTicks > 0) mob.walkTicks--;
         if (mob.type == ZOMBIE || mob.type == SKELETON) {
             // ModelBiped.animate() uses a 1.4 radian stride (about 80 degrees).
-            mob.legs[0].setOrientation((float)Math.cos(phase) * 80.214f * walk, 1, 0, 0);
-            mob.legs[1].setOrientation((float)Math.cos(phase + Math.PI) * 80.214f * walk, 1, 0, 0);
+            // Indev's renderer flips model Y, so X-axis pose rotations invert in M3G.
+            mob.legs[0].setOrientation(-(float)Math.cos(phase) * 80.214f * walk, 1, 0, 0);
+            mob.legs[1].setOrientation(-(float)Math.cos(phase + Math.PI) * 80.214f * walk, 1, 0, 0);
             float armPitch = (float)Math.sin(mob.age * 0.067f) * 0.05f * 57.29578f;
             float armRoll = ((float)Math.cos(mob.age * 0.09f) * 0.05f + 0.05f) * 57.29578f;
             mob.armsPitch[0].setOrientation(90.0f - armPitch, 1, 0, 0);
@@ -528,10 +529,11 @@ final class MobSystem {
         } else {
             // ModelQuadruped.animate() also uses a 1.4 radian stride.
             float stride = (float)Math.cos(phase) * 80.214f * walk;
-            mob.legs[0].setOrientation(stride, 1, 0, 0);
-            mob.legs[1].setOrientation(-stride, 1, 0, 0);
-            mob.legs[2].setOrientation(-stride, 1, 0, 0);
-            mob.legs[3].setOrientation(stride, 1, 0, 0);
+            // Preserve Indev's diagonal gait after the renderer's vertical flip.
+            mob.legs[0].setOrientation(-stride, 1, 0, 0);
+            mob.legs[1].setOrientation(stride, 1, 0, 0);
+            mob.legs[2].setOrientation(stride, 1, 0, 0);
+            mob.legs[3].setOrientation(-stride, 1, 0, 0);
         }
     }
 
@@ -830,12 +832,12 @@ final class MobSystem {
                 // Indev renders sheep fleece as a second, inflated model pass.
                 fleece[0] = new Group();
                 head.addChild(fleece[0]);
-                addPart(fleece[0], 0, 0, 7.2f, 7.2f, 7.2f, 6, 6, 6,
+                addPart(fleece[0], 0, 0, 7.2f, 7.2f, 9.2f, 6, 6, 8,
                         0.0f, 0.0f, 0.0f, 0, 0, 1, 0, fur,
-                        0.0f, 0.0625f, -0.0625f);
+                        0.0f, 0.0625f, -0.125f);
                 fleece[1] = new Group();
                 pose.addChild(fleece[1]);
-                addPart(fleece[1], 28, 8, 11.5f, 19.5f, 9.5f, 8, 16, 6,
+                addPart(fleece[1], 28, 8, 9, 17, 7, 8, 16, 6,
                         0.0f, 1.1875f, 0.125f, -90.0f, 1, 0, 0, fur,
                         0.0f, 0.125f, -0.25f);
                 addLegs(12, 0.75f, 0.1875f, fur);
@@ -845,19 +847,20 @@ final class MobSystem {
         private void addLegs(int length, float pivotY, float halfWidth, Appearance fur) {
             for (int i = 0; i < 4; i++) {
                 Group leg = new Group();
-                float x = (i & 1) == 0 ? -halfWidth : halfWidth;
+                // RenderLiving mirrors model X; Indev's first and third legs are on -X.
+                float x = (i & 1) == 0 ? halfWidth : -halfWidth;
                 float z = i < 2 ? 0.4375f : -0.3125f;
                 leg.setTranslation(x, pivotY, z);
                 pose.addChild(leg);
                 addPart(leg, 0, 16, 4, length, 4, 4, length, 4,
                         0.0f, -length / 32.0f, 0.0f, 0, 0, 1, 0);
-                if (fur != null)
-                    {
-                        fleece[2 + i] = new Group();
-                        leg.addChild(fleece[2 + i]);
-                        addPart(fleece[2 + i], 0, 16, 5, 7, 5, 4, 6, 4,
-                                0.0f, -6.0f / 32.0f, 0.0f, 0, 0, 1, 0, fur);
-                    }
+                if (fur != null) {
+                    fleece[2 + i] = new Group();
+                    leg.addChild(fleece[2 + i]);
+                    // Indev's wool pass inflates the full 4x12x4 sheep leg by 0.5 px.
+                    addPart(fleece[2 + i], 0, 16, 5, 13, 5, 4, 12, 4,
+                            0.0f, -0.375f, 0.0f, 0, 0, 1, 0, fur);
+                }
                 legs[i] = leg;
             }
         }
@@ -882,7 +885,8 @@ final class MobSystem {
                     0.0f, 1.5f, 0.0f, 0, 0, 1, 0,
                     0.0f, -0.375f, 0.0f);
             for (int i = 0; i < 2; i++) {
-                float side = i == 0 ? -1.0f : 1.0f;
+                // RenderLiving mirrors model X, so the model's right limb is +X here.
+                float side = i == 0 ? 1.0f : -1.0f;
                 Group arm = new Group();
                 arm.setTranslation(side * 0.3125f, 1.375f, 0.0f);
                 pose.addChild(arm);
@@ -911,16 +915,17 @@ final class MobSystem {
 
         private void buildCreeper(Appearance appearance) {
             addPart(pose, 16, 16, 8, 12, 4, 8, 12, 4,
-                    0.0f, 0.9375f, 0.0f, 0, 0, 1, 0);
+                    0.0f, 1.25f, 0.0f, 0, 0, 1, 0,
+                    0.0f, -0.375f, 0.0f);
             addPart(head, 0, 0, 8, 8, 8, 8, 8, 8,
                     0.0f, 0.0f, 0.0f, 0, 0, 1, 0);
             head.setTranslation(0.0f, 1.5f, 0.0f);
             pose.addChild(head);
             for (int i = 0; i < 4; i++) {
                 Group leg = new Group();
-                float x = (i & 1) == 0 ? -0.125f : 0.125f;
-                float z = i < 2 ? 0.1875f : -0.1875f;
-                leg.setTranslation(x, 0.375f, z);
+                float x = (i & 1) == 0 ? 0.125f : -0.125f;
+                float z = i < 2 ? -0.25f : 0.25f;
+                leg.setTranslation(x, 0.5f, z);
                 pose.addChild(leg);
                 addPart(leg, 0, 16, 4, 6, 4, 4, 6, 4,
                         0.0f, -0.1875f, 0.0f, 0, 0, 1, 0);
@@ -1034,3 +1039,4 @@ final class MobSystem {
     }
 
 }
+
