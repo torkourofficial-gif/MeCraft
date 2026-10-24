@@ -34,6 +34,7 @@ final class DroppedItemSystem {
 
     final Mesh mesh;
     final Mesh spriteMesh;
+    final Mesh tntFlashMesh;
     private final float[] x = new float[CAPACITY];
     private final float[] y = new float[CAPACITY];
     private final float[] z = new float[CAPACITY];
@@ -44,15 +45,16 @@ final class DroppedItemSystem {
     private final int[] age = new int[CAPACITY];
     private final int[] pickupDelay = new int[CAPACITY];
     private final int[] tntFuse = new int[CAPACITY];
-    private final int[] tntTextureFrame = new int[CAPACITY];
     private final short[] positions = new short[VERTEX_COUNT * 3];
     private final short[] texCoords = new short[VERTEX_COUNT * 2];
     private final short[] spritePositions = new short[VERTEX_COUNT * 3];
     private final short[] spriteTexCoords = new short[VERTEX_COUNT * 2];
+    private final short[] tntFlashPositions = new short[VERTEX_COUNT * 3];
     private final VertexArray positionArray;
     private final VertexArray texCoordArray;
     private final VertexArray spritePositionArray;
     private final VertexArray spriteTexCoordArray;
+    private final VertexArray tntFlashPositionArray;
     private int cursor;
     private int activeCount;
     private int random = 0x2468ACE1;
@@ -86,6 +88,24 @@ final class DroppedItemSystem {
         appearance.setCompositingMode(compositing);
         mesh = new Mesh(buffer, triangles, appearance);
         mesh.setRenderingEnable(false);
+        tntFlashPositionArray = new VertexArray(VERTEX_COUNT, 3, 2);
+        tntFlashPositionArray.set(0, VERTEX_COUNT, tntFlashPositions);
+        VertexBuffer tntFlashBuffer = new VertexBuffer();
+        tntFlashBuffer.setPositions(tntFlashPositionArray, 1.0f / POSITION_SCALE, null);
+        Appearance tntFlashAppearance = new Appearance();
+        Material tntFlashMaterial = new Material();
+        tntFlashMaterial.setColor(Material.AMBIENT, 0xBFFFFFFF);
+        tntFlashMaterial.setColor(Material.DIFFUSE, 0xBFFFFFFF);
+        tntFlashMaterial.setColor(Material.EMISSIVE, 0xBFFFFFFF);
+        tntFlashAppearance.setMaterial(tntFlashMaterial);
+        PolygonMode tntFlashPolygon = new PolygonMode();
+        tntFlashPolygon.setCulling(PolygonMode.CULL_NONE);
+        tntFlashAppearance.setPolygonMode(tntFlashPolygon);
+        CompositingMode tntFlashCompositing = new CompositingMode();
+        tntFlashCompositing.setBlending(CompositingMode.ALPHA);
+        tntFlashAppearance.setCompositingMode(tntFlashCompositing);
+        tntFlashMesh = new Mesh(tntFlashBuffer, triangles, tntFlashAppearance);
+        tntFlashMesh.setRenderingEnable(false);
         spritePositionArray = new VertexArray(VERTEX_COUNT, 3, 2);
         spritePositionArray.set(0, VERTEX_COUNT, spritePositions);
         spriteTexCoordArray = new VertexArray(VERTEX_COUNT, 2, 2);
@@ -115,6 +135,7 @@ final class DroppedItemSystem {
         texCoordArray.set(0, VERTEX_COUNT, texCoords);
         spritePositionArray.set(0, VERTEX_COUNT, spritePositions);
         spriteTexCoordArray.set(0, VERTEX_COUNT, spriteTexCoords);
+        tntFlashPositionArray.set(0, VERTEX_COUNT, tntFlashPositions);
     }
 
     void spawn(int id, int bx, int by, int bz) {
@@ -132,7 +153,6 @@ final class DroppedItemSystem {
 
         itemId[slot] = id;
         tntFuse[slot] = 0;
-        tntTextureFrame[slot] = -1;
         age[slot] = 0;
         pickupDelay[slot] = 10;
         x[slot] = bx + 0.15f + nextRandom() * 0.70f;
@@ -150,11 +170,15 @@ final class DroppedItemSystem {
         int slot = cursor == 0 ? CAPACITY - 1 : cursor - 1;
         tntFuse[slot] = fuse;
         pickupDelay[slot] = fuse + 20;
+        // Indev replaces the block with an EntityTNTPrimed, not a collectible
+        // spinning drop. Keep its center aligned to the original block.
+        x[slot] = bx + 0.5f;
+        y[slot] = by + 0.5f;
+        z[slot] = bz + 0.5f;
         float angle = nextRandom() * 6.2831855f;
         vx[slot] = (float)Math.sin(angle) * 0.02f;
         vy[slot] = 0.2f;
         vz[slot] = (float)Math.cos(angle) * 0.02f;
-        tntTextureFrame[slot] = tntFuse[slot] / 5 % 2;
         writeTexture(slot, Block.TNT);
     }
 
@@ -163,6 +187,7 @@ final class DroppedItemSystem {
         int picked = -1;
         boolean hasBlocks = false;
         boolean hasSprites = false;
+        boolean hasTntFlash = false;
         for (int i = 0; i < CAPACITY; i++) {
             if (itemId[i] == 0) {
                 writeItem(i);
@@ -179,26 +204,19 @@ final class DroppedItemSystem {
             }
 
             boolean primedTnt = tntFuse[i] > 0;
-            int textureFrame = tntFuse[i] / 5 % 2;
+            if (primedTnt && tntFuse[i] < 10 && tntFuse[i] / 5 % 2 == 0) hasTntFlash = true;
+            float entityHalfSize = primedTnt ? 0.5f : HALF_SIZE;
             vy[i] -= 0.04f;
-            move(world, i);
+            move(world, i, entityHalfSize);
             vx[i] *= 0.98f;
             vy[i] *= 0.98f;
             vz[i] *= 0.98f;
             boolean onGround = Block.solid(world.get(floorBlock(x[i]),
-                floorBlock(y[i] - HALF_SIZE - 0.01f), floorBlock(z[i])));
+                floorBlock(y[i] - entityHalfSize - 0.01f), floorBlock(z[i])));
             if (onGround) {
                 vx[i] *= 0.7f;
                 vz[i] *= 0.7f;
-                if (primedTnt) vy[i] *= -0.5f;
-                else vy[i] = 0.0f;
-            }
-            if (primedTnt) {
-                int nextTextureFrame = tntFuse[i] / 5 % 2;
-                if (nextTextureFrame != textureFrame || nextTextureFrame != tntTextureFrame[i]) {
-                    writeTexture(i, Block.TNT);
-                    tntTextureFrame[i] = nextTextureFrame;
-                }
+                vy[i] = 0.0f;
             }
             // Decrement before checking: a fuse of 1 must explode on this
             // tick. Post-decrement left it at 0, where primedTnt became false
@@ -212,7 +230,6 @@ final class DroppedItemSystem {
                 world.explode(x[i], y[i], z[i], 4.0f, this);
                 itemId[i] = 0;
                 tntFuse[i] = 0;
-                tntTextureFrame[i] = -1;
                 activeCount--;
                 writeItem(i);
                 continue;
@@ -227,7 +244,6 @@ final class DroppedItemSystem {
                 inventory[id]++;
                 itemId[i] = 0;
                 tntFuse[i] = 0;
-                tntTextureFrame[i] = -1;
                 activeCount--;
                 picked = id;
                 writeItem(i);
@@ -241,8 +257,10 @@ final class DroppedItemSystem {
         }
         positionArray.set(0, VERTEX_COUNT, positions);
         spritePositionArray.set(0, VERTEX_COUNT, spritePositions);
+        tntFlashPositionArray.set(0, VERTEX_COUNT, tntFlashPositions);
         mesh.setRenderingEnable(hasBlocks);
         spriteMesh.setRenderingEnable(hasSprites);
+        tntFlashMesh.setRenderingEnable(hasTntFlash);
         return picked;
     }
 
@@ -269,32 +287,32 @@ final class DroppedItemSystem {
         if (world.health < 0) world.health = 0;
     }
 
-    private void move(VoxelWorld world, int i) {
+    private void move(VoxelWorld world, int i, float halfSize) {
         float next = x[i] + vx[i];
-        if (collides(world, next, y[i], z[i])) vx[i] = 0.0f;
+        if (collides(world, next, y[i], z[i], halfSize)) vx[i] = 0.0f;
         else x[i] = next;
 
         next = z[i] + vz[i];
-        if (collides(world, x[i], y[i], next)) vz[i] = 0.0f;
+        if (collides(world, x[i], y[i], next, halfSize)) vz[i] = 0.0f;
         else z[i] = next;
 
         next = y[i] + vy[i];
-        if (collides(world, x[i], next, z[i])) {
-            if (vy[i] < 0.0f) y[i] = floorBlock(next - HALF_SIZE) + 1.0f + HALF_SIZE;
-            else y[i] = floorBlock(next + HALF_SIZE) - HALF_SIZE;
+        if (collides(world, x[i], next, z[i], halfSize)) {
+            if (vy[i] < 0.0f) y[i] = floorBlock(next - halfSize) + 1.0f + halfSize;
+            else y[i] = floorBlock(next + halfSize) - halfSize;
             vy[i] = 0.0f;
         } else {
             y[i] = next;
         }
     }
 
-    private boolean collides(VoxelWorld world, float px, float py, float pz) {
-        int minX = floorBlock(px - HALF_SIZE);
-        int maxX = floorBlock(px + HALF_SIZE);
-        int minY = floorBlock(py - HALF_SIZE);
-        int maxY = floorBlock(py + HALF_SIZE);
-        int minZ = floorBlock(pz - HALF_SIZE);
-        int maxZ = floorBlock(pz + HALF_SIZE);
+    private boolean collides(VoxelWorld world, float px, float py, float pz, float halfSize) {
+        int minX = floorBlock(px - halfSize);
+        int maxX = floorBlock(px + halfSize);
+        int minY = floorBlock(py - halfSize);
+        int maxY = floorBlock(py + halfSize);
+        int minZ = floorBlock(pz - halfSize);
+        int maxZ = floorBlock(pz + halfSize);
         for (int by = minY; by <= maxY; by++) {
             if (Block.solid(world.get(minX, by, minZ)) || Block.solid(world.get(maxX, by, minZ)) ||
                 Block.solid(world.get(minX, by, maxZ)) || Block.solid(world.get(maxX, by, maxZ))) return true;
@@ -308,14 +326,17 @@ final class DroppedItemSystem {
             int at = baseVertex * 3;
             for (int i = 0; i < VERTICES_PER_ITEM * 3; i++) positions[at + i] = 0;
             for (int i = 0; i < VERTICES_PER_ITEM * 3; i++) spritePositions[at + i] = 0;
+            for (int i = 0; i < VERTICES_PER_ITEM * 3; i++) tntFlashPositions[at + i] = 0;
             return;
         }
-        float angle = (age[slot] * 4.0f) * (float)Math.PI / 180.0f;
+        boolean primedTnt = itemId[slot] == Block.TNT && tntFuse[slot] > 0;
+        boolean flashTnt = primedTnt && tntFuse[slot] < 10 && tntFuse[slot] / 5 % 2 == 0;
+        float angle = primedTnt ? 0.0f : (age[slot] * 4.0f) * (float)Math.PI / 180.0f;
         float sin = (float)Math.sin(angle);
         float cos = (float)Math.cos(angle);
-        float bob = (float)Math.sin(age[slot] * 0.12f) * 0.035f;
-        float scale = 1.0f;
-        if (itemId[slot] == Block.TNT && tntFuse[slot] > 0 && tntFuse[slot] < 10) {
+        float bob = primedTnt ? 0.0f : (float)Math.sin(age[slot] * 0.12f) * 0.035f;
+        float scale = primedTnt ? 4.0f : 1.0f;
+        if (primedTnt && tntFuse[slot] < 10) {
             float progress = 1.0f - tntFuse[slot] / 10.0f;
             float pulse = progress * progress;
             pulse *= pulse;
@@ -328,6 +349,7 @@ final class DroppedItemSystem {
         if (itemId[slot] >= Block.COUNT) {
             int blockAt = baseVertex * 3;
             for (int i = 0; i < VERTICES_PER_ITEM * 3; i++) positions[blockAt + i] = 0;
+            for (int i = 0; i < VERTICES_PER_ITEM * 3; i++) tntFlashPositions[blockAt + i] = 0;
             int spriteAt = blockAt;
             for (int v = 0; v < VERTICES_PER_ITEM; v++) {
                 int lx = v < 8 ? FLOWER_LOCAL[v * 3] : 0;
@@ -342,6 +364,7 @@ final class DroppedItemSystem {
         int spriteAt = baseVertex * 3;
         for (int i = 0; i < VERTICES_PER_ITEM * 3; i++) spritePositions[spriteAt + i] = 0;
         int at = baseVertex * 3;
+        int flashAt = at;
         for (int v = 0; v < VERTICES_PER_ITEM; v++) {
             int lx, ly, lz;
             if (Block.isFlower((byte)itemId[slot])) {
@@ -359,6 +382,15 @@ final class DroppedItemSystem {
             positions[at++] = (short)(centerX + (int)(lx * cos + lz * sin));
             positions[at++] = (short)(centerYS + ly);
             positions[at++] = (short)(centerZ + (int)(-lx * sin + lz * cos));
+            if (flashTnt) {
+                tntFlashPositions[flashAt++] = (short)(centerX + (int)(LOCAL[v * 3] * 4.125f));
+                tntFlashPositions[flashAt++] = (short)(centerYS + (int)(LOCAL[v * 3 + 1] * 4.125f));
+                tntFlashPositions[flashAt++] = (short)(centerZ + (int)(LOCAL[v * 3 + 2] * 4.125f));
+            } else {
+                tntFlashPositions[flashAt++] = 0;
+                tntFlashPositions[flashAt++] = 0;
+                tntFlashPositions[flashAt++] = 0;
+            }
         }
     }
 
@@ -368,7 +400,6 @@ final class DroppedItemSystem {
         for (int face = 0; face < 6; face++) {
             int blockFace = face == 0 ? 0 : (face == 1 ? 5 : face - 1);
             int tile = Block.faceTile((byte)id, blockFace);
-            if (id == Block.TNT && tntFuse[slot] > 0 && tntFuse[slot] / 5 % 2 == 0) tile = 5;
             int u0 = (tile & 15) * 16 + 1;
             int v0 = (tile >> 4) * 16 + 1;
             int u1 = u0 + 14;

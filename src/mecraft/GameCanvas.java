@@ -26,6 +26,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private static final int WORLD_CREATE = 8;
     private static final int SETTINGS = 9;
     private static final int WORLD_DELETE = 10;
+    private static final int GAME_OVER = 11;
     private static final int MENU_SINGLEPLAYER = 0;
     private static final int MENU_CONTROLS = 1;
     private static final int MENU_SETTINGS = 2;
@@ -77,6 +78,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private String newWorldName = "Mundo 1";
     private TextBox worldNameEditor;
     private int pauseSelection;
+    private int gameOverSelection;
     private boolean selectCommandAttached = true;
     private VoxelWorld.SavedWorld[] savedWorlds = new VoxelWorld.SavedWorld[0];
     private final PlayerPhysics playerPhysics = new PlayerPhysics();
@@ -115,6 +117,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private int hurtTicks;
     private Image waterTint;
     private Image hurtTint;
+    private Image deathTint;
 
     GameCanvas(MeCraft app) {
         this.app = app;
@@ -190,13 +193,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (world.mode == 0 && fallDamage > 0) damagePlayer(fallDamage);
         int mobDamage = renderer.updateMobs(world);
         if (world.mode == 0 && mobDamage > 0) damagePlayer(mobDamage);
+        if (state != PLAYING) return;
         tickAirAndHurt();
+        if (state != PLAYING) return;
         int healthBeforeDrops = world.health;
         int pickedItem = renderer.updateDroppedItems(world, inventory);
         if (world.mode == 0 && world.health < healthBeforeDrops) {
             hurtTicks = 10;
-            if (world.health == 0) respawn();
+            if (world.health <= 0) enterGameOver();
         }
+        if (state != PLAYING) return;
         if (pickedItem > Block.AIR) ensureHotbarItem(pickedItem);
         if (keys[1]) updateMining();
         renderer.updateCamera(world, cameraPitch);
@@ -233,7 +239,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         world.health -= amount;
         if (world.health < 0) world.health = 0;
         hurtTicks = 10;
-        if (world.health == 0) respawn();
+        if (world.health == 0) enterGameOver();
     }
 
     /** Matches Indev's hurt camera pulse, with a 14 degree roll. */
@@ -252,6 +258,36 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         playerPhysics.reset();
         airTicks = MAX_AIR;
         hurtTicks = 0;
+    }
+
+    private void enterGameOver() {
+        if (state == GAME_OVER) return;
+        state = GAME_OVER;
+        gameOverSelection = 0;
+        clearKeys();
+        resetMining();
+        removeCommand(mineCommand);
+        removeCommand(placeCommand);
+        removeCommand(pauseCommand);
+        addSelectCommand();
+        repaint();
+    }
+
+    private void activateGameOverSelection() {
+        // Indev's game-over screen offers a new level or loading another one.
+        // Here the equivalent first action respawns in this saved world.
+        respawn();
+        if (gameOverSelection == 0) {
+            state = PLAYING;
+            removeSelectCommand();
+            addCommand(mineCommand);
+            addCommand(placeCommand);
+            addCommand(pauseCommand);
+            repaint();
+        } else {
+            saveIfNeeded();
+            backToMainMenu();
+        }
     }
 
     private void startNewWorld(int mode, String name) {
@@ -322,11 +358,19 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             renderer.updateCamera(world, cameraPitch);
             stage = "construyendo sectores visibles M3G";
             renderer.sync(world);
-            state = PLAYING;
-            removeSelectCommand();
-            addCommand(mineCommand);
-            addCommand(placeCommand);
-            addCommand(pauseCommand);
+            state = world.mode == 0 && world.health <= 0 ? GAME_OVER : PLAYING;
+            if (state == GAME_OVER) gameOverSelection = 0;
+            if (state == GAME_OVER) {
+                removeCommand(mineCommand);
+                removeCommand(placeCommand);
+                removeCommand(pauseCommand);
+                addSelectCommand();
+            } else {
+                removeSelectCommand();
+                addCommand(mineCommand);
+                addCommand(placeCommand);
+                addCommand(pauseCommand);
+            }
         } catch (OutOfMemoryError exhausted) {
             showError("No hay memoria suficiente para cargar el mundo guardado.");
         } catch (Throwable problem) {
@@ -786,6 +830,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             }
             return;
         }
+        if (state == GAME_OVER) {
+            int action = gameAction(keyCode);
+            if (keyCode == KEY_NUM2 || action == UP) {
+                gameOverSelection = (gameOverSelection + 1) % 2;
+                repaint();
+            } else if (keyCode == KEY_NUM8 || action == DOWN) {
+                gameOverSelection = (gameOverSelection + 1) % 2;
+                repaint();
+            } else if (keyCode == KEY_NUM5 || action == FIRE) activateGameOverSelection();
+            else if (keyCode == KEY_NUM0) {
+                gameOverSelection = 1;
+                activateGameOverSelection();
+            }
+            return;
+        }
         if (state == MENU || state == PAUSED || state == ERROR) {
             int action = gameAction(keyCode);
             if (action == UP || keyCode == KEY_NUM2) moveSelection(-1);
@@ -1096,14 +1155,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         try { containerTexture = GameAssets.image("container.png"); } catch (IOException ignored) { containerTexture = null; }
         int[] blueTintPixels = new int[16 * 16];
         int[] hurtTintPixels = new int[16 * 16];
+        int[] deathTintPixels = new int[16 * 16];
         for (int i = 0; i < blueTintPixels.length; i++) {
             blueTintPixels[i] = 0x500035A0;
             hurtTintPixels[i] = 0x503F0000;
+            deathTintPixels[i] = 0x99000000;
         }
         try { waterTint = Image.createRGBImage(blueTintPixels, 16, 16, true); } catch (Throwable ignored) { waterTint = null; }
         try { hurtTint = Image.createRGBImage(hurtTintPixels, 16, 16, true); } catch (Throwable ignored) { hurtTint = null; }
+        try { deathTint = Image.createRGBImage(deathTintPixels, 16, 16, true); } catch (Throwable ignored) { deathTint = null; }
         blueTintPixels = null;
         hurtTintPixels = null;
+        deathTintPixels = null;
         Image source = null;
         try {
             source = GameAssets.terrain();
@@ -1200,6 +1263,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             if (state == MENU) activateSelection();
             else if (state == WORLD_SELECT) activateWorldSelection();
             else if (state == WORLD_CREATE) activateCreateSelection();
+            else if (state == GAME_OVER) activateGameOverSelection();
             else backToMenu();
         } else if (command == craftingCommand) {
             if (state == CREATIVE_INVENTORY) closeCreativeInventory();
@@ -1216,7 +1280,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     protected synchronized void paint(Graphics g) {
-        if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH || state == CREATIVE_INVENTORY) {
+        if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH ||
+            state == CREATIVE_INVENTORY || state == GAME_OVER) {
             String stage = "actualizando mallas M3G";
             try {
                 renderer.sync(world);
@@ -1242,6 +1307,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                     if (state == PLAYING) drawMiningCracks(g);
                 }
                 if (state == PAUSED) drawPause(g);
+                if (state == GAME_OVER) {
+                    drawTint(g, deathTint);
+                    drawGameOver(g);
+                }
                 if (state == INVENTORY || state == WORKBENCH) drawCrafting(g, state == WORKBENCH);
                 if (state == CREATIVE_INVENTORY) drawCreativeInventory(g);
             } catch (OutOfMemoryError exhausted) {
@@ -1765,6 +1834,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         g.setColor(255, 255, 255); g.drawString("Partida pausada", w / 2, h / 2 - 30, Graphics.HCENTER | Graphics.TOP);
         String[] rows = new String[] { "Volver", "Guardar y menú", "Guardar y salir" };
         for (int i = 0; i < rows.length; i++) drawMenuItem(g, rows[i], h / 2 + i * 19, i == pauseSelection);
+    }
+
+    private void drawGameOver(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        g.setColor(255, 255, 255);
+        g.drawString("¡Has muerto!", w / 2, h / 4,
+                Graphics.HCENTER | Graphics.TOP);
+        g.setColor(255, 220, 80);
+        g.drawString("Puntuación: 0", w / 2, h / 4 + 25,
+                Graphics.HCENTER | Graphics.TOP);
+        drawMenuItem(g, "Reaparecer", h / 2, gameOverSelection == 0);
+        drawMenuItem(g, "Guardar y menú", h / 2 + 24, gameOverSelection == 1);
+        g.setColor(240, 224, 190);
+        g.drawString("2/8 elegir   5 aceptar", w / 2, h - 10,
+                Graphics.HCENTER | Graphics.BOTTOM);
     }
 
     private void drawError(Graphics g) {

@@ -102,8 +102,6 @@ final class MobSystem {
                     } else if (mob.type == CREEPER && mob.fuseTicks > 0) {
                         mob.fuseTicks--;
                     }
-                    if (mob.type == CREEPER && mob.hurtTicks == 0)
-                        mob.setHurt(mob.fuseTicks > 0 && (mob.fuseTicks / 2) % 2 == 0);
                     if (mob.type == SKELETON && distanceSquared > 16.0f && distanceSquared < 100.0f &&
                         mob.attackDelay <= 0 && !blocked(world, mob.x, mob.y + 1.2f, mob.z,
                                 dx / (float)Math.sqrt(distanceSquared), 0.0f,
@@ -124,6 +122,8 @@ final class MobSystem {
             } else {
                 wander(mob, 58);
             }
+            if (mob.type == CREEPER)
+                mob.setFlashWhite(mob.fuseTicks > 0 && (mob.fuseTicks / 2) % 2 == 0);
             animate(mob);
             turn(mob);
             move(mob, world);
@@ -253,6 +253,8 @@ final class MobSystem {
         if (--mob.burnDamageTicks <= 0) {
             mob.burnDamageTicks = 20;
             mob.health--;
+            mob.hurtTicks = 10;
+            mob.setHurt(true);
             if (mob.health <= 0) {
                 dropForDeath(mob);
                 beginDeath(mob);
@@ -323,6 +325,7 @@ final class MobSystem {
             mob.verticalVelocity = 0.0f;
             mob.motionX = mob.motionZ = 0.0f;
             mob.setHurt(false);
+            mob.setFlashWhite(false);
             mob.setSheared(false);
             mob.alive = !isHostile(mob.type);
             mob.root.setRenderingEnable(mob.alive);
@@ -420,6 +423,7 @@ final class MobSystem {
         mob.verticalVelocity = 0.0f;
         mob.motionX = mob.motionZ = 0.0f;
         mob.setHurt(false);
+        mob.setFlashWhite(false);
         mob.setSheared(false);
         mob.attackDelay = 0;
         mob.fuseTicks = 0;
@@ -809,6 +813,13 @@ final class MobSystem {
                 furMaterial.setColor(Material.AMBIENT, tint);
                 furMaterial.setColor(Material.DIFFUSE, tint);
             }
+        }
+
+        /** Indev's creeper fuse flash is a bright white overlay, not a red hurt tint. */
+        void setFlashWhite(boolean flashing) {
+            int emissive = flashing ? 0xFFFFFFFF : 0x00000000;
+            skinMaterial.setColor(Material.EMISSIVE, emissive);
+            if (furMaterial != null) furMaterial.setColor(Material.EMISSIVE, emissive);
         }
 
         private void buildQuadruped(Appearance appearance, boolean pig, Appearance fur) {

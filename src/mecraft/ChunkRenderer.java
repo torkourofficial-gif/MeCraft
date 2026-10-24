@@ -153,6 +153,7 @@ final class ChunkRenderer {
         scene.addChild(particles.mesh);
         scene.addChild(droppedItems.mesh);
         scene.addChild(droppedItems.spriteMesh);
+        scene.addChild(droppedItems.tntFlashMesh);
         scene.addChild(cameraPivot);
         scene.setActiveCamera(camera);
         sky.setColor(0xFF82B8E8);
