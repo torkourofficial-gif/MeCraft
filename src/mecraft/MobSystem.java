@@ -25,6 +25,8 @@ final class MobSystem {
     private static final int MOB_COUNT = 6;
     private static final int FIRE_FRAME_COUNT = 8;
     private static final int FIRE_FRAME_UV_HEIGHT = 32;
+    // Temporary diagnostic: include a reverse-wound copy of every cuboid face.
+    private static final boolean DEBUG_DOUBLE_SIDED_MOB_FACES = true;
 
     private final Mob[] mobs = new Mob[MOB_COUNT];
     private final Arrow[] arrows = new Arrow[3];
@@ -982,10 +984,12 @@ final class MobSystem {
 
     private Mesh makeBox(int u, int v, float width, float height, float depth,
             int layoutWidth, int layoutHeight, int layoutDepth, Appearance appearance, boolean mirror) {
-        // A cuboid is six independent quads (24 face vertices), triangulated as
-        // exactly two triangles per quad by M3G's four-vertex triangle strips.
-        short[] positions = new short[24 * 3];
-        short[] texCoords = new short[24 * 2];
+        // A cuboid uses six quads. The diagnostic copy reverses winding so its
+        // inner-facing side stays visible even on devices that mishandle CULL_NONE.
+        int sideCount = DEBUG_DOUBLE_SIDED_MOB_FACES ? 2 : 1;
+        int vertexCount = 24 * sideCount;
+        short[] positions = new short[vertexCount * 3];
+        short[] texCoords = new short[vertexCount * 2];
         float x0 = -width * 0.5f, x1 = width * 0.5f;
         if (mirror) { float swap = x0; x0 = x1; x1 = swap; }
         float y0 = -height * 0.5f, y1 = height * 0.5f;
@@ -1012,28 +1016,34 @@ final class MobSystem {
         int at = 0;
         for (int face = 0; face < 6; face++) {
             int[] r = rects[face];
-            for (int q = 0; q < 4; q++) {
-                int corner = mirror ? 3 - q : q;
-                float[] p = faces[face][corner];
-                positions[at * 3] = (short)(p[0] * 64.0f);
-                positions[at * 3 + 1] = (short)(p[1] * 64.0f);
-                positions[at * 3 + 2] = (short)(p[2] * 64.0f);
-                // Keep Indev's face order and inset, with M3G's image V direction corrected.
-                int uCoord = (corner == 0 || corner == 3) ? r[2] * 16 - 2 : r[0] * 16 + 2;
-                int vCoord = corner < 2 ? r[3] * 32 - 3 : r[1] * 32 + 3;
-                texCoords[at * 2] = (short)uCoord;
-                texCoords[at * 2 + 1] = (short)vCoord;
-                at++;
+            for (int side = 0; side < sideCount; side++) {
+                for (int q = 0; q < 4; q++) {
+                    // Reversing q flips winding while keeping each copy's UV attached.
+                    boolean reverse = mirror ^ (side != 0);
+                    int corner = reverse ? 3 - q : q;
+                    float[] p = faces[face][corner];
+                    positions[at * 3] = (short)(p[0] * 64.0f);
+                    positions[at * 3 + 1] = (short)(p[1] * 64.0f);
+                    positions[at * 3 + 2] = (short)(p[2] * 64.0f);
+                    // M3G's texture V direction is opposite the original atlas coordinates.
+                    int uCoord = (corner == 0 || corner == 3) ? r[2] * 16 - 2 : r[0] * 16 + 2;
+                    int vCoord = corner < 2 ? r[3] * 32 - 3 : r[1] * 32 + 3;
+                    texCoords[at * 2] = (short)uCoord;
+                    texCoords[at * 2 + 1] = (short)vCoord;
+                    at++;
+                }
             }
         }
-        VertexArray pa = new VertexArray(24, 3, 2);
-        pa.set(0, 24, positions);
-        VertexArray ta = new VertexArray(24, 2, 2);
-        ta.set(0, 24, texCoords);
+        VertexArray pa = new VertexArray(vertexCount, 3, 2);
+        pa.set(0, vertexCount, positions);
+        VertexArray ta = new VertexArray(vertexCount, 2, 2);
+        ta.set(0, vertexCount, texCoords);
         VertexBuffer vb = new VertexBuffer();
         vb.setPositions(pa, 1.0f / 1024.0f, null);
         vb.setTexCoords(0, ta, 1.0f / 1024.0f, null);
-        int[] strips = {4,4,4,4,4,4};
+        int[] strips = DEBUG_DOUBLE_SIDED_MOB_FACES
+                ? new int[] {4,4,4,4,4,4,4,4,4,4,4,4}
+                : new int[] {4,4,4,4,4,4};
         return new Mesh(vb, new TriangleStripArray(0, strips), appearance);
     }
 
