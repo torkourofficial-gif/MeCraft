@@ -186,7 +186,7 @@ final class PlayerPhysics {
         for (int by = fromY; by <= toY; by++) {
             for (int bx = minX; bx <= maxX; bx++) {
                 for (int bz = minZ; bz <= maxZ; bz++) {
-                    if (!Block.solid(world.get(bx, by, bz))) continue;
+                    if (!world.isSolidAt(bx, by, bz)) continue;
                     if (dy > 0.0f && y + HEIGHT <= by) {
                         float gap = by - (y + HEIGHT);
                         if (dy > gap) dy = gap;
@@ -209,7 +209,7 @@ final class PlayerPhysics {
         for (int bx = fromX; bx <= toX; bx++) {
             for (int by = minY; by <= maxY; by++) {
                 for (int bz = minZ; bz <= maxZ; bz++) {
-                    if (!Block.solid(world.get(bx, by, bz))) continue;
+                    if (!world.isSolidAt(bx, by, bz)) continue;
                     if (dx > 0.0f && x + RADIUS <= bx) {
                         float gap = bx - (x + RADIUS);
                         if (dx > gap) dx = gap;
@@ -232,7 +232,7 @@ final class PlayerPhysics {
         for (int bz = fromZ; bz <= toZ; bz++) {
             for (int by = minY; by <= maxY; by++) {
                 for (int bx = minX; bx <= maxX; bx++) {
-                    if (!Block.solid(world.get(bx, by, bz))) continue;
+                    if (!world.isSolidAt(bx, by, bz)) continue;
                     if (dz > 0.0f && z + RADIUS <= bz) {
                         float gap = bz - (z + RADIUS);
                         if (dz > gap) dz = gap;
@@ -265,8 +265,8 @@ final class PlayerPhysics {
         int minZ = floor(z - RADIUS + EPSILON), maxZ = floor(z + RADIUS - EPSILON);
         int minY = floor(y), maxY = floor(y + HEIGHT - EPSILON);
         for (int by = minY; by <= maxY; by++) {
-            if (Block.solid(world.get(minX, by, minZ)) || Block.solid(world.get(maxX, by, minZ)) ||
-                Block.solid(world.get(minX, by, maxZ)) || Block.solid(world.get(maxX, by, maxZ))) return true;
+            if (world.isSolidAt(minX, by, minZ) || world.isSolidAt(maxX, by, minZ) ||
+                world.isSolidAt(minX, by, maxZ) || world.isSolidAt(maxX, by, maxZ)) return true;
         }
         return false;
     }
@@ -276,3 +276,4 @@ final class PlayerPhysics {
         return value < i ? i - 1 : i;
     }
 }
+
