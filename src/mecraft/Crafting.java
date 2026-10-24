@@ -6,7 +6,9 @@ final class Crafting {
     static final int PLANKS_TO_TABLE = 1;
     static final int PLANKS_TO_STICKS = 2;
     static final int TORCHES = 3;
-    static final int TOOL_RECIPES = 4;
+    static final int BASIC_RECIPES = 4;
+    static final int DOOR = BASIC_RECIPES;
+    static final int TOOL_RECIPES = BASIC_RECIPES + 1;
     static final int RECIPE_COUNT = TOOL_RECIPES + ItemCatalog.TOOL_KINDS * ItemCatalog.TOOL_TIERS;
 
     static final int[] OUTPUT = new int[RECIPE_COUNT];
@@ -19,6 +21,7 @@ final class Crafting {
         setRecipe(PLANKS_TO_TABLE, Block.CRAFTING_TABLE, 1, "Mesa de trabajo", Block.PLANKS, 4, 0, 0);
         setRecipe(PLANKS_TO_STICKS, ItemCatalog.STICK, 4, "4 Palos", Block.PLANKS, 2, 0, 0);
         setRecipe(TORCHES, Block.TORCH, 4, "4 Antorchas", Block.COAL, 1, ItemCatalog.STICK, 1);
+        setRecipe(DOOR, Block.DOOR, 3, "3 Puertas", Block.PLANKS, 6, 0, 0);
         for (int tier = 0; tier < ItemCatalog.TOOL_TIERS; tier++) {
             int material = ItemCatalog.materialItem(tier);
             for (int kind = 0; kind < ItemCatalog.TOOL_KINDS; kind++) {
@@ -48,11 +51,11 @@ final class Crafting {
     }
 
     static int count(boolean workbench) {
-        return workbench ? RECIPE_COUNT : TOOL_RECIPES;
+        return workbench ? RECIPE_COUNT : BASIC_RECIPES;
     }
 
     static boolean requiresWorkbench(int recipe) {
-        return recipe >= TOOL_RECIPES;
+        return recipe >= BASIC_RECIPES;
     }
 
     static boolean canCraft(int recipe, int[] inventory, boolean creative) {
@@ -85,3 +88,4 @@ final class Crafting {
         return true;
     }
 }
+
