@@ -23,6 +23,8 @@ final class MobSystem {
     private static final int CREEPER = 3;
     private static final int SKELETON = 4;
     private static final int MOB_COUNT = 6;
+    private static final int FIRE_FRAME_COUNT = 8;
+    private static final int FIRE_FRAME_UV_HEIGHT = 32;
 
     private final Mob[] mobs = new Mob[MOB_COUNT];
     private final Arrow[] arrows = new Arrow[3];
@@ -245,7 +247,7 @@ final class MobSystem {
         }
         mob.fireTicks--;
         mob.fireMesh.setRenderingEnable(true);
-        mob.updateFireFrame((tick >> 2) & 7);
+        mob.updateFireFrame((tick >> 2) % FIRE_FRAME_COUNT);
         if (--mob.burnDamageTicks <= 0) {
             mob.burnDamageTicks = 20;
             mob.health--;
@@ -639,9 +641,9 @@ final class MobSystem {
         };
         VertexArray positionArray = new VertexArray(8, 3, 2);
         positionArray.set(0, 8, positions);
-        setFireUV(uv, 0, 1024, 128); setFireUV(uv, 2, 0, 128);
+        setFireUV(uv, 0, 1024, FIRE_FRAME_UV_HEIGHT); setFireUV(uv, 2, 0, FIRE_FRAME_UV_HEIGHT);
         setFireUV(uv, 4, 1024, 0);   setFireUV(uv, 6, 0, 0);
-        setFireUV(uv, 8, 1024, 128); setFireUV(uv, 10, 0, 128);
+        setFireUV(uv, 8, 1024, FIRE_FRAME_UV_HEIGHT); setFireUV(uv, 10, 0, FIRE_FRAME_UV_HEIGHT);
         setFireUV(uv, 12, 1024, 0);  setFireUV(uv, 14, 0, 0);
         texCoords.set(0, 8, uv);
         VertexBuffer vertices = new VertexBuffer();
@@ -785,8 +787,8 @@ final class MobSystem {
         void updateFireFrame(int frame) {
             if (frame == fireFrame) return;
             fireFrame = frame;
-            int v0 = frame * 128;
-            int v1 = v0 + 128;
+            int v0 = frame * FIRE_FRAME_UV_HEIGHT;
+            int v1 = v0 + FIRE_FRAME_UV_HEIGHT;
             short[] uv = fireTexCoords;
             setFireUV(uv, 0, 1024, v1); setFireUV(uv, 2, 0, v1);
             setFireUV(uv, 4, 1024, v0); setFireUV(uv, 6, 0, v0);
