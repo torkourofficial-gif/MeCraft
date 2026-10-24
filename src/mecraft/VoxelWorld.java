@@ -569,6 +569,19 @@ final class VoxelWorld {
         return listWorlds().length > 0;
     }
 
+    /** Deletes only a store owned by this game's named-world system. */
+    static boolean deleteWorld(String storeName) {
+        if (storeName == null ||
+            (!"mecraft-save".equals(storeName) && !storeName.startsWith("mecraft-world-")))
+            return false;
+        try {
+            RecordStore.deleteRecordStore(storeName);
+            return true;
+        } catch (RecordStoreException ignored) {
+            return false;
+        }
+    }
+
     static final class SavedWorld {
         final String storeName;
         final String name;

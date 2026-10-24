@@ -982,12 +982,12 @@ final class MobSystem {
         float y0 = -height * 0.5f, y1 = height * 0.5f;
         float z0 = -depth * 0.5f, z1 = depth * 0.5f;
         int[][] faces = new int[][] {
-            {5,1,3,7}, {0,4,6,2}, {5,4,0,1},
-            {2,3,7,6}, {1,0,2,3}, {4,5,7,6}
+            {5,1,2,6}, {0,4,7,3}, {5,4,0,1},
+            {2,3,7,6}, {1,0,3,2}, {4,5,6,7}
         };
         float[][] points = new float[][] {
-            {x0,y0,z0},{x1,y0,z0},{x0,y1,z0},{x1,y1,z0},
-            {x0,y0,z1},{x1,y0,z1},{x0,y1,z1},{x1,y1,z1}
+            {x0,y0,z0},{x1,y0,z0},{x1,y1,z0},{x0,y1,z0},
+            {x0,y0,z1},{x1,y0,z1},{x1,y1,z1},{x0,y1,z1}
         };
         int[][] rects = new int[][] {
             {u + layoutDepth + layoutWidth, v + layoutDepth,

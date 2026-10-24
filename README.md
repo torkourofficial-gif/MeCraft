@@ -40,6 +40,7 @@ La generación actual calcula primero una altura por columna y después rellena 
 | * | Pausar, guardar o regresar al menú |
 
 En las pantallas de crafteo, usa `2`/`8` para elegir una receta, `5` para crearla y `#` para volver al juego.
+En el selector de mundos, selecciona una partida y pulsa `1` para abrir la confirmación de borrado; `5` confirma y `0` cancela.
 En supervivencia, las casillas vacías del acceso rápido no muestran bloques y `7`/`9` recorren también esas casillas. Las herramientas de un solo uso se gastan según el material; picos, palas y hachas aceleran los bloques que les corresponden, y solo el pico recoge piedra, adoquín y minerales. La piedra deja adoquín. La azada convierte tierra o césped expuestos en tierra de cultivo y puede producir semillas. La espada pierde dos puntos de durabilidad al romper un bloque. La rotura conserva las penalizaciones de Indev por estar en el aire o bajo el agua. Soltar `1` cancela el daño acumulado. En creativo los bloques se rompen al instante.
 
 El cerdo crudo cura 3 puntos de vida como en Indev; solo se consume si falta vida y el stack tiene tamaño uno.

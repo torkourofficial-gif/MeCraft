@@ -25,6 +25,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private static final int WORLD_SELECT = 7;
     private static final int WORLD_CREATE = 8;
     private static final int SETTINGS = 9;
+    private static final int WORLD_DELETE = 10;
     private static final int MENU_SINGLEPLAYER = 0;
     private static final int MENU_CONTROLS = 1;
     private static final int MENU_SETTINGS = 2;
@@ -69,6 +70,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private int frameSkip;
     private int renderFrame;
     private int worldSelection;
+    private int worldDeleteSelection;
+    private boolean worldDeleteFailed;
     private int createSelection;
     private int newWorldMode;
     private String newWorldName = "Mundo 1";
@@ -735,8 +738,30 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             int action = gameAction(keyCode);
             if (keyCode == KEY_NUM2 || action == UP) moveWorldSelection(-1);
             else if (keyCode == KEY_NUM8 || action == DOWN) moveWorldSelection(1);
+            else if (keyCode == KEY_NUM1 && worldSelection < savedWorlds.length) {
+                worldDeleteSelection = worldSelection;
+                worldDeleteFailed = false;
+                state = WORLD_DELETE;
+                repaint();
+            }
             else if (keyCode == KEY_NUM5 || action == FIRE) activateWorldSelection();
             else if (keyCode == KEY_NUM0) backToMainMenu();
+            return;
+        }
+        if (state == WORLD_DELETE) {
+            if (keyCode == KEY_NUM5 || gameAction(keyCode) == FIRE) {
+                if (worldDeleteSelection >= 0 && worldDeleteSelection < savedWorlds.length &&
+                    VoxelWorld.deleteWorld(savedWorlds[worldDeleteSelection].storeName)) {
+                    refreshWorldList();
+                    worldSelection = worldDeleteSelection;
+                    if (worldSelection > savedWorlds.length) worldSelection = savedWorlds.length;
+                    state = WORLD_SELECT;
+                } else worldDeleteFailed = true;
+                repaint();
+            } else if (keyCode == KEY_NUM0) {
+                state = WORLD_SELECT;
+                repaint();
+            }
             return;
         }
         if (state == WORLD_CREATE) {
@@ -1228,6 +1253,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             }
         } else if (state == ERROR) drawError(g);
         else if (state == WORLD_SELECT) drawWorldSelect(g);
+        else if (state == WORLD_DELETE) drawWorldDelete(g);
         else if (state == WORLD_CREATE) drawWorldCreate(g);
         else if (state == SETTINGS) drawSettings(g);
         else drawMenu(g);
@@ -1341,7 +1367,28 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             }
         }
         g.setColor(255, 240, 205);
-        g.drawString("2/8 elegir  5 abrir", w / 2, h - 27, Graphics.TOP | Graphics.HCENTER);
+        g.drawString("2/8 elegir  5 abrir  1 borrar", w / 2, h - 27,
+                Graphics.TOP | Graphics.HCENTER);
+    }
+
+    private void drawWorldDelete(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        drawDirtBackground(g);
+        drawInsetPanel(g, 12, h / 2 - 64, w - 24, 128);
+        g.setColor(255, 255, 255);
+        g.drawString("Borrar mundo", w / 2, h / 2 - 52,
+                Graphics.TOP | Graphics.HCENTER);
+        String name = worldDeleteSelection >= 0 && worldDeleteSelection < savedWorlds.length ?
+                savedWorlds[worldDeleteSelection].name : "Mundo";
+        g.setColor(255, 230, 205);
+        g.drawString(trimText(name, 22), w / 2, h / 2 - 20,
+                Graphics.TOP | Graphics.HCENTER);
+        g.setColor(255, 110, 90);
+        g.drawString(worldDeleteFailed ? "No se pudo borrar" : "Se eliminara para siempre",
+                w / 2, h / 2 + 3, Graphics.TOP | Graphics.HCENTER);
+        g.setColor(255, 240, 205);
+        g.drawString("5 confirmar  0 cancelar", w / 2, h / 2 + 36,
+                Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawWorldCreate(Graphics g) {
