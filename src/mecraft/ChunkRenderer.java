@@ -239,7 +239,7 @@ final class ChunkRenderer {
         cameraPivot.setTranslation(world.playerX, world.playerY + 1.62f, world.playerZ);
         // M3G cameras look down local -Z; 180 degrees makes yaw zero face +Z.
         cameraPivot.setOrientation(world.yaw + 180.0f, 0.0f, 1.0f, 0.0f);
-        skyObjects.update(world, world.yaw + 180.0f,
+        skyObjects.update(world, world.yaw + 180.0f, world.yaw,
                 ((float)world.dayTime / (float)VoxelWorld.DAY_LENGTH - 0.15f) * 6.2831855f,
                 currentDaylight, currentSkyColor);
         camera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
