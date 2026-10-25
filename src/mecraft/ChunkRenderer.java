@@ -442,7 +442,7 @@ final class ChunkRenderer {
             int at = 0;
             for (int i = 0; i < builders.length; i++) {
                 if (builders[i] == null) continue;
-                Mesh mesh = makeMesh(builders[i], heldItemAppearance);
+                Mesh mesh = makeHeldMesh(builders[i], heldItemAppearance);
                 // Center the cube at the hand anchor and keep it slightly smaller
                 // than Indev's 0.4 inventory-render scale.
                 mesh.setScale(0.34f, 0.34f, 0.34f);
@@ -460,6 +460,9 @@ final class ChunkRenderer {
     private void buildCreativeHeldBlock() {
         FaceBuilder data = new FaceBuilder(0);
         for (int face = 0; face < 6; face++) data.add(0, 0, 0, face);
+        // The first-person cube uses the same outside-facing winding as the
+        // held block meshes. Keep this separate from world chunk geometry.
+        reverseFaceWinding(data);
         int vertexCount = data.vertexCount;
         VertexArray positions = new VertexArray(vertexCount, 3, 2);
         positions.set(0, vertexCount, data.p);
@@ -683,7 +686,11 @@ final class ChunkRenderer {
             -3,10,2, -3,10,-2, 1,10,2, 1,10,-2,
             -3,-2,-2, -3,-2,2, 1,-2,-2, 1,-2,2
         };
+        // ModelBiped's arm quads arrive in the opposite order to M3G's
+        // triangle-strip front-face convention. Reverse each quad so its
+        // two triangles point out of the arm rather than into it.
         short[] uv = makeHandUV(2);
+        reverseQuadWinding(p, null, null, 6);
         int[] strips = new int[] { 4,4,4,4,4,4 };
         VertexArray positions = new VertexArray(24, 3, 2);
         positions.set(0, 24, p);
@@ -706,6 +713,9 @@ final class ChunkRenderer {
         putHandFaceUV(uv, 16, 48,16,52,20, false);
         putHandFaceUV(uv, 20, 44,16,48,20, false);
         for (int i = 0; i < 24; i++) uv[i * 2 + 1] = (short)(uv[i * 2 + 1] * vScale);
+        for (int face = 0; face < 6; face++) {
+            swapShortVertex(uv, face * 4 + 1, face * 4 + 2, 2);
+        }
         return uv;
     }
 
@@ -1044,6 +1054,47 @@ final class ChunkRenderer {
 
     private Mesh makeMesh(FaceBuilder data, Appearance appearance) {
         return makeMesh(data, appearance, 1.0f / 256.0f);
+    }
+
+    /** Build a first-person cube with outward-facing faces, without changing chunk meshes. */
+    private Mesh makeHeldMesh(FaceBuilder data, Appearance appearance) {
+        reverseFaceWinding(data);
+        return makeMesh(data, appearance);
+    }
+
+    private void reverseFaceWinding(FaceBuilder data) {
+        reverseQuadWinding(data.p, data.uv, data.c, data.vertexCount / 4);
+    }
+
+    /** Swap strip vertices 1 and 2, including their attributes, in each quad. */
+    private void reverseQuadWinding(short[] positions, short[] texCoords,
+            byte[] colors, int quadCount) {
+        for (int quad = 0; quad < quadCount; quad++) {
+            int vertex = quad * 4;
+            swapShortVertex(positions, vertex + 1, vertex + 2, 3);
+            if (texCoords != null) swapShortVertex(texCoords, vertex + 1, vertex + 2, 2);
+            if (colors != null) swapByteVertex(colors, vertex + 1, vertex + 2, 4);
+        }
+    }
+
+    private void swapShortVertex(short[] values, int first, int second, int components) {
+        int a = first * components;
+        int b = second * components;
+        for (int i = 0; i < components; i++) {
+            short value = values[a + i];
+            values[a + i] = values[b + i];
+            values[b + i] = value;
+        }
+    }
+
+    private void swapByteVertex(byte[] values, int first, int second, int components) {
+        int a = first * components;
+        int b = second * components;
+        for (int i = 0; i < components; i++) {
+            byte value = values[a + i];
+            values[a + i] = values[b + i];
+            values[b + i] = value;
+        }
     }
 
     private Mesh makeMesh(FaceBuilder data, Appearance appearance, float textureScale) {
