@@ -25,7 +25,7 @@ final class ChunkRenderer {
     static final int CACHE_SIZE = VoxelWorld.CHUNKS_X * VoxelWorld.CHUNKS_Y * VoxelWorld.CHUNKS_Z;
     private static final int TILE_COUNT = 256;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
-    private static final float CAMERA_FAR = 38.0f;
+    private static final float CAMERA_FAR = 256.0f;
     private static final float CHUNK_RADIUS = 12.0f;
     private static final float TAN_VERTICAL_FOV = (float)Math.tan(Math.PI * 34.0 / 180.0);
 
@@ -217,7 +217,7 @@ final class ChunkRenderer {
         builtWidth = width;
         builtHeight = height;
         tanHorizontalFov = TAN_VERTICAL_FOV * (float)width / (float)height;
-        camera.setPerspective(68.0f, (float)width / (float)height, 0.1f, 38.0f);
+        camera.setPerspective(68.0f, (float)width / (float)height, 0.1f, CAMERA_FAR);
         armBase.setTranslation(handBaseX(width, height), -0.60f, -0.72f);
         if (!handSwinging)
             armSwingOffset.setTranslation(-0.08f * handHorizontalScale, 0.15f, 0.0f);

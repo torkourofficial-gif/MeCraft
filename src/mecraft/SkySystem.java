@@ -24,6 +24,7 @@ final class SkySystem {
     private final Mesh stars;
     private final Material starsMaterial;
     private final Material cloudsMaterial;
+    private final Material oceanMaterial;
     private VertexArray cloudUVArray;
     private final short[] cloudUV = new short[12];
 
@@ -56,6 +57,10 @@ final class SkySystem {
         cloudsMaterial = cloudAppearance.getMaterial();
         Mesh cloudPlane = makeCloudPlane(cloudAppearance);
         yawCounter.addChild(cloudPlane);
+
+        Appearance oceanAppearance = makeOceanAppearance();
+        oceanMaterial = oceanAppearance.getMaterial();
+        yawCounter.addChild(makeOceanPlane(oceanAppearance));
     }
 
     void update(VoxelWorld world, float yaw, float celestialAngle, float daylight) {
@@ -80,6 +85,8 @@ final class SkySystem {
                    (cloudTint << 8) | cloudTint;
         cloudsMaterial.setColor(Material.AMBIENT, tint);
         cloudsMaterial.setColor(Material.DIFFUSE, tint);
+        oceanMaterial.setColor(Material.AMBIENT, 0xFFD8F1FF);
+        oceanMaterial.setColor(Material.DIFFUSE, 0xFFD8F1FF);
 
         // Indev advances the cloud texture a tiny amount each world tick.
         int shift = (int)(world.dayTime * 0.00375f);
@@ -110,12 +117,8 @@ final class SkySystem {
         // Indev lays the cloud texture out over 512-block quads at 0.5/1024
         // UV scale: one full texture repeat spans 2048 world blocks. Keep
         // three texture repeats here, so the plane spans 6144 blocks.
-        short[] corners = new short[] {
-            fixed(-3072), fixed(VoxelWorld.HEIGHT + 10), fixed(-3072),
-            fixed(3072), fixed(VoxelWorld.HEIGHT + 10), fixed(-3072),
-            fixed(3072), fixed(VoxelWorld.HEIGHT + 10), fixed(3072),
-            fixed(-3072), fixed(VoxelWorld.HEIGHT + 10), fixed(3072)
-        };
+        short[] corners = largeQuad(-3072.0f, VoxelWorld.HEIGHT + 10, -3072.0f,
+                3072.0f, VoxelWorld.HEIGHT + 10, 3072.0f);
         short[] p = triangleQuad(corners, 3);
         int span = 3 * 256;
         cloudUV[0] = 0; cloudUV[1] = 0;
@@ -129,9 +132,45 @@ final class SkySystem {
         cloudUVArray = new VertexArray(6, 2, 2);
         cloudUVArray.set(0, 6, cloudUV);
         VertexBuffer vertices = new VertexBuffer();
-        vertices.setPositions(positions, FIXED_SCALE, null);
+        vertices.setPositions(positions, 1.0f / 16.0f, null);
         vertices.setTexCoords(0, cloudUVArray, 1.0f / 256.0f, null);
         return new Mesh(vertices, new TriangleStripArray(0, new int[] { 3, 3 }), appearance);
+    }
+
+    /** Indev fills the area beyond the finite island with a distant water plane. */
+    private Appearance makeOceanAppearance() throws IOException {
+        Image terrain = GameAssets.terrain();
+        int tile = Block.atlasTile(Block.WATER);
+        int[] pixels = new int[16 * 16];
+        terrain.getRGB(pixels, 0, 16, (tile & 15) * 16, (tile >> 4) * 16, 16, 16);
+        Image waterImage = Image.createRGBImage(pixels, 16, 16, true);
+        Texture2D waterTexture = new Texture2D(new Image2D(Image2D.RGBA, waterImage));
+        waterTexture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
+        waterTexture.setWrapping(Texture2D.WRAP_REPEAT, Texture2D.WRAP_REPEAT);
+        return alphaAppearance(waterTexture);
+    }
+
+    private Mesh makeOceanPlane(Appearance appearance) {
+        float y = VoxelWorld.SEA_LEVEL + 0.98f;
+        short[] corners = largeQuad(-3072.0f, y, -3072.0f, 3072.0f, y, 3072.0f);
+        short[] p = triangleQuad(corners, 3);
+        short[] uv = new short[] {
+            0,0, 768,0, 768,768, 0,0, 768,768, 0,768
+        };
+        return mesh(p, uv, 1.0f / 16.0f, 1.0f / 256.0f, appearance);
+    }
+
+    private short[] largeQuad(float x0, float y, float z0, float x1, float y1, float z1) {
+        return new short[] {
+            largeFixed(x0), largeFixed(y), largeFixed(z0),
+            largeFixed(x1), largeFixed(y), largeFixed(z0),
+            largeFixed(x1), largeFixed(y1), largeFixed(z1),
+            largeFixed(x0), largeFixed(y1), largeFixed(z1)
+        };
+    }
+
+    private short largeFixed(float value) {
+        return (short)(value * 16.0f);
     }
 
     private Mesh makeStars(Appearance appearance) {
