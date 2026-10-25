@@ -1254,7 +1254,7 @@ final class GameCanvas extends Canvas implements Runnable {
         final int cropX = 17, cropY = 66, cropWidth = 340, cropHeight = 102;
         if (source.getWidth() < cropX + cropWidth || source.getHeight() < cropY + cropHeight)
             return source;
-        int outputWidth = Math.min(getWidth() * 3 / 5, getHeight() * 9 / 20);
+        int outputWidth = Math.min(getWidth() * 4 / 5, getHeight() * 3 / 5);
         if (outputWidth < 1) outputWidth = 1;
         int outputHeight = outputWidth * cropHeight / cropWidth;
         if (outputHeight > getHeight() / 5) {
@@ -1487,11 +1487,6 @@ final class GameCanvas extends Canvas implements Runnable {
             g.drawString("MeCraft", w / 2, logoY, Graphics.TOP | Graphics.HCENTER);
             g.setFont(oldFont);
         }
-        int logoBottom = logoY + (title == null ? Font.getDefaultFont().getHeight() + 4 : title.getHeight());
-        g.setColor(255, 220, 80);
-        g.drawString("Java ME 3D", w / 2, logoBottom + 1,
-                Graphics.TOP | Graphics.HCENTER);
-
         int buttonHeight = Font.getDefaultFont().getHeight() + 8;
         int buttonStep = buttonHeight + 5;
         int stackHeight = buttonHeight * 4 + 15;
@@ -1507,11 +1502,6 @@ final class GameCanvas extends Canvas implements Runnable {
         g.setColor(235, 222, 196);
         g.drawString("2/8 elegir   5 aceptar", w / 2, h - 27,
                 Graphics.TOP | Graphics.HCENTER);
-        g.setColor(225, 210, 180);
-        g.drawString("MeCraft Indev 20100223", 4, h - 5,
-                Graphics.BOTTOM | Graphics.LEFT);
-        g.drawString("Java ME", w - 4, h - 5,
-                Graphics.BOTTOM | Graphics.RIGHT);
     }
 
     /** Classic Indev gray button with a raised pixel border and gold focus. */
