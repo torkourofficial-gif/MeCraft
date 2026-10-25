@@ -66,6 +66,8 @@ final class ItemCatalog {
     }
 
     static int iconIndex(int id) {
+        // Alpha's wooden door item icon in items.png (tile 43).
+        if (id == Block.DOOR) return 43;
         if (id == STICK) return 53;
         if (isTool(id)) {
             int offset = id - TOOL_START;
