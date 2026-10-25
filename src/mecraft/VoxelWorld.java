@@ -21,9 +21,9 @@ final class VoxelWorld {
     static final int CHUNKS_Y = HEIGHT / CHUNK_Y;
     static final int CHUNKS_Z = DEPTH / CHUNK_XZ;
     private static final int BLOCK_COUNT = WIDTH * HEIGHT * DEPTH;
-    // Keep Indev's 24,000-tick lighting curve, but run it at 10x so a full cycle
-    // is visible in a short Java ME play session rather than taking 20 minutes.
-    private static final int DAY_TICKS_PER_UPDATE = 10;
+    // Minecraft advances one world-time tick per game tick: 24,000 ticks at
+    // 20 ticks/second gives the original 20-minute day/night cycle.
+    private static final int DAY_TICKS_PER_UPDATE = 1;
     private static final int MCF6_BLOCK_COUNT = 15;
     private static final int MCF6_ITEM_COUNT = 45;
     private static final int MCF7_ITEM_COUNT = 47;

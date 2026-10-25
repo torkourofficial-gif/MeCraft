@@ -238,7 +238,7 @@ final class ChunkRenderer {
         // M3G cameras look down local -Z; 180 degrees makes yaw zero face +Z.
         cameraPivot.setOrientation(world.yaw + 180.0f, 0.0f, 1.0f, 0.0f);
         skyObjects.update(world, world.yaw + 180.0f,
-                ((float)world.dayTime / (float)VoxelWorld.DAY_LENGTH - 0.25f) * 6.2831855f,
+                ((float)world.dayTime / (float)VoxelWorld.DAY_LENGTH - 0.15f) * 6.2831855f,
                 currentDaylight);
         camera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
         handPivot.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
@@ -785,7 +785,7 @@ final class ChunkRenderer {
         sunlight.setIntensity(0.28f + sun * 0.72f);
         sky.setColor(blendColor(0xFF26354A, 0xFF82B8E8, sun));
         skyObjects.update(world, world.yaw + 180.0f,
-                ((float)world.dayTime / (float)VoxelWorld.DAY_LENGTH - 0.25f) * 6.2831855f,
+                ((float)world.dayTime / (float)VoxelWorld.DAY_LENGTH - 0.15f) * 6.2831855f,
                 sun);
         updateTorchLights(world);
     }

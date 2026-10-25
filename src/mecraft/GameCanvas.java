@@ -81,6 +81,7 @@ final class GameCanvas extends Canvas implements Runnable {
     private long lastNameTapTime;
     private int pauseSelection;
     private int gameOverSelection;
+    private int gameOverTicks;
     private VoxelWorld.SavedWorld[] savedWorlds = new VoxelWorld.SavedWorld[0];
     private final PlayerPhysics playerPhysics = new PlayerPhysics();
     private boolean jumpHeld;
@@ -163,6 +164,7 @@ final class GameCanvas extends Canvas implements Runnable {
             long start = System.currentTimeMillis();
             if (music != null) music.update(visible ? musicModeForState() : MusicController.OFF);
             if (visible && state == PLAYING) updateGame();
+            if (visible && state == GAME_OVER && gameOverTicks < 12) gameOverTicks++;
             if (visible && (state != PLAYING || renderFrame++ % (frameSkip + 1) == 0)) repaint();
             long elapsed = System.currentTimeMillis() - start;
             long wait = 50L - elapsed;
@@ -278,6 +280,7 @@ final class GameCanvas extends Canvas implements Runnable {
         if (state == GAME_OVER) return;
         state = GAME_OVER;
         gameOverSelection = 0;
+        gameOverTicks = 0;
         clearKeys();
         resetMining();
         repaint();
@@ -373,7 +376,10 @@ final class GameCanvas extends Canvas implements Runnable {
             stage = "construyendo sectores visibles M3G";
             renderer.sync(world);
             state = world.mode == 0 && world.health <= 0 ? GAME_OVER : PLAYING;
-            if (state == GAME_OVER) gameOverSelection = 0;
+            if (state == GAME_OVER) {
+                gameOverSelection = 0;
+                gameOverTicks = 0;
+            }
         } catch (OutOfMemoryError exhausted) {
             showError("No hay memoria suficiente para cargar el mundo guardado.");
         } catch (Throwable problem) {
@@ -2001,36 +2007,43 @@ final class GameCanvas extends Canvas implements Runnable {
 
     private void drawGameOver(Graphics g) {
         int w = getWidth(), h = getHeight();
+        float progress = gameOverTicks / 12.0f;
+        if (progress > 1.0f) progress = 1.0f;
+        float eased = 1.0f - (1.0f - progress) * (1.0f - progress) * (1.0f - progress);
+        int enterOffset = (int)((1.0f - eased) * 18.0f);
         Font oldFont = g.getFont();
         g.setFont(Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_LARGE));
         g.setColor(255, 255, 255);
-        g.drawString("Game over!", w / 2, h / 4 - 20,
+        g.drawString("Game over!", w / 2, h / 4 - 20 - enterOffset,
                 Graphics.HCENTER | Graphics.TOP);
         g.setFont(oldFont);
         String scorePrefix = "Score: ";
         int scoreWidth = oldFont.stringWidth(scorePrefix + "0");
         int scoreX = (w - scoreWidth) / 2;
-        int scoreY = h / 4 + 20;
+        int scoreY = h / 4 + 20 - enterOffset / 2;
         g.setColor(255, 255, 255);
         g.drawString(scorePrefix, scoreX, scoreY, Graphics.TOP | Graphics.LEFT);
         g.setColor(255, 220, 55);
         g.drawString("0", scoreX + oldFont.stringWidth(scorePrefix), scoreY,
                 Graphics.TOP | Graphics.LEFT);
-        drawGameOverButton(g, "Generate new level...", h / 4 + 72, gameOverSelection == 0);
-        drawGameOverButton(g, "Load level..", h / 4 + 96, gameOverSelection == 1);
+        int buttonOffset = (int)((1.0f - eased) * 14.0f);
+        drawGameOverButton(g, "Generate new level...", h / 4 + 72 + buttonOffset, gameOverSelection == 0);
+        drawGameOverButton(g, "Load level..", h / 4 + 96 + buttonOffset, gameOverSelection == 1);
     }
 
-    /** Indev's Game over overlay: red gradient from 0x60500000 to 0xA0803030. */
+    /** Fade the Indev red overlay in during the first twelve game-over frames. */
     private void drawDeathGradient(Graphics g) {
+        int height = Math.min(getHeight(), deathTint == null ? getHeight() : deathTint.getHeight());
+        int revealHeight = (height * gameOverTicks) / 12;
+        if (revealHeight <= 0) return;
         if (deathTint == null) {
             g.setColor(112, 32, 32);
-            g.fillRect(0, 0, getWidth(), getHeight());
+            g.fillRect(0, 0, getWidth(), revealHeight);
             return;
         }
         int width = getWidth();
-        int height = Math.min(getHeight(), deathTint.getHeight());
         for (int x = 0; x < width; x += deathTint.getWidth()) {
-            g.drawRegion(deathTint, 0, 0, deathTint.getWidth(), height,
+            g.drawRegion(deathTint, 0, 0, deathTint.getWidth(), revealHeight,
                     Sprite.TRANS_NONE, x, 0, Graphics.TOP | Graphics.LEFT);
         }
     }
