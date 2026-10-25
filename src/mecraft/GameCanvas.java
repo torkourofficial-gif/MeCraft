@@ -938,12 +938,13 @@ final class GameCanvas extends Canvas implements Runnable {
             return;
         }
         if (state == CREATIVE_INVENTORY) {
+            int action = gameAction(keyCode);
             if (keyCode == KEY_POUND || keyCode == KEY_NUM0) closeCreativeInventory();
-            else if (keyCode == KEY_NUM2) moveCreativeSelection(-9);
-            else if (keyCode == KEY_NUM8) moveCreativeSelection(9);
-            else if (keyCode == KEY_NUM4) moveCreativeSelection(-1);
-            else if (keyCode == KEY_NUM6) moveCreativeSelection(1);
-            else if (keyCode == KEY_NUM5) selectCreativeBlock();
+            else if (keyCode == KEY_NUM2 || action == UP) moveCreativeSelection(-9);
+            else if (keyCode == KEY_NUM8 || action == DOWN) moveCreativeSelection(9);
+            else if (keyCode == KEY_NUM4 || action == LEFT) moveCreativeSelection(-1);
+            else if (keyCode == KEY_NUM6 || action == RIGHT) moveCreativeSelection(1);
+            else if (keyCode == KEY_NUM5 || action == FIRE) selectCreativeBlock();
             return;
         }
         if (state != PLAYING) return;

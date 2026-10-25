@@ -107,11 +107,14 @@ final class SkySystem {
     }
 
     private Mesh makeCloudPlane(Appearance appearance) {
+        // Indev lays the cloud texture out over 512-block quads at 0.5/1024
+        // UV scale: one full texture repeat spans 2048 world blocks. Keep
+        // three texture repeats here, so the plane spans 6144 blocks.
         short[] corners = new short[] {
-            fixed(-120), fixed(18), fixed(-120),
-            fixed(120), fixed(18), fixed(-120),
-            fixed(120), fixed(18), fixed(120),
-            fixed(-120), fixed(18), fixed(120)
+            fixed(-3072), fixed(VoxelWorld.HEIGHT + 10), fixed(-3072),
+            fixed(3072), fixed(VoxelWorld.HEIGHT + 10), fixed(-3072),
+            fixed(3072), fixed(VoxelWorld.HEIGHT + 10), fixed(3072),
+            fixed(-3072), fixed(VoxelWorld.HEIGHT + 10), fixed(3072)
         };
         short[] p = triangleQuad(corners, 3);
         int span = 3 * 256;
