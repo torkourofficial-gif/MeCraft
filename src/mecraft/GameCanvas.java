@@ -1312,7 +1312,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             else if (state == WORLD_CREATE) activateCreateSelection();
             else if (state == GAME_OVER) activateGameOverSelection();
             else backToMenu();
-
+        }
     }
 
     protected synchronized void sizeChanged(int width, int height) {
