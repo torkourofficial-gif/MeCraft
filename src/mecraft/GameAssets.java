@@ -1,6 +1,7 @@
 package mecraft;
 
 import java.io.IOException;
+import java.io.InputStream;
 import javax.microedition.lcdui.Image;
 
 /** Loads resources from either NetBeans' /mecraft package or a flat JAR root. */
@@ -25,5 +26,13 @@ final class GameAssets {
                 throw new IOException("Recurso no encontrado: " + packaged + " ni /" + fileName);
             }
         }
+    }
+
+    static InputStream stream(String fileName) throws IOException {
+        String packaged = "/mecraft/" + fileName;
+        InputStream input = GameAssets.class.getResourceAsStream(packaged);
+        if (input == null) input = GameAssets.class.getResourceAsStream("/" + fileName);
+        if (input == null) throw new IOException("Recurso no encontrado: " + packaged);
+        return input;
     }
 }

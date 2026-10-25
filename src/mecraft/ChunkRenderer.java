@@ -24,6 +24,7 @@ import javax.microedition.m3g.World;
 final class ChunkRenderer {
     static final int CACHE_SIZE = VoxelWorld.CHUNKS_X * VoxelWorld.CHUNKS_Y * VoxelWorld.CHUNKS_Z;
     private static final int TILE_COUNT = 256;
+    private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
     private static final float CAMERA_FAR = 38.0f;
     private static final float CHUNK_RADIUS = 12.0f;
     private static final float TAN_VERTICAL_FOV = (float)Math.tan(Math.PI * 34.0 / 180.0);
@@ -74,6 +75,10 @@ final class ChunkRenderer {
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
+    // Reused by the synchronous chunk mesher to avoid short-lived arrays.
+    private final byte[] chunkVoxelScratch = new byte[VoxelWorld.CHUNK_XZ *
+            VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
+    private final int[] greedyMaskScratch = new int[CHUNK_AREA];
     private final Image terrainImage;
     private final Texture2D atlas;
     private final Texture2D itemAtlas;
@@ -939,6 +944,9 @@ final class ChunkRenderer {
             for (int z = z0; z < z1; z++) {
                 for (int x = x0; x < x1; x++) {
                     byte id = world.get(x, y, z);
+                    int localIndex = (((y - y0) * VoxelWorld.CHUNK_XZ) + (z - z0)) *
+                            VoxelWorld.CHUNK_XZ + (x - x0);
+                    chunkVoxelScratch[localIndex] = id;
                     if (Block.isFlower(id)) {
                         if (flowers == null) flowers = new FlowerBuilder();
                         flowers.add(x - x0, y - y0, z - z0, Block.sideTile(id));
@@ -954,7 +962,7 @@ final class ChunkRenderer {
         // Mine64-style greedy meshing: combine adjacent visible faces on each
         // chunk plane when their atlas tile matches. Tile textures repeat, so
         // the merged rectangles preserve the original per-block texture scale.
-        int[] mask = new int[VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ];
+        int[] mask = greedyMaskScratch;
         for (int face = 0; face < 6; face++) {
             int slices = face == 0 || face == 5 ? VoxelWorld.CHUNK_Y : VoxelWorld.CHUNK_XZ;
             int width = VoxelWorld.CHUNK_XZ;
@@ -971,7 +979,9 @@ final class ChunkRenderer {
                         } else {
                             x = x0 + a; y = y0 + b; z = z0 + slice;
                         }
-                        byte id = world.get(x, y, z);
+                        int voxelIndex = (((y - y0) * VoxelWorld.CHUNK_XZ) + (z - z0)) *
+                                VoxelWorld.CHUNK_XZ + (x - x0);
+                        byte id = chunkVoxelScratch[voxelIndex];
                         int key = 0;
                         if (id != Block.AIR && !Block.isFlower(id) && id != Block.DOOR &&
                             !(face == 5 && y == 0)) {
@@ -982,7 +992,21 @@ final class ChunkRenderer {
                             else if (face == 3) nz--;
                             else if (face == 4) nz++;
                             else ny--;
-                            if (Block.faceVisible(id, world.get(nx, ny, nz)))
+                            byte neighbor;
+                            if (face == 0 && y + 1 < y1)
+                                neighbor = chunkVoxelScratch[voxelIndex + CHUNK_AREA];
+                            else if (face == 1 && x > x0)
+                                neighbor = chunkVoxelScratch[voxelIndex - 1];
+                            else if (face == 2 && x + 1 < x1)
+                                neighbor = chunkVoxelScratch[voxelIndex + 1];
+                            else if (face == 3 && z > z0)
+                                neighbor = chunkVoxelScratch[voxelIndex - VoxelWorld.CHUNK_XZ];
+                            else if (face == 4 && z + 1 < z1)
+                                neighbor = chunkVoxelScratch[voxelIndex + VoxelWorld.CHUNK_XZ];
+                            else if (face == 5 && y > y0)
+                                neighbor = chunkVoxelScratch[voxelIndex - CHUNK_AREA];
+                            else neighbor = world.get(nx, ny, nz);
+                            if (Block.faceVisible(id, neighbor))
                                 key = Block.faceTile(id, face) + 1;
                         }
                         mask[row + a] = key;

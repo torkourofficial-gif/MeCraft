@@ -92,6 +92,7 @@ final class GameCanvas extends Canvas implements Runnable {
     private boolean lookUp, lookDown, lookLeft, lookRight;
     private VoxelWorld world;
     private ChunkRenderer renderer;
+    private MusicController music;
     private SkinGallery skinGallery;
     private Image title;
     private Image guiTexture;
@@ -123,6 +124,8 @@ final class GameCanvas extends Canvas implements Runnable {
 
     GameCanvas(MeCraft app) {
         this.app = app;
+        try { music = new MusicController(); }
+        catch (LinkageError unsupported) { music = null; }
         setFullScreenMode(true);
         loadTitle();
         loadHudTextures();
@@ -140,11 +143,13 @@ final class GameCanvas extends Canvas implements Runnable {
 
     synchronized void stop() {
         running = false;
+        if (music != null) music.close();
         saveIfNeeded();
     }
 
     synchronized void pauseGame() {
         visible = false;
+        if (music != null) music.update(MusicController.OFF);
         clearKeys();
         saveIfNeeded();
     }
@@ -156,6 +161,7 @@ final class GameCanvas extends Canvas implements Runnable {
     public void run() {
         while (running) {
             long start = System.currentTimeMillis();
+            if (music != null) music.update(visible ? musicModeForState() : MusicController.OFF);
             if (visible && state == PLAYING) updateGame();
             if (visible && (state != PLAYING || renderFrame++ % (frameSkip + 1) == 0)) repaint();
             long elapsed = System.currentTimeMillis() - start;
@@ -163,6 +169,15 @@ final class GameCanvas extends Canvas implements Runnable {
             if (wait < 8L) wait = 8L;
             try { Thread.sleep(wait); } catch (InterruptedException ignored) { }
         }
+    }
+
+    private int musicModeForState() {
+        if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH ||
+                state == CREATIVE_INVENTORY || state == GAME_OVER) return MusicController.GAMEPLAY;
+        if (state == MENU || state == WORLD_SELECT || state == WORLD_CREATE ||
+                state == WORLD_DELETE || state == WORLD_NAME || state == SETTINGS ||
+                state == SKIN_SELECT) return MusicController.MENU;
+        return MusicController.OFF;
     }
 
     private synchronized void updateGame() {

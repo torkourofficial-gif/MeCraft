@@ -7,6 +7,7 @@ Referencia consultada: [EaglerPorts/in-20100223](https://github.com/EaglerPorts/
 ## Estado jugable
 
 - Menú principal con fondo de tierra del atlas y selector de varios mundos. Cada partida conserva su propio nombre, modo y progreso; al crear una se puede editar el nombre y elegir Supervivencia o Creativo. Las partidas guardadas por versiones anteriores aparecen como «Mundo guardado».
+- Música MIDI: `menu.mid` acompaña el menú; durante el juego se elige al azar entre `calm1.mid` y `calm4.mid`, dejando diez segundos de silencio al terminar cada pista. El reproductor MMAPI mantiene una sola pista abierta y la música se silencia al pausar la aplicación.
 - Mundo de isla procedural de 48 × 24 × 48 bloques, con costa, agua, árboles, carbón, hierro y roca madre.
 - Modo supervivencia empieza con el inventario vacío; los bloques rotos se recogen, y modo creativo tiene bloques ilimitados.
 - En creativo, `#` abre una paleta paginada con los bloques texturados del atlas `textures.png`; se elige uno con `5` para ponerlo en la casilla rápida seleccionada. Las celdas vacías del atlas no aparecen. La TNT se activa al golpearla con `1`, sin soltar un bloque normal; cae, rebota y explota tras 80 ticks. La explosión puede encadenar otras TNT y dañar criaturas y al jugador.
@@ -57,7 +58,7 @@ El objetivo es ejecutarse en un heap Java de **4 MiB o más**. Las decisiones pa
 - Una sola imagen de terreno de 256 × 256 píxeles, cargada una vez y compartida por todas las mallas.
 - 27 sectores de datos como máximo, pero las mallas M3G solo se crean para los sectores que intersectan la vista y el alcance de la cámara. Al girar o alejarse, las mallas fuera de vista se quitan de la escena y se liberan; vuelven a construirse desde los bytes del mundo al entrar en vista.
 - No hay un límite global de triángulos que recorte terreno. Se descartan caras ocultas antes de crear las mallas y los bloques visibles se agrupan por tile para compartir apariencia y reducir nodos.
-- Geometría cuantizada a `short`, una apariencia compartida y arreglos temporales de CPU descartables después de construir cada sector.
+- Geometría cuantizada a `short`, una apariencia compartida y buffers de trabajo reutilizados para leer bloques y agrupar caras al reconstruir sectores.
 - Al editar un bloque se reconstruyen solo los sectores afectados que están cargados; los sectores fuera de vista se construyen con el bloque actualizado al volver a aparecer.
 - Las partículas de rotura reproducen la cuadrícula 4 × 4 × 4 de Indev con 64 ranuras fijas y una sola malla; cada fragmento reutiliza un recorte del atlas y no crea objetos durante la actualización.
 - Seis criaturas como máximo y texturas compartidas de 64 × 32 píxeles para las cinco especies; los modelos M3G se construyen una vez al crear el renderizador.
@@ -70,9 +71,9 @@ El heap de 4 MiB es el mínimo de diseño, no una garantía para cada implementa
 
 El repositorio es un proyecto Java ME de NetBeans; no necesita `build.bat`. Abre la carpeta del repositorio como proyecto y usa **Build** o **Clean and Build**. NetBeans genera `MeCraft.jar` y `MeCraft.jad` dentro de `dist/`; **Run** lo inicia en el emulador seleccionado.
 
-El proyecto está configurado para Oracle Java ME SDK 3.2, CLDC 1.1, MIDP 2.0 y M3G 1.1 (JSR-184). Si NetBeans muestra que el dispositivo soporta MIDP 2.1, eso describe sus capacidades; el perfil solicitado por el MIDlet sigue siendo MIDP 2.0. Puedes comprobarlo en **Project Properties > Platform > Device Profile** y en **Application Descriptor > Attributes**.
+El proyecto está configurado para Oracle Java ME SDK 3.2, CLDC 1.1, MIDP 2.0, M3G 1.1 (JSR-184) y MMAPI (JSR-135). Si NetBeans muestra que el dispositivo soporta MIDP 2.1, eso describe sus capacidades; el perfil solicitado por el MIDlet sigue siendo MIDP 2.0. Puedes comprobarlo en **Project Properties > Platform > Device Profile** y en **Application Descriptor > Attributes**.
 
-Si la plataforma SDK 3.2 no aparece en NetBeans, regístrala en **Tools > Java Platforms** y selecciona el dispositivo y la API opcional **JSR-184** en las propiedades del proyecto. El proyecto usa Java 1.3 y pre-verificación CLDC durante la compilación. Los PNG están junto a las clases en `src/mecraft/` y se empaquetan bajo `/mecraft/` en el JAR; el cargador también acepta esos recursos en la raíz del JAR.
+Si la plataforma SDK 3.2 no aparece en NetBeans, regístrala en **Tools > Java Platforms** y selecciona el dispositivo y las APIs opcionales **JSR-184** y **JSR-135** en las propiedades del proyecto. El proyecto usa Java 1.3 y pre-verificación CLDC durante la compilación. Los PNG y las cinco pistas MIDI deben estar en `src/mecraft/` y se empaquetan bajo `/mecraft/` en el JAR; el cargador también acepta esos recursos en la raíz del JAR. Si falta MMAPI o una pista, el juego sigue funcionando sin música.
 
 Para instalar manualmente, transfiere ambos archivos de `dist/` al teléfono o abre `MeCraft.jad` en el emulador Java ME.
 
