@@ -51,7 +51,8 @@ final class SkinGallery {
         }
         appearance = skinAppearance();
         model = makePlayer(appearance, textureWidth, textureHeight);
-        model.setTranslation(0.0f, -1.0f, 0.0f);
+        model.setScale(2.0f, 2.0f, 2.0f);
+        model.setTranslation(0.0f, -2.0f, 0.0f);
         world.addChild(model);
 
         camera.setPerspective(54.0f, (float)width / (float)height, 0.1f, 24.0f);
