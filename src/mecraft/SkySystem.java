@@ -37,6 +37,16 @@ final class SkySystem {
     private float[] screenY;
     private int viewportWidth;
     private int viewportHeight;
+    private boolean cloudFrameReady;
+    private float lastCloudYaw;
+    private float lastCloudPitch;
+    private int lastCloudShift;
+    private int lastCloudTint;
+    private int lastSkyColor;
+    private boolean starColorReady;
+    private int lastStarColor;
+    private boolean starVisibilityReady;
+    private boolean lastStarsVisible;
 
     SkySystem(Group cameraPivot, Background background, int width, int height) throws IOException {
         skyBackground = background;
@@ -73,6 +83,8 @@ final class SkySystem {
 
         Appearance oceanAppearance = makeOceanAppearance();
         oceanMaterial = oceanAppearance.getMaterial();
+        oceanMaterial.setColor(Material.AMBIENT, 0xFFD8F1FF);
+        oceanMaterial.setColor(Material.DIFFUSE, 0xFFD8F1FF);
         oceanPlane = makeOceanPlane(oceanAppearance);
         yawCounter.addChild(oceanPlane);
     }
@@ -80,6 +92,7 @@ final class SkySystem {
     void resize(int width, int height) {
         if (width <= 0 || height <= 0 ||
                 (width == viewportWidth && height == viewportHeight)) return;
+        cloudFrameReady = false;
         viewportWidth = width;
         viewportHeight = height;
         int sampleWidth = (width + 1) >> 1;
@@ -119,18 +132,24 @@ final class SkySystem {
 
         float night = 1.0f - daylight;
         float starLevel = night * night;
-        stars.setRenderingEnable(starLevel > 0.015f);
+        boolean starsVisible = starLevel > 0.015f;
+        if (!starVisibilityReady || starsVisible != lastStarsVisible) {
+            stars.setRenderingEnable(starsVisible);
+            lastStarsVisible = starsVisible;
+            starVisibilityReady = true;
+        }
         float shimmer = 0.88f + 0.12f *
                 (0.5f + 0.5f * (float)Math.sin(world.dayTime * 0.035f));
         int brightness = (int)(starLevel * shimmer * 255.0f);
         int starColor = 0xFF000000 | (brightness << 16) |
                         (brightness << 8) | brightness;
-        starsMaterial.setColor(Material.AMBIENT, starColor);
-        starsMaterial.setColor(Material.DIFFUSE, starColor);
-        starsMaterial.setColor(Material.EMISSIVE, starColor);
-
-        oceanMaterial.setColor(Material.AMBIENT, 0xFFD8F1FF);
-        oceanMaterial.setColor(Material.DIFFUSE, 0xFFD8F1FF);
+        if (!starColorReady || starColor != lastStarColor) {
+            starsMaterial.setColor(Material.AMBIENT, starColor);
+            starsMaterial.setColor(Material.DIFFUSE, starColor);
+            starsMaterial.setColor(Material.EMISSIVE, starColor);
+            lastStarColor = starColor;
+            starColorReady = true;
+        }
     }
 
     /** Rasterize Indev's cloud map into the sky background at 1 texel / 8 blocks. */
@@ -157,6 +176,9 @@ final class SkySystem {
         float focal = viewportHeight / (2.0f * TAN_HALF_FOV);
         int shift = (int)(dayTime * 0.00375f);
         int cloudTint = (int)(190.0f + daylight * 65.0f);
+        if (cloudFrameReady && yawDegrees == lastCloudYaw &&
+                pitchDegrees == lastCloudPitch && shift == lastCloudShift &&
+                cloudTint == lastCloudTint && skyColor == lastSkyColor) return;
         int skyR = skyColor >> 16 & 255;
         int skyG = skyColor >> 8 & 255;
         int skyB = skyColor & 255;
@@ -202,6 +224,12 @@ final class SkySystem {
             }
         }
         cloudBackground.set(0, 0, viewportWidth, viewportHeight, backgroundPixels);
+        lastCloudYaw = yawDegrees;
+        lastCloudPitch = pitchDegrees;
+        lastCloudShift = shift;
+        lastCloudTint = cloudTint;
+        lastSkyColor = skyColor;
+        cloudFrameReady = true;
     }
 
     private void putBackgroundPixel(int x, int y, int red, int green, int blue) {
