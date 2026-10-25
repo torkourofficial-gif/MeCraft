@@ -127,6 +127,7 @@ final class ChunkRenderer {
         handAppearance = createHandAppearance();
         handMesh = makeHandMesh();
         armBase.setTranslation(handBaseX(width, height), -0.60f, -0.72f);
+        armSwingOffset.setTranslation(-0.08f * handHorizontalScale, 0.15f, 0.0f);
         armSwingYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
         armSwingOffset.addChild(armBase);
         armBase.addChild(armSwingYaw);
@@ -210,6 +211,8 @@ final class ChunkRenderer {
         tanHorizontalFov = TAN_VERTICAL_FOV * (float)width / (float)height;
         camera.setPerspective(68.0f, (float)width / (float)height, 0.1f, 38.0f);
         armBase.setTranslation(handBaseX(width, height), -0.60f, -0.72f);
+        if (!handSwinging)
+            armSwingOffset.setTranslation(-0.08f * handHorizontalScale, 0.15f, 0.0f);
     }
 
     private float handBaseX(int width, int height) {
@@ -356,7 +359,8 @@ final class ChunkRenderer {
             armSwingYaw.setOrientation(45.0f + sinRoot * 70.0f, 0.0f, 1.0f, 0.0f);
             armSwingRoll.setOrientation(-sinLinear * 20.0f, 0.0f, 0.0f, 1.0f);
         } else {
-            armSwingOffset.setTranslation(0.0f, 0.0f, 0.0f);
+            // Lift and move the resting hand inward so more of it stays on-screen.
+            armSwingOffset.setTranslation(-0.08f * handHorizontalScale, 0.15f, 0.0f);
             armSwingYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
             armSwingRoll.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
         }
@@ -397,7 +401,7 @@ final class ChunkRenderer {
     }
 
     private void setRestHandPose() {
-        armSwingOffset.setTranslation(0.0f, 0.0f, 0.0f);
+        armSwingOffset.setTranslation(-0.08f * handHorizontalScale, 0.15f, 0.0f);
         armSwingYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
         armSwingRoll.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
         setRestHeldItemPose();
@@ -699,8 +703,8 @@ final class ChunkRenderer {
         putHandFaceUV(uv, 4, 52,20,56,32, true);
         putHandFaceUV(uv, 8, 40,20,44,32, false);
         putHandFaceUV(uv, 12, 48,20,52,32, false);
-        putHandFaceUV(uv, 16, 44,16,48,20, false);
-        putHandFaceUV(uv, 20, 48,16,52,20, false);
+        putHandFaceUV(uv, 16, 48,16,52,20, false);
+        putHandFaceUV(uv, 20, 44,16,48,20, false);
         for (int i = 0; i < 24; i++) uv[i * 2 + 1] = (short)(uv[i * 2 + 1] * vScale);
         return uv;
     }
