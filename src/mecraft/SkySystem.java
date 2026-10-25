@@ -25,6 +25,8 @@ final class SkySystem {
     private final Material starsMaterial;
     private final Material cloudsMaterial;
     private final Material oceanMaterial;
+    private final Mesh cloudPlane;
+    private final Mesh oceanPlane;
     private VertexArray cloudUVArray;
     private final short[] cloudUV = new short[12];
 
@@ -55,18 +57,22 @@ final class SkySystem {
         cloudTexture.setWrapping(Texture2D.WRAP_REPEAT, Texture2D.WRAP_REPEAT);
         Appearance cloudAppearance = alphaAppearance(cloudTexture);
         cloudsMaterial = cloudAppearance.getMaterial();
-        Mesh cloudPlane = makeCloudPlane(cloudAppearance);
+        cloudPlane = makeCloudPlane(cloudAppearance);
         yawCounter.addChild(cloudPlane);
 
         Appearance oceanAppearance = makeOceanAppearance();
         oceanMaterial = oceanAppearance.getMaterial();
-        yawCounter.addChild(makeOceanPlane(oceanAppearance));
+        oceanPlane = makeOceanPlane(oceanAppearance);
+        yawCounter.addChild(oceanPlane);
     }
 
     void update(VoxelWorld world, float yaw, float celestialAngle, float daylight) {
         yawCounter.setOrientation(-yaw, 0.0f, 1.0f, 0.0f);
         celestialRotation.setOrientation(celestialAngle * 57.29578f,
                 1.0f, 0.0f, 0.0f);
+        float eyeY = world.playerY + 1.62f;
+        cloudPlane.setTranslation(0.0f, VoxelWorld.HEIGHT + 10.0f - eyeY, 0.0f);
+        oceanPlane.setTranslation(0.0f, VoxelWorld.SEA_LEVEL + 1.0f - eyeY - 0.02f, 0.0f);
 
         float night = 1.0f - daylight;
         float starLevel = night * night;
@@ -117,8 +123,8 @@ final class SkySystem {
         // Indev lays the cloud texture out over 512-block quads at 0.5/1024
         // UV scale: one full texture repeat spans 2048 world blocks. Keep
         // three texture repeats here, so the plane spans 6144 blocks.
-        short[] corners = largeQuad(-3072.0f, VoxelWorld.HEIGHT + 10, -3072.0f,
-                3072.0f, VoxelWorld.HEIGHT + 10, 3072.0f);
+        short[] corners = largeQuad(-3072.0f, 0.0f, -3072.0f,
+                3072.0f, 0.0f, 3072.0f);
         short[] p = triangleQuad(corners, 3);
         int span = 3 * 256;
         cloudUV[0] = 0; cloudUV[1] = 0;
@@ -151,8 +157,7 @@ final class SkySystem {
     }
 
     private Mesh makeOceanPlane(Appearance appearance) {
-        float y = VoxelWorld.SEA_LEVEL + 0.98f;
-        short[] corners = largeQuad(-3072.0f, y, -3072.0f, 3072.0f, y, 3072.0f);
+        short[] corners = largeQuad(-3072.0f, 0.0f, -3072.0f, 3072.0f, 0.0f, 3072.0f);
         short[] p = triangleQuad(corners, 3);
         short[] uv = new short[] {
             0,0, 768,0, 768,768, 0,0, 768,768, 0,768
