@@ -140,7 +140,9 @@ final class SkySystem {
         cloudUVArray = new VertexArray(6, 2, 2);
         cloudUVArray.set(0, 6, cloudUV);
         VertexBuffer vertices = new VertexBuffer();
-        vertices.setPositions(positions, 1.0f / 16.0f, null);
+        // The cloud plane spans +/-3072 blocks. At 1/16 fixed-point this
+        // exceeds signed-short range and wraps the corners, so use 1/8 here.
+        vertices.setPositions(positions, 1.0f / 8.0f, null);
         vertices.setTexCoords(0, cloudUVArray, 1.0f / 256.0f, null);
         return new Mesh(vertices, new TriangleStripArray(0, new int[] { 3, 3 }), appearance);
     }
@@ -212,7 +214,7 @@ final class SkySystem {
     }
 
     private short largeFixed(float value) {
-        return (short)(value * 16.0f);
+        return (short)(value * 8.0f);
     }
 
     private Mesh makeStars(Appearance appearance) {
