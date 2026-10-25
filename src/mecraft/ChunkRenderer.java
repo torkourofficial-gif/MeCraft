@@ -232,7 +232,10 @@ final class ChunkRenderer {
 
     private void setHeldVisualVisible(int itemId, boolean visible) {
         if (itemId <= Block.AIR) return;
-        if (Block.isDecorative((byte)itemId) || itemId == Block.TNT || itemId == Block.DOOR) {
+        if (itemId == Block.DOOR) {
+            if (visible) setItemSprite(itemId);
+            itemSpriteMesh.setRenderingEnable(visible && ItemCatalog.iconIndex(itemId) >= 0);
+        } else if (Block.isDecorative((byte)itemId) || itemId == Block.TNT) {
             if (visible) setBlockMeshTile(itemId);
             if (heldCreativeBlockMesh != null) heldCreativeBlockMesh.setRenderingEnable(visible);
         } else if (itemId < Block.COUNT) {
@@ -360,7 +363,7 @@ final class ChunkRenderer {
 
     /** Flowers use the same first-person grip and swing path as Indev's stick. */
     private boolean usesSpriteHandPose(int itemId) {
-        return itemId >= ItemCatalog.STICK ||
+        return itemId == Block.DOOR || itemId >= ItemCatalog.STICK ||
                (itemId > Block.AIR && itemId < Block.COUNT && Block.isFlower((byte)itemId));
     }
 
