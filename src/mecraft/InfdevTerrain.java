@@ -27,17 +27,48 @@ final class InfdevTerrain {
                 int height = surfaceHeight(seed, worldX, worldZ);
                 int column = (z * CHUNK_SIZE + x) * WORLD_HEIGHT;
                 for (int y = 0; y < WORLD_HEIGHT; y++) {
-                    byte id = Block.AIR;
-                    if (y == 0) id = Block.BEDROCK;
-                    else if (y < height - 3) id = y < 5 && hash(seed ^ 0x5F356495, worldX, y, worldZ) % 23 == 0
-                        ? Block.COAL : Block.STONE;
-                    else if (y < height) id = height <= SEA_LEVEL + 1 ? Block.SAND : Block.DIRT;
-                    else if (y == height) id = height <= SEA_LEVEL + 1 ? Block.SAND : Block.GRASS;
-                    else if (y <= SEA_LEVEL) id = Block.WATER;
-                    blocks[column + y] = id;
+                    blocks[column + y] = terrainAtHeight(seed, worldX, y, worldZ, height);
                 }
             }
         }
+    }
+
+    static byte blockAt(int seed, int x, int y, int z) {
+        if (y < 0 || y >= WORLD_HEIGHT) return Block.AIR;
+        if (y == 0) return Block.BEDROCK;
+        return terrainAtHeight(seed, x, y, z, surfaceHeight(seed, x, z));
+    }
+
+    private static byte terrainAtHeight(int seed, int x, int y, int z, int height) {
+        if (y == 0) return Block.BEDROCK;
+        byte terrain;
+        if (y > height) terrain = y <= SEA_LEVEL ? Block.WATER : Block.AIR;
+        else if (y == height) terrain = height <= SEA_LEVEL + 1 ? Block.SAND : Block.GRASS;
+        else if (y >= height - 3) terrain = height <= SEA_LEVEL + 1 ? Block.SAND : Block.DIRT;
+        else if (y < 5 && hash(seed ^ 0x5F356495, x, y, z) % 23 == 0) terrain = Block.COAL;
+        else if (y < 5 && hash(seed ^ 0x4B1D2A37, x, y, z) % 61 == 0) terrain = Block.IRON;
+        else terrain = Block.STONE;
+        if (terrain == Block.AIR || y > height) return treeBlock(seed, x, y, z, terrain);
+        return terrain;
+    }
+
+    private static byte treeBlock(int seed, int x, int y, int z, byte terrain) {
+        int cellX = floorDiv(x - 4, 9);
+        int cellZ = floorDiv(z - 4, 9);
+        for (int dz = -1; dz <= 1; dz++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                int tx = (cellX + dx) * 9 + 4;
+                int tz = (cellZ + dz) * 9 + 4;
+                if (hash(seed ^ 0x16A5B, cellX + dx, 0, cellZ + dz) % 4 != 0) continue;
+                int ty = surfaceHeight(seed, tx, tz);
+                if (ty <= SEA_LEVEL + 1) continue;
+                if (x == tx && z == tz && y > ty && y <= ty + 3) return Block.LOG;
+                int canopy = Math.abs(x - tx) + Math.abs(z - tz);
+                if (terrain == Block.AIR && canopy <= 2 && y >= ty + 2 && y <= ty + 4 &&
+                    (y != ty + 4 || canopy <= 1)) return Block.LEAVES;
+            }
+        }
+        return terrain;
     }
 
     static int surfaceHeight(int seed, int x, int z) {

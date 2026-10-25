@@ -593,8 +593,7 @@ final class GameCanvas extends Canvas implements Runnable {
 
     /** ItemHoe.onItemUse: turn exposed grass/dirt into farmland and wear one use. */
     private void tillSoil(int x, int y, int z, int hoe) {
-        if (x <= 0 || y <= 0 || z <= 0 || x >= VoxelWorld.WIDTH - 1 ||
-            y >= VoxelWorld.HEIGHT - 1 || z >= VoxelWorld.DEPTH - 1) return;
+        if (y <= 0 || y >= VoxelWorld.HEIGHT - 1) return;
         byte soil = world.get(x, y, z);
         if ((soil != Block.GRASS && soil != Block.DIRT) || Block.solid(world.get(x, y + 1, z))) return;
         if (!world.set(x, y, z, Block.FARMLAND)) return;

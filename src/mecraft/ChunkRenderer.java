@@ -22,10 +22,11 @@ import javax.microedition.m3g.World;
 
 /** Builds shared-texture chunk meshes on demand for the visible part of the world. */
 final class ChunkRenderer {
-    static final int CACHE_SIZE = VoxelWorld.CHUNKS_X * VoxelWorld.CHUNKS_Y * VoxelWorld.CHUNKS_Z;
+    private static final int STREAM_RADIUS = 2;
+    static final int CACHE_SIZE = (STREAM_RADIUS * 2 + 1) * (STREAM_RADIUS * 2 + 1) * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
-    private static final float CAMERA_FAR = 256.0f;
+    private static final float CAMERA_FAR = 88.0f;
     private static final float CHUNK_RADIUS = 12.0f;
     private static final float TAN_VERTICAL_FOV = (float)Math.tan(Math.PI * 34.0 / 180.0);
 
@@ -75,7 +76,9 @@ final class ChunkRenderer {
     private int torchScanRevision = Integer.MIN_VALUE;
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
-    private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
+    private final int[] chunkWorldX = new int[CACHE_SIZE];
+    private final int[] chunkWorldY = new int[CACHE_SIZE];
+    private final int[] chunkWorldZ = new int[CACHE_SIZE];
     // Reused by the synchronous chunk mesher to avoid short-lived arrays.
     private final byte[] chunkVoxelScratch = new byte[VoxelWorld.CHUNK_XZ *
             VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
@@ -865,33 +868,31 @@ final class ChunkRenderer {
     }
 
     private void rebuildChanged(VoxelWorld world) {
-        boolean[] dirty = dirtyChunks;
-        for (int i = 0; i < dirty.length; i++) dirty[i] = false;
         int x = world.changedX, y = world.changedY, z = world.changedZ;
-        markDirty(dirty, x / VoxelWorld.CHUNK_XZ, y / VoxelWorld.CHUNK_Y, z / VoxelWorld.CHUNK_XZ);
-        if (x % VoxelWorld.CHUNK_XZ == 0) markDirty(dirty, x / VoxelWorld.CHUNK_XZ - 1, y / VoxelWorld.CHUNK_Y, z / VoxelWorld.CHUNK_XZ);
-        if (x % VoxelWorld.CHUNK_XZ == VoxelWorld.CHUNK_XZ - 1) markDirty(dirty, x / VoxelWorld.CHUNK_XZ + 1, y / VoxelWorld.CHUNK_Y, z / VoxelWorld.CHUNK_XZ);
-        if (y % VoxelWorld.CHUNK_Y == 0) markDirty(dirty, x / VoxelWorld.CHUNK_XZ, y / VoxelWorld.CHUNK_Y - 1, z / VoxelWorld.CHUNK_XZ);
-        if (y % VoxelWorld.CHUNK_Y == VoxelWorld.CHUNK_Y - 1) markDirty(dirty, x / VoxelWorld.CHUNK_XZ, y / VoxelWorld.CHUNK_Y + 1, z / VoxelWorld.CHUNK_XZ);
-        if (z % VoxelWorld.CHUNK_XZ == 0) markDirty(dirty, x / VoxelWorld.CHUNK_XZ, y / VoxelWorld.CHUNK_Y, z / VoxelWorld.CHUNK_XZ - 1);
-        if (z % VoxelWorld.CHUNK_XZ == VoxelWorld.CHUNK_XZ - 1) markDirty(dirty, x / VoxelWorld.CHUNK_XZ, y / VoxelWorld.CHUNK_Y, z / VoxelWorld.CHUNK_XZ + 1);
-        for (int i = 0; i < dirty.length; i++) {
-            if (dirty[i] && residentChunks[i]) replaceChunk(world, i);
+        int cx = floorDiv(x, VoxelWorld.CHUNK_XZ);
+        int cy = y / VoxelWorld.CHUNK_Y;
+        int cz = floorDiv(z, VoxelWorld.CHUNK_XZ);
+        int lx = x - cx * VoxelWorld.CHUNK_XZ;
+        int ly = y % VoxelWorld.CHUNK_Y;
+        int lz = z - cz * VoxelWorld.CHUNK_XZ;
+        for (int i = 0; i < CACHE_SIZE; i++) {
+            if (!residentChunks[i]) continue;
+            if (Math.abs(chunkWorldX[i] - cx) > (lx == 0 || lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0) ||
+                Math.abs(chunkWorldY[i] - cy) > (ly == 0 || ly == VoxelWorld.CHUNK_Y - 1 ? 1 : 0) ||
+                Math.abs(chunkWorldZ[i] - cz) > (lz == 0 || lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0)) continue;
+            replaceChunk(world, i, chunkWorldX[i], chunkWorldY[i], chunkWorldZ[i]);
         }
     }
 
-    private void markDirty(boolean[] dirty, int cx, int cy, int cz) {
-        if (cx < 0 || cx >= VoxelWorld.CHUNKS_X || cy < 0 || cy >= VoxelWorld.CHUNKS_Y ||
-            cz < 0 || cz >= VoxelWorld.CHUNKS_Z) return;
-        dirty[(cy * VoxelWorld.CHUNKS_Z + cz) * VoxelWorld.CHUNKS_X + cx] = true;
+    private int floorDiv(int value, int divisor) {
+        int result = value / divisor;
+        return value < 0 && value % divisor != 0 ? result - 1 : result;
     }
 
-    private void replaceChunk(VoxelWorld world, int i) {
+    private void replaceChunk(VoxelWorld world, int i, int cx, int cy, int cz) {
         removeChunk(i);
-        int cx = i % VoxelWorld.CHUNKS_X;
-        int cz = (i / VoxelWorld.CHUNKS_X) % VoxelWorld.CHUNKS_Z;
-        int cy = i / (VoxelWorld.CHUNKS_X * VoxelWorld.CHUNKS_Z);
         chunks[i] = buildChunk(world, cx, cy, cz);
+        chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
         residentChunks[i] = true;
         if (chunks[i] != null) {
             for (int m = 0; m < chunks[i].meshes.length; m++) terrain.addChild(chunks[i].meshes[m]);
@@ -922,10 +923,15 @@ final class ChunkRenderer {
         float tanVertical = TAN_VERTICAL_FOV;
         float eyeX = world.playerX, eyeY = world.playerY + 1.62f, eyeZ = world.playerZ;
 
+        int centerX = floorDiv((int)eyeX, VoxelWorld.CHUNK_XZ);
+        int centerZ = floorDiv((int)eyeZ, VoxelWorld.CHUNK_XZ);
+        int span = STREAM_RADIUS * 2 + 1;
         for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++) {
-            for (int cz = 0; cz < VoxelWorld.CHUNKS_Z; cz++) {
-                for (int cx = 0; cx < VoxelWorld.CHUNKS_X; cx++) {
-                    int i = (cy * VoxelWorld.CHUNKS_Z + cz) * VoxelWorld.CHUNKS_X + cx;
+            for (int rz = 0; rz < span; rz++) {
+                for (int rx = 0; rx < span; rx++) {
+                    int cx = centerX + rx - STREAM_RADIUS;
+                    int cz = centerZ + rz - STREAM_RADIUS;
+                    int i = (cy * span + rz) * span + rx;
                     float dx = cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeX;
                     float dy = cy * VoxelWorld.CHUNK_Y + VoxelWorld.CHUNK_Y * 0.5f - eyeY;
                     float dz = cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
@@ -936,7 +942,10 @@ final class ChunkRenderer {
                         depth - CHUNK_RADIUS <= CAMERA_FAR &&
                         Math.abs(horizontal) <= Math.max(0.0f, depth) * tanHorizontalFov + CHUNK_RADIUS &&
                         Math.abs(vertical) <= Math.max(0.0f, depth) * tanVertical + CHUNK_RADIUS;
-                    if (visible && !residentChunks[i]) replaceChunk(world, i);
+                    boolean sameChunk = residentChunks[i] && chunkWorldX[i] == cx &&
+                        chunkWorldY[i] == cy && chunkWorldZ[i] == cz;
+                    if (residentChunks[i] && (!visible || !sameChunk)) removeChunk(i);
+                    if (visible && !sameChunk) replaceChunk(world, i, cx, cy, cz);
                     else if (!visible && residentChunks[i]) removeChunk(i);
                 }
             }

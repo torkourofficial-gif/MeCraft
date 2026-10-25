@@ -153,10 +153,6 @@ final class PlayerPhysics {
         if (hitZ) motionZ = 0.0f;
         if (horizontalCollision && isInWater(world) && !intersectsSolid(world,
                 world.playerX, world.playerY + 0.6f, world.playerZ)) motionY = 0.3f;
-        if (world.playerX < RADIUS) world.playerX = RADIUS;
-        if (world.playerX > VoxelWorld.WIDTH - RADIUS) world.playerX = VoxelWorld.WIDTH - RADIUS;
-        if (world.playerZ < RADIUS) world.playerZ = RADIUS;
-        if (world.playerZ > VoxelWorld.DEPTH - RADIUS) world.playerZ = VoxelWorld.DEPTH - RADIUS;
     }
 
     private void applyDrag(boolean inWater) {

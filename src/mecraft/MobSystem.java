@@ -332,14 +332,12 @@ final class MobSystem {
             mob.alive = !isHostile(mob.type);
             mob.root.setRenderingEnable(mob.alive);
             int attempts = 0;
-            int x = VoxelWorld.WIDTH / 2, z = VoxelWorld.DEPTH / 2;
+            int x = (int)world.playerX, z = (int)world.playerZ;
             do {
                 int radius = isHostile(mob.type) ? 9 + random.nextInt(10) : 4 + random.nextInt(12);
                 int angle = random.nextInt(360);
-                x = VoxelWorld.WIDTH / 2 + (int)(Math.cos(angle * Math.PI / 180.0) * radius);
-                z = VoxelWorld.DEPTH / 2 + (int)(Math.sin(angle * Math.PI / 180.0) * radius);
-                x = clamp(x, 2, VoxelWorld.WIDTH - 3);
-                z = clamp(z, 2, VoxelWorld.DEPTH - 3);
+                x = (int)world.playerX + (int)(Math.cos(angle * Math.PI / 180.0) * radius);
+                z = (int)world.playerZ + (int)(Math.sin(angle * Math.PI / 180.0) * radius);
                 attempts++;
             } while ((!validSpawn(world, x, z) || tooClose(mob, x + 0.5f, z + 0.5f)) && attempts < 48);
             int ground = world.surfaceY(x, z);
@@ -396,15 +394,13 @@ final class MobSystem {
         mob.alive = false;
         mob.root.setRenderingEnable(false);
         int attempts = 0;
-        int x = clamp((int)world.playerX, 2, VoxelWorld.WIDTH - 3);
-        int z = clamp((int)world.playerZ, 2, VoxelWorld.DEPTH - 3);
+        int x = (int)world.playerX;
+        int z = (int)world.playerZ;
         do {
             int radius = 9 + random.nextInt(10);
             int angle = random.nextInt(360);
-            x = clamp((int)world.playerX + (int)(Math.cos(angle * Math.PI / 180.0) * radius),
-                      2, VoxelWorld.WIDTH - 3);
-            z = clamp((int)world.playerZ + (int)(Math.sin(angle * Math.PI / 180.0) * radius),
-                      2, VoxelWorld.DEPTH - 3);
+            x = (int)world.playerX + (int)(Math.cos(angle * Math.PI / 180.0) * radius);
+            z = (int)world.playerZ + (int)(Math.sin(angle * Math.PI / 180.0) * radius);
             attempts++;
         } while ((!validSpawn(world, x, z) || tooClose(mob, x + 0.5f, z + 0.5f)) && attempts < 48);
         int ground = world.surfaceY(x, z);
@@ -524,7 +520,6 @@ final class MobSystem {
 
     private boolean canMove(VoxelWorld world, Mob mob, float x, float z) {
         int bx = (int)x, bz = (int)z;
-        if (bx < 1 || bz < 1 || bx >= VoxelWorld.WIDTH - 1 || bz >= VoxelWorld.DEPTH - 1) return false;
         int feet = (int)mob.y;
         if (world.isSolidAt(bx, feet, bz) || world.isSolidAt(bx, feet + 1, bz)) return false;
         return world.isSolidAt(bx, feet - 1, bz);
@@ -616,8 +611,7 @@ final class MobSystem {
             if (dx * dx + dy * dy + dz * dz < 0.30f * 0.30f) {
                 if (damage < 2) damage = 2;
                 arrow.active = false;
-            } else if (world.isSolidAt(bx, by, bz) || arrow.life > 70 ||
-                    bx < 0 || bx >= VoxelWorld.WIDTH || bz < 0 || bz >= VoxelWorld.DEPTH || by < 0) {
+            } else if (world.isSolidAt(bx, by, bz) || arrow.life > 70 || by < 0) {
                 arrow.active = false;
             }
             if (!arrow.active) arrow.root.setRenderingEnable(false);

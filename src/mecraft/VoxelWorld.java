@@ -9,7 +9,7 @@ import java.util.Random;
 import javax.microedition.rms.RecordStore;
 import javax.microedition.rms.RecordStoreException;
 
-/** A small, single-island Indev world stored as one byte per voxel. */
+/** Infinite, seed-generated terrain with an editable saved starting area. */
 final class VoxelWorld {
     static final int WIDTH = 48;
     static final int HEIGHT = 24;
@@ -29,6 +29,8 @@ final class VoxelWorld {
     private static final int MCF7_ITEM_COUNT = 47;
     private static final int MCF8_ITEM_COUNT = 48;
     private static final int MCF9_ITEM_COUNT = 51;
+    private static final int INFDEV_EDIT_LIMIT = 512;
+    private static final int INFDEV_EDIT_MAGIC = 0x49464431;
     static final int DAY_LENGTH = 24000;
 
     final byte[] blocks = new byte[BLOCK_COUNT];
@@ -39,6 +41,16 @@ final class VoxelWorld {
     private final byte[] fluidQueued = new byte[(BLOCK_COUNT + 7) / 8];
     /** Temporary generation-only map; discarded before play to keep the heap small. */
     private byte[] generationSurface;
+    private final byte[] proceduralChunk = new byte[InfdevTerrain.CHUNK_VOLUME];
+    private int proceduralChunkX = Integer.MIN_VALUE;
+    private int proceduralChunkZ = Integer.MIN_VALUE;
+    private final int[] editX = new int[INFDEV_EDIT_LIMIT];
+    private final int[] editY = new int[INFDEV_EDIT_LIMIT];
+    private final int[] editZ = new int[INFDEV_EDIT_LIMIT];
+    private final byte[] editId = new byte[INFDEV_EDIT_LIMIT];
+    private final byte[] editMeta = new byte[INFDEV_EDIT_LIMIT];
+    private final short[] editLookup = new short[1024];
+    private int editCount;
     final int[] inventory = new int[ItemCatalog.COUNT];
     final int[] itemDamage = new int[ItemCatalog.COUNT];
     final int[] hotbar = new int[] {
@@ -88,11 +100,69 @@ final class VoxelWorld {
         return (y * DEPTH + z) * WIDTH + x;
     }
 
-    byte get(int x, int y, int z) {
-        if (x < 0 || x >= WIDTH || z < 0 || z >= DEPTH || y < 0 || y >= HEIGHT) {
-            return Block.AIR;
+    private boolean inside(int x, int z) {
+        return x >= 0 && x < WIDTH && z >= 0 && z < DEPTH;
+    }
+
+    private int floorChunk(int value) {
+        int result = value / CHUNK_XZ;
+        return value < 0 && value % CHUNK_XZ != 0 ? result - 1 : result;
+    }
+
+    private byte proceduralBlock(int x, int y, int z) {
+        int cx = floorChunk(x), cz = floorChunk(z);
+        if (cx != proceduralChunkX || cz != proceduralChunkZ) {
+            InfdevTerrain.generate(seed, cx, cz, proceduralChunk);
+            proceduralChunkX = cx; proceduralChunkZ = cz;
         }
-        return blocks[index(x, y, z)];
+        int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
+        return proceduralChunk[(lz * CHUNK_XZ + lx) * HEIGHT + y];
+    }
+
+    private int findEdit(int x, int y, int z) {
+        int hash = x * 73428767 ^ y * 912931 ^ z * 42317861;
+        int slot = hash & (editLookup.length - 1);
+        for (int probe = 0; probe < editLookup.length; probe++) {
+            int value = editLookup[slot] & 65535;
+            if (value == 0) return -1;
+            int i = value - 1;
+            if (editX[i] == x && editY[i] == y && editZ[i] == z) return i;
+            slot = (slot + 1) & (editLookup.length - 1);
+        }
+        return -1;
+    }
+
+    private int ensureEdit(int x, int y, int z) {
+        int i = findEdit(x, y, z);
+        if (i >= 0) return i;
+        if (editCount == editX.length) return -1;
+        i = editCount++;
+        editX[i] = x; editY[i] = y; editZ[i] = z;
+        int slot = (x * 73428767 ^ y * 912931 ^ z * 42317861) & (editLookup.length - 1);
+        while (editLookup[slot] != 0) slot = (slot + 1) & (editLookup.length - 1);
+        editLookup[slot] = (short)(i + 1);
+        return i;
+    }
+
+    private int metadataAt(int x, int y, int z) {
+        if (inside(x, z)) return waterLevels[index(x, y, z)] & 255;
+        int i = findEdit(x, y, z);
+        return i < 0 ? 0 : editMeta[i] & 255;
+    }
+
+    private void setMetadata(int x, int y, int z, int metadata) {
+        if (inside(x, z)) waterLevels[index(x, y, z)] = (byte)metadata;
+        else {
+            int i = ensureEdit(x, y, z);
+            if (i >= 0) editMeta[i] = (byte)metadata;
+        }
+    }
+
+    byte get(int x, int y, int z) {
+        if (y < 0 || y >= HEIGHT) return Block.AIR;
+        if (inside(x, z)) return blocks[index(x, y, z)];
+        int edit = findEdit(x, y, z);
+        return edit >= 0 ? editId[edit] : proceduralBlock(x, y, z);
     }
 
     boolean set(int x, int y, int z, byte id) {
@@ -101,7 +171,7 @@ final class VoxelWorld {
 
     int woolColor(int x, int y, int z) {
         if (get(x, y, z) != Block.WOOL) return 0;
-        return waterLevels[index(x, y, z)] & 15;
+        return metadataAt(x, y, z) & 15;
     }
 
     int dropItemId(int x, int y, int z) {
@@ -110,8 +180,18 @@ final class VoxelWorld {
     }
 
     boolean setWool(int x, int y, int z, int color) {
-        if (x < 0 || x >= WIDTH || z < 0 || z >= DEPTH || y <= 0 || y >= HEIGHT ||
-            color < 0 || color >= WoolColors.COUNT) return false;
+        if (y <= 0 || y >= HEIGHT || color < 0 || color >= WoolColors.COUNT) return false;
+        if (!inside(x, z)) {
+            byte old = get(x, y, z);
+            if (old != Block.WOOL && !Block.replaceable(old)) return false;
+            if (old == Block.WOOL && woolColor(x, y, z) == color) return false;
+            int edit = ensureEdit(x, y, z);
+            if (edit < 0) return false;
+            editId[edit] = Block.WOOL;
+            editMeta[edit] = (byte)color;
+            changedX = x; changedY = y; changedZ = z; revision++;
+            return true;
+        }
         int i = index(x, y, z);
         byte old = blocks[i];
         if (old != Block.WOOL && !Block.replaceable(old)) return false;
@@ -126,7 +206,7 @@ final class VoxelWorld {
 
     int doorMetadata(int x, int y, int z) {
         if (get(x, y, z) != Block.DOOR) return 0;
-        return waterLevels[index(x, y, z)] & 15;
+        return metadataAt(x, y, z) & 15;
     }
 
     int doorState(int x, int y, int z) {
@@ -143,8 +223,8 @@ final class VoxelWorld {
             return false;
         }
         int metadata = orientation & 7;
-        waterLevels[index(x, y, z)] = (byte)metadata;
-        waterLevels[index(x, y + 1, z)] = (byte)(metadata | 8);
+        setMetadata(x, y, z, metadata);
+        setMetadata(x, y + 1, z, metadata | 8);
         fullRebuild = true;
         revision++;
         changedX = x; changedY = y; changedZ = z;
@@ -157,8 +237,8 @@ final class VoxelWorld {
         if ((metadata & 8) != 0) { y--; metadata = doorMetadata(x, y, z); }
         if (get(x, y, z) != Block.DOOR || get(x, y + 1, z) != Block.DOOR) return false;
         metadata ^= 4;
-        waterLevels[index(x, y, z)] = (byte)metadata;
-        waterLevels[index(x, y + 1, z)] = (byte)(metadata | 8);
+        setMetadata(x, y, z, metadata);
+        setMetadata(x, y + 1, z, metadata | 8);
         fullRebuild = true;
         revision++;
         changedX = x; changedY = y; changedZ = z;
@@ -183,6 +263,29 @@ final class VoxelWorld {
 
     /** Indev's shell ray blast, scaled to TNT radius 4 and stored in a reusable bitset. */
     void explode(float x, float y, float z, float radius, DroppedItemSystem drops) {
+        if (!inside(floorBlock(x), floorBlock(z))) {
+            int reach = (int)(radius * 2.0f) + 1;
+            int minX = floorBlock(x) - reach, maxX = floorBlock(x) + reach;
+            int minY = Math.max(1, floorBlock(y) - reach), maxY = Math.min(HEIGHT - 1, floorBlock(y) + reach);
+            int minZ = floorBlock(z) - reach, maxZ = floorBlock(z) + reach;
+            float radiusSquared = radius * radius * 4.0f;
+            for (int by = minY; by <= maxY; by++) {
+                for (int bz = minZ; bz <= maxZ; bz++) {
+                    for (int bx = minX; bx <= maxX; bx++) {
+                        float dx = bx + 0.5f - x, dy = by + 0.5f - y, dz = bz + 0.5f - z;
+                        if (dx * dx + dy * dy + dz * dz > radiusSquared) continue;
+                        byte id = get(bx, by, bz);
+                        if (id == Block.AIR || id == Block.BEDROCK || id == Block.WATER) continue;
+                        if (id == Block.TNT) drops.spawnPrimedTnt(bx, by, bz, 10 + randomInt(20));
+                        else if (Block.dropsItem(id) && randomFloat() < 0.3f)
+                            drops.spawn(dropItemId(bx, by, bz), bx, by, bz);
+                        set(bx, by, bz, Block.AIR);
+                    }
+                }
+            }
+            fullRebuild = true;
+            return;
+        }
         for (int i = 0; i < explosionBits.length; i++) explosionBits[i] = 0;
         for (int rx = 0; rx < 16; rx++) {
             for (int ry = 0; ry < 16; ry++) {
@@ -266,12 +369,19 @@ final class VoxelWorld {
     }
 
     private boolean setBlock(int x, int y, int z, byte id, int fluidLevel) {
-        if (x < 0 || x >= WIDTH || z < 0 || z >= DEPTH || y <= 0 || y >= HEIGHT) return false;
+        if (y <= 0 || y >= HEIGHT) return false;
         if (id < 0 || id >= Block.COUNT) return false;
-        int i = index(x, y, z);
-        if (blocks[i] == id) return false;
-        blocks[i] = id;
-        waterLevels[i] = id == Block.WATER ? (byte)fluidLevel : 0;
+        if (get(x, y, z) == id && (id != Block.WATER || metadataAt(x, y, z) == fluidLevel)) return false;
+        if (inside(x, z)) {
+            int i = index(x, y, z);
+            blocks[i] = id;
+            waterLevels[i] = id == Block.WATER ? (byte)fluidLevel : 0;
+        } else {
+            int edit = ensureEdit(x, y, z);
+            if (edit < 0) return false;
+            editId[edit] = id;
+            editMeta[edit] = id == Block.WATER ? (byte)fluidLevel : 0;
+        }
         changedX = x;
         changedY = y;
         changedZ = z;
@@ -361,6 +471,26 @@ final class VoxelWorld {
     }
 
     private void generate() {
+        for (int cz = 0; cz < CHUNKS_Z; cz++) {
+            for (int cx = 0; cx < CHUNKS_X; cx++) {
+                InfdevTerrain.generate(seed, cx, cz, proceduralChunk);
+                proceduralChunkX = cx; proceduralChunkZ = cz;
+                for (int z = 0; z < CHUNK_XZ; z++) {
+                    for (int x = 0; x < CHUNK_XZ; x++) {
+                        int wx = cx * CHUNK_XZ + x, wz = cz * CHUNK_XZ + z;
+                        for (int y = 0; y < HEIGHT; y++)
+                            blocks[index(wx, y, wz)] = proceduralChunk[(z * CHUNK_XZ + x) * HEIGHT + y];
+                    }
+                }
+            }
+        }
+        playerX = WIDTH / 2 + 0.5f;
+        playerZ = DEPTH / 2 + 0.5f;
+        playerY = InfdevTerrain.surfaceHeight(seed, WIDTH / 2, DEPTH / 2) + 1.0f;
+        yaw = 0f;
+    }
+
+    private void generateLegacy() {
         Random random = new Random(seed);
         int centerX = WIDTH / 2;
         int centerZ = DEPTH / 2;
@@ -520,6 +650,12 @@ final class VoxelWorld {
             out.writeShort(dayTime);
             out.write(blocks);
             out.write(waterLevels);
+            out.writeInt(INFDEV_EDIT_MAGIC);
+            out.writeShort(editCount);
+            for (int i = 0; i < editCount; i++) {
+                out.writeInt(editX[i]); out.writeByte(editY[i]); out.writeInt(editZ[i]);
+                out.writeByte(editId[i]); out.writeByte(editMeta[i]);
+            }
             out.flush();
             byte[] data = bytes.toByteArray();
 
@@ -630,6 +766,15 @@ final class VoxelWorld {
                 format == 0x4D434637 || format == 0x4D434638 || format == 0x4D434639 ||
                 currentFormat)
                 in.readFully(world.waterLevels);
+            if (in.available() >= 6 && in.readInt() == INFDEV_EDIT_MAGIC) {
+                int count = in.readUnsignedShort();
+                for (int i = 0; i < count; i++) {
+                    int x = in.readInt(), y = in.readUnsignedByte(), z = in.readInt();
+                    byte id = in.readByte(), meta = in.readByte();
+                    int edit = world.ensureEdit(x, y, z);
+                    if (edit >= 0) { world.editId[edit] = id; world.editMeta[edit] = meta; }
+                }
+            }
             if (format != 0x4D434636 && format != 0x4D434637 && format != 0x4D434638 &&
                 format != 0x4D434639 && !currentFormat)
                 world.migrateLegacyFurnaces();
