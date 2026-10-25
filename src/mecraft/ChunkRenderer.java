@@ -62,6 +62,7 @@ final class ChunkRenderer {
     private final Group handModelOffset = new Group();
     private final Group terrain = new Group();
     private final Background sky = new Background();
+    private final SkySystem skyObjects;
     private final Light sunlight = new Light();
     private final Light[] torchLights = new Light[3];
     private final float[] nearestTorchDistance = new float[] { 65.0f, 65.0f, 65.0f };
@@ -109,6 +110,7 @@ final class ChunkRenderer {
     private int builtHeight;
     private float tanHorizontalFov;
     private float cameraPitch;
+    private float currentDaylight = 1.0f;
 
     ChunkRenderer(int width, int height) throws IOException {
         if (width <= 0) width = 1;
@@ -182,6 +184,7 @@ final class ChunkRenderer {
         cameraPivot.addChild(cameraEffectPivot);
         cameraEffectPivot.addChild(camera);
         cameraEffectPivot.addChild(handPivot);
+        skyObjects = new SkySystem(cameraPivot);
         scene.addChild(terrain);
         scene.addChild(particles.mesh);
         scene.addChild(droppedItems.mesh);
@@ -234,6 +237,9 @@ final class ChunkRenderer {
         cameraPivot.setTranslation(world.playerX, world.playerY + 1.62f, world.playerZ);
         // M3G cameras look down local -Z; 180 degrees makes yaw zero face +Z.
         cameraPivot.setOrientation(world.yaw + 180.0f, 0.0f, 1.0f, 0.0f);
+        skyObjects.update(world, world.yaw + 180.0f,
+                ((float)world.dayTime / (float)VoxelWorld.DAY_LENGTH - 0.25f) * 6.2831855f,
+                currentDaylight);
         camera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
         handPivot.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
     }
@@ -774,9 +780,13 @@ final class ChunkRenderer {
         float sun = (float)Math.cos(angle) * 1.5f + 0.5f;
         if (sun < 0.0f) sun = 0.0f;
         if (sun > 1.0f) sun = 1.0f;
+        currentDaylight = sun;
         // Keep moonlight visible on small, low-brightness phone displays.
         sunlight.setIntensity(0.28f + sun * 0.72f);
         sky.setColor(blendColor(0xFF26354A, 0xFF82B8E8, sun));
+        skyObjects.update(world, world.yaw + 180.0f,
+                ((float)world.dayTime / (float)VoxelWorld.DAY_LENGTH - 0.25f) * 6.2831855f,
+                sun);
         updateTorchLights(world);
     }
 

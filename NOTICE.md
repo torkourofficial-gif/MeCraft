@@ -6,5 +6,7 @@ Los PNG que ya estaban en este repositorio se conservan sin modificar. `src/mecr
 
 `src/mecraft/fire.png` contiene la tira de fotogramas del fuego usada por MeCraft; el renderizador toma los primeros ocho cuadros de 16 × 16 para la animación de quemadura. El comportamiento visual sigue la referencia de fuego de [EaglerPorts/in-20100223](https://github.com/EaglerPorts/in-20100223).
 
+`src/mecraft/sun.png`, `src/mecraft/moon.png` y `src/mecraft/clouds.png` se tomaron sin modificar de `resources/terrain/` y `resources/` de [EaglerPorts/in-20100223](https://github.com/EaglerPorts/in-20100223). Se usan para el cielo, los cuerpos celestes y las nubes. La titularidad y licencia de estas texturas corresponden a sus autores originales.
+
 El código de MeCraft en `src/mecraft/` es una implementación original del demake para MIDP/M3G. Confirma los derechos/licencias de las texturas antes de redistribuir un `.jar` que las incluya.
 
