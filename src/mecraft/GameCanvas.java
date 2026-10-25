@@ -2,14 +2,20 @@ package mecraft;
 
 import java.io.IOException;
 import javax.microedition.lcdui.Canvas;
+import javax.microedition.lcdui.Command;
+import javax.microedition.lcdui.CommandListener;
+import javax.microedition.lcdui.Display;
+import javax.microedition.lcdui.Displayable;
 import javax.microedition.lcdui.Font;
 import javax.microedition.lcdui.Graphics;
 import javax.microedition.lcdui.Image;
+import javax.microedition.lcdui.TextBox;
+import javax.microedition.lcdui.TextField;
 import javax.microedition.lcdui.game.Sprite;
 import javax.microedition.m3g.Graphics3D;
 
 /** Game loop, phone controls, M3G view and compact HUD. */
-final class GameCanvas extends Canvas implements Runnable {
+final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private static final int MENU = 0;
     private static final int PLAYING = 1;
     private static final int PAUSED = 2;
@@ -24,6 +30,30 @@ final class GameCanvas extends Canvas implements Runnable {
     private static final int GAME_OVER = 11;
     private static final int WORLD_NAME = 12;
     private static final int SKIN_SELECT = 13;
+    private static final int CONTROLS = 14;
+    private static final int CONTROL_LOOK_UP = 0;
+    private static final int CONTROL_LOOK_DOWN = 1;
+    private static final int CONTROL_LOOK_LEFT = 2;
+    private static final int CONTROL_LOOK_RIGHT = 3;
+    private static final int CONTROL_FORWARD = 4;
+    private static final int CONTROL_BACK = 5;
+    private static final int CONTROL_STRAFE_LEFT = 6;
+    private static final int CONTROL_STRAFE_RIGHT = 7;
+    private static final int CONTROL_JUMP = 8;
+    private static final int CONTROL_MINE = 9;
+    private static final int CONTROL_USE = 10;
+    private static final int CONTROL_INVENTORY = 11;
+    private static final int CONTROL_SLOT_PREVIOUS = 12;
+    private static final int CONTROL_SLOT_NEXT = 13;
+    private static final int CONTROL_PAUSE = 14;
+    private static final int CONTROL_DESCEND = 15;
+    private static final int CONTROL_COUNT = 16;
+    private static final String[] CONTROL_NAMES = new String[] {
+        "Mirar arriba", "Mirar abajo", "Mirar izquierda", "Mirar derecha",
+        "Avanzar", "Retroceder", "Desplazarse izquierda", "Desplazarse derecha",
+        "Saltar / volar", "Romper / atacar", "Usar / colocar / comer", "Inventario",
+        "Casilla anterior", "Casilla siguiente", "Pausa", "Descender (creativo)"
+    };
     private static final int MENU_SINGLEPLAYER = 0;
     private static final int MENU_CONTROLS = 1;
     private static final int MENU_SETTINGS = 2;
@@ -44,9 +74,6 @@ final class GameCanvas extends Canvas implements Runnable {
         Block.DIRT, Block.STONE, Block.LOG, Block.SAND, Block.PLANKS,
         Block.LEAVES, Block.COAL, Block.IRON, Block.TORCH
     };
-    private static final String[] NAME_KEYPAD = new String[] {
-        " ", ".,?!", "abc", "def", "ghi", "jkl", "mno", "pqrs", "tuv", "wxyz"
-    };
     private static final String[] PAUSE_ROWS = new String[] {
         "Volver", "Guardar y menú", "Guardar y salir"
     };
@@ -66,6 +93,14 @@ final class GameCanvas extends Canvas implements Runnable {
     private volatile int state = MENU;
     private int menuSelection = MENU_SINGLEPLAYER;
     private int settingsSelection;
+    private int cameraSensitivity = 2;
+    private boolean controlsReturnSettings;
+    private final int[] controlCodes = new int[CONTROL_COUNT];
+    private final boolean[] customControls = new boolean[CONTROL_COUNT];
+    private int controlsSelection;
+    private int controlsScroll;
+    private boolean controlsListening;
+    private String controlsMessage;
     private int skinSelection;
     private int frameSkip;
     private int renderFrame;
@@ -75,10 +110,9 @@ final class GameCanvas extends Canvas implements Runnable {
     private int createSelection;
     private int newWorldMode;
     private String newWorldName = "Mundo 1";
-    private StringBuffer worldNameBuffer;
-    private int lastNameKey = -1;
-    private int lastNameLetter;
-    private long lastNameTapTime;
+    private TextBox worldNameInput;
+    private Command worldNameAccept;
+    private Command worldNameCancel;
     private int pauseSelection;
     private int gameOverSelection;
     private int gameOverTicks;
@@ -126,6 +160,11 @@ final class GameCanvas extends Canvas implements Runnable {
 
     GameCanvas(MeCraft app) {
         this.app = app;
+        int[] savedSettings = new int[] { frameSkip, cameraSensitivity, selectedPlayerSkin };
+        GameSettings.load(savedSettings, controlCodes, customControls);
+        frameSkip = clamp(savedSettings[0], 0, 2);
+        cameraSensitivity = clamp(savedSettings[1], 0, 4);
+        selectedPlayerSkin = clamp(savedSettings[2], 0, 4);
         try { music = new MusicController(); }
         catch (NoClassDefFoundError unsupported) { music = null; }
         setFullScreenMode(true);
@@ -179,18 +218,19 @@ final class GameCanvas extends Canvas implements Runnable {
                 state == CREATIVE_INVENTORY || state == GAME_OVER) return MusicController.GAMEPLAY;
         if (state == MENU || state == WORLD_SELECT || state == WORLD_CREATE ||
                 state == WORLD_DELETE || state == WORLD_NAME || state == SETTINGS ||
-                state == SKIN_SELECT) return MusicController.MENU;
+                state == SKIN_SELECT || state == CONTROLS) return MusicController.MENU;
         return MusicController.OFF;
     }
 
     private synchronized void updateGame() {
         if (!visible || state != PLAYING || world == null || renderer == null) return;
-        if (lookLeft) world.yaw += 3.0f;
-        if (lookRight) world.yaw -= 3.0f;
+        float sensitivity = cameraSensitivityScale();
+        if (lookLeft) world.yaw += 3.0f * sensitivity;
+        if (lookRight) world.yaw -= 3.0f * sensitivity;
         if (world.yaw < 0.0f) world.yaw += 360.0f;
         if (world.yaw >= 360.0f) world.yaw -= 360.0f;
-        if (lookUp) cameraPitch += 2.5f;
-        if (lookDown) cameraPitch -= 2.5f;
+        if (lookUp) cameraPitch += 2.5f * sensitivity;
+        if (lookDown) cameraPitch -= 2.5f * sensitivity;
         if (cameraPitch > 80.0f) cameraPitch = 80.0f;
         if (cameraPitch < -80.0f) cameraPitch = -80.0f;
         renderer.updateHandAnimation();
@@ -871,19 +911,54 @@ final class GameCanvas extends Canvas implements Runnable {
             return;
         }
         if (state == WORLD_NAME) {
-            handleWorldNameKey(keyCode);
             return;
         }
         if (state == SETTINGS) {
             int action = gameAction(keyCode);
             if (keyCode == KEY_NUM2 || action == UP || keyCode == KEY_NUM8 || action == DOWN) {
-                settingsSelection = 1 - settingsSelection;
+                settingsSelection = (settingsSelection + 1) % 4;
                 repaint();
             } else if (settingsSelection == 0 && (keyCode == KEY_NUM4 || action == LEFT)) changeFrameSkip(-1);
             else if (settingsSelection == 0 && (keyCode == KEY_NUM6 || action == RIGHT)) changeFrameSkip(1);
-            else if (settingsSelection == 1 && (keyCode == KEY_NUM5 || action == FIRE)) openSkinSelect();
+            else if (settingsSelection == 1 && (keyCode == KEY_NUM4 || action == LEFT)) changeSensitivity(-1);
+            else if (settingsSelection == 1 && (keyCode == KEY_NUM6 || action == RIGHT)) changeSensitivity(1);
+            else if (settingsSelection == 2 && (keyCode == KEY_NUM5 || action == FIRE)) openSkinSelect();
+            else if (settingsSelection == 3 && (keyCode == KEY_NUM5 || action == FIRE)) {
+                controlsReturnSettings = true;
+                state = CONTROLS;
+                repaint();
+            }
             else if (keyCode == KEY_NUM0 || keyCode == KEY_POUND) {
                 state = MENU;
+                repaint();
+            }
+            return;
+        }
+        if (state == CONTROLS) {
+            int action = gameAction(keyCode);
+            if (controlsListening) {
+                if (keyCode == KEY_NUM0) {
+                    controlsListening = false;
+                    controlsMessage = "Asignacion cancelada";
+                } else assignControl(keyCode);
+                repaint();
+            } else if (keyCode == KEY_NUM7) {
+                customControls[controlsSelection] = false;
+                controlCodes[controlsSelection] = 0;
+                controlsMessage = "Control restaurado";
+                saveSettings();
+                repaint();
+            } else if (keyCode == KEY_NUM2 || action == UP) {
+                moveControlSelection(-1);
+            } else if (keyCode == KEY_NUM8 || action == DOWN) {
+                moveControlSelection(1);
+            } else if (keyCode == KEY_NUM5 || action == FIRE) {
+                controlsListening = true;
+                controlsMessage = "Pulsa una tecla; 0 cancela";
+                repaint();
+            } else if (keyCode == KEY_NUM0 || keyCode == KEY_POUND) {
+                controlsListening = false;
+                state = controlsReturnSettings ? SETTINGS : MENU;
                 repaint();
             }
             return;
@@ -900,6 +975,7 @@ final class GameCanvas extends Canvas implements Runnable {
             } else if (keyCode == KEY_NUM5 || gameAction(keyCode) == FIRE) {
                 selectedPlayerSkin = skinSelection;
                 if (renderer != null) renderer.setPlayerSkinIndex(selectedPlayerSkin);
+                saveSettings();
                 skinGallery = null;
                 state = SETTINGS;
                 repaint();
@@ -952,16 +1028,16 @@ final class GameCanvas extends Canvas implements Runnable {
             return;
         }
         if (state != PLAYING) return;
-        if (keyCode == KEY_POUND) {
+        if (isControlKey(CONTROL_INVENTORY, keyCode, KEY_POUND, 0)) {
             if (world.mode == 1) openCreativeInventory();
             else openCrafting(false);
             return;
         }
-        if (keyCode == KEY_NUM2) keys[2] = true;
-        else if (keyCode == KEY_NUM8) keys[8] = true;
-        else if (keyCode == KEY_NUM4) keys[4] = true;
-        else if (keyCode == KEY_NUM6) keys[6] = true;
-        else if (keyCode == KEY_NUM1) {
+        if (isControlKey(CONTROL_FORWARD, keyCode, KEY_NUM2, 0)) keys[2] = true;
+        else if (isControlKey(CONTROL_BACK, keyCode, KEY_NUM8, 0)) keys[8] = true;
+        else if (isControlKey(CONTROL_STRAFE_LEFT, keyCode, KEY_NUM4, 0)) keys[4] = true;
+        else if (isControlKey(CONTROL_STRAFE_RIGHT, keyCode, KEY_NUM6, 0)) keys[6] = true;
+        else if (isControlKey(CONTROL_MINE, keyCode, KEY_NUM1, 0)) {
             if (!keys[1] && renderer != null) {
                 int mobHit = renderer.hitMob(world, cameraPitch, heldAttackDamage());
                 if (mobHit >= 0) {
@@ -973,15 +1049,12 @@ final class GameCanvas extends Canvas implements Runnable {
             }
             keys[1] = true;
         }
-        else {
-            int action = gameAction(keyCode);
-            if (action == UP) lookUp = true;
-            else if (action == DOWN) lookDown = true;
-            else if (action == LEFT) lookLeft = true;
-            else if (action == RIGHT) lookRight = true;
-        }
+        if (isControlKey(CONTROL_LOOK_UP, keyCode, 0, UP)) lookUp = true;
+        if (isControlKey(CONTROL_LOOK_DOWN, keyCode, 0, DOWN)) lookDown = true;
+        if (isControlKey(CONTROL_LOOK_LEFT, keyCode, 0, LEFT)) lookLeft = true;
+        if (isControlKey(CONTROL_LOOK_RIGHT, keyCode, 0, RIGHT)) lookRight = true;
         boolean toggledFlight = false;
-        if (keyCode == KEY_NUM5) {
+        if (isControlKey(CONTROL_JUMP, keyCode, KEY_NUM5, 0)) {
             if (!jumpHeld && world.mode == 1) {
                 long now = System.currentTimeMillis();
                 if (hasJumpTap && now - lastJumpTap <= 350L) {
@@ -996,28 +1069,25 @@ final class GameCanvas extends Canvas implements Runnable {
             }
             jumpHeld = !(toggledFlight && !flying);
         }
-        if (keyCode == KEY_NUM0 && world.mode == 1) descendHeld = true;
-        if (keyCode == KEY_NUM3) useSelectedItem();
-        if (keyCode == KEY_NUM7) cycleSlot(-1);
-        if (keyCode == KEY_NUM9) cycleSlot(1);
-        if (keyCode == KEY_STAR) openPause();
+        if (isControlKey(CONTROL_DESCEND, keyCode, KEY_NUM0, 0) && world.mode == 1) descendHeld = true;
+        if (isControlKey(CONTROL_USE, keyCode, KEY_NUM3, 0)) useSelectedItem();
+        if (isControlKey(CONTROL_SLOT_PREVIOUS, keyCode, KEY_NUM7, 0)) cycleSlot(-1);
+        if (isControlKey(CONTROL_SLOT_NEXT, keyCode, KEY_NUM9, 0)) cycleSlot(1);
+        if (isControlKey(CONTROL_PAUSE, keyCode, KEY_STAR, 0)) openPause();
     }
 
     public synchronized void keyReleased(int keyCode) {
-        if (keyCode == KEY_NUM5) jumpHeld = false;
-        if (keyCode == KEY_NUM0) descendHeld = false;
-        if (keyCode == KEY_NUM1) cancelMining();
-        else if (keyCode == KEY_NUM2) keys[2] = false;
-        else if (keyCode == KEY_NUM8) keys[8] = false;
-        else if (keyCode == KEY_NUM4) keys[4] = false;
-        else if (keyCode == KEY_NUM6) keys[6] = false;
-        else {
-            int action = gameAction(keyCode);
-            if (action == UP) lookUp = false;
-            else if (action == DOWN) lookDown = false;
-            else if (action == LEFT) lookLeft = false;
-            else if (action == RIGHT) lookRight = false;
-        }
+        if (isControlKey(CONTROL_JUMP, keyCode, KEY_NUM5, 0)) jumpHeld = false;
+        if (isControlKey(CONTROL_DESCEND, keyCode, KEY_NUM0, 0)) descendHeld = false;
+        if (isControlKey(CONTROL_MINE, keyCode, KEY_NUM1, 0)) cancelMining();
+        if (isControlKey(CONTROL_FORWARD, keyCode, KEY_NUM2, 0)) keys[2] = false;
+        if (isControlKey(CONTROL_BACK, keyCode, KEY_NUM8, 0)) keys[8] = false;
+        if (isControlKey(CONTROL_STRAFE_LEFT, keyCode, KEY_NUM4, 0)) keys[4] = false;
+        if (isControlKey(CONTROL_STRAFE_RIGHT, keyCode, KEY_NUM6, 0)) keys[6] = false;
+        if (isControlKey(CONTROL_LOOK_UP, keyCode, 0, UP)) lookUp = false;
+        if (isControlKey(CONTROL_LOOK_DOWN, keyCode, 0, DOWN)) lookDown = false;
+        if (isControlKey(CONTROL_LOOK_LEFT, keyCode, 0, LEFT)) lookLeft = false;
+        if (isControlKey(CONTROL_LOOK_RIGHT, keyCode, 0, RIGHT)) lookRight = false;
     }
 
     private void moveSelection(int delta) {
@@ -1034,7 +1104,118 @@ final class GameCanvas extends Canvas implements Runnable {
         frameSkip += delta;
         if (frameSkip < 0) frameSkip = 2;
         if (frameSkip > 2) frameSkip = 0;
+        saveSettings();
         repaint();
+    }
+
+    private float cameraSensitivityScale() {
+        if (cameraSensitivity == 0) return 0.5f;
+        if (cameraSensitivity == 1) return 0.75f;
+        if (cameraSensitivity == 3) return 1.25f;
+        if (cameraSensitivity >= 4) return 1.5f;
+        return 1.0f;
+    }
+
+    private void changeSensitivity(int delta) {
+        cameraSensitivity += delta;
+        if (cameraSensitivity < 0) cameraSensitivity = 4;
+        if (cameraSensitivity > 4) cameraSensitivity = 0;
+        saveSettings();
+        repaint();
+    }
+
+    private void saveSettings() {
+        GameSettings.save(new int[] { frameSkip, cameraSensitivity, selectedPlayerSkin },
+                controlCodes, customControls);
+    }
+
+    private boolean isControlKey(int control, int keyCode, int defaultKeyCode, int defaultAction) {
+        if (customControls[control]) return controlCodes[control] == keyCode;
+        for (int i = 0; i < customControls.length; i++) {
+            if (i != control && customControls[i] && controlCodes[i] == keyCode) return false;
+        }
+        if (defaultKeyCode != 0 && keyCode == defaultKeyCode) return true;
+        return defaultAction != 0 && !isNumericKey(keyCode) && gameAction(keyCode) == defaultAction;
+    }
+
+    private boolean isNumericKey(int keyCode) {
+        return keyCode == KEY_NUM0 || keyCode == KEY_NUM1 || keyCode == KEY_NUM2 ||
+                keyCode == KEY_NUM3 || keyCode == KEY_NUM4 || keyCode == KEY_NUM5 ||
+                keyCode == KEY_NUM6 || keyCode == KEY_NUM7 || keyCode == KEY_NUM8 ||
+                keyCode == KEY_NUM9;
+    }
+
+    private void assignControl(int keyCode) {
+        for (int i = 0; i < customControls.length; i++) {
+            if (i != controlsSelection && customControls[i] && controlCodes[i] == keyCode) {
+                controlsMessage = "Esa tecla ya esta asignada";
+                return;
+            }
+        }
+        controlCodes[controlsSelection] = keyCode;
+        customControls[controlsSelection] = true;
+        controlsListening = false;
+        controlsMessage = "Control guardado";
+        saveSettings();
+    }
+
+    private void moveControlSelection(int delta) {
+        controlsSelection += delta;
+        if (controlsSelection < 0) controlsSelection = CONTROL_COUNT - 1;
+        if (controlsSelection >= CONTROL_COUNT) controlsSelection = 0;
+        int rows = controlsVisibleRows();
+        if (controlsSelection < controlsScroll) controlsScroll = controlsSelection;
+        else if (controlsSelection >= controlsScroll + rows) controlsScroll = controlsSelection - rows + 1;
+        controlsMessage = null;
+        repaint();
+    }
+
+    private int controlsVisibleRows() {
+        int height = getHeight();
+        int panelY = Math.max(12, (height - 238) / 2);
+        int panelHeight = Math.min(height - panelY - 8, 238);
+        int rowHeight = Font.getDefaultFont().getHeight() + 3;
+        return Math.max(1, (panelHeight - 86) / rowHeight);
+    }
+
+    private String controlKeyName(int control) {
+        if (!customControls[control]) {
+            if (control == CONTROL_LOOK_UP) return "Dpad arriba";
+            if (control == CONTROL_LOOK_DOWN) return "Dpad abajo";
+            if (control == CONTROL_LOOK_LEFT) return "Dpad izquierda";
+            if (control == CONTROL_LOOK_RIGHT) return "Dpad derecha";
+            if (control == CONTROL_FORWARD) return "2";
+            if (control == CONTROL_BACK) return "8";
+            if (control == CONTROL_STRAFE_LEFT) return "4";
+            if (control == CONTROL_STRAFE_RIGHT) return "6";
+            if (control == CONTROL_JUMP) return "5";
+            if (control == CONTROL_MINE) return "1";
+            if (control == CONTROL_USE) return "3";
+            if (control == CONTROL_INVENTORY) return "#";
+            if (control == CONTROL_SLOT_PREVIOUS) return "7";
+            if (control == CONTROL_SLOT_NEXT) return "9";
+            if (control == CONTROL_PAUSE) return "*";
+            if (control == CONTROL_DESCEND) return "0";
+        }
+        int code = controlCodes[control];
+        if (code == KEY_NUM0) return "0";
+        if (code == KEY_NUM1) return "1";
+        if (code == KEY_NUM2) return "2";
+        if (code == KEY_NUM3) return "3";
+        if (code == KEY_NUM4) return "4";
+        if (code == KEY_NUM5) return "5";
+        if (code == KEY_NUM6) return "6";
+        if (code == KEY_NUM7) return "7";
+        if (code == KEY_NUM8) return "8";
+        if (code == KEY_NUM9) return "9";
+        if (code == KEY_POUND) return "#";
+        if (code == KEY_STAR) return "*";
+        int action = gameAction(code);
+        if (action == UP) return "Dpad arriba";
+        if (action == DOWN) return "Dpad abajo";
+        if (action == LEFT) return "Dpad izquierda";
+        if (action == RIGHT) return "Dpad derecha";
+        return Integer.toString(code);
     }
 
     private void openSkinSelect() {
@@ -1110,12 +1291,7 @@ final class GameCanvas extends Canvas implements Runnable {
 
     private void activateCreateSelection() {
         if (createSelection == 0) {
-            worldNameBuffer = new StringBuffer(newWorldName == null ? "" : newWorldName);
-            lastNameKey = -1;
-            lastNameLetter = 0;
-            lastNameTapTime = 0L;
-            state = WORLD_NAME;
-            repaint();
+            openWorldNameInput();
         } else if (createSelection == 1) {
             newWorldMode = 1 - newWorldMode;
             repaint();
@@ -1129,68 +1305,30 @@ final class GameCanvas extends Canvas implements Runnable {
         }
     }
 
-    /** Small multi-tap editor keeps world naming inside Canvas. */
-    private void handleWorldNameKey(int keyCode) {
-        if (keyCode == KEY_POUND) {
-            String value = worldNameBuffer == null ? "" : worldNameBuffer.toString().trim();
+    private void openWorldNameInput() {
+        worldNameInput = new TextBox("Nombre del mundo", newWorldName, 24, TextField.ANY);
+        worldNameAccept = new Command("Aceptar", Command.OK, 1);
+        worldNameCancel = new Command("Cancelar", Command.CANCEL, 2);
+        worldNameInput.addCommand(worldNameAccept);
+        worldNameInput.addCommand(worldNameCancel);
+        worldNameInput.setCommandListener(this);
+        state = WORLD_NAME;
+        Display.getDisplay(app).setCurrent(worldNameInput);
+    }
+
+    public synchronized void commandAction(Command command, Displayable displayable) {
+        if (displayable != worldNameInput) return;
+        if (command == worldNameAccept) {
+            String value = worldNameInput.getString();
+            value = value == null ? "" : value.trim();
             newWorldName = value.length() == 0 ? "Mundo " + (savedWorlds.length + 1) : value;
-            state = WORLD_CREATE;
-            lastNameKey = -1;
-            repaint();
-            return;
         }
-        if (keyCode == KEY_STAR) {
-            if (worldNameBuffer != null && worldNameBuffer.length() > 0)
-                worldNameBuffer.deleteCharAt(worldNameBuffer.length() - 1);
-            lastNameKey = -1;
-            repaint();
-            return;
-        }
-        int digit = keypadDigit(keyCode);
-        if (digit < 0 || worldNameBuffer == null) return;
-        String letters = NAME_KEYPAD[digit];
-        if (letters.length() == 0) return;
-        long now = System.currentTimeMillis();
-        if (digit == lastNameKey && now - lastNameTapTime < 850L && worldNameBuffer.length() > 0) {
-            lastNameLetter = (lastNameLetter + 1) % letters.length();
-            worldNameBuffer.setCharAt(worldNameBuffer.length() - 1, letters.charAt(lastNameLetter));
-        } else if (worldNameBuffer.length() < 24) {
-            lastNameKey = digit;
-            lastNameLetter = 0;
-            worldNameBuffer.append(letters.charAt(0));
-        } else {
-            lastNameKey = -1;
-        }
-        lastNameKey = digit;
-        lastNameTapTime = now;
+        worldNameInput = null;
+        worldNameAccept = null;
+        worldNameCancel = null;
+        state = WORLD_CREATE;
+        Display.getDisplay(app).setCurrent(this);
         repaint();
-    }
-
-    private int keypadDigit(int keyCode) {
-        if (keyCode == KEY_NUM0) return 0;
-        if (keyCode == KEY_NUM1) return 1;
-        if (keyCode == KEY_NUM2) return 2;
-        if (keyCode == KEY_NUM3) return 3;
-        if (keyCode == KEY_NUM4) return 4;
-        if (keyCode == KEY_NUM5) return 5;
-        if (keyCode == KEY_NUM6) return 6;
-        if (keyCode == KEY_NUM7) return 7;
-        if (keyCode == KEY_NUM8) return 8;
-        if (keyCode == KEY_NUM9) return 9;
-        return -1;
-    }
-
-    private void drawWorldNameEditor(Graphics g) {
-        int w = getWidth(), h = getHeight();
-        drawDirtBackground(g);
-        drawInsetPanel(g, 12, h / 3, w - 24, h / 3);
-        g.setColor(255, 255, 255);
-        g.drawString("Nombre del mundo", w / 2, h / 3 + 14, Graphics.TOP | Graphics.HCENTER);
-        g.setColor(255, 240, 205);
-        String name = worldNameBuffer == null ? "" : worldNameBuffer.toString();
-        g.drawString(trimText(name, 20), w / 2, h / 3 + 48, Graphics.TOP | Graphics.HCENTER);
-        g.drawString("2-9 escribir  0 espacio", w / 2, h / 3 + 78, Graphics.TOP | Graphics.HCENTER);
-        g.drawString("* borrar  # aceptar", w / 2, h / 3 + 98, Graphics.TOP | Graphics.HCENTER);
     }
 
     private void activateSelection() {
@@ -1202,8 +1340,9 @@ final class GameCanvas extends Canvas implements Runnable {
                 repaint();
             }
             else if (menuSelection == MENU_CONTROLS) {
-                errorMessage = "Controles: cruceta mira; 2/8 avanzar; 4/6 desplazarse; 5 saltar/crear; mantener 1 para romper; 3 colocar o usar mesa; # inventario 2x2; 7/9 bloque; * pausa.";
-                state = ERROR;
+                controlsReturnSettings = false;
+                state = CONTROLS;
+                repaint();
             }
             else if (menuSelection == MENU_SETTINGS) { state = SETTINGS; repaint(); }
             else if (menuSelection == MENU_EXIT) app.closeGame();
@@ -1466,11 +1605,11 @@ final class GameCanvas extends Canvas implements Runnable {
                 drawError(g);
             }
         } else if (state == ERROR) drawError(g);
-        else if (state == WORLD_NAME) drawWorldNameEditor(g);
         else if (state == WORLD_SELECT) drawWorldSelect(g);
         else if (state == WORLD_DELETE) drawWorldDelete(g);
         else if (state == WORLD_CREATE) drawWorldCreate(g);
         else if (state == SETTINGS) drawSettings(g);
+        else if (state == CONTROLS) drawControls(g);
         else if (state == SKIN_SELECT) drawSkinSelect(g);
         else drawMenu(g);
     }
@@ -1529,17 +1668,63 @@ final class GameCanvas extends Canvas implements Runnable {
     private void drawSettings(Graphics g) {
         int w = getWidth(), h = getHeight();
         drawDirtBackground(g);
-        int panelY = Math.max(36, h / 3);
-        drawInsetPanel(g, 12, panelY, w - 24, Math.max(104, h / 3));
+        int panelY = Math.max(24, h / 5);
+        int panelHeight = Math.min(h - panelY - 8, 202);
+        drawInsetPanel(g, 12, panelY, w - 24, panelHeight);
         g.setColor(255, 244, 200);
         g.drawString("Ajustes", w / 2, panelY + 10, Graphics.TOP | Graphics.HCENTER);
         String value = frameSkip == 0 ? "Desactivado" : (frameSkip == 1 ? "1 de cada 2" : "2 de cada 3");
-        drawMenuItem(g, "Frameskip: " + value, panelY + 34, settingsSelection == 0);
-        drawMenuItem(g, "Skin del jugador", panelY + 64, settingsSelection == 1);
+        String[] sensitivityNames = new String[] { "Muy baja", "Baja", "Normal", "Alta", "Muy alta" };
+        drawMenuItem(g, "Frameskip: " + value, panelY + 36, settingsSelection == 0);
+        drawMenuItem(g, "Sensibilidad: " + sensitivityNames[cameraSensitivity], panelY + 64,
+                settingsSelection == 1);
+        drawMenuItem(g, "Skin del jugador", panelY + 92, settingsSelection == 2);
+        drawMenuItem(g, "Controles", panelY + 120, settingsSelection == 3);
         g.setColor(240, 224, 190);
-        g.drawString("2/8 elegir   4/6 cambiar   5 aceptar", w / 2, panelY + 98,
+        g.drawString("2/8 elegir   4/6 cambiar   5 abrir", w / 2, panelY + 154,
                 Graphics.TOP | Graphics.HCENTER);
-        g.drawString("0 volver", w / 2, panelY + 116, Graphics.TOP | Graphics.HCENTER);
+        g.drawString("0 volver", w / 2, panelY + 172, Graphics.TOP | Graphics.HCENTER);
+    }
+
+    private void drawControls(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        drawDirtBackground(g);
+        int panelY = Math.max(12, (h - 238) / 2);
+        int panelHeight = Math.min(h - panelY - 8, 238);
+        drawInsetPanel(g, 10, panelY, w - 20, panelHeight);
+        g.setColor(255, 244, 200);
+        g.drawString("Controles", w / 2, panelY + 10, Graphics.TOP | Graphics.HCENTER);
+        if (controlsListening) {
+            g.setColor(255, 215, 128);
+            g.drawString("Pulsa una tecla nueva (0 cancela)", w / 2, panelY + 27,
+                    Graphics.TOP | Graphics.HCENTER);
+        }
+        int rows = controlsVisibleRows();
+        int rowHeight = Font.getDefaultFont().getHeight() + 3;
+        int firstY = panelY + (controlsListening ? 48 : 34);
+        for (int row = 0; row < rows; row++) {
+            int index = controlsScroll + row;
+            if (index >= CONTROL_COUNT) break;
+            int y = firstY + row * rowHeight;
+            boolean selected = index == controlsSelection;
+            if (selected) {
+                g.setColor(99, 69, 43);
+                g.fillRect(15, y - 1, w - 30, rowHeight);
+            }
+            g.setColor(selected ? 255 : 225, selected ? 229 : 215, selected ? 166 : 195);
+            g.drawString(CONTROL_NAMES[index], 18, y, Graphics.TOP | Graphics.LEFT);
+            g.setColor(selected ? 255 : 190, selected ? 239 : 180, selected ? 177 : 145);
+            g.drawString(controlKeyName(index), w - 18, y, Graphics.TOP | Graphics.RIGHT);
+        }
+        g.setColor(240, 224, 190);
+        if (controlsMessage != null) {
+            g.drawString(controlsMessage, w / 2, panelY + panelHeight - 42,
+                    Graphics.TOP | Graphics.HCENTER);
+        }
+        g.drawString("5: reasignar   7: restaurar fila", w / 2, panelY + panelHeight - 26,
+                Graphics.TOP | Graphics.HCENTER);
+        g.drawString("2/8 mover   0 volver", w / 2, panelY + panelHeight - 12,
+                Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawSkinSelect(Graphics g) {

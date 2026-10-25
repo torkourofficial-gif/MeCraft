@@ -130,9 +130,7 @@ final class SkySystem {
         oceanPlane.setTranslation(-world.playerX,
                 VoxelWorld.SEA_LEVEL + 1.0f - (world.playerY + 1.62f), -world.playerZ);
 
-        float night = 1.0f - daylight;
-        float starLevel = night * night;
-        boolean starsVisible = starLevel > 0.015f;
+        boolean starsVisible = world.isNight();
         if (!starVisibilityReady || starsVisible != lastStarsVisible) {
             stars.setRenderingEnable(starsVisible);
             lastStarsVisible = starsVisible;
@@ -140,7 +138,7 @@ final class SkySystem {
         }
         float shimmer = 0.88f + 0.12f *
                 (0.5f + 0.5f * (float)Math.sin(world.dayTime * 0.035f));
-        int brightness = (int)(starLevel * shimmer * 255.0f);
+        int brightness = starsVisible ? (int)(shimmer * 255.0f) : 0;
         int starColor = 0xFF000000 | (brightness << 16) |
                         (brightness << 8) | brightness;
         if (!starColorReady || starColor != lastStarColor) {
