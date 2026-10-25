@@ -325,6 +325,7 @@ final class MobSystem {
             mob.pose.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
             mob.verticalVelocity = 0.0f;
             mob.motionX = mob.motionZ = 0.0f;
+            mob.walkPhase = mob.walkAmount = 0.0f;
             mob.setHurt(false);
             mob.setFlashWhite(false);
             mob.setSheared(false);
@@ -483,6 +484,8 @@ final class MobSystem {
         float speed = isHostile(mob.type) ? (mob.type == CREEPER ? 0.018f : 0.026f) : 0.014f;
         if (!isHostile(mob.type) && mob.fleeTicks > 0) speed *= 1.6f;
         if (!walking) speed = 0.0f;
+        float oldX = mob.x;
+        float oldZ = mob.z;
         float radians = mob.yaw * (float)Math.PI / 180.0f;
         float nx = mob.x + (float)Math.sin(radians) * speed + mob.motionX;
         float nz = mob.z + (float)Math.cos(radians) * speed + mob.motionZ;
@@ -492,6 +495,19 @@ final class MobSystem {
         else { mob.targetYaw -= 140.0f; mob.motionZ = 0.0f; }
         mob.motionX *= 0.91f;
         mob.motionZ *= 0.91f;
+        float movedX = mob.x - oldX;
+        float movedZ = mob.z - oldZ;
+        float distance = (float)Math.sqrt(movedX * movedX + movedZ * movedZ);
+        // Advance the gait by distance, so slower entities animate more slowly
+        // and a collision or stop also brings the limbs to rest.
+        mob.walkPhase += distance * 8.0f;
+        if (mob.walkPhase >= 6.2831855f) mob.walkPhase %= 6.2831855f;
+        if (distance > 0.0001f && speed > 0.0f) {
+            mob.walkAmount = distance / speed;
+            if (mob.walkAmount > 1.0f) mob.walkAmount = 1.0f;
+        } else {
+            mob.walkAmount = 0.0f;
+        }
         float ground = world.surfaceY(floor(mob.x), floor(mob.z)) + 1.0f;
         if (mob.verticalVelocity != 0.0f || mob.y > ground) {
             mob.y += mob.verticalVelocity;
@@ -515,18 +531,16 @@ final class MobSystem {
     }
 
     private void animate(Mob mob) {
-        float phase = mob.age * 0.6662f;
-        float walk = 0.0f;
-        if (isHostile(mob.type) && mob.chasing) walk = 0.9f;
-        else if (mob.fleeTicks > 0 || mob.walkTicks > 0) walk = 0.5f;
+        float phase = mob.walkPhase;
+        float walk = mob.walkAmount;
         if (mob.walkTicks > 0) mob.walkTicks--;
         if (mob.type == ZOMBIE || mob.type == SKELETON) {
             // ModelBiped.animate() uses a 1.4 radian stride (about 80 degrees).
             // Indev's renderer flips model Y, so X-axis pose rotations invert in M3G.
             mob.legs[0].setOrientation(-(float)Math.cos(phase) * 80.214f * walk, 1, 0, 0);
             mob.legs[1].setOrientation(-(float)Math.cos(phase + Math.PI) * 80.214f * walk, 1, 0, 0);
-            float armPitch = (float)Math.sin(mob.age * 0.067f) * 0.05f * 57.29578f;
-            float armRoll = ((float)Math.cos(mob.age * 0.09f) * 0.05f + 0.05f) * 57.29578f;
+            float armPitch = (float)Math.sin(phase) * 0.05f * 57.29578f * walk;
+            float armRoll = (float)Math.cos(phase) * 0.05f * 57.29578f * walk;
             mob.armsPitch[0].setOrientation(90.0f - armPitch, 1, 0, 0);
             mob.armsPitch[1].setOrientation(90.0f + armPitch, 1, 0, 0);
             mob.arms[0].setOrientation(0.1f * 57.29578f, 0, 1, 0);
@@ -775,6 +789,7 @@ final class MobSystem {
         int hurtTicks;
         float verticalVelocity;
         float motionX, motionZ;
+        float walkPhase, walkAmount;
         float x, y, z, yaw, targetYaw;
 
         Mob(int type, Appearance appearance, Appearance fur, Appearance fire) {
