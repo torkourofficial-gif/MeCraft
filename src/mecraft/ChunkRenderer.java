@@ -72,7 +72,7 @@ final class ChunkRenderer {
     private int torchScanX = Integer.MIN_VALUE;
     private int torchScanY = Integer.MIN_VALUE;
     private int torchScanZ = Integer.MIN_VALUE;
-    private int torchScanDelay;
+    private int torchScanRevision = Integer.MIN_VALUE;
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
@@ -808,14 +808,12 @@ final class ChunkRenderer {
 
     private void updateTorchLights(VoxelWorld world) {
         int px = (int)world.playerX, py = (int)world.playerY, pz = (int)world.playerZ;
-        if (px == torchScanX && py == torchScanY && pz == torchScanZ && torchScanDelay > 0) {
-            torchScanDelay--;
-            return;
-        }
+        if (px == torchScanX && py == torchScanY && pz == torchScanZ &&
+            world.revision == torchScanRevision) return;
         torchScanX = px;
         torchScanY = py;
         torchScanZ = pz;
-        torchScanDelay = 4;
+        torchScanRevision = world.revision;
         for (int i = 0; i < torchLights.length; i++) nearestTorchDistance[i] = 65.0f;
         for (int y = py - 5; y <= py + 6; y++) {
             for (int z = pz - 8; z <= pz + 8; z++) {

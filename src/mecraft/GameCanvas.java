@@ -761,11 +761,14 @@ final class GameCanvas extends Canvas implements Runnable {
         float ox = world.playerX;
         float oy = world.playerY + PLAYER_EYE_HEIGHT;
         float oz = world.playerZ;
+        double dirX = Math.sin(yaw) * Math.cos(pitch);
+        double dirY = Math.sin(pitch);
+        double dirZ = Math.cos(yaw) * Math.cos(pitch);
         int oldX = floorBlock(ox), oldY = floorBlock(oy), oldZ = floorBlock(oz);
         for (float d = 0.35f; d <= reach; d += 0.12f) {
-            float x = ox + (float)(Math.sin(yaw) * Math.cos(pitch) * d);
-            float y = oy + (float)(Math.sin(pitch) * d);
-            float z = oz + (float)(Math.cos(yaw) * Math.cos(pitch) * d);
+            float x = ox + (float)(dirX * d);
+            float y = oy + (float)(dirY * d);
+            float z = oz + (float)(dirZ * d);
             int bx = floorBlock(x), by = floorBlock(y), bz = floorBlock(z);
             byte id = world.get(bx, by, bz);
             if (id != Block.AIR && id != Block.WATER) {

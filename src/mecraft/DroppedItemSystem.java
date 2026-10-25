@@ -194,13 +194,18 @@ final class DroppedItemSystem {
 
     /** Returns one collected block ID, or -1 when nothing was collected. */
     int update(VoxelWorld world, int[] inventory) {
+        if (activeCount == 0) {
+            mesh.setRenderingEnable(false);
+            spriteMesh.setRenderingEnable(false);
+            tntFlashMesh.setRenderingEnable(false);
+            return -1;
+        }
         int picked = -1;
         boolean hasBlocks = false;
         boolean hasSprites = false;
         boolean hasTntFlash = false;
         for (int i = 0; i < CAPACITY; i++) {
             if (itemId[i] == 0) {
-                writeItem(i);
                 continue;
             }
             age[i]++;
@@ -265,9 +270,15 @@ final class DroppedItemSystem {
                 else hasSprites = true;
             }
         }
-        positionArray.set(0, VERTEX_COUNT, positions);
-        spritePositionArray.set(0, VERTEX_COUNT, spritePositions);
-        tntFlashPositionArray.set(0, VERTEX_COUNT, tntFlashPositions);
+        if (activeCount == 0) {
+            mesh.setRenderingEnable(false);
+            spriteMesh.setRenderingEnable(false);
+            tntFlashMesh.setRenderingEnable(false);
+            return picked;
+        }
+        if (hasBlocks) positionArray.set(0, VERTEX_COUNT, positions);
+        if (hasSprites) spritePositionArray.set(0, VERTEX_COUNT, spritePositions);
+        if (hasTntFlash) tntFlashPositionArray.set(0, VERTEX_COUNT, tntFlashPositions);
         mesh.setRenderingEnable(hasBlocks);
         spriteMesh.setRenderingEnable(hasSprites);
         tntFlashMesh.setRenderingEnable(hasTntFlash);

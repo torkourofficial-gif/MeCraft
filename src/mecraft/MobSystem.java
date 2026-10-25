@@ -103,11 +103,13 @@ final class MobSystem {
                         mob.fuseTicks--;
                     }
                     if (mob.type == SKELETON && distanceSquared > 16.0f && distanceSquared < 100.0f &&
-                        mob.attackDelay <= 0 && !blocked(world, mob.x, mob.y + 1.2f, mob.z,
-                                dx / (float)Math.sqrt(distanceSquared), 0.0f,
-                                dz / (float)Math.sqrt(distanceSquared), (float)Math.sqrt(distanceSquared))) {
-                        mob.attackDelay = 30;
-                        shootArrow(mob, world);
+                        mob.attackDelay <= 0) {
+                        float distance = (float)Math.sqrt(distanceSquared);
+                        if (!blocked(world, mob.x, mob.y + 1.2f, mob.z,
+                                dx / distance, 0.0f, dz / distance, distance)) {
+                            mob.attackDelay = 30;
+                            shootArrow(mob, world);
+                        }
                     } else if (distanceSquared < 2.5f * 2.5f &&
                         world.playerY < mob.y + 1.8f && world.playerY + 1.8f > mob.y) {
                         if (mob.attackDelay <= 0) {
