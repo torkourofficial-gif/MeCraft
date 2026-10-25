@@ -25,7 +25,7 @@ final class SkySystem {
     private final Material starsMaterial;
     private final Material cloudsMaterial;
     private VertexArray cloudUVArray;
-    private final short[] cloudUV = new short[8];
+    private final short[] cloudUV = new short[12];
 
     SkySystem(Group cameraPivot) throws IOException {
         yawCounter.addChild(celestialRotation);
@@ -40,6 +40,7 @@ final class SkySystem {
         starsMaterial = new Material();
         starsMaterial.setColor(Material.AMBIENT, 0xFFFFFFFF);
         starsMaterial.setColor(Material.DIFFUSE, 0xFFFFFFFF);
+        starsMaterial.setColor(Material.EMISSIVE, 0xFFFFFFFF);
         starAppearance.setMaterial(starsMaterial);
         PolygonMode starPolygon = new PolygonMode();
         starPolygon.setCulling(PolygonMode.CULL_NONE);
@@ -65,11 +66,14 @@ final class SkySystem {
         float night = 1.0f - daylight;
         float starLevel = night * night;
         stars.setRenderingEnable(starLevel > 0.015f);
-        int brightness = (int)(starLevel * 255.0f);
+        float shimmer = 0.88f + 0.12f *
+                (0.5f + 0.5f * (float)Math.sin(world.dayTime * 0.035f));
+        int brightness = (int)(starLevel * shimmer * 255.0f);
         int starColor = 0xFF000000 | (brightness << 16) |
                         (brightness << 8) | brightness;
         starsMaterial.setColor(Material.AMBIENT, starColor);
         starsMaterial.setColor(Material.DIFFUSE, starColor);
+        starsMaterial.setColor(Material.EMISSIVE, starColor);
 
         int cloudTint = (int)(190.0f + daylight * 65.0f);
         int tint = 0xFF000000 | (cloudTint << 16) |
@@ -79,49 +83,58 @@ final class SkySystem {
 
         // Indev advances the cloud texture a tiny amount each world tick.
         int shift = (int)(world.dayTime * 0.00375f);
-        int repeat = 16 * 256;
+        int repeat = 3 * 256;
         int u = shift % repeat;
         cloudUV[0] = (short)u;          cloudUV[1] = 0;
         cloudUV[2] = (short)(u + repeat); cloudUV[3] = 0;
         cloudUV[4] = (short)(u + repeat); cloudUV[5] = (short)repeat;
-        cloudUV[6] = (short)u;          cloudUV[7] = (short)repeat;
-        cloudUVArray.set(0, 4, cloudUV);
+        cloudUV[6] = (short)u;          cloudUV[7] = 0;
+        cloudUV[8] = (short)(u + repeat); cloudUV[9] = (short)repeat;
+        cloudUV[10] = (short)u;         cloudUV[11] = (short)repeat;
+        cloudUVArray.set(0, 6, cloudUV);
     }
 
     private Mesh skyQuad(float y, float halfSize, Appearance appearance) {
-        short[] p = new short[] {
+        short[] corners = new short[] {
             fixed(-halfSize), fixed(y), fixed(-halfSize),
             fixed(halfSize), fixed(y), fixed(-halfSize),
             fixed(halfSize), fixed(y), fixed(halfSize),
             fixed(-halfSize), fixed(y), fixed(halfSize)
         };
-        short[] uv = new short[] { 0, 0, 256, 0, 256, 256, 0, 256 };
+        short[] p = triangleQuad(corners, 3);
+        short[] uv = triangleQuadUV();
         return mesh(p, uv, FIXED_SCALE, 1.0f / 256.0f, appearance);
     }
 
     private Mesh makeCloudPlane(Appearance appearance) {
-        short[] p = new short[] {
-            fixed(-64), fixed(18), fixed(-64),
-            fixed(64), fixed(18), fixed(-64),
-            fixed(64), fixed(18), fixed(64),
-            fixed(-64), fixed(18), fixed(64)
+        short[] corners = new short[] {
+            fixed(-120), fixed(18), fixed(-120),
+            fixed(120), fixed(18), fixed(-120),
+            fixed(120), fixed(18), fixed(120),
+            fixed(-120), fixed(18), fixed(120)
         };
-        int span = 16 * 256;
-        short[] uv = new short[] { 0, 0, (short)span, 0, (short)span, (short)span, 0, (short)span };
-        VertexArray positions = new VertexArray(4, 3, 2);
-        positions.set(0, 4, p);
-        cloudUVArray = new VertexArray(4, 2, 2);
-        cloudUVArray.set(0, 4, uv);
+        short[] p = triangleQuad(corners, 3);
+        int span = 3 * 256;
+        cloudUV[0] = 0; cloudUV[1] = 0;
+        cloudUV[2] = (short)span; cloudUV[3] = 0;
+        cloudUV[4] = (short)span; cloudUV[5] = (short)span;
+        cloudUV[6] = 0; cloudUV[7] = 0;
+        cloudUV[8] = (short)span; cloudUV[9] = (short)span;
+        cloudUV[10] = 0; cloudUV[11] = (short)span;
+        VertexArray positions = new VertexArray(6, 3, 2);
+        positions.set(0, 6, p);
+        cloudUVArray = new VertexArray(6, 2, 2);
+        cloudUVArray.set(0, 6, cloudUV);
         VertexBuffer vertices = new VertexBuffer();
         vertices.setPositions(positions, FIXED_SCALE, null);
         vertices.setTexCoords(0, cloudUVArray, 1.0f / 256.0f, null);
-        return new Mesh(vertices, new TriangleStripArray(0, new int[] { 4 }), appearance);
+        return new Mesh(vertices, new TriangleStripArray(0, new int[] { 3, 3 }), appearance);
     }
 
     private Mesh makeStars(Appearance appearance) {
-        short[] p = new short[STAR_COUNT * 4 * 3];
-        short[] uv = new short[STAR_COUNT * 4 * 2];
-        int[] strips = new int[STAR_COUNT];
+        short[] p = new short[STAR_COUNT * 6 * 3];
+        short[] uv = new short[STAR_COUNT * 6 * 2];
+        int[] strips = new int[STAR_COUNT * 2];
         Random random = new Random(10842L);
         int pa = 0;
         int ta = 0;
@@ -134,7 +147,7 @@ final class SkySystem {
             float cz = (float)(Math.sin(theta) * radial * -31.0);
             float size = 0.25f + random.nextFloat() * 0.25f;
             float roll = random.nextFloat() * 6.2831855f;
-            float ux = cx / -31.0f, uy = cy / -31.0f, uz = cz / -31.0f;
+            float ux = cx / 31.0f, uy = cy / 31.0f, uz = cz / 31.0f;
             float ex = uz, ez = -ux;
             float el = (float)Math.sqrt(ex * ex + ez * ez);
             if (el < 0.001f) { ex = 1.0f; ez = 0.0f; el = 1.0f; }
@@ -146,20 +159,23 @@ final class SkySystem {
             float bx = (-ex * (float)Math.sin(roll) + fx * (float)Math.cos(roll)) * size;
             float by = fy * (float)Math.cos(roll) * size;
             float bz = (-ez * (float)Math.sin(roll) + fz * (float)Math.cos(roll)) * size;
-            p[pa++] = fixed(cx - ax - bx); p[pa++] = fixed(cy - ay - by); p[pa++] = fixed(cz - az - bz);
-            p[pa++] = fixed(cx + ax - bx); p[pa++] = fixed(cy + ay - by); p[pa++] = fixed(cz + az - bz);
-            p[pa++] = fixed(cx + ax + bx); p[pa++] = fixed(cy + ay + by); p[pa++] = fixed(cz + az + bz);
-            p[pa++] = fixed(cx - ax + bx); p[pa++] = fixed(cy - ay + by); p[pa++] = fixed(cz - az + bz);
-            uv[ta++] = 0; uv[ta++] = 0;
-            uv[ta++] = 256; uv[ta++] = 0;
-            uv[ta++] = 256; uv[ta++] = 256;
-            uv[ta++] = 0; uv[ta++] = 256;
-            strips[i] = 4;
+            float x0 = cx - ax - bx, y0 = cy - ay - by, z0 = cz - az - bz;
+            float x1 = cx + ax - bx, y1 = cy + ay - by, z1 = cz + az - bz;
+            float x2 = cx + ax + bx, y2 = cy + ay + by, z2 = cz + az + bz;
+            float x3 = cx - ax + bx, y3 = cy - ay + by, z3 = cz - az + bz;
+            pa = putVertex(p, pa, x0, y0, z0); pa = putVertex(p, pa, x1, y1, z1);
+            pa = putVertex(p, pa, x2, y2, z2); pa = putVertex(p, pa, x0, y0, z0);
+            pa = putVertex(p, pa, x2, y2, z2); pa = putVertex(p, pa, x3, y3, z3);
+            uv[ta++] = 0; uv[ta++] = 0; uv[ta++] = 256; uv[ta++] = 0;
+            uv[ta++] = 256; uv[ta++] = 256; uv[ta++] = 0; uv[ta++] = 0;
+            uv[ta++] = 256; uv[ta++] = 256; uv[ta++] = 0; uv[ta++] = 256;
+            strips[i * 2] = 3;
+            strips[i * 2 + 1] = 3;
         }
-        VertexArray positions = new VertexArray(STAR_COUNT * 4, 3, 2);
-        positions.set(0, STAR_COUNT * 4, p);
-        VertexArray texCoords = new VertexArray(STAR_COUNT * 4, 2, 2);
-        texCoords.set(0, STAR_COUNT * 4, uv);
+        VertexArray positions = new VertexArray(STAR_COUNT * 6, 3, 2);
+        positions.set(0, STAR_COUNT * 6, p);
+        VertexArray texCoords = new VertexArray(STAR_COUNT * 6, 2, 2);
+        texCoords.set(0, STAR_COUNT * 6, uv);
         VertexBuffer vertices = new VertexBuffer();
         vertices.setPositions(positions, FIXED_SCALE, null);
         vertices.setTexCoords(0, texCoords, 1.0f / 256.0f, null);
@@ -168,14 +184,36 @@ final class SkySystem {
 
     private Mesh mesh(short[] p, short[] uv, float positionScale,
             float uvScale, Appearance appearance) {
-        VertexArray positions = new VertexArray(4, 3, 2);
-        positions.set(0, 4, p);
-        VertexArray texCoords = new VertexArray(4, 2, 2);
-        texCoords.set(0, 4, uv);
+        VertexArray positions = new VertexArray(6, 3, 2);
+        positions.set(0, 6, p);
+        VertexArray texCoords = new VertexArray(6, 2, 2);
+        texCoords.set(0, 6, uv);
         VertexBuffer vertices = new VertexBuffer();
         vertices.setPositions(positions, positionScale, null);
         vertices.setTexCoords(0, texCoords, uvScale, null);
-        return new Mesh(vertices, new TriangleStripArray(0, new int[] { 4 }), appearance);
+        return new Mesh(vertices, new TriangleStripArray(0, new int[] { 3, 3 }), appearance);
+    }
+
+    private short[] triangleQuad(short[] corners, int stride) {
+        short[] triangles = new short[18];
+        int[] order = { 0, 1, 2, 0, 2, 3 };
+        int at = 0;
+        for (int i = 0; i < order.length; i++) {
+            int from = order[i] * stride;
+            for (int c = 0; c < stride; c++) triangles[at++] = corners[from + c];
+        }
+        return triangles;
+    }
+
+    private short[] triangleQuadUV() {
+        return new short[] { 0, 0, 256, 0, 256, 256, 0, 0, 256, 256, 0, 256 };
+    }
+
+    private int putVertex(short[] positions, int at, float x, float y, float z) {
+        positions[at++] = fixed(x);
+        positions[at++] = fixed(y);
+        positions[at++] = fixed(z);
+        return at;
     }
 
     private Appearance textureAppearance(String file) throws IOException {
