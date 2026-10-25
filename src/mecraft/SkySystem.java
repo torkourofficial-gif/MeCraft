@@ -107,12 +107,12 @@ final class SkySystem {
     private static final float TAN_HALF_FOV =
             (float)Math.tan(34.0 * Math.PI / 180.0);
 
-    void update(VoxelWorld world, float yaw, float pitch, float celestialAngle,
+    void update(VoxelWorld world, float yaw, float celestialAngle,
             float daylight, int skyColor) {
         yawCounter.setOrientation(-yaw, 0.0f, 1.0f, 0.0f);
         celestialRotation.setOrientation(celestialAngle * 57.29578f,
                 1.0f, 0.0f, 0.0f);
-        renderCloudBackground(world, yaw, pitch, daylight, skyColor);
+        renderCloudBackground(world.dayTime, daylight, skyColor);
         oceanPlane.setTranslation(-world.playerX,
                 VoxelWorld.SEA_LEVEL + 1.0f - (world.playerY + 1.62f), -world.playerZ);
 
@@ -133,23 +133,14 @@ final class SkySystem {
     }
 
     /** Rasterize Indev's cloud map into the sky background at 1 texel / 8 blocks. */
-    private void renderCloudBackground(VoxelWorld world, float yawDegrees,
-            float pitchDegrees, float daylight, int skyColor) {
-        double yaw = yawDegrees * Math.PI / 180.0;
-        double pitch = pitchDegrees * Math.PI / 180.0;
-        float sinYaw = (float)Math.sin(yaw), cosYaw = (float)Math.cos(yaw);
-        float sinPitch = (float)Math.sin(pitch), cosPitch = (float)Math.cos(pitch);
-        float forwardX = sinYaw * cosPitch;
-        float forwardY = sinPitch;
-        float forwardZ = cosYaw * cosPitch;
-        float rightX = cosYaw, rightZ = -sinYaw;
-        float upX = -sinYaw * sinPitch;
-        float upY = cosPitch;
-        float upZ = -cosYaw * sinPitch;
-        float eyeY = world.playerY + 1.62f;
-        float cloudLevel = VoxelWorld.HEIGHT + 10.0f - eyeY;
+    private void renderCloudBackground(int dayTime, float daylight, int skyColor) {
+        // Keep a virtual, fixed camera for the cloud layer. Player translation,
+        // yaw, and pitch never affect this 2D background; only Indev's slow
+        // time-based cloud drift changes its texture coordinates.
+        float virtualEyeY = VoxelWorld.HEIGHT * 0.5f;
+        float cloudLevel = VoxelWorld.HEIGHT + 10.0f - virtualEyeY;
         float focal = viewportHeight / (2.0f * TAN_HALF_FOV);
-        int shift = (int)(world.dayTime * 0.00375f);
+        int shift = (int)(dayTime * 0.00375f);
         int cloudTint = (int)(190.0f + daylight * 65.0f);
         int skyR = skyColor >> 16 & 255;
         int skyG = skyColor >> 8 & 255;
@@ -158,23 +149,15 @@ final class SkySystem {
         int halfHeight = (viewportHeight + 1) >> 1;
         for (int sy = 0; sy < halfHeight; sy++) {
             float screenUp = screenY[sy];
-            float rayY = forwardY + screenUp * upY;
-            float baseRayX = forwardX + screenUp * upX;
-            float baseRayZ = forwardZ + screenUp * upZ;
-            float startX = 0.0f, startZ = 0.0f, stepX = 0.0f, stepZ = 0.0f;
-            boolean hitsCloudLayer = rayY > 0.0001f && cloudLevel > 0.0f;
-            if (hitsCloudLayer) {
-                float distance = cloudLevel / rayY;
-                startX = world.playerX + baseRayX * distance + screenX[0] * rightX * distance;
-                startZ = world.playerZ + baseRayZ * distance + screenX[0] * rightZ * distance;
-                stepX = rightX * distance * 2.0f / focal;
-                stepZ = rightZ * distance * 2.0f / focal;
-            }
+            float distance = screenUp > 0.0001f ? cloudLevel / screenUp : 0.0f;
+            float startX = screenUp > 0.0001f ? screenX[0] * distance : 0.0f;
+            float startZ = distance;
+            float stepX = distance * 2.0f / focal;
             for (int sx = 0; sx < halfWidth; sx++) {
                 int red = skyR, green = skyG, blue = skyB;
-                if (hitsCloudLayer) {
+                if (screenUp > 0.0001f) {
                     int tx = floor(startX * cloudWidth / 2048.0f) + shift;
-                    int tz = floor(startZ * this.cloudHeight / 2048.0f);
+                    int tz = floor(startZ * cloudHeight / 2048.0f);
                     tx = wrap(tx, cloudWidth);
                     tz = wrap(tz, cloudHeight);
                     int alpha = cloudAlpha[tz * cloudWidth + tx] & 255;
@@ -184,7 +167,6 @@ final class SkySystem {
                         blue = (skyB * (255 - alpha) + cloudTint * alpha) / 255;
                     }
                     startX += stepX;
-                    startZ += stepZ;
                 }
                 int x = sx << 1, y = sy << 1;
                 putBackgroundPixel(x, y, red, green, blue);
