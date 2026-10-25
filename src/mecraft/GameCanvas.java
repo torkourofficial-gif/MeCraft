@@ -2,11 +2,6 @@ package mecraft;
 
 import java.io.IOException;
 import javax.microedition.lcdui.Canvas;
-import javax.microedition.lcdui.Command;
-import javax.microedition.lcdui.CommandListener;
-import javax.microedition.lcdui.Display;
-import javax.microedition.lcdui.TextBox;
-import javax.microedition.lcdui.TextField;
 import javax.microedition.lcdui.Font;
 import javax.microedition.lcdui.Graphics;
 import javax.microedition.lcdui.Image;
@@ -14,7 +9,7 @@ import javax.microedition.lcdui.game.Sprite;
 import javax.microedition.m3g.Graphics3D;
 
 /** Game loop, phone controls, M3G view and compact HUD. */
-final class GameCanvas extends Canvas implements Runnable, CommandListener {
+final class GameCanvas extends Canvas implements Runnable {
     private static final int MENU = 0;
     private static final int PLAYING = 1;
     private static final int PAUSED = 2;
@@ -27,6 +22,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private static final int SETTINGS = 9;
     private static final int WORLD_DELETE = 10;
     private static final int GAME_OVER = 11;
+    private static final int WORLD_NAME = 12;
+    private static final int SKIN_SELECT = 13;
     private static final int MENU_SINGLEPLAYER = 0;
     private static final int MENU_CONTROLS = 1;
     private static final int MENU_SETTINGS = 2;
@@ -47,6 +44,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         Block.DIRT, Block.STONE, Block.LOG, Block.SAND, Block.PLANKS,
         Block.LEAVES, Block.COAL, Block.IRON, Block.TORCH
     };
+    private static final String[] NAME_KEYPAD = new String[] {
+        " ", ".,?!", "abc", "def", "ghi", "jkl", "mno", "pqrs", "tuv", "wxyz"
+    };
+    private static final String[] PAUSE_ROWS = new String[] {
+        "Volver", "Guardar y menú", "Guardar y salir"
+    };
+    private static final String SELECT_MARKER = ">  ";
+    private static final String EMPTY_MARKER = "   ";
+    private static int selectedPlayerSkin;
 
     private final MeCraft app;
     private final boolean[] keys = new boolean[10];
@@ -55,15 +61,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         Block.LEAVES, Block.COAL, Block.IRON, Block.TORCH
     };
     private final int[] inventory = new int[ItemCatalog.COUNT];
-    private final Command selectCommand = new Command("Elegir", Command.OK, 1);
-    private final Command exitCommand = new Command("Salir", Command.EXIT, 9);
-    private final Command nameAcceptCommand = new Command("Aceptar", Command.OK, 1);
-    private final Command nameCancelCommand = new Command("Cancelar", Command.CANCEL, 2);
-
     private volatile boolean running;
     private volatile boolean visible;
     private volatile int state = MENU;
     private int menuSelection = MENU_SINGLEPLAYER;
+    private int settingsSelection;
+    private int skinSelection;
     private int frameSkip;
     private int renderFrame;
     private int worldSelection;
@@ -72,10 +75,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private int createSelection;
     private int newWorldMode;
     private String newWorldName = "Mundo 1";
-    private TextBox worldNameEditor;
+    private StringBuffer worldNameBuffer;
+    private int lastNameKey = -1;
+    private int lastNameLetter;
+    private long lastNameTapTime;
     private int pauseSelection;
     private int gameOverSelection;
-    private boolean selectCommandAttached = true;
     private VoxelWorld.SavedWorld[] savedWorlds = new VoxelWorld.SavedWorld[0];
     private final PlayerPhysics playerPhysics = new PlayerPhysics();
     private boolean jumpHeld;
@@ -87,6 +92,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private boolean lookUp, lookDown, lookLeft, lookRight;
     private VoxelWorld world;
     private ChunkRenderer renderer;
+    private SkinGallery skinGallery;
     private Image title;
     private Image guiTexture;
     private Image iconsTexture;
@@ -118,13 +124,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     GameCanvas(MeCraft app) {
         this.app = app;
         setFullScreenMode(true);
-        setCommandListener(this);
         loadTitle();
         loadHudTextures();
         refreshWorldList();
         menuSelection = MENU_SINGLEPLAYER;
-        addCommand(selectCommand);
-        addCommand(exitCommand);
     }
 
     void start() {
@@ -262,8 +265,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         gameOverSelection = 0;
         clearKeys();
         resetMining();
-        removeSelectCommand();
-        removeCommand(exitCommand);
         repaint();
     }
 
@@ -313,13 +314,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             world.save();
             stage = "cargando /mecraft/textures.png y creando escena M3G";
             renderer = new ChunkRenderer(getWidth(), getHeight());
+            renderer.setPlayerSkinIndex(selectedPlayerSkin);
             stage = "configurando cámara M3G";
             renderer.updateCamera(world, cameraPitch);
             stage = "construyendo sectores visibles M3G";
             renderer.sync(world);
             state = PLAYING;
-            removeSelectCommand();
-            removeCommand(exitCommand);
             repaint();
         } catch (OutOfMemoryError exhausted) {
             showError("No hay memoria suficiente para crear el mundo. Libera memoria y vuelve a intentarlo.");
@@ -352,19 +352,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             world.selectedSlot = clamp(world.selectedSlot, 0, hotbar.length - 1);
             stage = "cargando /mecraft/textures.png y creando escena M3G";
             renderer = new ChunkRenderer(getWidth(), getHeight());
+            renderer.setPlayerSkinIndex(selectedPlayerSkin);
             stage = "configurando cámara M3G";
             renderer.updateCamera(world, cameraPitch);
             stage = "construyendo sectores visibles M3G";
             renderer.sync(world);
             state = world.mode == 0 && world.health <= 0 ? GAME_OVER : PLAYING;
             if (state == GAME_OVER) gameOverSelection = 0;
-            removeCommand(exitCommand);
-            if (state == GAME_OVER) {
-                                        addSelectCommand();
-            } else {
-                removeSelectCommand();
-                removeCommand(exitCommand);
-            }
         } catch (OutOfMemoryError exhausted) {
             showError("No hay memoria suficiente para cargar el mundo guardado.");
         } catch (Throwable problem) {
@@ -383,7 +377,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         diagnosticError = false;
         diagnosticScroll = 0;
         state = ERROR;
-        addSelectCommand();
     }
 
     private void showDiagnostic(String stage, Throwable problem) {
@@ -403,7 +396,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         diagnosticError = true;
         diagnosticScroll = 0;
         state = ERROR;
-        addSelectCommand();
     }
 
     private String readProperty(String name) {
@@ -421,20 +413,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             return value == null ? "no informado" : value;
         } catch (Throwable ignored) {
             return "no disponible";
-        }
-    }
-
-    private void addSelectCommand() {
-        if (!selectCommandAttached) {
-            addCommand(selectCommand);
-            selectCommandAttached = true;
-        }
-    }
-
-    private void removeSelectCommand() {
-        if (selectCommandAttached) {
-            removeCommand(selectCommand);
-            selectCommandAttached = false;
         }
     }
 
@@ -865,12 +843,40 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             else if (keyCode == KEY_NUM0) { state = WORLD_SELECT; repaint(); }
             return;
         }
+        if (state == WORLD_NAME) {
+            handleWorldNameKey(keyCode);
+            return;
+        }
         if (state == SETTINGS) {
             int action = gameAction(keyCode);
-            if (keyCode == KEY_NUM4 || action == LEFT) changeFrameSkip(-1);
-            else if (keyCode == KEY_NUM6 || action == RIGHT) changeFrameSkip(1);
-            else if (keyCode == KEY_NUM5 || action == FIRE || keyCode == KEY_NUM0 || keyCode == KEY_POUND) {
+            if (keyCode == KEY_NUM2 || action == UP || keyCode == KEY_NUM8 || action == DOWN) {
+                settingsSelection = 1 - settingsSelection;
+                repaint();
+            } else if (settingsSelection == 0 && (keyCode == KEY_NUM4 || action == LEFT)) changeFrameSkip(-1);
+            else if (settingsSelection == 0 && (keyCode == KEY_NUM6 || action == RIGHT)) changeFrameSkip(1);
+            else if (settingsSelection == 1 && (keyCode == KEY_NUM5 || action == FIRE)) openSkinSelect();
+            else if (keyCode == KEY_NUM0 || keyCode == KEY_POUND) {
                 state = MENU;
+                repaint();
+            }
+            return;
+        }
+        if (state == SKIN_SELECT) {
+            if (keyCode == KEY_NUM4 || gameAction(keyCode) == LEFT) {
+                skinSelection = (skinSelection + 4) % 5;
+                repaint();
+            } else if (keyCode == KEY_NUM6 || gameAction(keyCode) == RIGHT) {
+                skinSelection = (skinSelection + 1) % 5;
+                repaint();
+            } else if (keyCode == KEY_NUM5 || gameAction(keyCode) == FIRE) {
+                selectedPlayerSkin = skinSelection;
+                if (renderer != null) renderer.setPlayerSkinIndex(selectedPlayerSkin);
+                skinGallery = null;
+                state = SETTINGS;
+                repaint();
+            } else if (keyCode == KEY_NUM0 || keyCode == KEY_POUND) {
+                skinGallery = null;
+                state = SETTINGS;
                 repaint();
             }
             return;
@@ -1001,6 +1007,17 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         repaint();
     }
 
+    private void openSkinSelect() {
+        skinSelection = selectedPlayerSkin;
+        try {
+            skinGallery = new SkinGallery(getWidth(), Math.max(1, getHeight() - 120));
+            state = SKIN_SELECT;
+            repaint();
+        } catch (IOException unavailable) {
+            showError("No se pudieron cargar las texturas de jugador.");
+        }
+    }
+
     private void openCreativeInventory() {
         if (state != PLAYING || world == null || world.mode != 1) return;
         state = CREATIVE_INVENTORY;
@@ -1053,15 +1070,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void activateCreateSelection() {
         if (createSelection == 0) {
-            if (worldNameEditor == null) {
-                worldNameEditor = new TextBox("Nombre del mundo", newWorldName, 24, TextField.ANY);
-                worldNameEditor.addCommand(nameAcceptCommand);
-                worldNameEditor.addCommand(nameCancelCommand);
-                worldNameEditor.setCommandListener(this);
-            } else {
-                worldNameEditor.setString(newWorldName);
-            }
-            Display.getDisplay(app).setCurrent(worldNameEditor);
+            worldNameBuffer = new StringBuffer(newWorldName == null ? "" : newWorldName);
+            lastNameKey = -1;
+            lastNameLetter = 0;
+            lastNameTapTime = 0L;
+            state = WORLD_NAME;
+            repaint();
         } else if (createSelection == 1) {
             newWorldMode = 1 - newWorldMode;
             repaint();
@@ -1073,6 +1087,70 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             state = WORLD_SELECT;
             repaint();
         }
+    }
+
+    /** Small multi-tap editor keeps world naming inside Canvas. */
+    private void handleWorldNameKey(int keyCode) {
+        if (keyCode == KEY_POUND) {
+            String value = worldNameBuffer == null ? "" : worldNameBuffer.toString().trim();
+            newWorldName = value.length() == 0 ? "Mundo " + (savedWorlds.length + 1) : value;
+            state = WORLD_CREATE;
+            lastNameKey = -1;
+            repaint();
+            return;
+        }
+        if (keyCode == KEY_STAR) {
+            if (worldNameBuffer != null && worldNameBuffer.length() > 0)
+                worldNameBuffer.deleteCharAt(worldNameBuffer.length() - 1);
+            lastNameKey = -1;
+            repaint();
+            return;
+        }
+        int digit = keypadDigit(keyCode);
+        if (digit < 0 || worldNameBuffer == null) return;
+        String letters = NAME_KEYPAD[digit];
+        if (letters.length() == 0) return;
+        long now = System.currentTimeMillis();
+        if (digit == lastNameKey && now - lastNameTapTime < 850L && worldNameBuffer.length() > 0) {
+            lastNameLetter = (lastNameLetter + 1) % letters.length();
+            worldNameBuffer.setCharAt(worldNameBuffer.length() - 1, letters.charAt(lastNameLetter));
+        } else if (worldNameBuffer.length() < 24) {
+            lastNameKey = digit;
+            lastNameLetter = 0;
+            worldNameBuffer.append(letters.charAt(0));
+        } else {
+            lastNameKey = -1;
+        }
+        lastNameKey = digit;
+        lastNameTapTime = now;
+        repaint();
+    }
+
+    private int keypadDigit(int keyCode) {
+        if (keyCode == KEY_NUM0) return 0;
+        if (keyCode == KEY_NUM1) return 1;
+        if (keyCode == KEY_NUM2) return 2;
+        if (keyCode == KEY_NUM3) return 3;
+        if (keyCode == KEY_NUM4) return 4;
+        if (keyCode == KEY_NUM5) return 5;
+        if (keyCode == KEY_NUM6) return 6;
+        if (keyCode == KEY_NUM7) return 7;
+        if (keyCode == KEY_NUM8) return 8;
+        if (keyCode == KEY_NUM9) return 9;
+        return -1;
+    }
+
+    private void drawWorldNameEditor(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        drawDirtBackground(g);
+        drawInsetPanel(g, 12, h / 3, w - 24, h / 3);
+        g.setColor(255, 255, 255);
+        g.drawString("Nombre del mundo", w / 2, h / 3 + 14, Graphics.TOP | Graphics.HCENTER);
+        g.setColor(255, 240, 205);
+        String name = worldNameBuffer == null ? "" : worldNameBuffer.toString();
+        g.drawString(trimText(name, 20), w / 2, h / 3 + 48, Graphics.TOP | Graphics.HCENTER);
+        g.drawString("2-9 escribir  0 espacio", w / 2, h / 3 + 78, Graphics.TOP | Graphics.HCENTER);
+        g.drawString("* borrar  # aceptar", w / 2, h / 3 + 98, Graphics.TOP | Graphics.HCENTER);
     }
 
     private void activateSelection() {
@@ -1117,9 +1195,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         refreshWorldList();
         state = MENU;
         menuSelection = MENU_SINGLEPLAYER;
-        removeCommand(exitCommand);
-        addCommand(exitCommand);
-        addSelectCommand();
         clearKeys();
         renderer = null;
         world = null;
@@ -1289,34 +1364,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         try { return getGameAction(keyCode); } catch (IllegalArgumentException ignored) { return 0; }
     }
 
-    public synchronized void commandAction(Command command, javax.microedition.lcdui.Displayable displayable) {
-        if (displayable == worldNameEditor) {
-            if (command == nameAcceptCommand) {
-                newWorldName = worldNameEditor.getString().trim();
-                if (newWorldName.length() == 0) newWorldName = "Mundo " + (savedWorlds.length + 1);
-            }
-            Display.getDisplay(app).setCurrent(this);
-            state = WORLD_CREATE;
-            repaint();
-        } else if (command == exitCommand) {
-            if (state == PLAYING) openPause();
-            else if (state == INVENTORY || state == WORKBENCH) closeCrafting();
-            else if (state == CREATIVE_INVENTORY) closeCreativeInventory();
-            else if (state == WORLD_CREATE) { state = WORLD_SELECT; repaint(); }
-            else if (state == WORLD_SELECT) backToMainMenu();
-            else if (state == SETTINGS) { state = MENU; repaint(); }
-            else app.closeGame();
-        } else if (command == selectCommand) {
-            if (state == MENU) activateSelection();
-            else if (state == WORLD_SELECT) activateWorldSelection();
-            else if (state == WORLD_CREATE) activateCreateSelection();
-            else if (state == GAME_OVER) activateGameOverSelection();
-            else backToMenu();
-        }
-    }
-
     protected synchronized void sizeChanged(int width, int height) {
         if (renderer != null) renderer.resize(width, height);
+        if (skinGallery != null) skinGallery.resize(width - 16, Math.max(1, height - 120));
         if (state == MENU && width > 0 && height > 0) loadTitle();
     }
 
@@ -1362,10 +1412,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 drawError(g);
             }
         } else if (state == ERROR) drawError(g);
+        else if (state == WORLD_NAME) drawWorldNameEditor(g);
         else if (state == WORLD_SELECT) drawWorldSelect(g);
         else if (state == WORLD_DELETE) drawWorldDelete(g);
         else if (state == WORLD_CREATE) drawWorldCreate(g);
         else if (state == SETTINGS) drawSettings(g);
+        else if (state == SKIN_SELECT) drawSkinSelect(g);
         else drawMenu(g);
     }
 
@@ -1392,15 +1444,63 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private void drawSettings(Graphics g) {
         int w = getWidth(), h = getHeight();
         drawDirtBackground(g);
-        drawInsetPanel(g, 15, h / 3, w - 30, h / 3);
+        int panelY = Math.max(36, h / 3);
+        drawInsetPanel(g, 12, panelY, w - 24, Math.max(104, h / 3));
         g.setColor(255, 244, 200);
-        g.drawString("Ajustes", w / 2, h / 3 + 14, Graphics.TOP | Graphics.HCENTER);
+        g.drawString("Ajustes", w / 2, panelY + 10, Graphics.TOP | Graphics.HCENTER);
         String value = frameSkip == 0 ? "Desactivado" : (frameSkip == 1 ? "1 de cada 2" : "2 de cada 3");
-        g.drawString("Frameskip", w / 2, h / 3 + 48, Graphics.TOP | Graphics.HCENTER);
-        g.drawString("<  " + value + "  >", w / 2, h / 3 + 68, Graphics.TOP | Graphics.HCENTER);
+        drawMenuItem(g, "Frameskip: " + value, panelY + 34, settingsSelection == 0);
+        drawMenuItem(g, "Skin del jugador", panelY + 64, settingsSelection == 1);
         g.setColor(240, 224, 190);
-        g.drawString("4/6 cambiar   5 aceptar", w / 2, h * 2 / 3 - 24, Graphics.TOP | Graphics.HCENTER);
-        g.drawString("0 volver", w / 2, h * 2 / 3, Graphics.TOP | Graphics.HCENTER);
+        g.drawString("2/8 elegir   4/6 cambiar   5 aceptar", w / 2, panelY + 98,
+                Graphics.TOP | Graphics.HCENTER);
+        g.drawString("0 volver", w / 2, panelY + 116, Graphics.TOP | Graphics.HCENTER);
+    }
+
+    private void drawSkinSelect(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        drawDirtBackground(g);
+        drawInsetPanel(g, 6, 5, w - 12, h - 10);
+        g.setColor(255, 244, 200);
+        g.drawString("Skins", w / 2, 9, Graphics.TOP | Graphics.HCENTER);
+
+        int viewportX = 10, viewportY = 30;
+        int viewportWidth = w - 20;
+        int viewportHeight = Math.max(1, h - 116);
+        if (skinGallery != null && viewportWidth > 0) {
+            try {
+                Graphics3D graphics3D = Graphics3D.getInstance();
+                graphics3D.bindTarget(g);
+                try {
+                    graphics3D.setViewport(viewportX, viewportY, viewportWidth, viewportHeight);
+                    skinGallery.render(graphics3D, System.currentTimeMillis());
+                } finally { graphics3D.releaseTarget(); }
+            } catch (Throwable problem) {
+                g.setColor(255, 220, 180);
+                g.drawString("No se pudo mostrar la vista 3D", w / 2,
+                        viewportY + viewportHeight / 2, Graphics.TOP | Graphics.HCENTER);
+            }
+        }
+
+        int slotY = h - 72;
+        int slotWidth = Math.max(30, (w - 28) / 5);
+        for (int i = 0; i < 5; i++) {
+            int x = 9 + i * slotWidth;
+            boolean selected = i == skinSelection;
+            g.setColor(selected ? 198 : 76, selected ? 177 : 56, selected ? 116 : 38);
+            g.fillRect(x, slotY, slotWidth - 3, 22);
+            g.setColor(selected ? 255 : 164, selected ? 230 : 130, selected ? 176 : 91);
+            g.drawRect(x, slotY, slotWidth - 4, 21);
+            g.drawString(String.valueOf(i + 1), x + (slotWidth - 3) / 2, slotY + 3,
+                    Graphics.TOP | Graphics.HCENTER);
+        }
+        g.setColor(240, 224, 190);
+        if (skinGallery != null && skinGallery.isFallback(skinSelection)) {
+            g.drawString("Falta skin" + (skinSelection + 1) + ".png", w / 2, h - 46,
+                    Graphics.TOP | Graphics.HCENTER);
+        }
+        g.drawString("4/6 elegir   5 usar   0 volver", w / 2, h - 23,
+                Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawMenuItem(Graphics g, String label, int y, boolean selected) {
@@ -1412,8 +1512,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         g.setColor(selected ? 228 : 150, selected ? 210 : 150, selected ? 148 : 150);
         g.drawRect(x, y, width - 1, height - 1);
         g.setColor(selected ? 255 : 224, selected ? 244 : 224, selected ? 180 : 224);
-        g.drawString((selected ? ">  " : "   ") + label, w / 2, y + 3,
-                Graphics.TOP | Graphics.HCENTER);
+        Font font = g.getFont();
+        String marker = selected ? SELECT_MARKER : EMPTY_MARKER;
+        int textWidth = font.stringWidth(marker) + font.stringWidth(label);
+        int textX = (w - textWidth) / 2;
+        g.drawString(marker, textX, y + 3, Graphics.TOP | Graphics.LEFT);
+        g.drawString(label, textX + font.stringWidth(marker), y + 3, Graphics.TOP | Graphics.LEFT);
     }
 
     private void drawDirtBackground(Graphics g) {
@@ -1507,12 +1611,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         drawInsetPanel(g, 12, 50, w - 24, 210);
         g.setColor(255, 255, 255);
         g.drawString("Crear mundo", w / 2, 61, Graphics.TOP | Graphics.HCENTER);
-        String[] labels = new String[] {
-            "Nombre: " + trimText(newWorldName, 17),
-            "Modo: " + (newWorldMode == 0 ? "Supervivencia" : "Creativo"),
-            "Crear mundo", "Volver"
-        };
-        for (int i = 0; i < labels.length; i++) drawMenuItem(g, labels[i], 101 + i * 37, i == createSelection);
+        drawMenuItem(g, "Nombre: " + trimText(newWorldName, 17), 101, createSelection == 0);
+        drawMenuItem(g, "Modo: " + (newWorldMode == 0 ? "Supervivencia" : "Creativo"),
+                138, createSelection == 1);
+        drawMenuItem(g, "Crear mundo", 175, createSelection == 2);
+        drawMenuItem(g, "Volver", 212, createSelection == 3);
         g.setColor(255, 240, 205);
         g.drawString("5 editar/cambiar/elegir", w / 2, 277, Graphics.TOP | Graphics.HCENTER);
     }
@@ -1874,8 +1977,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         int w = getWidth(), h = getHeight();
         g.setColor(0, 0, 0); g.fillRect(0, 0, w, h);
         g.setColor(255, 255, 255); g.drawString("Partida pausada", w / 2, h / 2 - 30, Graphics.HCENTER | Graphics.TOP);
-        String[] rows = new String[] { "Volver", "Guardar y menú", "Guardar y salir" };
-        for (int i = 0; i < rows.length; i++) drawMenuItem(g, rows[i], h / 2 + i * 19, i == pauseSelection);
+        for (int i = 0; i < PAUSE_ROWS.length; i++)
+            drawMenuItem(g, PAUSE_ROWS[i], h / 2 + i * 19, i == pauseSelection);
     }
 
     private void drawGameOver(Graphics g) {

@@ -26,6 +26,7 @@ final class ChunkRenderer {
     private static final int TILE_COUNT = 256;
     private static final float CAMERA_FAR = 38.0f;
     private static final float CHUNK_RADIUS = 12.0f;
+    private static final float TAN_VERTICAL_FOV = (float)Math.tan(Math.PI * 34.0 / 180.0);
 
     final World scene = new World();
     final Camera camera = new Camera();
@@ -60,8 +61,13 @@ final class ChunkRenderer {
     private final int[] nearestTorchX = new int[3];
     private final int[] nearestTorchY = new int[3];
     private final int[] nearestTorchZ = new int[3];
+    private int torchScanX = Integer.MIN_VALUE;
+    private int torchScanY = Integer.MIN_VALUE;
+    private int torchScanZ = Integer.MIN_VALUE;
+    private int torchScanDelay;
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
+    private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
     private final Image terrainImage;
     private final Texture2D atlas;
     private final Texture2D itemAtlas;
@@ -71,6 +77,7 @@ final class ChunkRenderer {
     private final Appearance itemSpriteAppearance;
     private final Appearance handAppearance;
     private final Mesh handMesh;
+    private VertexArray handTexCoords;
     private final Mesh itemSpriteMesh;
     private VertexArray itemSpriteTexCoordArray;
     private final short[] itemSpriteUV;
@@ -89,6 +96,7 @@ final class ChunkRenderer {
     private int builtRevision = -1;
     private int builtWidth;
     private int builtHeight;
+    private float tanHorizontalFov;
     private float cameraPitch;
 
     ChunkRenderer(int width, int height) throws IOException {
@@ -173,12 +181,14 @@ final class ChunkRenderer {
         }
         builtWidth = width;
         builtHeight = height;
+        tanHorizontalFov = TAN_VERTICAL_FOV * (float)width / (float)height;
     }
 
     void resize(int width, int height) {
         if (width <= 0 || height <= 0 || (width == builtWidth && height == builtHeight)) return;
         builtWidth = width;
         builtHeight = height;
+        tanHorizontalFov = TAN_VERTICAL_FOV * (float)width / (float)height;
         camera.setPerspective(68.0f, (float)width / (float)height, 0.1f, 38.0f);
         armBase.setTranslation(handBaseX(width, height), -0.60f, -0.72f);
     }
@@ -503,17 +513,22 @@ final class ChunkRenderer {
             int x0,int y0,int z0, int x1,int y1,int z1,
             int x2,int y2,int z2, int x3,int y3,int z3,
             int u0,int v0,int u1,int v1,int u2,int v2,int u3,int v3) {
-        int[] xyz = new int[] {x0,y0,z0,x1,y1,z1,x2,y2,z2,x3,y3,z3};
-        int[] uv = new int[] {u0,v0,u1,v1,u2,v2,u3,v3};
-        for (int i = 0; i < 4; i++) {
-            positions[vertex * 3] = (short)xyz[i * 3];
-            positions[vertex * 3 + 1] = (short)xyz[i * 3 + 1];
-            positions[vertex * 3 + 2] = (short)xyz[i * 3 + 2];
-            texCoords[vertex * 2] = (short)uv[i * 2];
-            texCoords[vertex * 2 + 1] = (short)uv[i * 2 + 1];
-            vertex++;
-        }
+        vertex = putItemSpriteVertex(positions, texCoords, vertex, x0,y0,z0,u0,v0);
+        vertex = putItemSpriteVertex(positions, texCoords, vertex, x1,y1,z1,u1,v1);
+        vertex = putItemSpriteVertex(positions, texCoords, vertex, x2,y2,z2,u2,v2);
+        vertex = putItemSpriteVertex(positions, texCoords, vertex, x3,y3,z3,u3,v3);
         return vertex;
+    }
+
+    private int putItemSpriteVertex(short[] positions, short[] texCoords, int vertex,
+            int x, int y, int z, int u, int v) {
+        int p = vertex * 3, t = vertex * 2;
+        positions[p] = (short)x;
+        positions[p + 1] = (short)y;
+        positions[p + 2] = (short)z;
+        texCoords[t] = (short)u;
+        texCoords[t + 1] = (short)v;
+        return vertex + 1;
     }
 
     private void fillItemSpriteUV(int tileU, int tileV) {
@@ -571,8 +586,8 @@ final class ChunkRenderer {
     private Appearance createHandAppearance() {
         Appearance appearance = new Appearance();
         Material material = new Material();
-        material.setColor(Material.AMBIENT, 0xFFFFD6A0);
-        material.setColor(Material.DIFFUSE, 0xFFFFD6A0);
+        material.setColor(Material.AMBIENT, 0xFFFFFFFF);
+        material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
         appearance.setMaterial(material);
         PolygonMode polygon = new PolygonMode();
         polygon.setCulling(PolygonMode.CULL_NONE);
@@ -581,8 +596,34 @@ final class ChunkRenderer {
         CompositingMode compositing = new CompositingMode();
         compositing.setDepthTestEnable(false);
         compositing.setDepthWriteEnable(false);
+        compositing.setAlphaThreshold(0.5f);
+        compositing.setBlending(CompositingMode.ALPHA);
         appearance.setCompositingMode(compositing);
         return appearance;
+    }
+
+    void setPlayerSkinIndex(int index) {
+        if (index < 0 || index > 4) index = 0;
+        Image image;
+        try { image = GameAssets.image("skin" + (index + 1) + ".png"); }
+        catch (IOException missingSkin) {
+            try { image = GameAssets.image("char.png"); }
+            catch (IOException missingDefault) { return; }
+        }
+        setPlayerSkin(image);
+    }
+
+    void setPlayerSkin(Image image) {
+        if (image == null) return;
+        Texture2D texture = new Texture2D(new Image2D(Image2D.RGBA, image));
+        texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
+        texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
+        handAppearance.setTexture(0, texture);
+        if (handTexCoords != null) {
+            int vScale = image.getWidth() / image.getHeight();
+            if (vScale < 1) vScale = 1;
+            handTexCoords.set(0, 24, makeHandUV(vScale));
+        }
     }
 
     private Appearance createFirstPersonAppearance(Texture2D texture, boolean alphaBlending) {
@@ -619,6 +660,7 @@ final class ChunkRenderer {
             -3,10,2, -3,10,-2, 1,10,2, 1,10,-2,
             -3,-2,-2, -3,-2,2, 1,-2,-2, 1,-2,2
         };
+        short[] uv = makeHandUV(2);
         final float inv16 = 1.0f / 16.0f;
         final float positionScale = 1024.0f;
         final float sinY = (float)Math.sin(-135.0 * Math.PI / 180.0);
@@ -647,10 +689,37 @@ final class ChunkRenderer {
         int[] strips = new int[] { 4,4,4,4,4,4 };
         VertexArray positions = new VertexArray(24, 3, 2);
         positions.set(0, 24, p);
+        handTexCoords = new VertexArray(24, 2, 2);
+        handTexCoords.set(0, 24, uv);
         VertexBuffer vertices = new VertexBuffer();
         vertices.setPositions(positions, 1.0f / positionScale, null);
+        vertices.setTexCoords(0, handTexCoords, 1.0f / 64.0f, null);
         TriangleStripArray triangles = new TriangleStripArray(0, strips);
         return new Mesh(vertices, triangles, handAppearance);
+    }
+
+    private short[] makeHandUV(int vScale) {
+        short[] uv = new short[48];
+        // Classic ModelBiped/ModelBox right arm: UV origin (40,16), 4x12x4.
+        putHandFaceUV(uv, 0, 44,20,48,32, false);
+        putHandFaceUV(uv, 4, 52,20,56,32, true);
+        putHandFaceUV(uv, 8, 40,20,44,32, false);
+        putHandFaceUV(uv, 12, 48,20,52,32, false);
+        putHandFaceUV(uv, 16, 44,16,48,20, false);
+        putHandFaceUV(uv, 20, 48,16,52,20, false);
+        for (int i = 0; i < 24; i++) uv[i * 2 + 1] = (short)(uv[i * 2 + 1] * vScale);
+        return uv;
+    }
+
+    private void putHandFaceUV(short[] uv, int firstVertex,
+            int u0, int v0, int u1, int v1, boolean reverse) {
+        int[] coordinates = reverse
+                ? new int[] { u1,v1, u1,v0, u0,v1, u0,v0 }
+                : new int[] { u0,v1, u0,v0, u1,v1, u1,v0 };
+        for (int i = 0; i < 4; i++) {
+            uv[(firstVertex + i) * 2] = (short)coordinates[i * 2];
+            uv[(firstVertex + i) * 2 + 1] = (short)coordinates[i * 2 + 1];
+        }
     }
 
     /** Quantize a model-space float without relying on Math.round in CLDC. */
@@ -717,8 +786,16 @@ final class ChunkRenderer {
     }
 
     private void updateTorchLights(VoxelWorld world) {
-        for (int i = 0; i < torchLights.length; i++) nearestTorchDistance[i] = 65.0f;
         int px = (int)world.playerX, py = (int)world.playerY, pz = (int)world.playerZ;
+        if (px == torchScanX && py == torchScanY && pz == torchScanZ && torchScanDelay > 0) {
+            torchScanDelay--;
+            return;
+        }
+        torchScanX = px;
+        torchScanY = py;
+        torchScanZ = pz;
+        torchScanDelay = 4;
+        for (int i = 0; i < torchLights.length; i++) nearestTorchDistance[i] = 65.0f;
         for (int y = py - 5; y <= py + 6; y++) {
             for (int z = pz - 8; z <= pz + 8; z++) {
                 for (int x = px - 8; x <= px + 8; x++) {
@@ -769,7 +846,8 @@ final class ChunkRenderer {
     }
 
     private void rebuildChanged(VoxelWorld world) {
-        boolean[] dirty = new boolean[chunks.length];
+        boolean[] dirty = dirtyChunks;
+        for (int i = 0; i < dirty.length; i++) dirty[i] = false;
         int x = world.changedX, y = world.changedY, z = world.changedZ;
         markDirty(dirty, x / VoxelWorld.CHUNK_XZ, y / VoxelWorld.CHUNK_Y, z / VoxelWorld.CHUNK_XZ);
         if (x % VoxelWorld.CHUNK_XZ == 0) markDirty(dirty, x / VoxelWorld.CHUNK_XZ - 1, y / VoxelWorld.CHUNK_Y, z / VoxelWorld.CHUNK_XZ);
@@ -822,9 +900,7 @@ final class ChunkRenderer {
         float forwardX = sinYaw * cosPitch, forwardY = sinPitch, forwardZ = cosYaw * cosPitch;
         float rightX = cosYaw, rightZ = -sinYaw;
         float upX = -sinYaw * sinPitch, upY = cosPitch, upZ = -cosYaw * sinPitch;
-        float aspect = builtHeight <= 0 ? 0.75f : (float)builtWidth / (float)builtHeight;
-        float tanVertical = (float)Math.tan(Math.PI * 34.0 / 180.0);
-        float tanHorizontal = tanVertical * aspect;
+        float tanVertical = TAN_VERTICAL_FOV;
         float eyeX = world.playerX, eyeY = world.playerY + 1.62f, eyeZ = world.playerZ;
 
         for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++) {
@@ -839,7 +915,7 @@ final class ChunkRenderer {
                     float vertical = dx * upX + dy * upY + dz * upZ;
                     boolean visible = depth + CHUNK_RADIUS >= 0.1f &&
                         depth - CHUNK_RADIUS <= CAMERA_FAR &&
-                        Math.abs(horizontal) <= Math.max(0.0f, depth) * tanHorizontal + CHUNK_RADIUS &&
+                        Math.abs(horizontal) <= Math.max(0.0f, depth) * tanHorizontalFov + CHUNK_RADIUS &&
                         Math.abs(vertical) <= Math.max(0.0f, depth) * tanVertical + CHUNK_RADIUS;
                     if (visible && !residentChunks[i]) replaceChunk(world, i);
                     else if (!visible && residentChunks[i]) removeChunk(i);
