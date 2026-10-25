@@ -53,6 +53,12 @@ final class ChunkRenderer {
     private final Group armBase = new Group();
     private final Group armSwingYaw = new Group();
     private final Group armSwingRoll = new Group();
+    private final Group handOffset = new Group();
+    private final Group handRotateZ = new Group();
+    private final Group handRotateX = new Group();
+    private final Group handRotateY = new Group();
+    private final Group handScale = new Group();
+    private final Group handModelOffset = new Group();
     private final Group terrain = new Group();
     private final Background sky = new Background();
     private final Light sunlight = new Light();
@@ -125,7 +131,20 @@ final class ChunkRenderer {
         armSwingOffset.addChild(armBase);
         armBase.addChild(armSwingYaw);
         armSwingYaw.addChild(armSwingRoll);
-        armSwingRoll.addChild(handMesh);
+        armSwingRoll.addChild(handOffset);
+        handOffset.addChild(handRotateZ);
+        handRotateZ.addChild(handRotateX);
+        handRotateX.addChild(handRotateY);
+        handRotateY.addChild(handScale);
+        handScale.addChild(handModelOffset);
+        handModelOffset.addChild(handMesh);
+        handOffset.setTranslation(-0.2f, -0.3f, 0.1f);
+        handRotateZ.setOrientation(120.0f, 0.0f, 0.0f, 1.0f);
+        handRotateX.setOrientation(200.0f, 1.0f, 0.0f, 0.0f);
+        handRotateY.setOrientation(-135.0f, 0.0f, 1.0f, 0.0f);
+        handScale.setScale(1.0f / 16.0f, 1.0f / 16.0f, 1.0f / 16.0f);
+        // Indev translates by +6 before drawing the arm, whose pivot is (-5, 2, 0).
+        handModelOffset.setTranslation(1.0f / 16.0f, 2.0f / 16.0f, 0.0f);
         handPivot.addChild(armSwingOffset);
         handPivot.addChild(heldItemOffset);
         heldItemOffset.addChild(heldItemYaw);
@@ -661,38 +680,13 @@ final class ChunkRenderer {
             -3,-2,-2, -3,-2,2, 1,-2,-2, 1,-2,2
         };
         short[] uv = makeHandUV(2);
-        final float inv16 = 1.0f / 16.0f;
-        final float positionScale = 1024.0f;
-        final float sinY = (float)Math.sin(-135.0 * Math.PI / 180.0);
-        final float cosY = (float)Math.cos(-135.0 * Math.PI / 180.0);
-        final float sinX = (float)Math.sin(200.0 * Math.PI / 180.0);
-        final float cosX = (float)Math.cos(200.0 * Math.PI / 180.0);
-        final float sinZ = (float)Math.sin(120.0 * Math.PI / 180.0);
-        final float cosZ = (float)Math.cos(120.0 * Math.PI / 180.0);
-        for (int i = 0; i < 24; i++) {
-            float x = (p[i * 3] + 1.0f) * inv16;
-            float y = (p[i * 3 + 1] + 2.0f) * inv16;
-            float z = p[i * 3 + 2] * inv16;
-
-            float rotatedX = x * cosY + z * sinY;
-            float rotatedZ = -x * sinY + z * cosY;
-            float rotatedY = y * cosX - rotatedZ * sinX;
-            float finalZ = y * sinX + rotatedZ * cosX;
-            float finalX = rotatedX * cosZ - rotatedY * sinZ - 0.2f;
-            float finalY = rotatedX * sinZ + rotatedY * cosZ - 0.3f;
-            finalZ += 0.1f;
-
-            p[i * 3] = quantizePosition(finalX, positionScale);
-            p[i * 3 + 1] = quantizePosition(finalY, positionScale);
-            p[i * 3 + 2] = quantizePosition(finalZ, positionScale);
-        }
         int[] strips = new int[] { 4,4,4,4,4,4 };
         VertexArray positions = new VertexArray(24, 3, 2);
         positions.set(0, 24, p);
         handTexCoords = new VertexArray(24, 2, 2);
         handTexCoords.set(0, 24, uv);
         VertexBuffer vertices = new VertexBuffer();
-        vertices.setPositions(positions, 1.0f / positionScale, null);
+        vertices.setPositions(positions, 1.0f, null);
         vertices.setTexCoords(0, handTexCoords, 1.0f / 64.0f, null);
         TriangleStripArray triangles = new TriangleStripArray(0, strips);
         return new Mesh(vertices, triangles, handAppearance);
@@ -718,17 +712,9 @@ final class ChunkRenderer {
                 : new int[] { u0,v1, u0,v0, u1,v1, u1,v0 };
         for (int i = 0; i < 4; i++) {
             uv[(firstVertex + i) * 2] = (short)coordinates[i * 2];
-            uv[(firstVertex + i) * 2 + 1] = (short)coordinates[i * 2 + 1];
+            uv[(firstVertex + i) * 2 + 1] =
+                    (short)(v0 + v1 - coordinates[i * 2 + 1]);
         }
-    }
-
-    /** Quantize a model-space float without relying on Math.round in CLDC. */
-    private short quantizePosition(float value, float scale) {
-        float scaled = value * scale;
-        int rounded = (int)(scaled >= 0.0f ? scaled + 0.5f : scaled - 0.5f);
-        if (rounded > 32767) rounded = 32767;
-        if (rounded < -32768) rounded = -32768;
-        return (short)rounded;
     }
 
     void spawnBlockDestroy(int x, int y, int z, int tile) {
