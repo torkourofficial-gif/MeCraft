@@ -55,12 +55,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         Block.LEAVES, Block.COAL, Block.IRON, Block.TORCH
     };
     private final int[] inventory = new int[ItemCatalog.COUNT];
-    private final Command mineCommand = new Command("Romper", Command.SCREEN, 1);
-    private final Command placeCommand = new Command("Colocar", Command.SCREEN, 2);
-    private final Command pauseCommand = new Command("Pausa", Command.SCREEN, 3);
     private final Command selectCommand = new Command("Elegir", Command.OK, 1);
     private final Command exitCommand = new Command("Salir", Command.EXIT, 9);
-    private final Command craftingCommand = new Command("Cerrar", Command.BACK, 4);
     private final Command nameAcceptCommand = new Command("Aceptar", Command.OK, 1);
     private final Command nameCancelCommand = new Command("Cancelar", Command.CANCEL, 2);
 
@@ -266,10 +262,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         gameOverSelection = 0;
         clearKeys();
         resetMining();
-        removeCommand(mineCommand);
-        removeCommand(placeCommand);
-        removeCommand(pauseCommand);
-        addSelectCommand();
+        removeSelectCommand();
+        removeCommand(exitCommand);
         repaint();
     }
 
@@ -325,9 +319,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             renderer.sync(world);
             state = PLAYING;
             removeSelectCommand();
-            addCommand(mineCommand);
-            addCommand(placeCommand);
-            addCommand(pauseCommand);
+            removeCommand(exitCommand);
             repaint();
         } catch (OutOfMemoryError exhausted) {
             showError("No hay memoria suficiente para crear el mundo. Libera memoria y vuelve a intentarlo.");
@@ -366,16 +358,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             renderer.sync(world);
             state = world.mode == 0 && world.health <= 0 ? GAME_OVER : PLAYING;
             if (state == GAME_OVER) gameOverSelection = 0;
+            removeCommand(exitCommand);
             if (state == GAME_OVER) {
-                removeCommand(mineCommand);
-                removeCommand(placeCommand);
-                removeCommand(pauseCommand);
-                addSelectCommand();
+                                        addSelectCommand();
             } else {
                 removeSelectCommand();
-                addCommand(mineCommand);
-                addCommand(placeCommand);
-                addCommand(pauseCommand);
+                removeCommand(exitCommand);
             }
         } catch (OutOfMemoryError exhausted) {
             showError("No hay memoria suficiente para cargar el mundo guardado.");
@@ -395,9 +383,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         diagnosticError = false;
         diagnosticScroll = 0;
         state = ERROR;
-        removeCommand(mineCommand);
-        removeCommand(placeCommand);
-        removeCommand(pauseCommand);
         addSelectCommand();
     }
 
@@ -418,9 +403,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         diagnosticError = true;
         diagnosticScroll = 0;
         state = ERROR;
-        removeCommand(mineCommand);
-        removeCommand(placeCommand);
-        removeCommand(pauseCommand);
         addSelectCommand();
     }
 
@@ -734,20 +716,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         recipeSelection = 0;
         recipeScroll = 0;
         clearKeys();
-        removeCommand(mineCommand);
-        removeCommand(placeCommand);
-        removeCommand(pauseCommand);
-        addCommand(craftingCommand);
         repaint();
     }
 
     private void closeCrafting() {
         if (state != INVENTORY && state != WORKBENCH) return;
         state = PLAYING;
-        removeCommand(craftingCommand);
-        addCommand(mineCommand);
-        addCommand(placeCommand);
-        addCommand(pauseCommand);
         repaint();
     }
 
@@ -1032,20 +1006,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         state = CREATIVE_INVENTORY;
         creativeSelection = 0;
         clearKeys();
-        removeCommand(mineCommand);
-        removeCommand(placeCommand);
-        removeCommand(pauseCommand);
-        addCommand(craftingCommand);
         repaint();
     }
 
     private void closeCreativeInventory() {
         if (state != CREATIVE_INVENTORY) return;
         state = PLAYING;
-        removeCommand(craftingCommand);
-        addCommand(mineCommand);
-        addCommand(placeCommand);
-        addCommand(pauseCommand);
         repaint();
     }
 
@@ -1151,9 +1117,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         refreshWorldList();
         state = MENU;
         menuSelection = MENU_SINGLEPLAYER;
-        removeCommand(mineCommand);
-        removeCommand(placeCommand);
-        removeCommand(pauseCommand);
+        removeCommand(exitCommand);
+        addCommand(exitCommand);
         addSelectCommand();
         clearKeys();
         renderer = null;
@@ -1347,13 +1312,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             else if (state == WORLD_CREATE) activateCreateSelection();
             else if (state == GAME_OVER) activateGameOverSelection();
             else backToMenu();
-        } else if (command == craftingCommand) {
-            if (state == CREATIVE_INVENTORY) closeCreativeInventory();
-            else closeCrafting();
-        }
-        else if (command == mineCommand) mineTarget();
-        else if (command == placeCommand) placeBlock();
-        else if (command == pauseCommand) openPause();
+
     }
 
     protected synchronized void sizeChanged(int width, int height) {
