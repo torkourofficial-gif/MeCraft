@@ -107,12 +107,13 @@ final class SkySystem {
     private static final float TAN_HALF_FOV =
             (float)Math.tan(34.0 * Math.PI / 180.0);
 
-    void update(VoxelWorld world, float yaw, float cloudYaw, float celestialAngle,
+    void update(VoxelWorld world, float yaw, float cloudYaw, float pitch,
+            float celestialAngle,
             float daylight, int skyColor) {
         yawCounter.setOrientation(-yaw, 0.0f, 1.0f, 0.0f);
         celestialRotation.setOrientation(celestialAngle * 57.29578f,
                 1.0f, 0.0f, 0.0f);
-        renderCloudBackground(world.dayTime, cloudYaw, daylight, skyColor);
+        renderCloudBackground(world.dayTime, cloudYaw, pitch, daylight, skyColor);
         oceanPlane.setTranslation(-world.playerX,
                 VoxelWorld.SEA_LEVEL + 1.0f - (world.playerY + 1.62f), -world.playerZ);
 
@@ -134,16 +135,23 @@ final class SkySystem {
 
     /** Rasterize Indev's cloud map into the sky background at 1 texel / 8 blocks. */
     private void renderCloudBackground(int dayTime, float yawDegrees,
-            float daylight, int skyColor) {
+            float pitchDegrees, float daylight, int skyColor) {
         // Keep the cloud panorama fixed at the world origin: translation and
         // pitch never affect it. Horizontal camera yaw changes the sampled
         // world direction, so the image scrolls oppositely to the player turn.
         double yaw = yawDegrees * Math.PI / 180.0;
+        double pitch = pitchDegrees * Math.PI / 180.0;
         float sinYaw = (float)Math.sin(yaw), cosYaw = (float)Math.cos(yaw);
-        float forwardX = sinYaw, forwardZ = cosYaw;
+        float sinPitch = (float)Math.sin(pitch), cosPitch = (float)Math.cos(pitch);
+        float forwardX = sinYaw * cosPitch;
+        float forwardY = sinPitch;
+        float forwardZ = cosYaw * cosPitch;
         // The camera pivot has a 180-degree base yaw, so its screen-right
         // vector is the negative of the usual world-space right vector.
         float rightX = -cosYaw, rightZ = sinYaw;
+        float upX = -sinYaw * sinPitch;
+        float upY = cosPitch;
+        float upZ = -cosYaw * sinPitch;
         float virtualEyeY = VoxelWorld.HEIGHT * 0.5f;
         float cloudLevel = VoxelWorld.HEIGHT + 10.0f - virtualEyeY;
         float focal = viewportHeight / (2.0f * TAN_HALF_FOV);
@@ -156,16 +164,20 @@ final class SkySystem {
         int halfHeight = (viewportHeight + 1) >> 1;
         for (int sy = 0; sy < halfHeight; sy++) {
             float screenUp = screenY[sy];
-            float distance = screenUp > 0.0001f ? cloudLevel / screenUp : 0.0f;
-            float startX = screenUp > 0.0001f
-                    ? (forwardX + screenX[0] * rightX) * distance : 0.0f;
-            float startZ = screenUp > 0.0001f
-                    ? (forwardZ + screenX[0] * rightZ) * distance : 0.0f;
-            float stepX = rightX * distance * 2.0f / focal;
-            float stepZ = rightZ * distance * 2.0f / focal;
+            float rayY = forwardY + screenUp * upY;
+            float baseRayX = forwardX + screenUp * upX;
+            float baseRayZ = forwardZ + screenUp * upZ;
+            boolean hitsCloudLayer = rayY > 0.0001f;
+            float distance = hitsCloudLayer ? cloudLevel / rayY : 0.0f;
+            float startX = hitsCloudLayer
+                    ? (baseRayX + screenX[0] * rightX) * distance : 0.0f;
+            float startZ = hitsCloudLayer
+                    ? (baseRayZ + screenX[0] * rightZ) * distance : 0.0f;
+            float stepX = hitsCloudLayer ? rightX * distance * 2.0f / focal : 0.0f;
+            float stepZ = hitsCloudLayer ? rightZ * distance * 2.0f / focal : 0.0f;
             for (int sx = 0; sx < halfWidth; sx++) {
                 int red = skyR, green = skyG, blue = skyB;
-                if (screenUp > 0.0001f) {
+                if (hitsCloudLayer) {
                     int tx = floor(startX * cloudWidth / 2048.0f) + shift;
                     int tz = floor(startZ * cloudHeight / 2048.0f);
                     tx = wrap(tx, cloudWidth);
