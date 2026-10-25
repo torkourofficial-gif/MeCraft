@@ -114,12 +114,12 @@ final class ChunkRenderer {
         atlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         atlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         flowerAppearance = createFlowerAppearance();
-        heldItemAppearance = createFirstPersonAppearance(atlas, true);
+        heldItemAppearance = createFirstPersonAppearance(atlas, true, true);
         Image itemSource = GameAssets.image("items.png");
         itemAtlas = new Texture2D(new Image2D(Image2D.RGBA, itemSource));
         itemAtlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         itemAtlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
-        itemSpriteAppearance = createFirstPersonAppearance(itemAtlas, true);
+        itemSpriteAppearance = createFirstPersonAppearance(itemAtlas, true, false);
         ItemSpriteData itemData = makeItemSpriteMesh();
         itemSpriteMesh = itemData.mesh;
         itemSpriteTexCoordArray = itemData.texCoords;
@@ -442,7 +442,7 @@ final class ChunkRenderer {
             int at = 0;
             for (int i = 0; i < builders.length; i++) {
                 if (builders[i] == null) continue;
-                Mesh mesh = makeHeldMesh(builders[i], heldItemAppearance);
+                Mesh mesh = makeMesh(builders[i], heldItemAppearance);
                 // Center the cube at the hand anchor and keep it slightly smaller
                 // than Indev's 0.4 inventory-render scale.
                 mesh.setScale(0.34f, 0.34f, 0.34f);
@@ -462,7 +462,6 @@ final class ChunkRenderer {
         for (int face = 0; face < 6; face++) data.add(0, 0, 0, face);
         // The first-person cube uses the same outside-facing winding as the
         // held block meshes. Keep this separate from world chunk geometry.
-        reverseFaceWinding(data);
         int vertexCount = data.vertexCount;
         VertexArray positions = new VertexArray(vertexCount, 3, 2);
         positions.set(0, vertexCount, data.p);
@@ -616,7 +615,7 @@ final class ChunkRenderer {
         material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
         appearance.setMaterial(material);
         PolygonMode polygon = new PolygonMode();
-        polygon.setCulling(PolygonMode.CULL_NONE);
+        polygon.setCulling(PolygonMode.CULL_BACK);
         polygon.setShading(PolygonMode.SHADE_FLAT);
         appearance.setPolygonMode(polygon);
         CompositingMode compositing = new CompositingMode();
@@ -652,7 +651,8 @@ final class ChunkRenderer {
         }
     }
 
-    private Appearance createFirstPersonAppearance(Texture2D texture, boolean alphaBlending) {
+    private Appearance createFirstPersonAppearance(Texture2D texture,
+            boolean alphaBlending, boolean cullBackFaces) {
         Appearance appearance = new Appearance();
         if (texture != null) appearance.setTexture(0, texture);
         Material material = new Material();
@@ -660,7 +660,7 @@ final class ChunkRenderer {
         material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
         appearance.setMaterial(material);
         PolygonMode polygon = new PolygonMode();
-        polygon.setCulling(PolygonMode.CULL_NONE);
+        polygon.setCulling(cullBackFaces ? PolygonMode.CULL_BACK : PolygonMode.CULL_NONE);
         polygon.setShading(PolygonMode.SHADE_FLAT);
         appearance.setPolygonMode(polygon);
         CompositingMode compositing = new CompositingMode();
@@ -690,7 +690,7 @@ final class ChunkRenderer {
         // triangle-strip front-face convention. Reverse each quad so its
         // two triangles point out of the arm rather than into it.
         short[] uv = makeHandUV(2);
-        reverseQuadWinding(p, null, null, 6);
+        reverseQuadWinding(p, 6);
         int[] strips = new int[] { 4,4,4,4,4,4 };
         VertexArray positions = new VertexArray(24, 3, 2);
         positions.set(0, 24, p);
@@ -1057,23 +1057,11 @@ final class ChunkRenderer {
     }
 
     /** Build a first-person cube with outward-facing faces, without changing chunk meshes. */
-    private Mesh makeHeldMesh(FaceBuilder data, Appearance appearance) {
-        reverseFaceWinding(data);
-        return makeMesh(data, appearance);
-    }
-
-    private void reverseFaceWinding(FaceBuilder data) {
-        reverseQuadWinding(data.p, data.uv, data.c, data.vertexCount / 4);
-    }
-
-    /** Swap strip vertices 1 and 2, including their attributes, in each quad. */
-    private void reverseQuadWinding(short[] positions, short[] texCoords,
-            byte[] colors, int quadCount) {
+    /** Swap vertices 1 and 2 in each arm quad to point its face outward. */
+    private void reverseQuadWinding(short[] positions, int quadCount) {
         for (int quad = 0; quad < quadCount; quad++) {
             int vertex = quad * 4;
             swapShortVertex(positions, vertex + 1, vertex + 2, 3);
-            if (texCoords != null) swapShortVertex(texCoords, vertex + 1, vertex + 2, 2);
-            if (colors != null) swapByteVertex(colors, vertex + 1, vertex + 2, 4);
         }
     }
 
@@ -1082,16 +1070,6 @@ final class ChunkRenderer {
         int b = second * components;
         for (int i = 0; i < components; i++) {
             short value = values[a + i];
-            values[a + i] = values[b + i];
-            values[b + i] = value;
-        }
-    }
-
-    private void swapByteVertex(byte[] values, int first, int second, int components) {
-        int a = first * components;
-        int b = second * components;
-        for (int i = 0; i < components; i++) {
-            byte value = values[a + i];
             values[a + i] = values[b + i];
             values[b + i] = value;
         }
