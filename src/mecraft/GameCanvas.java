@@ -93,6 +93,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private volatile int state = MENU;
     private int menuSelection = MENU_SINGLEPLAYER;
     private int settingsSelection;
+    private int language = Language.ENGLISH;
     private int cameraSensitivity = 2;
     private boolean controlsReturnSettings;
     private final int[] controlCodes = new int[CONTROL_COUNT];
@@ -109,7 +110,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private boolean worldDeleteFailed;
     private int createSelection;
     private int newWorldMode;
-    private String newWorldName = "Mundo 1";
+    private String newWorldName = "World 1";
     private TextBox worldNameInput;
     private Command worldNameAccept;
     private Command worldNameCancel;
@@ -160,11 +161,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     GameCanvas(MeCraft app) {
         this.app = app;
-        int[] savedSettings = new int[] { frameSkip, cameraSensitivity, selectedPlayerSkin };
+        int[] savedSettings = new int[] { frameSkip, cameraSensitivity, selectedPlayerSkin, language };
         GameSettings.load(savedSettings, controlCodes, customControls);
         frameSkip = clamp(savedSettings[0], 0, 2);
         cameraSensitivity = clamp(savedSettings[1], 0, 4);
         selectedPlayerSkin = clamp(savedSettings[2], 0, 4);
+        language = clamp(savedSettings[3], Language.ENGLISH, Language.SPANISH);
+        Language.set(language);
         try { music = new MusicController(); }
         catch (NoClassDefFoundError unsupported) { music = null; }
         setFullScreenMode(true);
@@ -337,7 +340,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         world = null;
         System.gc();
         if (gameOverSelection == 0) {
-            newWorldName = "Mundo " + (savedWorlds.length + 1);
+            newWorldName = defaultWorldName(savedWorlds.length + 1);
             newWorldMode = mode;
             createSelection = 0;
             state = WORLD_CREATE;
@@ -360,7 +363,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 System.gc();
             }
             world = new VoxelWorld((int)(System.currentTimeMillis() ^ System.currentTimeMillis() >>> 32), mode);
-            world.worldName = name == null || name.trim().length() == 0 ? "Mundo" : name.trim();
+            world.worldName = name == null || name.trim().length() == 0 ? Language.text("Mundo") : name.trim();
             world.saveStoreName = VoxelWorld.nextWorldStoreName();
             copyHotbarFromWorld();
             playerPhysics.reset();
@@ -435,7 +438,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void showError(String message) {
-        errorMessage = message;
+        errorMessage = Language.text(message);
         diagnosticError = false;
         diagnosticScroll = 0;
         state = ERROR;
@@ -449,12 +452,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         String runtimeProfiles = readProperty("microedition.profiles");
         String requiredConfig = readAppProperty("MicroEdition-Configuration");
         String runtimeConfig = readProperty("microedition.configuration");
-        errorMessage = "Etapa: " + stage + " | Tipo: " + problem.getClass().getName() +
-                       " | Mensaje: " + message + " | M3G runtime: " + m3gVersion +
-                       " | Perfil solicitado por la app (JAD): " + requiredProfile +
-                       " | Perfiles que soporta el emulador: " + runtimeProfiles +
-                       " | Config solicitada (JAD): " + requiredConfig +
-                       " | Config que soporta el emulador: " + runtimeConfig;
+        errorMessage = Language.text("Etapa") + ": " + Language.text(stage) + " | " +
+                       Language.text("Tipo") + ": " + problem.getClass().getName() +
+                       " | " + Language.text("Mensaje") + ": " + message + " | M3G runtime: " + m3gVersion +
+                       " | " + Language.text("Perfil solicitado por la app (JAD)") + ": " + requiredProfile +
+                       " | " + Language.text("Perfiles que soporta el emulador") + ": " + runtimeProfiles +
+                       " | " + Language.text("Config solicitada (JAD)") + ": " + requiredConfig +
+                       " | " + Language.text("Config que soporta el emulador") + ": " + runtimeConfig;
         diagnosticError = true;
         diagnosticScroll = 0;
         state = ERROR;
@@ -463,18 +467,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private String readProperty(String name) {
         try {
             String value = System.getProperty(name);
-            return value == null ? "no informado" : value;
+            return value == null ? Language.text("no informado") : value;
         } catch (Throwable ignored) {
-            return "no disponible";
+            return Language.text("no disponible");
         }
     }
 
     private String readAppProperty(String name) {
         try {
             String value = app.getAppProperty(name);
-            return value == null ? "no informado" : value;
+            return value == null ? Language.text("no informado") : value;
         } catch (Throwable ignored) {
-            return "no disponible";
+            return Language.text("no disponible");
         }
     }
 
@@ -916,14 +920,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (state == SETTINGS) {
             int action = gameAction(keyCode);
             if (keyCode == KEY_NUM2 || action == UP || keyCode == KEY_NUM8 || action == DOWN) {
-                settingsSelection = (settingsSelection + 1) % 4;
+                settingsSelection = (settingsSelection + 1) % 5;
                 repaint();
             } else if (settingsSelection == 0 && (keyCode == KEY_NUM4 || action == LEFT)) changeFrameSkip(-1);
             else if (settingsSelection == 0 && (keyCode == KEY_NUM6 || action == RIGHT)) changeFrameSkip(1);
             else if (settingsSelection == 1 && (keyCode == KEY_NUM4 || action == LEFT)) changeSensitivity(-1);
             else if (settingsSelection == 1 && (keyCode == KEY_NUM6 || action == RIGHT)) changeSensitivity(1);
+            else if (settingsSelection == 3 && (keyCode == KEY_NUM4 || action == LEFT ||
+                    keyCode == KEY_NUM6 || action == RIGHT)) changeLanguage();
             else if (settingsSelection == 2 && (keyCode == KEY_NUM5 || action == FIRE)) openSkinSelect();
-            else if (settingsSelection == 3 && (keyCode == KEY_NUM5 || action == FIRE)) {
+            else if (settingsSelection == 4 && (keyCode == KEY_NUM5 || action == FIRE)) {
                 controlsReturnSettings = true;
                 state = CONTROLS;
                 repaint();
@@ -1125,8 +1131,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void saveSettings() {
-        GameSettings.save(new int[] { frameSkip, cameraSensitivity, selectedPlayerSkin },
+        GameSettings.save(new int[] { frameSkip, cameraSensitivity, selectedPlayerSkin, language },
                 controlCodes, customControls);
+    }
+
+    private void changeLanguage() {
+        language = language == Language.ENGLISH ? Language.SPANISH : Language.ENGLISH;
+        Language.set(language);
+        if (newWorldName.equals("World 1") || newWorldName.equals("Mundo 1"))
+            newWorldName = defaultWorldName(savedWorlds.length + 1);
+        saveSettings();
+        repaint();
+    }
+
+    private String defaultWorldName(int number) {
+        return Language.text("Mundo") + " " + number;
     }
 
     private boolean isControlKey(int control, int keyCode, int defaultKeyCode, int defaultAction) {
@@ -1279,7 +1298,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (worldSelection < savedWorlds.length) {
             openSavedWorld(savedWorlds[worldSelection]);
         } else if (worldSelection == savedWorlds.length) {
-            newWorldName = "Mundo " + (savedWorlds.length + 1);
+            newWorldName = defaultWorldName(savedWorlds.length + 1);
             newWorldMode = 0;
             createSelection = 0;
             state = WORLD_CREATE;
@@ -1297,7 +1316,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             repaint();
         } else if (createSelection == 2) {
             String name = newWorldName == null ? "" : newWorldName.trim();
-            if (name.length() == 0) name = "Mundo " + (savedWorlds.length + 1);
+            if (name.length() == 0) name = defaultWorldName(savedWorlds.length + 1);
             startNewWorld(newWorldMode, name);
         } else {
             state = WORLD_SELECT;
@@ -1306,9 +1325,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void openWorldNameInput() {
-        worldNameInput = new TextBox("Nombre del mundo", newWorldName, 24, TextField.ANY);
-        worldNameAccept = new Command("Aceptar", Command.OK, 1);
-        worldNameCancel = new Command("Cancelar", Command.CANCEL, 2);
+        worldNameInput = new TextBox(Language.text("Nombre del mundo"), newWorldName, 24, TextField.ANY);
+        worldNameAccept = new Command(Language.text("Aceptar"), Command.OK, 1);
+        worldNameCancel = new Command(Language.text("Cancelar"), Command.CANCEL, 2);
         worldNameInput.addCommand(worldNameAccept);
         worldNameInput.addCommand(worldNameCancel);
         worldNameInput.setCommandListener(this);
@@ -1321,7 +1340,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (command == worldNameAccept) {
             String value = worldNameInput.getString();
             value = value == null ? "" : value.trim();
-            newWorldName = value.length() == 0 ? "Mundo " + (savedWorlds.length + 1) : value;
+            newWorldName = value.length() == 0 ? defaultWorldName(savedWorlds.length + 1) : value;
         }
         worldNameInput = null;
         worldNameAccept = null;
@@ -1639,7 +1658,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         drawIndevMenuButton(g, "Salir", firstY + buttonStep * 3, buttonHeight,
                 menuSelection == MENU_EXIT);
         g.setColor(235, 222, 196);
-        g.drawString("2/8 elegir   5 aceptar", w / 2, h - 27,
+        g.drawString(Language.text("2/8 elegir   5 aceptar"), w / 2, h - 27,
                 Graphics.TOP | Graphics.HCENTER);
     }
 
@@ -1661,29 +1680,31 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         g.setColor(selected ? 255 : 160, selected ? 226 : 160, selected ? 112 : 160);
         g.drawRect(x, y, width - 1, height - 1);
         g.setColor(selected ? 255 : 245, selected ? 224 : 245, selected ? 125 : 245);
-        g.drawString(label, w / 2, y + (height - Font.getDefaultFont().getHeight()) / 2,
+        g.drawString(Language.text(label), w / 2, y + (height - Font.getDefaultFont().getHeight()) / 2,
                 Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawSettings(Graphics g) {
         int w = getWidth(), h = getHeight();
         drawDirtBackground(g);
-        int panelY = Math.max(24, h / 5);
-        int panelHeight = Math.min(h - panelY - 8, 202);
+        int panelY = Math.max(16, h / 5);
+        int panelHeight = Math.min(h - panelY - 8, 190);
         drawInsetPanel(g, 12, panelY, w - 24, panelHeight);
         g.setColor(255, 244, 200);
-        g.drawString("Ajustes", w / 2, panelY + 10, Graphics.TOP | Graphics.HCENTER);
+        g.drawString(Language.text("Ajustes"), w / 2, panelY + 10, Graphics.TOP | Graphics.HCENTER);
         String value = frameSkip == 0 ? "Desactivado" : (frameSkip == 1 ? "1 de cada 2" : "2 de cada 3");
         String[] sensitivityNames = new String[] { "Muy baja", "Baja", "Normal", "Alta", "Muy alta" };
-        drawMenuItem(g, "Frameskip: " + value, panelY + 36, settingsSelection == 0);
-        drawMenuItem(g, "Sensibilidad: " + sensitivityNames[cameraSensitivity], panelY + 64,
+        drawMenuItem(g, "Frameskip: " + value, panelY + 32, settingsSelection == 0);
+        drawMenuItem(g, "Sensibilidad: " + sensitivityNames[cameraSensitivity], panelY + 56,
                 settingsSelection == 1);
-        drawMenuItem(g, "Skin del jugador", panelY + 92, settingsSelection == 2);
-        drawMenuItem(g, "Controles", panelY + 120, settingsSelection == 3);
+        drawMenuItem(g, "Skin del jugador", panelY + 80, settingsSelection == 2);
+        drawMenuItem(g, "Idioma: " + (language == Language.ENGLISH ? "English" : "Español"),
+                panelY + 104, settingsSelection == 3);
+        drawMenuItem(g, "Controles", panelY + 128, settingsSelection == 4);
         g.setColor(240, 224, 190);
-        g.drawString("2/8 elegir   4/6 cambiar   5 abrir", w / 2, panelY + 154,
+        g.drawString(Language.text("2/8 elegir   4/6 cambiar   5 abrir"), w / 2, panelY + 158,
                 Graphics.TOP | Graphics.HCENTER);
-        g.drawString("0 volver", w / 2, panelY + 172, Graphics.TOP | Graphics.HCENTER);
+        g.drawString(Language.text("0 volver"), w / 2, panelY + 174, Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawControls(Graphics g) {
@@ -1693,10 +1714,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         int panelHeight = Math.min(h - panelY - 8, 238);
         drawInsetPanel(g, 10, panelY, w - 20, panelHeight);
         g.setColor(255, 244, 200);
-        g.drawString("Controles", w / 2, panelY + 10, Graphics.TOP | Graphics.HCENTER);
+        g.drawString(Language.text("Controles"), w / 2, panelY + 10, Graphics.TOP | Graphics.HCENTER);
         if (controlsListening) {
             g.setColor(255, 215, 128);
-            g.drawString("Pulsa una tecla nueva (0 cancela)", w / 2, panelY + 27,
+            g.drawString(Language.text("Pulsa una tecla nueva (0 cancela)"), w / 2, panelY + 27,
                     Graphics.TOP | Graphics.HCENTER);
         }
         int rows = controlsVisibleRows();
@@ -1712,18 +1733,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 g.fillRect(15, y - 1, w - 30, rowHeight);
             }
             g.setColor(selected ? 255 : 225, selected ? 229 : 215, selected ? 166 : 195);
-            g.drawString(CONTROL_NAMES[index], 18, y, Graphics.TOP | Graphics.LEFT);
+            g.drawString(Language.text(CONTROL_NAMES[index]), 18, y, Graphics.TOP | Graphics.LEFT);
             g.setColor(selected ? 255 : 190, selected ? 239 : 180, selected ? 177 : 145);
             g.drawString(controlKeyName(index), w - 18, y, Graphics.TOP | Graphics.RIGHT);
         }
         g.setColor(240, 224, 190);
         if (controlsMessage != null) {
-            g.drawString(controlsMessage, w / 2, panelY + panelHeight - 42,
+            g.drawString(Language.text(controlsMessage), w / 2, panelY + panelHeight - 42,
                     Graphics.TOP | Graphics.HCENTER);
         }
-        g.drawString("5: reasignar   7: restaurar fila", w / 2, panelY + panelHeight - 26,
+        g.drawString(Language.text("5: reasignar   7: restaurar fila"), w / 2, panelY + panelHeight - 26,
                 Graphics.TOP | Graphics.HCENTER);
-        g.drawString("2/8 mover   0 volver", w / 2, panelY + panelHeight - 12,
+        g.drawString(Language.text("2/8 mover   0 volver"), w / 2, panelY + panelHeight - 12,
                 Graphics.TOP | Graphics.HCENTER);
     }
 
@@ -1732,7 +1753,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         drawDirtBackground(g);
         drawInsetPanel(g, 6, 5, w - 12, h - 10);
         g.setColor(255, 244, 200);
-        g.drawString("Skins", w / 2, 9, Graphics.TOP | Graphics.HCENTER);
+        g.drawString(Language.text("Skins"), w / 2, 9, Graphics.TOP | Graphics.HCENTER);
 
         int viewportX = 10, viewportY = 30;
         int viewportWidth = w - 20;
@@ -1747,7 +1768,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 } finally { graphics3D.releaseTarget(); }
             } catch (Throwable problem) {
                 g.setColor(255, 220, 180);
-                g.drawString("No se pudo mostrar la vista 3D", w / 2,
+                g.drawString(Language.text("No se pudo mostrar la vista 3D"), w / 2,
                         viewportY + viewportHeight / 2, Graphics.TOP | Graphics.HCENTER);
             }
         }
@@ -1766,10 +1787,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
         g.setColor(240, 224, 190);
         if (skinGallery != null && skinGallery.isFallback(skinSelection)) {
-            g.drawString("Falta skin" + (skinSelection + 1) + ".png", w / 2, h - 46,
+            g.drawString(Language.text("Falta skin" + (skinSelection + 1) + ".png"), w / 2, h - 46,
                     Graphics.TOP | Graphics.HCENTER);
         }
-        g.drawString("4/6 elegir   5 usar   0 volver", w / 2, h - 23,
+        g.drawString(Language.text("4/6 elegir   5 usar   0 volver"), w / 2, h - 23,
                 Graphics.TOP | Graphics.HCENTER);
     }
 
@@ -1784,10 +1805,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         g.setColor(selected ? 255 : 224, selected ? 244 : 224, selected ? 180 : 224);
         Font font = g.getFont();
         String marker = selected ? SELECT_MARKER : EMPTY_MARKER;
-        int textWidth = font.stringWidth(marker) + font.stringWidth(label);
+        String displayLabel = Language.text(label);
+        int textWidth = font.stringWidth(marker) + font.stringWidth(displayLabel);
         int textX = (w - textWidth) / 2;
         g.drawString(marker, textX, y + 3, Graphics.TOP | Graphics.LEFT);
-        g.drawString(label, textX + font.stringWidth(marker), y + 3, Graphics.TOP | Graphics.LEFT);
+        g.drawString(displayLabel, textX + font.stringWidth(marker), y + 3, Graphics.TOP | Graphics.LEFT);
     }
 
     private void drawDirtBackground(Graphics g) {
@@ -1819,7 +1841,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         drawDirtBackground(g);
         drawInsetPanel(g, 8, 7, w - 16, h - 42);
         g.setColor(255, 255, 255);
-        g.drawString("Seleccionar mundo", w / 2, 12, Graphics.TOP | Graphics.HCENTER);
+        g.drawString(Language.text("Seleccionar mundo"), w / 2, 12, Graphics.TOP | Graphics.HCENTER);
         int top = 38, rowHeight = 30, visible = 7;
         int total = savedWorlds.length + 2;
         int first = worldSelection - visible + 1;
@@ -1842,16 +1864,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 String name = trimText(entry.name, 21);
                 g.drawString(name, 21, y + 2, Graphics.TOP | Graphics.LEFT);
                 g.setColor(214, 196, 167);
-                g.drawString(entry.mode == 1 ? "Creativo" : "Supervivencia", 21,
+                g.drawString(Language.text(entry.mode == 1 ? "Creativo" : "Supervivencia"), 21,
                         y + 15, Graphics.TOP | Graphics.LEFT);
             } else {
                 String label = index == savedWorlds.length ? "Crear mundo nuevo" : "Volver";
-                g.drawString((selected ? "> " : "  ") + label, w / 2, y + 7,
+                g.drawString((selected ? "> " : "  ") + Language.text(label), w / 2, y + 7,
                         Graphics.TOP | Graphics.HCENTER);
             }
         }
         g.setColor(255, 240, 205);
-        g.drawString("2/8 elegir  5 abrir  1 borrar", w / 2, h - 27,
+        g.drawString(Language.text("2/8 elegir  5 abrir  1 borrar"), w / 2, h - 27,
                 Graphics.TOP | Graphics.HCENTER);
     }
 
@@ -1860,18 +1882,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         drawDirtBackground(g);
         drawInsetPanel(g, 12, h / 2 - 64, w - 24, 128);
         g.setColor(255, 255, 255);
-        g.drawString("Borrar mundo", w / 2, h / 2 - 52,
+        g.drawString(Language.text("Borrar mundo"), w / 2, h / 2 - 52,
                 Graphics.TOP | Graphics.HCENTER);
         String name = worldDeleteSelection >= 0 && worldDeleteSelection < savedWorlds.length ?
-                savedWorlds[worldDeleteSelection].name : "Mundo";
+                savedWorlds[worldDeleteSelection].name : Language.text("Mundo");
         g.setColor(255, 230, 205);
         g.drawString(trimText(name, 22), w / 2, h / 2 - 20,
                 Graphics.TOP | Graphics.HCENTER);
         g.setColor(255, 110, 90);
-        g.drawString(worldDeleteFailed ? "No se pudo borrar" : "Se eliminara para siempre",
+        g.drawString(Language.text(worldDeleteFailed ? "No se pudo borrar" : "Se eliminara para siempre"),
                 w / 2, h / 2 + 3, Graphics.TOP | Graphics.HCENTER);
         g.setColor(255, 240, 205);
-        g.drawString("5 confirmar  0 cancelar", w / 2, h / 2 + 36,
+        g.drawString(Language.text("5 confirmar  0 cancelar"), w / 2, h / 2 + 36,
                 Graphics.TOP | Graphics.HCENTER);
     }
 
@@ -1880,18 +1902,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         drawDirtBackground(g);
         drawInsetPanel(g, 12, 50, w - 24, 210);
         g.setColor(255, 255, 255);
-        g.drawString("Crear mundo", w / 2, 61, Graphics.TOP | Graphics.HCENTER);
+        g.drawString(Language.text("Crear mundo"), w / 2, 61, Graphics.TOP | Graphics.HCENTER);
         drawMenuItem(g, "Nombre: " + trimText(newWorldName, 17), 101, createSelection == 0);
         drawMenuItem(g, "Modo: " + (newWorldMode == 0 ? "Supervivencia" : "Creativo"),
                 138, createSelection == 1);
         drawMenuItem(g, "Crear mundo", 175, createSelection == 2);
         drawMenuItem(g, "Volver", 212, createSelection == 3);
         g.setColor(255, 240, 205);
-        g.drawString("5 editar/cambiar/elegir", w / 2, 277, Graphics.TOP | Graphics.HCENTER);
+        g.drawString(Language.text("5 editar/cambiar/elegir"), w / 2, 277, Graphics.TOP | Graphics.HCENTER);
     }
 
     private String trimText(String text, int maxChars) {
-        if (text == null) return "Mundo";
+        if (text == null) return Language.text("Mundo");
         if (text.length() <= maxChars) return text;
         return text.substring(0, maxChars - 3) + "...";
     }
@@ -1925,10 +1947,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 } else drawDurability(g, id, x + 2, y + 19);
             }
         }
-        g.drawString(world.mode == 0 ? "Supervivencia" : "Creativo", 3, 2, Graphics.TOP | Graphics.LEFT);
-        g.drawString(world.isNight() ? "Noche" : "Día", w - 3, 2, Graphics.TOP | Graphics.RIGHT);
+        g.drawString(Language.text(world.mode == 0 ? "Supervivencia" : "Creativo"), 3, 2, Graphics.TOP | Graphics.LEFT);
+        g.drawString(Language.text(world.isNight() ? "Noche" : "Día"), w - 3, 2, Graphics.TOP | Graphics.RIGHT);
         if (world.mode == 1)
-            g.drawString(flying ? "Volando  5 subir  0 bajar" : "5 dos veces: volar",
+            g.drawString(Language.text(flying ? "Volando  5 subir  0 bajar" : "5 dos veces: volar"),
                     centerX, 13, Graphics.TOP | Graphics.HCENTER);
     }
 
@@ -2015,7 +2037,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (first > count - 6) first = count > 6 ? count - 6 : 0;
         g.setClip(left + 3, top + 1, panelW - 6, 15);
         g.setColor(35, 35, 35);
-        g.drawString(workbench ? "Recetas de la mesa" : "Crafteo 2x2",
+        g.drawString(Language.text(workbench ? "Recetas de la mesa" : "Crafteo 2x2"),
                 left + panelW / 2, top + 1, Graphics.TOP | Graphics.HCENTER);
         g.setClip(0, 0, w, h);
         for (int row = 0; row < 6; row++) {
@@ -2032,7 +2054,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             g.setColor(rowAvailable ? (recipe == selected ? 255 : 35) : 115,
                        rowAvailable ? (recipe == selected ? 230 : 35) : 115,
                        rowAvailable ? (recipe == selected ? 100 : 35) : 115);
-            g.drawString(Crafting.NAME[recipe], left + 26, y + 2, Graphics.TOP | Graphics.LEFT);
+            g.drawString(Language.text(Crafting.NAME[recipe]), left + 26, y + 2, Graphics.TOP | Graphics.LEFT);
             String amount = "x" + Crafting.OUTPUT_COUNT[recipe];
             g.drawString(amount, left + panelW - 7, y + 2, Graphics.TOP | Graphics.RIGHT);
         }
@@ -2057,9 +2079,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
 
         g.setColor(35, 35, 35);
-        g.drawString(available ? "5 crear" : "No disponible",
+        g.drawString(Language.text(available ? "5 crear" : "No disponible"),
                 w / 2, top + panelH + 2, Graphics.TOP | Graphics.HCENTER);
-        g.drawString("# cerrar  |  2/8 lista", w / 2, top + panelH + 15,
+        g.drawString(Language.text("# cerrar  |  2/8 lista"), w / 2, top + panelH + 15,
                 Graphics.TOP | Graphics.HCENTER);
     }
 
@@ -2095,7 +2117,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         int first = creativeSelection / pageSize * pageSize;
         int pageCount = (creativeItemCount() + pageSize - 1) / pageSize;
         g.setColor(35, 35, 35);
-        g.drawString("Bloques creativos", w / 2, top + 3, Graphics.TOP | Graphics.HCENTER);
+        g.drawString(Language.text("Bloques creativos"), w / 2, top + 3, Graphics.TOP | Graphics.HCENTER);
         for (int cell = 0; cell < pageSize; cell++) {
             int paletteIndex = first + cell;
             if (paletteIndex >= creativeItemCount()) break;
@@ -2117,11 +2139,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
         int selectedBlock = creativeItemAt(creativeSelection);
         g.setColor(35, 35, 35);
-        String name = ItemCatalog.name(selectedBlock);
+        String name = Language.text(ItemCatalog.name(selectedBlock));
         if (name.length() > 16) name = name.substring(0, 16);
         g.drawString(name + "  " + (creativeSelection / pageSize + 1) + "/" + pageCount,
                 w / 2, top + 137, Graphics.TOP | Graphics.HCENTER);
-        g.drawString("4/6 mover  2/8 fila  5 tomar  # cerrar",
+        g.drawString(Language.text("4/6 mover  2/8 fila  5 tomar  # cerrar"),
                 w / 2, top + panelH + 2, Graphics.TOP | Graphics.HCENTER);
     }
 
@@ -2254,7 +2276,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         Font oldFont = g.getFont();
         g.setFont(Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_LARGE));
         g.setColor(255, 244, 210);
-        g.drawString("Menú del juego", w / 2, panelY + 9,
+        g.drawString(Language.text("Menú del juego"), w / 2, panelY + 9,
                 Graphics.HCENTER | Graphics.TOP);
         g.setFont(oldFont);
         g.setColor(52, 37, 26);
@@ -2264,7 +2286,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         for (int i = 0; i < PAUSE_ROWS.length; i++)
             drawMenuItem(g, PAUSE_ROWS[i], panelY + 40 + i * 27, i == pauseSelection);
         g.setColor(237, 220, 187);
-        g.drawString("2/8 elegir   5 aceptar   0 menú", w / 2, panelY + 126,
+        g.drawString(Language.text("2/8 elegir   5 aceptar   0 menú"), w / 2, panelY + 126,
                 Graphics.TOP | Graphics.HCENTER);
     }
 
@@ -2277,10 +2299,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         Font oldFont = g.getFont();
         g.setFont(Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_LARGE));
         g.setColor(255, 255, 255);
-        g.drawString("Game over!", w / 2, h / 4 - 20 - enterOffset,
+        g.drawString(Language.text("Fin del juego!"), w / 2, h / 4 - 20 - enterOffset,
                 Graphics.HCENTER | Graphics.TOP);
         g.setFont(oldFont);
-        String scorePrefix = "Score: ";
+        String scorePrefix = Language.text("Puntuación: ");
         int scoreWidth = oldFont.stringWidth(scorePrefix + "0");
         int scoreX = (w - scoreWidth) / 2;
         int scoreY = h / 4 + 20 - enterOffset / 2;
@@ -2290,8 +2312,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         g.drawString("0", scoreX + oldFont.stringWidth(scorePrefix), scoreY,
                 Graphics.TOP | Graphics.LEFT);
         int buttonOffset = (int)((1.0f - eased) * 14.0f);
-        drawGameOverButton(g, "Generate new level...", h / 4 + 72 + buttonOffset, gameOverSelection == 0);
-        drawGameOverButton(g, "Load level..", h / 4 + 96 + buttonOffset, gameOverSelection == 1);
+        drawGameOverButton(g, Language.text("Generar nuevo nivel..."), h / 4 + 72 + buttonOffset, gameOverSelection == 0);
+        drawGameOverButton(g, Language.text("Cargar nivel.."), h / 4 + 96 + buttonOffset, gameOverSelection == 1);
     }
 
     /** Fade the Indev red overlay in during the first twelve game-over frames. */
@@ -2353,7 +2375,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
         if (line >= diagnosticScroll && y < bottom)
             g.drawString(text, getWidth() / 2, y, Graphics.HCENTER | Graphics.TOP);
-        g.drawString(diagnosticError ? "2/8 ver detalles  5 volver" : "Pulsa 5 para volver",
+        g.drawString(Language.text(diagnosticError ? "2/8 ver detalles  5 volver" : "Pulsa 5 para volver"),
                      getWidth() / 2, getHeight() - 10, Graphics.HCENTER | Graphics.BOTTOM);
     }
 

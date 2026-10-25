@@ -10,7 +10,7 @@ import javax.microedition.rms.RecordStore;
 final class GameSettings {
     private static final String STORE_NAME = "mecraft-settings";
     private static final int MAGIC = 0x4D435354;
-    private static final int VERSION = 1;
+    private static final int VERSION = 2;
 
     private GameSettings() { }
 
@@ -21,8 +21,14 @@ final class GameSettings {
             if (store.getNumRecords() == 0) return;
             byte[] data = store.getRecord(1);
             DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
-            if (in.readInt() != MAGIC || in.readUnsignedByte() != VERSION) return;
-            for (int i = 0; i < values.length; i++) values[i] = in.readInt();
+            if (in.readInt() != MAGIC) return;
+            int version = in.readUnsignedByte();
+            if (version < 1 || version > VERSION) return;
+            int savedValueCount = version == 1 ? 3 : values.length;
+            for (int i = 0; i < savedValueCount; i++) {
+                int value = in.readInt();
+                if (i < values.length) values[i] = value;
+            }
             int count = in.readUnsignedByte();
             int limit = Math.min(count, customControls.length);
             for (int i = 0; i < count; i++) {
