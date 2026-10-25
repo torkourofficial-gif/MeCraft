@@ -76,7 +76,7 @@ final class MobSystem {
                 updateDeath(mob);
                 continue;
             }
-            if (!mob.alive || (isHostile(mob.type) && world.mode != 0)) continue;
+            if (!mob.alive) continue;
             mob.age++;
             if (updateBurning(mob, world)) continue;
             if (mob.hurtTicks > 0 && --mob.hurtTicks == 0) mob.setHurt(false);
@@ -147,7 +147,6 @@ final class MobSystem {
 
     /** Returns 1 for a hit, 0 when the target is still on attack cooldown, or -1 for no target. */
     int hit(VoxelWorld world, float pitch, int damage) {
-        if (world.mode != 0) return -1;
         if (worldSeed != world.seed) reset(world);
         float yaw = world.yaw * (float)Math.PI / 180.0f;
         float pitchRadians = pitch * (float)Math.PI / 180.0f;
@@ -161,7 +160,7 @@ final class MobSystem {
         float closestDistance = 4.0f;
         for (int i = 0; i < mobs.length; i++) {
             Mob mob = mobs[i];
-            if (!mob.alive || (isHostile(mob.type) && world.mode != 0)) continue;
+            if (!mob.alive) continue;
             float height = isHostile(mob.type) ? 1.8f : (mob.type == PIG ? 0.9f : 1.3f);
             float width = isHostile(mob.type) ? 0.6f : 0.9f;
             float along = rayBox(originX, originY, originZ, dirX, dirY, dirZ,
@@ -360,7 +359,7 @@ final class MobSystem {
 
     /** Zombies/skeletons burn under open daylight; creepers remain night-only. */
     private void updateHostileCycle(VoxelWorld world) {
-        boolean night = world.mode == 0 && world.isNight();
+        boolean night = world.isNight();
         if (!night) {
             for (int i = 0; i < mobs.length; i++) {
                 Mob mob = mobs[i];

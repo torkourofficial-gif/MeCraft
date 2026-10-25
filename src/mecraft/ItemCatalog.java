@@ -12,7 +12,9 @@ final class ItemCatalog {
     static final int SEEDS = GOLD_INGOT + 1;
     static final int PORK_RAW = SEEDS + 1;
     static final int FEATHER = PORK_RAW + 1;
-    static final int COUNT = FEATHER + 1;
+    static final int WOOL_COLOR_START = FEATHER + 1;
+    static final int WOOL_COLOR_COUNT = WoolColors.COUNT - 1;
+    static final int COUNT = WOOL_COLOR_START + WOOL_COLOR_COUNT;
 
     static final int SWORD = 0;
     static final int SHOVEL = 1;
@@ -45,6 +47,18 @@ final class ItemCatalog {
 
     static boolean isTool(int id) {
         return id >= TOOL_START && id < IRON_INGOT;
+    }
+
+    static boolean isColoredWool(int id) {
+        return id >= WOOL_COLOR_START && id < COUNT;
+    }
+
+    static int woolColor(int id) {
+        return isColoredWool(id) ? id - WOOL_COLOR_START + 1 : 0;
+    }
+
+    static int woolItem(int color) {
+        return color <= 0 ? Block.WOOL : WOOL_COLOR_START + color - 1;
     }
 
     static int kind(int id) { return (id - TOOL_START) % TOOL_KINDS; }
@@ -90,6 +104,7 @@ final class ItemCatalog {
         if (id == SEEDS) return "Semillas";
         if (id == PORK_RAW) return "Cerdo crudo";
         if (id == FEATHER) return "Pluma";
+        if (isColoredWool(id)) return "Lana " + WoolColors.name(woolColor(id));
         if (id > 0 && id < Block.COUNT) return Block.NAME[id];
         return "Objeto";
     }

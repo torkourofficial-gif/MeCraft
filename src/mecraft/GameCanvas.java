@@ -551,7 +551,7 @@ final class GameCanvas extends Canvas implements Runnable {
             int heldItem = hotbar[world.selectedSlot];
             boolean canHarvest = Block.canHarvest(id, heldItem);
             if (world.mode == 0 && Block.dropsItem(id) && canHarvest)
-                renderer.spawnDroppedItem(Block.dropId(id), x, y, z);
+                renderer.spawnDroppedItem(world.dropItemId(x, y, z), x, y, z);
             renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
             renderer.swingHand();
             world.set(x, y, z, Block.AIR);
@@ -626,11 +626,13 @@ final class GameCanvas extends Canvas implements Runnable {
         }
         if (target == null || target[3] == Integer.MIN_VALUE) return;
         int selectedItem = hotbar[world.selectedSlot];
+        boolean coloredWool = ItemCatalog.isColoredWool(selectedItem);
         if (ItemCatalog.isTool(selectedItem) && ItemCatalog.kind(selectedItem) == ItemCatalog.HOE) {
             tillSoil(target[0], target[1], target[2], selectedItem);
             return;
         }
-        if (selectedItem >= Block.COUNT || selectedItem == Block.AIR) return;
+        if (selectedItem == Block.AIR || selectedItem >= Block.COUNT && !coloredWool) return;
+        int block = coloredWool ? Block.WOOL : selectedItem;
         int x = target[0] + target[3];
         int y = target[1] + target[4];
         int z = target[2] + target[5];
@@ -654,20 +656,20 @@ final class GameCanvas extends Canvas implements Runnable {
             renderer.sync(world);
             return;
         }
-        if (selectedItem == Block.TORCH && !Block.solid(world.get(x, y - 1, z))) return;
+        if (block == Block.TORCH && !Block.solid(world.get(x, y - 1, z))) return;
         float px = world.playerX, py = world.playerY, pz = world.playerZ;
         if (x + 1.0f > px - PLAYER_RADIUS && x < px + PLAYER_RADIUS &&
             z + 1.0f > pz - PLAYER_RADIUS && z < pz + PLAYER_RADIUS &&
             y + 1.0f > py && y < py + PLAYER_HEIGHT) return;
-        int slot = world.selectedSlot;
-        int block = hotbar[slot];
-        if (world.mode == 0 && inventory[block] <= 0) return;
+        if (world.mode == 0 && inventory[selectedItem] <= 0) return;
         if (!Block.replaceable(world.get(x, y, z))) return;
-        if (!world.set(x, y, z, (byte)block)) return;
+        boolean placed = coloredWool ? world.setWool(x, y, z,
+                ItemCatalog.woolColor(selectedItem)) : world.set(x, y, z, (byte)block);
+        if (!placed) return;
         renderer.swingHand();
         if (world.mode == 0) {
-            inventory[block]--;
-            if (inventory[block] == 0) restoreHotbarItem(block);
+            inventory[selectedItem]--;
+            if (inventory[selectedItem] == 0) restoreHotbarItem(selectedItem);
         }
         renderer.sync(world);
     }
@@ -1057,19 +1059,28 @@ final class GameCanvas extends Canvas implements Runnable {
     }
 
     private void moveCreativeSelection(int delta) {
-        int count = Block.CREATIVE_PALETTE.length;
+        int count = creativeItemCount();
         creativeSelection = (creativeSelection + delta) % count;
         if (creativeSelection < 0) creativeSelection += count;
         repaint();
     }
 
     private void selectCreativeBlock() {
-        int block = Block.CREATIVE_PALETTE[creativeSelection];
-        if (block <= Block.AIR || block >= Block.COUNT) return;
-        hotbar[world.selectedSlot] = block;
-        inventory[block] = ItemCatalog.maxStack(block);
+        int item = creativeItemAt(creativeSelection);
+        if (item <= Block.AIR || item >= ItemCatalog.COUNT) return;
+        hotbar[world.selectedSlot] = item;
+        inventory[item] = ItemCatalog.maxStack(item);
         copyInventoryToWorld();
         closeCreativeInventory();
+    }
+
+    private int creativeItemCount() {
+        return Block.CREATIVE_PALETTE.length + ItemCatalog.WOOL_COLOR_COUNT;
+    }
+
+    private int creativeItemAt(int index) {
+        if (index < Block.CREATIVE_PALETTE.length) return Block.CREATIVE_PALETTE[index];
+        return ItemCatalog.WOOL_COLOR_START + index - Block.CREATIVE_PALETTE.length;
     }
 
     private void moveWorldSelection(int delta) {
@@ -1339,10 +1350,19 @@ final class GameCanvas extends Canvas implements Runnable {
             for (int i = 0; i < blockIcons.length; i++) blockIcons[i] = null;
         }
         source = null;
+        Image woolSource = null;
         try {
+            woolSource = GameAssets.terrain();
             source = GameAssets.image("items.png");
             int[] iconPixels = new int[16 * 16];
             for (int id = Block.COUNT; id < ItemCatalog.COUNT; id++) {
+                if (ItemCatalog.isColoredWool(id)) {
+                    if (woolSource != null) {
+                        itemIcons[id] = WoolColors.texture(woolSource, ItemCatalog.woolColor(id));
+                        mutedItemIcons[id] = makeMutedIcon(itemIcons[id]);
+                    }
+                    continue;
+                }
                 int tile = ItemCatalog.iconIndex(id);
                 if (tile < 0) continue;
                 source.getRGB(iconPixels, 0, 16, (tile & 15) * 16, (tile >> 4) * 16, 16, 16);
@@ -1352,6 +1372,7 @@ final class GameCanvas extends Canvas implements Runnable {
         } catch (Throwable unavailableItemsAtlas) {
             for (int i = Block.COUNT; i < itemIcons.length; i++) itemIcons[i] = null;
         }
+        woolSource = null;
         source = null;
         System.gc();
     }
@@ -1847,13 +1868,13 @@ final class GameCanvas extends Canvas implements Runnable {
             g.setColor(40, 40, 40); g.drawRect(left, top, panelW - 1, panelH - 1);
         }
         int first = creativeSelection / pageSize * pageSize;
-        int pageCount = (Block.CREATIVE_PALETTE.length + pageSize - 1) / pageSize;
+        int pageCount = (creativeItemCount() + pageSize - 1) / pageSize;
         g.setColor(35, 35, 35);
         g.drawString("Bloques creativos", w / 2, top + 3, Graphics.TOP | Graphics.HCENTER);
         for (int cell = 0; cell < pageSize; cell++) {
             int paletteIndex = first + cell;
-            if (paletteIndex >= Block.CREATIVE_PALETTE.length) break;
-            int block = Block.CREATIVE_PALETTE[paletteIndex];
+            if (paletteIndex >= creativeItemCount()) break;
+            int block = creativeItemAt(paletteIndex);
             int x = left + 7 + (cell % 9) * 18;
             int y = top + 23 + (cell / 9) * 18;
             if (paletteIndex == creativeSelection) {
@@ -1869,9 +1890,9 @@ final class GameCanvas extends Canvas implements Runnable {
             int y = top + 199;
             drawInventoryCell(g, hotbar[slot], x, y);
         }
-        int selectedBlock = Block.CREATIVE_PALETTE[creativeSelection];
+        int selectedBlock = creativeItemAt(creativeSelection);
         g.setColor(35, 35, 35);
-        String name = selectedBlock < Block.COUNT ? Block.NAME[selectedBlock] : "";
+        String name = ItemCatalog.name(selectedBlock);
         if (name.length() > 16) name = name.substring(0, 16);
         g.drawString(name + "  " + (creativeSelection / pageSize + 1) + "/" + pageCount,
                 w / 2, top + 137, Graphics.TOP | Graphics.HCENTER);

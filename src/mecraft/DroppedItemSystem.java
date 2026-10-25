@@ -47,11 +47,13 @@ final class DroppedItemSystem {
     private final int[] tntFuse = new int[CAPACITY];
     private final short[] positions = new short[VERTEX_COUNT * 3];
     private final short[] texCoords = new short[VERTEX_COUNT * 2];
+    private final byte[] colors = new byte[VERTEX_COUNT * 4];
     private final short[] spritePositions = new short[VERTEX_COUNT * 3];
     private final short[] spriteTexCoords = new short[VERTEX_COUNT * 2];
     private final short[] tntFlashPositions = new short[VERTEX_COUNT * 3];
     private final VertexArray positionArray;
     private final VertexArray texCoordArray;
+    private final VertexArray colorArray;
     private final VertexArray spritePositionArray;
     private final VertexArray spriteTexCoordArray;
     private final VertexArray tntFlashPositionArray;
@@ -64,11 +66,15 @@ final class DroppedItemSystem {
     DroppedItemSystem(Texture2D atlas, Texture2D itemAtlas) {
         positionArray = new VertexArray(VERTEX_COUNT, 3, 2);
         texCoordArray = new VertexArray(VERTEX_COUNT, 2, 2);
+        colorArray = new VertexArray(VERTEX_COUNT, 4, 1);
+        for (int i = 0; i < colors.length; i++) colors[i] = (byte)255;
         positionArray.set(0, VERTEX_COUNT, positions);
         texCoordArray.set(0, VERTEX_COUNT, texCoords);
+        colorArray.set(0, VERTEX_COUNT, colors);
         VertexBuffer buffer = new VertexBuffer();
         buffer.setPositions(positionArray, 1.0f / POSITION_SCALE, null);
         buffer.setTexCoords(0, texCoordArray, 1.0f / POSITION_SCALE, null);
+        buffer.setColors(colorArray);
         int[] strips = new int[CAPACITY * 6];
         for (int i = 0; i < strips.length; i++) strips[i] = 4;
         TriangleStripArray triangles = new TriangleStripArray(0, strips);
@@ -78,6 +84,7 @@ final class DroppedItemSystem {
         Material material = new Material();
         material.setColor(Material.AMBIENT, 0xFFFFFFFF);
         material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
+        material.setVertexColorTrackingEnable(true);
         appearance.setMaterial(material);
         PolygonMode polygon = new PolygonMode();
         polygon.setCulling(PolygonMode.CULL_NONE);
@@ -161,8 +168,11 @@ final class DroppedItemSystem {
         vx[slot] = nextRandom() * 0.2f - 0.1f;
         vy[slot] = 0.2f;
         vz[slot] = nextRandom() * 0.2f - 0.1f;
-        if (id < Block.COUNT) writeTexture(slot, id);
-        else writeSpriteTexture(slot, id);
+        if (id < Block.COUNT || ItemCatalog.isColoredWool(id)) {
+            int blockId = ItemCatalog.isColoredWool(id) ? Block.WOOL : id;
+            writeTexture(slot, blockId);
+            setVertexColor(slot, ItemCatalog.isColoredWool(id) ? ItemCatalog.woolColor(id) : 0);
+        } else writeSpriteTexture(slot, id);
     }
 
     void spawnPrimedTnt(int bx, int by, int bz, int fuse) {
@@ -251,7 +261,7 @@ final class DroppedItemSystem {
                 writeItem(i);
             }
             if (itemId[i] > 0) {
-                if (itemId[i] < Block.COUNT) hasBlocks = true;
+                if (itemId[i] < Block.COUNT || ItemCatalog.isColoredWool(itemId[i])) hasBlocks = true;
                 else hasSprites = true;
             }
         }
@@ -346,7 +356,7 @@ final class DroppedItemSystem {
         int centerX = toShort(x[slot]);
         int centerYS = toShort(centerY);
         int centerZ = toShort(z[slot]);
-        if (itemId[slot] >= Block.COUNT) {
+        if (itemId[slot] >= Block.COUNT && !ItemCatalog.isColoredWool(itemId[slot])) {
             int blockAt = baseVertex * 3;
             for (int i = 0; i < VERTICES_PER_ITEM * 3; i++) positions[blockAt + i] = 0;
             for (int i = 0; i < VERTICES_PER_ITEM * 3; i++) tntFlashPositions[blockAt + i] = 0;
@@ -410,6 +420,18 @@ final class DroppedItemSystem {
             texCoords[at++] = (short)u1; texCoords[at++] = (short)v0;
         }
         texCoordArray.set(0, VERTEX_COUNT, texCoords);
+    }
+
+    private void setVertexColor(int slot, int color) {
+        int rgb = color == 0 ? 0xFFFFFF : WoolColors.rgb(color);
+        int at = slot * VERTICES_PER_ITEM * 4;
+        for (int i = 0; i < VERTICES_PER_ITEM; i++) {
+            colors[at++] = (byte)(rgb >> 16);
+            colors[at++] = (byte)(rgb >> 8);
+            colors[at++] = (byte)rgb;
+            colors[at++] = (byte)255;
+        }
+        colorArray.set(0, VERTEX_COUNT, colors);
     }
 
     private void writeSpriteTexture(int slot, int id) {

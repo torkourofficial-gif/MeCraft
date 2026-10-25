@@ -99,6 +99,31 @@ final class VoxelWorld {
         return setBlock(x, y, z, id, 0);
     }
 
+    int woolColor(int x, int y, int z) {
+        if (get(x, y, z) != Block.WOOL) return 0;
+        return waterLevels[index(x, y, z)] & 15;
+    }
+
+    int dropItemId(int x, int y, int z) {
+        byte id = get(x, y, z);
+        return id == Block.WOOL ? ItemCatalog.woolItem(woolColor(x, y, z)) : Block.dropId(id);
+    }
+
+    boolean setWool(int x, int y, int z, int color) {
+        if (x < 0 || x >= WIDTH || z < 0 || z >= DEPTH || y <= 0 || y >= HEIGHT ||
+            color < 0 || color >= WoolColors.COUNT) return false;
+        int i = index(x, y, z);
+        byte old = blocks[i];
+        if (old != Block.WOOL && !Block.replaceable(old)) return false;
+        if (old == Block.WOOL && (waterLevels[i] & 15) == color) return false;
+        blocks[i] = Block.WOOL;
+        waterLevels[i] = (byte)color;
+        changedX = x; changedY = y; changedZ = z;
+        revision++;
+        scheduleWaterNeighbors(x, y, z);
+        return true;
+    }
+
     int doorMetadata(int x, int y, int z) {
         if (get(x, y, z) != Block.DOOR) return 0;
         return waterLevels[index(x, y, z)] & 15;
@@ -205,7 +230,7 @@ final class VoxelWorld {
                         continue;
                     }
                     else if (Block.dropsItem(id) && randomFloat() < 0.3f)
-                        drops.spawn(Block.dropId(id), bx, by, bz);
+                        drops.spawn(dropItemId(bx, by, bz), bx, by, bz);
                     set(bx, by, bz, Block.AIR);
                     if (by + 1 < HEIGHT && get(bx, by + 1, bz) == Block.DOOR &&
                         !Block.solid(get(bx, by, bz))) {
@@ -479,7 +504,7 @@ final class VoxelWorld {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(blocks.length * 2 + 64);
             DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(0x4D434642); // MCFB: named worlds
+            out.writeInt(0x4D434643); // MCFC: named worlds with colored wool
             out.writeInt(seed);
             out.writeByte(mode);
             out.writeUTF(worldName == null ? "Mundo" : worldName);
@@ -535,21 +560,23 @@ final class VoxelWorld {
             if (format != 0x4D434631 && format != 0x4D434632 && format != 0x4D434633 &&
                 format != 0x4D434634 && format != 0x4D434635 && format != 0x4D434636 &&
                 format != 0x4D434637 && format != 0x4D434638 && format != 0x4D434639 &&
-                format != 0x4D434641 && format != 0x4D434642) return null;
+                format != 0x4D434641 && format != 0x4D434642 && format != 0x4D434643) return null;
             int seed = in.readInt();
             int mode = in.readByte();
-            boolean namedFormat = format == 0x4D434642;
+            boolean namedFormat = format == 0x4D434642 || format == 0x4D434643;
             VoxelWorld world = new VoxelWorld(seed, mode);
             world.worldName = namedFormat ? in.readUTF() : "Mundo guardado";
             world.saveStoreName = storeName;
             world.selectedSlot = in.readByte();
-            boolean currentFormat = format == 0x4D434641 || namedFormat;
+            boolean currentFormat = format == 0x4D434641 || format == 0x4D434642 || format == 0x4D434643;
+            boolean latestFormat = format == 0x4D434643;
             if (format == 0x4D434635 || format == 0x4D434636 || format == 0x4D434637 ||
                 format == 0x4D434638 || format == 0x4D434639 || currentFormat) {
-                int inventoryLength = currentFormat ? world.inventory.length :
+                int inventoryLength = latestFormat ? world.inventory.length :
+                                      (currentFormat ? world.inventory.length - ItemCatalog.WOOL_COLOR_COUNT :
                                       (format == 0x4D434639 ? MCF9_ITEM_COUNT :
                                       (format == 0x4D434638 ? MCF8_ITEM_COUNT :
-                                       (format == 0x4D434637 ? MCF7_ITEM_COUNT : MCF6_ITEM_COUNT)));
+                                       (format == 0x4D434637 ? MCF7_ITEM_COUNT : MCF6_ITEM_COUNT))));
                 for (int i = 0; i < inventoryLength; i++) {
                     int newId = currentFormat ? i : (format == 0x4D434639 ? i :
                                 (format == 0x4D434638 ? (i < 18 ? i : i + 1) :

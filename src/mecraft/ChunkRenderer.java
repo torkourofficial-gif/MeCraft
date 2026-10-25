@@ -278,7 +278,8 @@ final class ChunkRenderer {
         if (itemId == Block.DOOR) {
             if (visible) setItemSprite(itemId);
             itemSpriteMesh.setRenderingEnable(visible && ItemCatalog.iconIndex(itemId) >= 0);
-        } else if (Block.isDecorative((byte)itemId) || itemId == Block.TNT) {
+        } else if (Block.isDecorative((byte)itemId) || itemId == Block.TNT ||
+                   ItemCatalog.isColoredWool(itemId)) {
             if (visible) setBlockMeshTile(itemId);
             if (heldCreativeBlockMesh != null) heldCreativeBlockMesh.setRenderingEnable(visible);
         } else if (itemId < Block.COUNT) {
@@ -290,9 +291,14 @@ final class ChunkRenderer {
     }
 
     private void setBlockMeshTile(int blockId) {
+        boolean coloredWool = ItemCatalog.isColoredWool(blockId);
+        int woolColor = coloredWool ? ItemCatalog.woolColor(blockId) : 0;
+        if (coloredWool) heldCreativeBlockMesh.setAppearance(0,
+                tileAppearance(Block.WOOL_TINT_TILE_START + woolColor));
+        else heldCreativeBlockMesh.setAppearance(0, heldItemAppearance);
         int at = 0;
         for (int face = 0; face < 6; face++) {
-            int tile = Block.faceTile((byte)blockId, face);
+            int tile = coloredWool ? 0 : Block.faceTile((byte)blockId, face);
             int u0 = (tile & 15) * 16 + 1, v0 = (tile >> 4) * 16 + 1;
             at = writeHeldCubeFace(at, face, u0, v0, u0 + 14, v0 + 14);
         }
@@ -1017,7 +1023,7 @@ final class ChunkRenderer {
                                 neighbor = chunkVoxelScratch[voxelIndex - CHUNK_AREA];
                             else neighbor = world.get(nx, ny, nz);
                             if (Block.faceVisible(id, neighbor))
-                                key = Block.faceTile(id, face) + 1;
+                                key = Block.renderTile(id, face, world.woolColor(x, y, z)) + 1;
                         }
                         mask[row + a] = key;
                     }
@@ -1147,7 +1153,15 @@ final class ChunkRenderer {
         Appearance appearance = tileAppearances[tile];
         if (appearance != null) return appearance;
         int[] pixels = new int[16 * 16];
-        terrainImage.getRGB(pixels, 0, 16, (tile & 15) * 16, (tile >> 4) * 16, 16, 16);
+        if (tile >= Block.WOOL_TINT_TILE_START) {
+            int woolTile = Block.atlasTile(Block.WOOL);
+            terrainImage.getRGB(pixels, 0, 16, (woolTile & 15) * 16,
+                    (woolTile >> 4) * 16, 16, 16);
+            WoolColors.recolor(pixels, tile - Block.WOOL_TINT_TILE_START);
+        } else {
+            terrainImage.getRGB(pixels, 0, 16, (tile & 15) * 16,
+                    (tile >> 4) * 16, 16, 16);
+        }
         Image tileImage = Image.createRGBImage(pixels, 16, 16, true);
         Texture2D texture = new Texture2D(new Image2D(Image2D.RGBA, tileImage));
         texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);

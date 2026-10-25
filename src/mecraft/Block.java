@@ -22,6 +22,7 @@ final class Block {
     static final byte TORCH = 17;
     static final byte WOOL = 18;
     static final byte TNT = 19;
+    static final int WOOL_TINT_TILE_START = 240;
 
     static final int LEGACY_COUNT = 14;
     static final int DECORATIVE_START = 20;
@@ -241,6 +242,10 @@ final class Block {
         }
         if (id == CRAFTING_TABLE) return (face == 1 || face == 3) ? 59 : 60;
         return sideTile(id);
+    }
+
+    static int renderTile(byte id, int face, int woolColor) {
+        return id == WOOL && woolColor > 0 ? WOOL_TINT_TILE_START + woolColor : faceTile(id, face);
     }
 
     static boolean isDecorative(byte id) {
