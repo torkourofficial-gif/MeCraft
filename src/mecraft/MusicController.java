@@ -101,7 +101,7 @@ final class MusicController implements PlayerListener {
             return true;
         } catch (Exception unavailable) {
             failedTracks |= bit;
-        } catch (LinkageError unsupported) {
+        } catch (NoClassDefFoundError unsupported) {
             failedTracks |= bit;
         }
         if (next != null && player == next) closePlayer();

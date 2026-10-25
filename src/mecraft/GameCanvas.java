@@ -125,7 +125,7 @@ final class GameCanvas extends Canvas implements Runnable {
     GameCanvas(MeCraft app) {
         this.app = app;
         try { music = new MusicController(); }
-        catch (LinkageError unsupported) { music = null; }
+        catch (NoClassDefFoundError unsupported) { music = null; }
         setFullScreenMode(true);
         loadTitle();
         loadHudTextures();
