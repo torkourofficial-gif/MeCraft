@@ -141,7 +141,9 @@ final class SkySystem {
         double yaw = yawDegrees * Math.PI / 180.0;
         float sinYaw = (float)Math.sin(yaw), cosYaw = (float)Math.cos(yaw);
         float forwardX = sinYaw, forwardZ = cosYaw;
-        float rightX = cosYaw, rightZ = -sinYaw;
+        // The camera pivot has a 180-degree base yaw, so its screen-right
+        // vector is the negative of the usual world-space right vector.
+        float rightX = -cosYaw, rightZ = sinYaw;
         float virtualEyeY = VoxelWorld.HEIGHT * 0.5f;
         float cloudLevel = VoxelWorld.HEIGHT + 10.0f - virtualEyeY;
         float focal = viewportHeight / (2.0f * TAN_HALF_FOV);
