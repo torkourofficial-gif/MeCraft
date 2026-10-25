@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.Random;
 import javax.microedition.lcdui.Image;
 import javax.microedition.m3g.Appearance;
+import javax.microedition.m3g.Background;
 import javax.microedition.m3g.CompositingMode;
 import javax.microedition.m3g.Group;
 import javax.microedition.m3g.Image2D;
@@ -22,16 +23,23 @@ final class SkySystem {
     private static final int[] OCEAN_TRIANGLE_ORDER = new int[] { 0, 1, 2, 0, 2, 3 };
     private final Group yawCounter = new Group();
     private final Group celestialRotation = new Group();
+    private final Background skyBackground;
     private final Mesh stars;
     private final Material starsMaterial;
-    private final Material cloudsMaterial;
     private final Material oceanMaterial;
-    private final Mesh cloudPlane;
     private final Mesh oceanPlane;
-    private VertexArray cloudUVArray;
-    private final short[] cloudUV = new short[12];
+    private final int cloudWidth;
+    private final int cloudHeight;
+    private final byte[] cloudAlpha;
+    private Image2D cloudBackground;
+    private byte[] backgroundPixels;
+    private float[] screenX;
+    private float[] screenY;
+    private int viewportWidth;
+    private int viewportHeight;
 
-    SkySystem(Group cameraPivot) throws IOException {
+    SkySystem(Group cameraPivot, Background background, int width, int height) throws IOException {
+        skyBackground = background;
         yawCounter.addChild(celestialRotation);
         cameraPivot.addChild(yawCounter);
 
@@ -53,13 +61,15 @@ final class SkySystem {
         celestialRotation.addChild(stars);
 
         Image cloudImage = GameAssets.image("clouds.png");
-        Texture2D cloudTexture = new Texture2D(new Image2D(Image2D.RGBA, cloudImage));
-        cloudTexture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
-        cloudTexture.setWrapping(Texture2D.WRAP_REPEAT, Texture2D.WRAP_REPEAT);
-        Appearance cloudAppearance = alphaAppearance(cloudTexture);
-        cloudsMaterial = cloudAppearance.getMaterial();
-        cloudPlane = makeCloudPlane(cloudAppearance);
-        yawCounter.addChild(cloudPlane);
+        cloudWidth = cloudImage.getWidth();
+        cloudHeight = cloudImage.getHeight();
+        int[] sourcePixels = new int[cloudWidth * cloudHeight];
+        cloudImage.getRGB(sourcePixels, 0, cloudWidth, 0, 0, cloudWidth, cloudHeight);
+        cloudAlpha = new byte[sourcePixels.length];
+        for (int i = 0; i < sourcePixels.length; i++)
+            cloudAlpha[i] = (byte)(sourcePixels[i] >>> 24);
+        sourcePixels = null;
+        resize(width, height);
 
         Appearance oceanAppearance = makeOceanAppearance();
         oceanMaterial = oceanAppearance.getMaterial();
@@ -67,14 +77,44 @@ final class SkySystem {
         yawCounter.addChild(oceanPlane);
     }
 
-    void update(VoxelWorld world, float yaw, float celestialAngle, float daylight) {
+    void resize(int width, int height) {
+        if (width <= 0 || height <= 0 ||
+                (width == viewportWidth && height == viewportHeight)) return;
+        viewportWidth = width;
+        viewportHeight = height;
+        int sampleWidth = (width + 1) >> 1;
+        int sampleHeight = (height + 1) >> 1;
+        screenX = new float[sampleWidth];
+        screenY = new float[sampleHeight];
+        float focal = height / (2.0f * TAN_HALF_FOV);
+        for (int x = 0; x < sampleWidth; x++)
+            screenX[x] = (x * 2 + 1.0f - width * 0.5f) / focal;
+        for (int y = 0; y < sampleHeight; y++)
+            screenY[y] = (height * 0.5f - (y * 2 + 1.0f)) / focal;
+        backgroundPixels = new byte[width * height * 3];
+        cloudBackground = new Image2D(Image2D.RGB, width, height);
+        for (int at = 0; at < backgroundPixels.length; at += 3) {
+            backgroundPixels[at] = (byte)0x82;
+            backgroundPixels[at + 1] = (byte)0xB8;
+            backgroundPixels[at + 2] = (byte)0xE8;
+        }
+        cloudBackground.set(0, 0, width, height, backgroundPixels);
+        skyBackground.setImage(cloudBackground);
+        skyBackground.setImageMode(Background.BORDER, Background.BORDER);
+        skyBackground.setCrop(0, 0, width, height);
+    }
+
+    private static final float TAN_HALF_FOV =
+            (float)Math.tan(34.0 * Math.PI / 180.0);
+
+    void update(VoxelWorld world, float yaw, float pitch, float celestialAngle,
+            float daylight, int skyColor) {
         yawCounter.setOrientation(-yaw, 0.0f, 1.0f, 0.0f);
         celestialRotation.setOrientation(celestialAngle * 57.29578f,
                 1.0f, 0.0f, 0.0f);
-        float eyeY = world.playerY + 1.62f;
-        cloudPlane.setTranslation(0.0f, VoxelWorld.HEIGHT + 10.0f - eyeY, 0.0f);
+        renderCloudBackground(world, yaw, pitch, daylight, skyColor);
         oceanPlane.setTranslation(-world.playerX,
-                VoxelWorld.SEA_LEVEL + 1.0f - eyeY, -world.playerZ);
+                VoxelWorld.SEA_LEVEL + 1.0f - (world.playerY + 1.62f), -world.playerZ);
 
         float night = 1.0f - daylight;
         float starLevel = night * night;
@@ -88,25 +128,92 @@ final class SkySystem {
         starsMaterial.setColor(Material.DIFFUSE, starColor);
         starsMaterial.setColor(Material.EMISSIVE, starColor);
 
-        int cloudTint = (int)(190.0f + daylight * 65.0f);
-        int tint = 0xFF000000 | (cloudTint << 16) |
-                   (cloudTint << 8) | cloudTint;
-        cloudsMaterial.setColor(Material.AMBIENT, tint);
-        cloudsMaterial.setColor(Material.DIFFUSE, tint);
         oceanMaterial.setColor(Material.AMBIENT, 0xFFD8F1FF);
         oceanMaterial.setColor(Material.DIFFUSE, 0xFFD8F1FF);
+    }
 
-        // Indev advances the cloud texture a tiny amount each world tick.
+    /** Rasterize Indev's cloud map into the sky background at 1 texel / 8 blocks. */
+    private void renderCloudBackground(VoxelWorld world, float yawDegrees,
+            float pitchDegrees, float daylight, int skyColor) {
+        double yaw = yawDegrees * Math.PI / 180.0;
+        double pitch = pitchDegrees * Math.PI / 180.0;
+        float sinYaw = (float)Math.sin(yaw), cosYaw = (float)Math.cos(yaw);
+        float sinPitch = (float)Math.sin(pitch), cosPitch = (float)Math.cos(pitch);
+        float forwardX = sinYaw * cosPitch;
+        float forwardY = sinPitch;
+        float forwardZ = cosYaw * cosPitch;
+        float rightX = cosYaw, rightZ = -sinYaw;
+        float upX = -sinYaw * sinPitch;
+        float upY = cosPitch;
+        float upZ = -cosYaw * sinPitch;
+        float eyeY = world.playerY + 1.62f;
+        float cloudLevel = VoxelWorld.HEIGHT + 10.0f - eyeY;
+        float focal = viewportHeight / (2.0f * TAN_HALF_FOV);
         int shift = (int)(world.dayTime * 0.00375f);
-        int repeat = 3 * 256;
-        int u = shift % repeat;
-        cloudUV[0] = (short)u;          cloudUV[1] = 0;
-        cloudUV[2] = (short)(u + repeat); cloudUV[3] = 0;
-        cloudUV[4] = (short)(u + repeat); cloudUV[5] = (short)repeat;
-        cloudUV[6] = (short)u;          cloudUV[7] = 0;
-        cloudUV[8] = (short)(u + repeat); cloudUV[9] = (short)repeat;
-        cloudUV[10] = (short)u;         cloudUV[11] = (short)repeat;
-        cloudUVArray.set(0, 6, cloudUV);
+        int cloudTint = (int)(190.0f + daylight * 65.0f);
+        int skyR = skyColor >> 16 & 255;
+        int skyG = skyColor >> 8 & 255;
+        int skyB = skyColor & 255;
+        int halfWidth = (viewportWidth + 1) >> 1;
+        int halfHeight = (viewportHeight + 1) >> 1;
+        for (int sy = 0; sy < halfHeight; sy++) {
+            float screenUp = screenY[sy];
+            float rayY = forwardY + screenUp * upY;
+            float baseRayX = forwardX + screenUp * upX;
+            float baseRayZ = forwardZ + screenUp * upZ;
+            float startX = 0.0f, startZ = 0.0f, stepX = 0.0f, stepZ = 0.0f;
+            boolean hitsCloudLayer = rayY > 0.0001f && cloudLevel > 0.0f;
+            if (hitsCloudLayer) {
+                float distance = cloudLevel / rayY;
+                startX = world.playerX + baseRayX * distance + screenX[0] * rightX * distance;
+                startZ = world.playerZ + baseRayZ * distance + screenX[0] * rightZ * distance;
+                stepX = rightX * distance * 2.0f / focal;
+                stepZ = rightZ * distance * 2.0f / focal;
+            }
+            for (int sx = 0; sx < halfWidth; sx++) {
+                int red = skyR, green = skyG, blue = skyB;
+                if (hitsCloudLayer) {
+                    int tx = floor(startX * cloudWidth / 2048.0f) + shift;
+                    int tz = floor(startZ * this.cloudHeight / 2048.0f);
+                    tx = wrap(tx, cloudWidth);
+                    tz = wrap(tz, cloudHeight);
+                    int alpha = cloudAlpha[tz * cloudWidth + tx] & 255;
+                    if (alpha > 12) {
+                        red = (skyR * (255 - alpha) + cloudTint * alpha) / 255;
+                        green = (skyG * (255 - alpha) + cloudTint * alpha) / 255;
+                        blue = (skyB * (255 - alpha) + cloudTint * alpha) / 255;
+                    }
+                    startX += stepX;
+                    startZ += stepZ;
+                }
+                int x = sx << 1, y = sy << 1;
+                putBackgroundPixel(x, y, red, green, blue);
+                if (x + 1 < viewportWidth) putBackgroundPixel(x + 1, y, red, green, blue);
+                if (y + 1 < viewportHeight) {
+                    putBackgroundPixel(x, y + 1, red, green, blue);
+                    if (x + 1 < viewportWidth)
+                        putBackgroundPixel(x + 1, y + 1, red, green, blue);
+                }
+            }
+        }
+        cloudBackground.set(0, 0, viewportWidth, viewportHeight, backgroundPixels);
+    }
+
+    private void putBackgroundPixel(int x, int y, int red, int green, int blue) {
+        int at = (y * viewportWidth + x) * 3;
+        backgroundPixels[at] = (byte)red;
+        backgroundPixels[at + 1] = (byte)green;
+        backgroundPixels[at + 2] = (byte)blue;
+    }
+
+    private int floor(float value) {
+        int result = (int)value;
+        return value < result ? result - 1 : result;
+    }
+
+    private int wrap(int value, int length) {
+        value %= length;
+        return value < 0 ? value + length : value;
     }
 
     private Mesh skyQuad(float y, float halfSize, Appearance appearance) {
@@ -119,32 +226,6 @@ final class SkySystem {
         short[] p = triangleQuad(corners, 3);
         short[] uv = triangleQuadUV();
         return mesh(p, uv, FIXED_SCALE, 1.0f / 256.0f, appearance);
-    }
-
-    private Mesh makeCloudPlane(Appearance appearance) {
-        // Indev lays the cloud texture out over 512-block quads at 0.5/1024
-        // UV scale: one full texture repeat spans 2048 world blocks. Keep
-        // three texture repeats here, so the plane spans 6144 blocks.
-        short[] corners = largeQuad(-3072.0f, 0.0f, -3072.0f,
-                3072.0f, 0.0f, 3072.0f);
-        short[] p = triangleQuad(corners, 3);
-        int span = 3 * 256;
-        cloudUV[0] = 0; cloudUV[1] = 0;
-        cloudUV[2] = (short)span; cloudUV[3] = 0;
-        cloudUV[4] = (short)span; cloudUV[5] = (short)span;
-        cloudUV[6] = 0; cloudUV[7] = 0;
-        cloudUV[8] = (short)span; cloudUV[9] = (short)span;
-        cloudUV[10] = 0; cloudUV[11] = (short)span;
-        VertexArray positions = new VertexArray(6, 3, 2);
-        positions.set(0, 6, p);
-        cloudUVArray = new VertexArray(6, 2, 2);
-        cloudUVArray.set(0, 6, cloudUV);
-        VertexBuffer vertices = new VertexBuffer();
-        // The cloud plane spans +/-3072 blocks. At 1/16 fixed-point this
-        // exceeds signed-short range and wraps the corners, so use 1/8 here.
-        vertices.setPositions(positions, 1.0f / 8.0f, null);
-        vertices.setTexCoords(0, cloudUVArray, 1.0f / 256.0f, null);
-        return new Mesh(vertices, new TriangleStripArray(0, new int[] { 3, 3 }), appearance);
     }
 
     /** Indev fills the area beyond the finite island with a distant water plane. */
@@ -202,19 +283,6 @@ final class SkySystem {
             texCoords[uvAt++] = (short)(z / 8);
         }
         return pAt;
-    }
-
-    private short[] largeQuad(float x0, float y, float z0, float x1, float y1, float z1) {
-        return new short[] {
-            largeFixed(x0), largeFixed(y), largeFixed(z0),
-            largeFixed(x1), largeFixed(y), largeFixed(z0),
-            largeFixed(x1), largeFixed(y1), largeFixed(z1),
-            largeFixed(x0), largeFixed(y1), largeFixed(z1)
-        };
-    }
-
-    private short largeFixed(float value) {
-        return (short)(value * 8.0f);
     }
 
     private Mesh makeStars(Appearance appearance) {
