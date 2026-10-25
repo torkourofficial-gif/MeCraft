@@ -1090,18 +1090,20 @@ final class ChunkRenderer {
             int tile = (metadata & 8) != 0 ? 81 : 97;
             int u0 = (tile & 15) * 16 + 1, v0 = (tile >> 4) * 16 + 1;
             int u1 = u0 + 14, v1 = v0 + 14;
+            // TriangleStripArray joins vertices 1 and 2. Order the vertices
+            // as two triangles sharing the panel diagonal, not as its outline.
             if (state == 0) {
-                vertex(x0,y0,z0+edge,u0,v1); vertex(x1,y0,z0+edge,u1,v1);
-                vertex(x1,y1,z0+edge,u1,v0); vertex(x0,y1,z0+edge,u0,v0);
+                vertex(x0,y0,z0+edge,u0,v1); vertex(x0,y1,z0+edge,u0,v0);
+                vertex(x1,y0,z0+edge,u1,v1); vertex(x1,y1,z0+edge,u1,v0);
             } else if (state == 1) {
-                vertex(x1-edge,y0,z0,u0,v1); vertex(x1-edge,y0,z1,u1,v1);
-                vertex(x1-edge,y1,z1,u1,v0); vertex(x1-edge,y1,z0,u0,v0);
+                vertex(x1-edge,y0,z0,u0,v1); vertex(x1-edge,y1,z0,u0,v0);
+                vertex(x1-edge,y0,z1,u1,v1); vertex(x1-edge,y1,z1,u1,v0);
             } else if (state == 2) {
-                vertex(x1,y0,z1-edge,u0,v1); vertex(x0,y0,z1-edge,u1,v1);
-                vertex(x0,y1,z1-edge,u1,v0); vertex(x1,y1,z1-edge,u0,v0);
+                vertex(x1,y0,z1-edge,u0,v1); vertex(x1,y1,z1-edge,u0,v0);
+                vertex(x0,y0,z1-edge,u1,v1); vertex(x0,y1,z1-edge,u1,v0);
             } else {
-                vertex(x0+edge,y0,z1,u0,v1); vertex(x0+edge,y0,z0,u1,v1);
-                vertex(x0+edge,y1,z0,u1,v0); vertex(x0+edge,y1,z1,u0,v0);
+                vertex(x0+edge,y0,z1,u0,v1); vertex(x0+edge,y1,z1,u0,v0);
+                vertex(x0+edge,y0,z0,u1,v1); vertex(x0+edge,y1,z0,u1,v0);
             }
         }
 
