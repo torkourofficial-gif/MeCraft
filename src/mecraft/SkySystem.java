@@ -19,6 +19,7 @@ import javax.microedition.m3g.VertexBuffer;
 final class SkySystem {
     private static final float FIXED_SCALE = 1.0f / 256.0f;
     private static final int STAR_COUNT = 500;
+    private static final int[] OCEAN_TRIANGLE_ORDER = new int[] { 0, 1, 2, 0, 2, 3 };
     private final Group yawCounter = new Group();
     private final Group celestialRotation = new Group();
     private final Mesh stars;
@@ -72,7 +73,8 @@ final class SkySystem {
                 1.0f, 0.0f, 0.0f);
         float eyeY = world.playerY + 1.62f;
         cloudPlane.setTranslation(0.0f, VoxelWorld.HEIGHT + 10.0f - eyeY, 0.0f);
-        oceanPlane.setTranslation(0.0f, VoxelWorld.SEA_LEVEL + 1.0f - eyeY - 0.02f, 0.0f);
+        oceanPlane.setTranslation(-world.playerX,
+                VoxelWorld.SEA_LEVEL + 1.0f - eyeY, -world.playerZ);
 
         float night = 1.0f - daylight;
         float starLevel = night * night;
@@ -157,12 +159,47 @@ final class SkySystem {
     }
 
     private Mesh makeOceanPlane(Appearance appearance) {
-        short[] corners = largeQuad(-3072.0f, 0.0f, -3072.0f, 3072.0f, 0.0f, 3072.0f);
-        short[] p = triangleQuad(corners, 3);
-        short[] uv = new short[] {
-            0,0, 768,0, 768,768, 0,0, 768,768, 0,768
-        };
-        return mesh(p, uv, 1.0f / 16.0f, 1.0f / 256.0f, appearance);
+        short[] positions = new short[24 * 3];
+        short[] texCoords = new short[24 * 2];
+        int pAt = 0, uvAt = 0;
+        int margin = 2048;
+        int maxX = VoxelWorld.WIDTH, maxZ = VoxelWorld.DEPTH;
+        // Indev's out-of-bounds ocean renderer fills only the space outside
+        // the finite map. These four strips begin exactly at the island edge.
+        pAt = addOceanQuad(positions, texCoords, pAt, uvAt,
+                -margin, -margin, 0, maxZ + margin); uvAt += 12;
+        pAt = addOceanQuad(positions, texCoords, pAt, uvAt,
+                maxX, -margin, maxX + margin, maxZ + margin); uvAt += 12;
+        pAt = addOceanQuad(positions, texCoords, pAt, uvAt,
+                0, -margin, maxX, 0); uvAt += 12;
+        addOceanQuad(positions, texCoords, pAt, uvAt,
+                0, maxZ, maxX, maxZ + margin);
+
+        VertexArray positionArray = new VertexArray(24, 3, 2);
+        positionArray.set(0, 24, positions);
+        VertexArray texCoordArray = new VertexArray(24, 2, 2);
+        texCoordArray.set(0, 24, texCoords);
+        VertexBuffer vertices = new VertexBuffer();
+        vertices.setPositions(positionArray, 1.0f / 8.0f, null);
+        vertices.setTexCoords(0, texCoordArray, 1.0f / 256.0f, null);
+        return new Mesh(vertices, new TriangleStripArray(0,
+                new int[] { 3, 3, 3, 3, 3, 3, 3, 3 }), appearance);
+    }
+
+    private int addOceanQuad(short[] positions, short[] texCoords, int pAt, int uvAt,
+            int x0, int z0, int x1, int z1) {
+        for (int i = 0; i < OCEAN_TRIANGLE_ORDER.length; i++) {
+            int corner = OCEAN_TRIANGLE_ORDER[i];
+            int x = corner == 0 || corner == 3 ? x0 : x1;
+            int z = corner < 2 ? z0 : z1;
+            positions[pAt++] = (short)(x * 8);
+            positions[pAt++] = 0;
+            positions[pAt++] = (short)(z * 8);
+            // 256 UV units per 2048 world blocks, matching Indev's tiling.
+            texCoords[uvAt++] = (short)(x / 8);
+            texCoords[uvAt++] = (short)(z / 8);
+        }
+        return pAt;
     }
 
     private short[] largeQuad(float x0, float y, float z0, float x1, float y1, float z1) {
