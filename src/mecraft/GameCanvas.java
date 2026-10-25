@@ -121,6 +121,7 @@ final class GameCanvas extends Canvas implements Runnable {
     private int hurtTicks;
     private Image waterTint;
     private Image hurtTint;
+    private Image pauseTint;
     private Image deathTint;
 
     GameCanvas(MeCraft app) {
@@ -1305,11 +1306,13 @@ final class GameCanvas extends Canvas implements Runnable {
         try { containerTexture = GameAssets.image("container.png"); } catch (IOException ignored) { containerTexture = null; }
         int[] blueTintPixels = new int[16 * 16];
         int[] hurtTintPixels = new int[16 * 16];
+        int[] pauseTintPixels = new int[16 * 16];
         int deathHeight = getHeight() > 0 ? getHeight() : 320;
         int[] deathTintPixels = new int[16 * deathHeight];
         for (int i = 0; i < blueTintPixels.length; i++) {
             blueTintPixels[i] = 0x500035A0;
             hurtTintPixels[i] = 0x503F0000;
+            pauseTintPixels[i] = 0xA0000000;
         }
         int deathTop = 0x60500000;
         int deathBottom = 0xA0803030;
@@ -1324,9 +1327,11 @@ final class GameCanvas extends Canvas implements Runnable {
         }
         try { waterTint = Image.createRGBImage(blueTintPixels, 16, 16, true); } catch (Throwable ignored) { waterTint = null; }
         try { hurtTint = Image.createRGBImage(hurtTintPixels, 16, 16, true); } catch (Throwable ignored) { hurtTint = null; }
+        try { pauseTint = Image.createRGBImage(pauseTintPixels, 16, 16, true); } catch (Throwable ignored) { pauseTint = null; }
         try { deathTint = Image.createRGBImage(deathTintPixels, 16, deathHeight, true); } catch (Throwable ignored) { deathTint = null; }
         blueTintPixels = null;
         hurtTintPixels = null;
+        pauseTintPixels = null;
         deathTintPixels = null;
         Image source = null;
         try {
@@ -2024,10 +2029,27 @@ final class GameCanvas extends Canvas implements Runnable {
 
     private void drawPause(Graphics g) {
         int w = getWidth(), h = getHeight();
-        g.setColor(0, 0, 0); g.fillRect(0, 0, w, h);
-        g.setColor(255, 255, 255); g.drawString("Partida pausada", w / 2, h / 2 - 30, Graphics.HCENTER | Graphics.TOP);
+        drawTint(g, pauseTint);
+        int panelWidth = Math.min(220, w - 20);
+        int panelHeight = 150;
+        int panelX = (w - panelWidth) / 2;
+        int panelY = (h - panelHeight) / 2;
+        drawInsetPanel(g, panelX, panelY, panelWidth, panelHeight);
+        Font oldFont = g.getFont();
+        g.setFont(Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_LARGE));
+        g.setColor(255, 244, 210);
+        g.drawString("Menú del juego", w / 2, panelY + 9,
+                Graphics.HCENTER | Graphics.TOP);
+        g.setFont(oldFont);
+        g.setColor(52, 37, 26);
+        g.drawLine(panelX + 9, panelY + 34, panelX + panelWidth - 10, panelY + 34);
+        g.setColor(174, 140, 99);
+        g.drawLine(panelX + 9, panelY + 35, panelX + panelWidth - 10, panelY + 35);
         for (int i = 0; i < PAUSE_ROWS.length; i++)
-            drawMenuItem(g, PAUSE_ROWS[i], h / 2 + i * 19, i == pauseSelection);
+            drawMenuItem(g, PAUSE_ROWS[i], panelY + 40 + i * 27, i == pauseSelection);
+        g.setColor(237, 220, 187);
+        g.drawString("2/8 elegir   5 aceptar   0 menú", w / 2, panelY + 126,
+                Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawGameOver(Graphics g) {
