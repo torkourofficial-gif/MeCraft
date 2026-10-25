@@ -19,20 +19,23 @@ import javax.microedition.m3g.VertexArray;
 import javax.microedition.m3g.VertexBuffer;
 import javax.microedition.m3g.World;
 
-/** Small, fixed five-model viewer for the classic Indev player-skin layout. */
+/** Single-model viewer for the classic Indev player-skin layout. */
 final class SkinGallery {
     private static final int SKIN_COUNT = 5;
     private final World world = new World();
     private final Camera camera = new Camera();
-    private final Group[] models = new Group[SKIN_COUNT];
+    private final Group model;
     private final Image[] skinImages = new Image[SKIN_COUNT];
+    private final Texture2D[] skinTextures = new Texture2D[SKIN_COUNT];
     private final boolean[] fallback = new boolean[SKIN_COUNT];
+    private final Appearance appearance;
 
     SkinGallery(int width, int height) throws IOException {
         if (width <= 0) width = 240;
         if (height <= 0) height = 200;
-        Appearance[] appearances = new Appearance[SKIN_COUNT];
         Image defaultSkin = GameAssets.image("char.png");
+        int textureWidth = 64;
+        int textureHeight = 64;
         for (int i = 0; i < SKIN_COUNT; i++) {
             try {
                 skinImages[i] = GameAssets.image("skin" + (i + 1) + ".png");
@@ -40,11 +43,16 @@ final class SkinGallery {
                 skinImages[i] = defaultSkin;
                 fallback[i] = true;
             }
-            appearances[i] = skinAppearance(skinImages[i]);
-            models[i] = makePlayer(appearances[i], skinImages[i].getWidth(), skinImages[i].getHeight());
-            models[i].setTranslation((i - 2) * 1.18f, -1.0f, 0.0f);
-            world.addChild(models[i]);
+            skinTextures[i] = createSkinTexture(skinImages[i]);
+            if (i == 0) {
+                textureWidth = skinImages[i].getWidth();
+                textureHeight = skinImages[i].getHeight();
+            }
         }
+        appearance = skinAppearance();
+        model = makePlayer(appearance, textureWidth, textureHeight);
+        model.setTranslation(0.0f, -1.0f, 0.0f);
+        world.addChild(model);
 
         camera.setPerspective(54.0f, (float)width / (float)height, 0.1f, 24.0f);
         camera.setTranslation(0.0f, 0.0f, 8.0f);
@@ -68,20 +76,27 @@ final class SkinGallery {
 
     void render(Graphics3D graphics, long timeMillis) {
         float angle = (float)((timeMillis % 12000L) * 360.0 / 12000.0);
-        for (int i = 0; i < models.length; i++)
-            models[i].setOrientation(angle, 0.0f, 1.0f, 0.0f);
+        model.setOrientation(angle, 0.0f, 1.0f, 0.0f);
         graphics.render(world);
     }
 
-    Image skinImage(int index) { return skinImages[index]; }
     boolean isFallback(int index) { return fallback[index]; }
 
-    private Appearance skinAppearance(Image image) {
+    void selectSkin(int index) {
+        if (index < 0) index = 0;
+        if (index >= SKIN_COUNT) index = SKIN_COUNT - 1;
+        appearance.setTexture(0, skinTextures[index]);
+    }
+
+    private Texture2D createSkinTexture(Image image) {
         Texture2D texture = new Texture2D(new Image2D(Image2D.RGBA, image));
         texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
+        return texture;
+    }
+
+    private Appearance skinAppearance() {
         Appearance appearance = new Appearance();
-        appearance.setTexture(0, texture);
         Material material = new Material();
         material.setColor(Material.AMBIENT, 0xFFFFFFFF);
         material.setColor(Material.DIFFUSE, 0xFFFFFFFF);

@@ -864,9 +864,11 @@ final class GameCanvas extends Canvas implements Runnable {
         if (state == SKIN_SELECT) {
             if (keyCode == KEY_NUM4 || gameAction(keyCode) == LEFT) {
                 skinSelection = (skinSelection + 4) % 5;
+                if (skinGallery != null) skinGallery.selectSkin(skinSelection);
                 repaint();
             } else if (keyCode == KEY_NUM6 || gameAction(keyCode) == RIGHT) {
                 skinSelection = (skinSelection + 1) % 5;
+                if (skinGallery != null) skinGallery.selectSkin(skinSelection);
                 repaint();
             } else if (keyCode == KEY_NUM5 || gameAction(keyCode) == FIRE) {
                 selectedPlayerSkin = skinSelection;
@@ -1011,6 +1013,7 @@ final class GameCanvas extends Canvas implements Runnable {
         skinSelection = selectedPlayerSkin;
         try {
             skinGallery = new SkinGallery(getWidth(), Math.max(1, getHeight() - 120));
+            skinGallery.selectSkin(skinSelection);
             state = SKIN_SELECT;
             repaint();
         } catch (IOException unavailable) {
