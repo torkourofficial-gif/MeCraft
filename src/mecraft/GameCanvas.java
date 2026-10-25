@@ -1478,21 +1478,62 @@ final class GameCanvas extends Canvas implements Runnable {
     private void drawMenu(Graphics g) {
         int w = getWidth(), h = getHeight();
         drawDirtBackground(g);
-        int panelY = Math.max(72, h * 3 / 8);
-        int itemStep = Math.max(24, Math.min(36, h / 9));
-        int panelHeight = itemStep * 4 + 24;
-        drawInsetPanel(g, 15, panelY, w - 30, panelHeight);
-        if (title != null) g.drawImage(title, w / 2, Math.max(8, panelY / 3 - title.getHeight() / 2), Graphics.TOP | Graphics.HCENTER);
+        int logoY = Math.max(8, h / 12);
+        if (title != null) g.drawImage(title, w / 2, logoY, Graphics.TOP | Graphics.HCENTER);
         else {
+            Font oldFont = g.getFont();
+            g.setFont(Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_LARGE));
             g.setColor(255, 255, 255);
-            g.drawString("MeCraft", w / 2, Math.max(8, panelY / 3), Graphics.TOP | Graphics.HCENTER);
+            g.drawString("MeCraft", w / 2, logoY, Graphics.TOP | Graphics.HCENTER);
+            g.setFont(oldFont);
         }
-        drawMenuItem(g, "Un jugador", panelY + 12, menuSelection == MENU_SINGLEPLAYER);
-        drawMenuItem(g, "Controles", panelY + 12 + itemStep, menuSelection == MENU_CONTROLS);
-        drawMenuItem(g, "Ajustes", panelY + 12 + itemStep * 2, menuSelection == MENU_SETTINGS);
-        drawMenuItem(g, "Salir", panelY + 12 + itemStep * 3, menuSelection == MENU_EXIT);
-        g.setColor(244, 230, 190);
-        g.drawString("Indev  |  Java ME 3D", w / 2, h - 9, Graphics.BOTTOM | Graphics.HCENTER);
+        int logoBottom = logoY + (title == null ? Font.getDefaultFont().getHeight() + 4 : title.getHeight());
+        g.setColor(255, 220, 80);
+        g.drawString("Java ME 3D", w / 2, logoBottom + 1,
+                Graphics.TOP | Graphics.HCENTER);
+
+        int buttonHeight = Font.getDefaultFont().getHeight() + 8;
+        int buttonStep = buttonHeight + 5;
+        int stackHeight = buttonHeight * 4 + 15;
+        int firstY = h / 2 - stackHeight / 2 + 15;
+        drawIndevMenuButton(g, "Un jugador", firstY, buttonHeight,
+                menuSelection == MENU_SINGLEPLAYER);
+        drawIndevMenuButton(g, "Controles", firstY + buttonStep, buttonHeight,
+                menuSelection == MENU_CONTROLS);
+        drawIndevMenuButton(g, "Ajustes", firstY + buttonStep * 2, buttonHeight,
+                menuSelection == MENU_SETTINGS);
+        drawIndevMenuButton(g, "Salir", firstY + buttonStep * 3, buttonHeight,
+                menuSelection == MENU_EXIT);
+        g.setColor(235, 222, 196);
+        g.drawString("2/8 elegir   5 aceptar", w / 2, h - 27,
+                Graphics.TOP | Graphics.HCENTER);
+        g.setColor(225, 210, 180);
+        g.drawString("MeCraft Indev 20100223", 4, h - 5,
+                Graphics.BOTTOM | Graphics.LEFT);
+        g.drawString("Java ME", w - 4, h - 5,
+                Graphics.BOTTOM | Graphics.RIGHT);
+    }
+
+    /** Classic Indev gray button with a raised pixel border and gold focus. */
+    private void drawIndevMenuButton(Graphics g, String label, int y,
+            int height, boolean selected) {
+        int w = getWidth();
+        int width = Math.min(200, w - 32);
+        if (width < 1) width = 1;
+        int x = (w - width) / 2;
+        g.setColor(20, 20, 20);
+        g.fillRect(x + 2, y + 2, width, height);
+        g.setColor(selected ? 132 : 100, selected ? 132 : 100, selected ? 132 : 100);
+        g.fillRect(x, y, width, height);
+        g.setColor(selected ? 224 : 166, selected ? 224 : 166, selected ? 224 : 166);
+        g.fillRect(x + 1, y + 1, width - 2, 2);
+        g.setColor(selected ? 72 : 54, selected ? 72 : 54, selected ? 72 : 54);
+        g.fillRect(x + 1, y + height - 3, width - 2, 2);
+        g.setColor(selected ? 255 : 160, selected ? 226 : 160, selected ? 112 : 160);
+        g.drawRect(x, y, width - 1, height - 1);
+        g.setColor(selected ? 255 : 245, selected ? 224 : 245, selected ? 125 : 245);
+        g.drawString(label, w / 2, y + (height - Font.getDefaultFont().getHeight()) / 2,
+                Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawSettings(Graphics g) {
