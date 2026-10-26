@@ -15,7 +15,7 @@ import javax.microedition.m3g.TriangleStripArray;
 import javax.microedition.m3g.VertexArray;
 import javax.microedition.m3g.VertexBuffer;
 
-/** Bounded, lazy-loaded Indev mob models and movement for the 4 MiB target. */
+/** Bounded, lazy-loaded Alpha mob models and movement for the 4 MiB target. */
 final class MobSystem {
     private static final int PIG = 0;
     private static final int SHEEP = 1;
@@ -43,6 +43,7 @@ final class MobSystem {
     private final DroppedItemSystem drops;
     private final ParticleSystem particles;
     private final Appearance fireAppearance;
+    private final Appearance spiderEyesAppearance;
     private final Texture2D[] mobTextures = new Texture2D[11];
     private Texture2D fleeceTexture;
     private final Random random = new Random(1L);
@@ -57,14 +58,14 @@ final class MobSystem {
         this.drops = drops;
         this.particles = particles;
         fireAppearance = skin(texture(GameAssets.image("fire.png")));
+        spiderEyesAppearance = skin(texture("alpha_spider_eyes.png"));
+        spiderEyesAppearance.getMaterial().setColor(Material.EMISSIVE, 0xFFAA2222);
         Texture2D[] skinTextures = new Texture2D[] {
             texture("pig.png"), texture("sheep.png"), texture("zombie.png"),
             texture("creeper.png"), texture("skeleton.png"), texture("cow.png"),
-            texture(createMobTexture(0xFFE6E1D0, 0xFFCA4C3B, 0xFF8B5A3C)),
-            texture(createMobTexture(0xFF43352C, 0xFF171513, 0xFFB73531)),
-            texture(createMobTexture(0xFF59C843, 0xFF338C27, 0xFF205B22)),
-            texture(createMobTexture(0xFFF2F1E9, 0xFFD5D4CA, 0xFF9B8B72)),
-            texture(createMobTexture(0xFF9E7762, 0xFFB99A73, 0xFF675249))
+            texture("alpha_chicken.png"), texture("alpha_spider.png"),
+            texture("alpha_slime.png"), texture("alpha_ghast.png"),
+            texture("alpha_pigzombie.png")
         };
         System.arraycopy(skinTextures, 0, mobTextures, 0, skinTextures.length);
         fleeceTexture = texture("sheep_fur.png");
@@ -131,7 +132,8 @@ final class MobSystem {
                         world.playerY < mob.y + 1.8f && world.playerY + 1.8f > mob.y) {
                         if (mob.attackDelay <= 0) {
                             mob.attackDelay = 20;
-                            playerDamage = 5;
+                            if (mob.type != SLIME || mob.slimeSize > 1)
+                                playerDamage = mob.type == SLIME ? mob.slimeSize : 5;
                         }
                     }
                 } else {
@@ -157,6 +159,8 @@ final class MobSystem {
                 mob.root.setScale((1.0f + swell * 0.4f) * pulse,
                         (1.0f + swell * 0.1f) / pulse,
                         (1.0f + swell * 0.4f) * pulse);
+            } else if (mob.type == SLIME) {
+                mob.root.setScale((float)mob.slimeSize, (float)mob.slimeSize, (float)mob.slimeSize);
             } else mob.root.setScale(1.0f, 1.0f, 1.0f);
             mob.root.setOrientation(modelYaw(mob.yaw), 0.0f, 1.0f, 0.0f);
         }
@@ -180,9 +184,11 @@ final class MobSystem {
         for (int i = 0; i < mobs.length; i++) {
             Mob mob = mobs[i];
             if (mob == null || !mob.alive) continue;
-            float height = isHostile(mob.type) ? 1.8f :
-                    (mob.type == PIG || mob.type == CHICKEN ? 0.9f : 1.3f);
-            float width = isHostile(mob.type) ? (mob.type == SPIDER ? 1.4f : 0.6f) : 0.9f;
+            float height = mob.type == SLIME ? 0.6f * mob.slimeSize :
+                    (isHostile(mob.type) ? 1.8f :
+                    (mob.type == PIG || mob.type == CHICKEN ? 0.9f : 1.3f));
+            float width = mob.type == SLIME ? 0.6f * mob.slimeSize :
+                    (isHostile(mob.type) ? (mob.type == SPIDER ? 1.4f : 0.6f) : 0.9f);
             float along = rayBox(originX, originY, originZ, dirX, dirY, dirZ,
                     mob.x - width * 0.5f, mob.y, mob.z - width * 0.5f,
                     mob.x + width * 0.5f, mob.y + height, mob.z + width * 0.5f);
@@ -301,7 +307,7 @@ final class MobSystem {
         }
         int drop = mob.type == COW ? ItemCatalog.LEATHER :
                    (mob.type == SPIDER ? ItemCatalog.STRING :
-                   (mob.type == SLIME ? ItemCatalog.SLIMEBALL :
+                   (mob.type == SLIME && mob.slimeSize == 1 ? ItemCatalog.SLIMEBALL :
                    (mob.type == GHAST || mob.type == CREEPER ? ItemCatalog.GUNPOWDER :
                    (mob.type == SKELETON ? ItemCatalog.ARROW :
                    (mob.type == PIG_ZOMBIE ? ItemCatalog.GOLD_INGOT :
@@ -367,7 +373,8 @@ final class MobSystem {
         if (mob != null) return mob;
         int type = mobTypeForSlot(slot);
         Appearance fleece = type == SHEEP ? skin(fleeceTexture) : null;
-        mob = new Mob(type, skin(mobTextures[type]), fleece, fireAppearance);
+        mob = new Mob(type, skin(mobTextures[type]), fleece, fireAppearance,
+                      type == SPIDER ? spiderEyesAppearance : null);
         mobs[slot] = mob;
         scene.addChild(mob.root);
         return mob;
@@ -516,6 +523,8 @@ final class MobSystem {
         mob.age = random.nextInt(100);
         mob.nextWander = tick + 20 + random.nextInt(100);
         mob.health = 20;
+        mob.slimeSize = mob.type == SLIME ? 1 << random.nextInt(3) : 1;
+        if (mob.type == SLIME) mob.health = mob.slimeSize * mob.slimeSize;
         mob.hurtTicks = 0;
         mob.dying = false;
         mob.deathTicks = 0;
@@ -534,7 +543,7 @@ final class MobSystem {
         mob.chasing = false;
         mob.alive = true;
         mob.root.setTranslation(mob.x, mob.y, mob.z);
-        mob.root.setScale(1.0f, 1.0f, 1.0f);
+        mob.root.setScale((float)mob.slimeSize, (float)mob.slimeSize, (float)mob.slimeSize);
         mob.root.setOrientation(modelYaw(mob.yaw), 0.0f, 1.0f, 0.0f);
         mob.root.setRenderingEnable(true);
     }
@@ -633,10 +642,36 @@ final class MobSystem {
         float phase = mob.walkPhase;
         float walk = mob.walkAmount;
         if (mob.walkTicks > 0) mob.walkTicks--;
-        if (mob.type == SPIDER || mob.type == SLIME || mob.type == GHAST) return;
+        if (mob.type == SPIDER) {
+            for (int i = 0; i < mob.spiderLegs.length; i++) {
+                float side = (i & 1) == 0 ? 1.0f : -1.0f;
+                float phaseOffset = (i >> 1) * 0.5f * (float)Math.PI;
+                float swing = (float)Math.cos(phase + phaseOffset) * 24.0f * walk;
+                mob.spiderLegs[i].setOrientation(side * swing, 0, 1, 0);
+            }
+            return;
+        }
+        if (mob.type == GHAST) {
+            for (int i = 0; i < mob.tentacles.length; i++) {
+                float angle = (0.2f * (float)Math.sin(mob.age * 0.3f + i) + 0.4f) * 57.29578f;
+                mob.tentacles[i].setOrientation(angle, 1, 0, 0);
+            }
+            return;
+        }
+        if (mob.type == SLIME) return;
+        if (mob.type == CHICKEN) {
+            float stride = (float)Math.cos(phase) * 80.214f * walk;
+            mob.legs[0].setOrientation(-stride, 1, 0, 0);
+            mob.legs[1].setOrientation(stride, 1, 0, 0);
+            float flap = (float)Math.sin(mob.age * 0.30f) * 24.0f;
+            mob.arms[0].setOrientation(flap, 0, 0, 1);
+            mob.arms[1].setOrientation(-flap, 0, 0, 1);
+            return;
+        }
         if (mob.type == ZOMBIE || mob.type == SKELETON || mob.type == PIG_ZOMBIE) {
             // ModelBiped.animate() uses a 1.4 radian stride (about 80 degrees).
-            // Indev's renderer flips model Y, so X-axis pose rotations invert in M3G.
+            // The original renderer flips model Y, so its X-axis pose rotations
+            // invert when represented by these M3G groups.
             mob.legs[0].setOrientation(-(float)Math.cos(phase) * 80.214f * walk, 1, 0, 0);
             mob.legs[1].setOrientation(-(float)Math.cos(phase + Math.PI) * 80.214f * walk, 1, 0, 0);
             float armPitch = (float)Math.sin(phase) * 0.05f * 57.29578f * walk;
@@ -650,7 +685,7 @@ final class MobSystem {
         } else {
             // ModelQuadruped.animate() also uses a 1.4 radian stride.
             float stride = (float)Math.cos(phase) * 80.214f * walk;
-            // Preserve Indev's diagonal gait after the renderer's vertical flip.
+            // Preserve the original diagonal gait after the renderer's vertical flip.
             mob.legs[0].setOrientation(-stride, 1, 0, 0);
             mob.legs[1].setOrientation(stride, 1, 0, 0);
             if (mob.type == CHICKEN) return;
@@ -679,20 +714,6 @@ final class MobSystem {
     private boolean hostileAllowed(int type, VoxelWorld world) {
         if (type == GHAST || type == PIG_ZOMBIE) return world.nether;
         return !world.nether;
-    }
-
-    private Image createMobTexture(int base, int patch, int accent) {
-        int[] pixels = new int[64 * 32];
-        for (int i = 0; i < pixels.length; i++) pixels[i] = base;
-        for (int y = 0; y < 32; y++) {
-            for (int x = 0; x < 64; x++) {
-                if (((x / 4) + (y / 4)) % 7 == 0) pixels[y * 64 + x] = patch;
-                if ((x >= 8 && x < 16 && y >= 8 && y < 16) ||
-                    (x >= 40 && x < 48 && y >= 8 && y < 16))
-                    pixels[y * 64 + x] = accent;
-            }
-        }
-        return Image.createRGBImage(pixels, 64, 32, true);
     }
 
     private void shootArrow(Mob shooter, VoxelWorld world) {
@@ -867,7 +888,7 @@ final class MobSystem {
         return false;
     }
 
-    /** Returns the first ray/AABB intersection, matching the mobs' Indev hit boxes. */
+    /** Returns the first ray/AABB intersection, matching the mobs' Alpha hit boxes. */
     private float rayBox(float ox, float oy, float oz, float dx, float dy, float dz,
             float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
         float near = 0.0f;
@@ -939,6 +960,8 @@ final class MobSystem {
         final Group[] arms = new Group[2];
         final Group[] armsPitch = new Group[2];
         final Group[] armsRoll = new Group[2];
+        final Group[] spiderLegs = new Group[8];
+        final Group[] tentacles = new Group[9];
         final Group[] fleece = new Group[6];
         private final Appearance skin;
         private final Material skinMaterial;
@@ -948,6 +971,7 @@ final class MobSystem {
         private final short[] fireTexCoords = new short[16];
         private int fireFrame = -1;
         int health;
+        int slimeSize = 1;
         int age;
         int deathTicks;
         int fireTicks;
@@ -967,7 +991,7 @@ final class MobSystem {
         float walkPhase, walkAmount;
         float x, y, z, yaw, targetYaw;
 
-        Mob(int type, Appearance appearance, Appearance fur, Appearance fire) {
+        Mob(int type, Appearance appearance, Appearance fur, Appearance fire, Appearance spiderEyes) {
             this.type = type;
             this.skin = appearance;
             this.skinMaterial = appearance.getMaterial();
@@ -976,7 +1000,8 @@ final class MobSystem {
             if (type == ZOMBIE || type == PIG_ZOMBIE) buildZombie(appearance, true);
             else if (type == SKELETON) buildZombie(appearance, false);
             else if (type == CREEPER) buildCreeper(appearance);
-            else if (type == SPIDER) buildSpider(appearance);
+            else if (type == COW) buildCow(appearance);
+            else if (type == SPIDER) buildSpider(appearance, spiderEyes);
             else if (type == SLIME) buildSlime(appearance);
             else if (type == GHAST) buildGhast(appearance);
             else if (type == CHICKEN) buildChicken(appearance);
@@ -1010,7 +1035,7 @@ final class MobSystem {
             }
         }
 
-        /** Indev's creeper fuse flash is a bright white overlay, not a red hurt tint. */
+        /** Alpha's creeper fuse flash is a bright white overlay, not a red hurt tint. */
         void setFlashWhite(boolean flashing) {
             int emissive = flashing ? 0xFFFFFFFF : 0x00000000;
             skinMaterial.setColor(Material.EMISSIVE, emissive);
@@ -1037,8 +1062,7 @@ final class MobSystem {
                         0.0f, 0.0625f, -0.125f);
                 head.setTranslation(0.0f, 1.125f, -0.5f);
                 pose.addChild(head);
-                // Sheep fleece is a separate inflated pass; cows use the same
-                // compact quadruped frame without that wool overlay.
+                // Sheep fleece is a separate inflated pass over the bare model.
                 if (fur != null) {
                     fleece[0] = new Group();
                     head.addChild(fleece[0]);
@@ -1058,7 +1082,7 @@ final class MobSystem {
         private void addLegs(int length, float pivotY, float halfWidth, Appearance fur) {
             for (int i = 0; i < 4; i++) {
                 Group leg = new Group();
-                // RenderLiving mirrors model X; Indev's first and third legs are on -X.
+                // The original renderer mirrors model X; its first and third legs are on -X.
                 float x = (i & 1) == 0 ? halfWidth : -halfWidth;
                 float z = i < 2 ? 0.4375f : -0.3125f;
                 leg.setTranslation(x, pivotY, z);
@@ -1070,7 +1094,7 @@ final class MobSystem {
                 if (fur != null) {
                     fleece[2 + i] = new Group();
                     leg.addChild(fleece[2 + i]);
-                    // Indev's separate wool model covers the upper 6 px of each leg.
+                    // The separate fleece model covers the upper 6 px of each leg.
                     addPart(fleece[2 + i], 0, 16, 5, 7, 5, 4, 6, 4,
                             0.0f, -0.1875f, 0.0f, 0, 0, 1, 0, fur);
                 }
@@ -1155,59 +1179,121 @@ final class MobSystem {
             }
         }
 
-        private void buildChicken(Appearance appearance) {
-            addPart(pose, 28, 8, 6, 8, 6, 6, 8, 6,
-                    0.0f, 0.72f, 0.0f, -90.0f, 1, 0, 0, appearance,
-                    0.0f, 0.0f, 0.0f);
-            addPart(head, 0, 0, 5, 6, 5, 5, 6, 5,
-                    0.0f, 0.0f, 0.0f, 0.0f, 0, 1, 0, appearance,
-                    0.0f, 0.0f, 0.0f);
-            head.setTranslation(0.0f, 0.95f, -0.20f);
+        private void buildCow(Appearance appearance) {
+            // Alpha ModelCow: an 8x8x6 head, 12x18x10 body, four 4x12x4
+            // legs, two horns and the small udder mesh.
+            addPart(pose, 18, 4, 12, 18, 10, 12, 18, 10,
+                    0.0f, 0.82f, 0.125f, -90.0f, 1, 0, 0, appearance);
+            head.setTranslation(0.0f, 0.95f, -0.5f);
             pose.addChild(head);
-            addPart(head, 24, 0, 2, 2, 2, 2, 2, 2,
-                    0.0f, -0.12f, -0.17f, 0.0f, 0, 1, 0, appearance);
-            for (int i = 0; i < 2; i++) {
+            addPart(head, 0, 0, 8, 8, 6, 8, 8, 6,
+                    0.0f, 0.0f, -0.0625f, 0, 0, 1, 0, appearance);
+            addPart(head, 22, 0, 1, 3, 1, 1, 3, 1,
+                    0.25f, 0.20f, -0.125f, 0, 0, 1, 0, appearance);
+            addPart(head, 22, 0, 1, 3, 1, 1, 3, 1,
+                    -0.25f, 0.20f, -0.125f, 0, 0, 1, 0, appearance,
+                    0.0f, 0.0f, 0.0f, true);
+            addPart(pose, 52, 0, 4, 6, 2, 4, 6, 2,
+                    0.0f, 0.43f, 0.45f, 90.0f, 1, 0, 0, appearance);
+            for (int i = 0; i < 4; i++) {
+                float side = (i & 1) == 0 ? -1.0f : 1.0f;
+                float front = i < 2 ? -0.34f : 0.34f;
                 Group leg = new Group();
-                leg.setTranslation(i == 0 ? 0.1f : -0.1f, 0.35f, 0.0f);
+                leg.setTranslation(side * 0.25f, 0.375f, front);
                 pose.addChild(leg);
-                addPart(leg, 0, 16, 2, 4, 2, 2, 4, 2,
-                        0.0f, -0.06f, 0.0f, 0, 0, 1, 0, appearance);
+                addPart(leg, 0, 16, 4, 12, 4, 4, 12, 4,
+                        0, -0.375f, 0, 0, 0, 1, 0, appearance);
                 legs[i] = leg;
             }
         }
 
-        private void buildSpider(Appearance appearance) {
-            addPart(pose, 0, 0, 10, 6, 12, 10, 6, 12,
-                    0.0f, 0.48f, 0.12f, 0, 0, 1, 0, appearance);
-            addPart(head, 32, 0, 8, 6, 8, 8, 6, 8,
-                    0.0f, 0.0f, 0.0f, 0, 0, 1, 0, appearance);
-            head.setTranslation(0.0f, 0.5f, -0.32f);
+        private void buildChicken(Appearance appearance) {
+            // Alpha ModelChicken's eight pieces and original 64x32 UV layout.
+            addPart(pose, 0, 9, 6, 8, 6, 6, 8, 6,
+                    0.0f, 0.62f, 0.0f, -90.0f, 1, 0, 0, appearance);
+            head.setTranslation(0.0f, 0.78f, -0.25f);
             pose.addChild(head);
+            addPart(head, 0, 0, 4, 6, 3, 4, 6, 3,
+                    0.0f, 0.0f, 0.0f, 0, 0, 1, 0, appearance);
+            addPart(head, 14, 0, 4, 2, 2, 4, 2, 2,
+                    0.0f, -0.125f, -0.15625f, 0, 0, 1, 0, appearance);
+            addPart(head, 14, 4, 2, 2, 2, 2, 2, 2,
+                    0.0f, -0.25f, -0.125f, 0, 0, 1, 0, appearance);
+            for (int i = 0; i < 2; i++) {
+                float side = i == 0 ? -1.0f : 1.0f;
+                Group leg = new Group();
+                leg.setTranslation(side * 0.10f, 0.31f, 0.0f);
+                pose.addChild(leg);
+                addPart(leg, 26, 0, 3, 5, 3, 3, 5, 3,
+                        0, -0.15625f, 0, 0, 0, 1, 0, appearance);
+                legs[i] = leg;
+                Group wing = new Group();
+                wing.setTranslation(side * 0.25f, 0.61f, 0.0f);
+                pose.addChild(wing);
+                addPart(wing, 24, 13, 1, 4, 6, 1, 4, 6,
+                        0, 0, 0, 0, 0, 1, 0, appearance);
+                arms[i] = wing;
+            }
+        }
+
+        private void buildSpider(Appearance appearance, Appearance eyes) {
+            addPart(pose, 0, 0, 6, 6, 6, 6, 6, 6,
+                    0.0f, 0.75f, 0.0f, 0, 0, 1, 0, appearance);
+            head.setTranslation(0.0f, 0.75f, -0.25f);
+            pose.addChild(head);
+            addPart(head, 32, 4, 8, 8, 8, 8, 8, 8,
+                    0.0f, 0.0f, 0.0f, 0, 0, 1, 0, appearance);
+            if (eyes != null)
+                addPart(head, 32, 4, 8, 8, 8, 8, 8, 8,
+                        0.0f, 0.0f, -0.002f, 0, 0, 1, 0, eyes);
+            addPart(pose, 0, 12, 10, 8, 12, 10, 8, 12,
+                    0.0f, 0.75f, 0.56f, 0, 0, 1, 0, appearance);
             for (int i = 0; i < 8; i++) {
                 boolean left = (i & 1) == 0;
                 int row = i >> 1;
-                float z = 0.38f - row * 0.25f;
-                float x = left ? 0.20f : -0.20f;
-                float angle = (left ? -1.0f : 1.0f) * (25.0f + row * 12.0f);
-                addPart(pose, 0, 16, 10, 2, 2, 10, 2, 2,
-                        x, 0.42f, z, angle, 0, 1, 0, appearance);
+                float side = left ? 1.0f : -1.0f;
+                float z = (2 - row) * 0.0625f;
+                Group leg = new Group();
+                leg.setTranslation(side * 0.25f, 0.72f, z);
+                leg.setOrientation(side * (row == 0 || row == 3 ? 45.0f : 33.3f), 0, 0, 1);
+                pose.addChild(leg);
+                Group swing = new Group();
+                leg.addChild(swing);
+                addPart(swing, 18, 0, 16, 2, 2, 16, 2, 2,
+                        side * 0.4375f, 0, 0, 0, 0, 1, 0, appearance);
+                spiderLegs[i] = swing;
             }
         }
 
         private void buildSlime(Appearance appearance) {
+            // Alpha renders a translucent 8-cube around a smaller inner cube
+            // whose UVs contain the eyes and mouth.
             addPart(pose, 0, 0, 8, 8, 8, 8, 8, 8,
-                    0.0f, 0.5f, 0.0f, 0, 0, 1, 0, appearance);
+                    0.0f, 0.50f, 0.0f, 0, 0, 1, 0, appearance);
+            addPart(pose, 0, 16, 6, 6, 6, 6, 6, 6,
+                    0.0f, 0.50f, -0.01f, 0, 0, 1, 0, appearance);
+            addPart(pose, 32, 0, 2, 2, 2, 2, 2, 2,
+                    0.0f, 0.56f, -0.19f, 0, 0, 1, 0, appearance);
+            addPart(pose, 32, 4, 2, 2, 2, 2, 2, 2,
+                    0.25f, 0.56f, -0.19f, 0, 0, 1, 0, appearance);
+            addPart(pose, 32, 8, 1, 1, 1, 1, 1, 1,
+                    0.125f, 0.34f, -0.19f, 0, 0, 1, 0, appearance);
         }
 
         private void buildGhast(Appearance appearance) {
             addPart(pose, 0, 0, 16, 16, 16, 16, 16, 16,
                     0.0f, 1.0f, 0.0f, 0, 0, 1, 0, appearance);
-            for (int i = 0; i < 9; i++) {
-                float x = ((i % 3) - 1) * 0.30f;
-                float z = ((i / 3) - 1) * 0.30f;
-                float length = 8.0f + (i % 3) * 2.0f;
-                addPart(pose, 0, 16, 2, length, 2, 2, 10, 2,
-                        x, 0.42f - length / 32.0f, z, 0, 0, 1, 0, appearance);
+            Random modelRandom = new Random(1660L);
+            for (int i = 0; i < tentacles.length; i++) {
+                float x = ((((i % 3) - (i / 3 % 2) * 0.5f + 0.25f) / 2.0f) * 2.0f - 1.0f) * 5.0f / 16.0f;
+                float z = (((i / 3) / 2.0f) * 2.0f - 1.0f) * 5.0f / 16.0f;
+                int length = 8 + modelRandom.nextInt(7);
+                Group tentacle = new Group();
+                tentacle.setTranslation(x, 0.5625f, z);
+                pose.addChild(tentacle);
+                addPart(tentacle, 0, 0, 2, length, 2, 2, length, 2,
+                        0.0f, -length / 32.0f, 0.0f, 0, 0, 1, 0, appearance);
+                tentacles[i] = tentacle;
             }
         }
 
