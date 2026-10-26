@@ -897,6 +897,10 @@ final class ChunkRenderer {
         return mobs.hit(world, pitch, damage);
     }
 
+    boolean shootPlayerArrow(VoxelWorld world, float pitch) {
+        return mobs.shootPlayerArrow(world, pitch);
+    }
+
     void sync(VoxelWorld world) {
         if (world.revision != builtRevision || world.fullRebuild) {
             if (builtRevision < 0 || world.fullRebuild) rebuildWorld(world);

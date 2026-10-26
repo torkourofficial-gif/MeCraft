@@ -22,7 +22,13 @@ final class MobSystem {
     private static final int ZOMBIE = 2;
     private static final int CREEPER = 3;
     private static final int SKELETON = 4;
-    private static final int MOB_COUNT = 8;
+    private static final int COW = 5;
+    private static final int CHICKEN = 6;
+    private static final int SPIDER = 7;
+    private static final int SLIME = 8;
+    private static final int GHAST = 9;
+    private static final int PIG_ZOMBIE = 10;
+    private static final int MOB_COUNT = 14;
     private static final float DESPAWN_DISTANCE_SQUARED = 32.0f * 32.0f;
     private static final int PASSIVE_RESPAWN_INTERVAL = 80;
     private static final int HOSTILE_RESPAWN_INTERVAL = 100;
@@ -37,7 +43,7 @@ final class MobSystem {
     private final DroppedItemSystem drops;
     private final ParticleSystem particles;
     private final Appearance fireAppearance;
-    private final Texture2D[] mobTextures = new Texture2D[5];
+    private final Texture2D[] mobTextures = new Texture2D[11];
     private Texture2D fleeceTexture;
     private final Random random = new Random(1L);
     private int worldSeed = Integer.MIN_VALUE;
@@ -53,7 +59,12 @@ final class MobSystem {
         fireAppearance = skin(texture(GameAssets.image("fire.png")));
         Texture2D[] skinTextures = new Texture2D[] {
             texture("pig.png"), texture("sheep.png"), texture("zombie.png"),
-            texture("creeper.png"), texture("skeleton.png")
+            texture("creeper.png"), texture("skeleton.png"), texture("cow.png"),
+            texture(createMobTexture(0xFFE6E1D0, 0xFFCA4C3B, 0xFF8B5A3C)),
+            texture(createMobTexture(0xFF43352C, 0xFF171513, 0xFFB73531)),
+            texture(createMobTexture(0xFF59C843, 0xFF338C27, 0xFF205B22)),
+            texture(createMobTexture(0xFFF2F1E9, 0xFFD5D4CA, 0xFF9B8B72)),
+            texture(createMobTexture(0xFF9E7762, 0xFFB99A73, 0xFF675249))
         };
         System.arraycopy(skinTextures, 0, mobTextures, 0, skinTextures.length);
         fleeceTexture = texture("sheep_fur.png");
@@ -82,6 +93,8 @@ final class MobSystem {
             }
             if (!mob.alive) continue;
             mob.age++;
+            if (mob.type == CHICKEN && mob.age > 0 && mob.age % 500 == 0)
+                drops.spawn(ItemCatalog.EGG, floor(mob.x), floor(mob.y), floor(mob.z));
             if (updateBurning(mob, world)) continue;
             if (mob.hurtTicks > 0 && --mob.hurtTicks == 0) mob.setHurt(false);
             mob.chasing = false;
@@ -167,8 +180,9 @@ final class MobSystem {
         for (int i = 0; i < mobs.length; i++) {
             Mob mob = mobs[i];
             if (mob == null || !mob.alive) continue;
-            float height = isHostile(mob.type) ? 1.8f : (mob.type == PIG ? 0.9f : 1.3f);
-            float width = isHostile(mob.type) ? 0.6f : 0.9f;
+            float height = isHostile(mob.type) ? 1.8f :
+                    (mob.type == PIG || mob.type == CHICKEN ? 0.9f : 1.3f);
+            float width = isHostile(mob.type) ? (mob.type == SPIDER ? 1.4f : 0.6f) : 0.9f;
             float along = rayBox(originX, originY, originZ, dirX, dirY, dirZ,
                     mob.x - width * 0.5f, mob.y, mob.z - width * 0.5f,
                     mob.x + width * 0.5f, mob.y + height, mob.z + width * 0.5f);
@@ -279,11 +293,21 @@ final class MobSystem {
     }
 
     private void dropForDeath(Mob mob) {
-        int drop = mob.type == PIG ? ItemCatalog.PORK_RAW :
-                   (isHostile(mob.type) ? ItemCatalog.FEATHER : 0);
-        int count = drop == 0 ? 0 : random.nextInt(3);
-        for (int i = 0; i < count; i++)
-            drops.spawn(drop, floor(mob.x), floor(mob.y), floor(mob.z));
+        int bx = floor(mob.x), by = floor(mob.y), bz = floor(mob.z);
+        if (mob.type == PIG) {
+            int meat = 1 + random.nextInt(2);
+            int pork = mob.fireTicks > 0 ? ItemCatalog.PORK_COOKED : ItemCatalog.PORK_RAW;
+            for (int i = 0; i < meat; i++) drops.spawn(pork, bx, by, bz);
+        }
+        int drop = mob.type == COW ? ItemCatalog.LEATHER :
+                   (mob.type == SPIDER ? ItemCatalog.STRING :
+                   (mob.type == SLIME ? ItemCatalog.SLIMEBALL :
+                   (mob.type == GHAST || mob.type == CREEPER ? ItemCatalog.GUNPOWDER :
+                   (mob.type == SKELETON ? ItemCatalog.ARROW :
+                   (mob.type == PIG_ZOMBIE ? ItemCatalog.GOLD_INGOT :
+                   (mob.type == ZOMBIE || mob.type == CHICKEN ? ItemCatalog.FEATHER : 0))))));
+        int count = drop == 0 ? 0 : 1 + random.nextInt(2);
+        for (int i = 0; i < count; i++) drops.spawn(drop, bx, by, bz);
     }
 
     private void beginDeath(Mob mob) {
@@ -325,10 +349,17 @@ final class MobSystem {
     }
 
     private int mobTypeForSlot(int slot) {
-        if (slot == 0 || slot == 2) return PIG;
-        if (slot == 1 || slot == 3) return SHEEP;
-        if (slot == 4 || slot == 5) return ZOMBIE;
-        return slot == 6 ? CREEPER : SKELETON;
+        if (slot == 0 || slot == 4) return PIG;
+        if (slot == 1 || slot == 5) return SHEEP;
+        if (slot == 2 || slot == 6) return COW;
+        if (slot == 3) return CHICKEN;
+        if (slot == 7) return ZOMBIE;
+        if (slot == 8) return SKELETON;
+        if (slot == 9) return CREEPER;
+        if (slot == 10) return SPIDER;
+        if (slot == 11) return SLIME;
+        if (slot == 12) return GHAST;
+        return PIG_ZOMBIE;
     }
 
     private Mob createMob(int slot) {
@@ -413,11 +444,20 @@ final class MobSystem {
 
     /** Zombies/skeletons burn under open daylight; creepers remain night-only. */
     private void updateHostileCycle(VoxelWorld world) {
-        boolean night = world.isNight();
+        boolean night = world.nether || world.isNight();
+        for (int i = 0; i < mobs.length; i++) {
+            if (isHostile(mobTypeForSlot(i)) && !hostileAllowed(mobTypeForSlot(i), world) &&
+                    mobs[i] != null) releaseMob(i);
+        }
         if (!night) {
             for (int i = 0; i < mobs.length; i++) {
                 Mob mob = mobs[i];
-                if (!isHostile(mobTypeForSlot(i)) || mob == null || mob.dying) continue;
+                if (!isHostile(mobTypeForSlot(i))) continue;
+                if (!hostileAllowed(mobTypeForSlot(i), world)) {
+                    if (mob != null) releaseMob(i);
+                    continue;
+                }
+                if (mob == null || mob.dying) continue;
                 if (mob.type == CREEPER) {
                     releaseMob(i);
                 } else if (mob.alive && mob.fireTicks == 0 && hasSkyExposure(world, mob)) {
@@ -432,7 +472,7 @@ final class MobSystem {
             if (tick % HOSTILE_RESPAWN_INTERVAL == 0) {
                 for (int i = 0; i < mobs.length; i++) {
                     Mob mob = mobs[i];
-                    if (isHostile(mobTypeForSlot(i)) &&
+                    if (isHostile(mobTypeForSlot(i)) && hostileAllowed(mobTypeForSlot(i), world) &&
                         (mob == null || (!mob.alive && !mob.dying))) {
                         spawnZombie(world, createMob(i));
                         break;
@@ -444,7 +484,7 @@ final class MobSystem {
         zombiesNightActive = true;
         for (int i = 0; i < mobs.length; i++) {
             Mob mob = mobs[i];
-            if (!isHostile(mobTypeForSlot(i))) continue;
+            if (!isHostile(mobTypeForSlot(i)) || !hostileAllowed(mobTypeForSlot(i), world)) continue;
             if (mob == null) mob = createMob(i);
             if (mob.dying) continue;
             if (mob.alive) {
@@ -593,7 +633,8 @@ final class MobSystem {
         float phase = mob.walkPhase;
         float walk = mob.walkAmount;
         if (mob.walkTicks > 0) mob.walkTicks--;
-        if (mob.type == ZOMBIE || mob.type == SKELETON) {
+        if (mob.type == SPIDER || mob.type == SLIME || mob.type == GHAST) return;
+        if (mob.type == ZOMBIE || mob.type == SKELETON || mob.type == PIG_ZOMBIE) {
             // ModelBiped.animate() uses a 1.4 radian stride (about 80 degrees).
             // Indev's renderer flips model Y, so X-axis pose rotations invert in M3G.
             mob.legs[0].setOrientation(-(float)Math.cos(phase) * 80.214f * walk, 1, 0, 0);
@@ -612,6 +653,7 @@ final class MobSystem {
             // Preserve Indev's diagonal gait after the renderer's vertical flip.
             mob.legs[0].setOrientation(-stride, 1, 0, 0);
             mob.legs[1].setOrientation(stride, 1, 0, 0);
+            if (mob.type == CHICKEN) return;
             mob.legs[2].setOrientation(stride, 1, 0, 0);
             mob.legs[3].setOrientation(-stride, 1, 0, 0);
         }
@@ -630,7 +672,27 @@ final class MobSystem {
     }
 
     private boolean isHostile(int type) {
-        return type == ZOMBIE || type == CREEPER || type == SKELETON;
+        return type == ZOMBIE || type == CREEPER || type == SKELETON || type == SPIDER ||
+               type == SLIME || type == GHAST || type == PIG_ZOMBIE;
+    }
+
+    private boolean hostileAllowed(int type, VoxelWorld world) {
+        if (type == GHAST || type == PIG_ZOMBIE) return world.nether;
+        return !world.nether;
+    }
+
+    private Image createMobTexture(int base, int patch, int accent) {
+        int[] pixels = new int[64 * 32];
+        for (int i = 0; i < pixels.length; i++) pixels[i] = base;
+        for (int y = 0; y < 32; y++) {
+            for (int x = 0; x < 64; x++) {
+                if (((x / 4) + (y / 4)) % 7 == 0) pixels[y * 64 + x] = patch;
+                if ((x >= 8 && x < 16 && y >= 8 && y < 16) ||
+                    (x >= 40 && x < 48 && y >= 8 && y < 16))
+                    pixels[y * 64 + x] = accent;
+            }
+        }
+        return Image.createRGBImage(pixels, 64, 32, true);
     }
 
     private void shootArrow(Mob shooter, VoxelWorld world) {
@@ -650,11 +712,36 @@ final class MobSystem {
         arrow.vz = dz / length * speed;
         arrow.life = 0;
         arrow.active = true;
+        arrow.playerOwned = false;
         arrow.root.setTranslation(arrow.x, arrow.y, arrow.z);
         arrow.root.setOrientation(yawTo(dx, dz), 0.0f, 1.0f, 0.0f);
         float pitch = dy * 90.0f / (horizontal + (dy < 0.0f ? -dy : dy) + 0.0001f);
         arrow.pitch.setOrientation(-pitch, 1.0f, 0.0f, 0.0f);
         arrow.root.setRenderingEnable(true);
+    }
+
+    boolean shootPlayerArrow(VoxelWorld world, float pitchDegrees) {
+        Arrow arrow = arrows[nextArrow++ % arrows.length];
+        float yaw = world.yaw * (float)Math.PI / 180.0f;
+        float pitch = pitchDegrees * (float)Math.PI / 180.0f;
+        float horizontal = (float)Math.cos(pitch);
+        float dx = (float)Math.sin(yaw) * horizontal;
+        float dy = (float)Math.sin(pitch);
+        float dz = (float)Math.cos(yaw) * horizontal;
+        arrow.x = world.playerX + dx * 0.5f;
+        arrow.y = world.playerY + 1.45f;
+        arrow.z = world.playerZ + dz * 0.5f;
+        arrow.vx = dx * 1.0f;
+        arrow.vy = dy * 1.0f;
+        arrow.vz = dz * 1.0f;
+        arrow.life = 0;
+        arrow.active = true;
+        arrow.playerOwned = true;
+        arrow.root.setTranslation(arrow.x, arrow.y, arrow.z);
+        arrow.root.setOrientation(world.yaw, 0.0f, 1.0f, 0.0f);
+        arrow.pitch.setOrientation(-pitchDegrees, 1.0f, 0.0f, 0.0f);
+        arrow.root.setRenderingEnable(true);
+        return true;
     }
 
     private int updateArrows(VoxelWorld world, int damage) {
@@ -669,13 +756,42 @@ final class MobSystem {
             arrow.life++;
             arrow.root.setTranslation(arrow.x, arrow.y, arrow.z);
             int bx = floor(arrow.x), by = floor(arrow.y), bz = floor(arrow.z);
+            boolean hitMob = false;
+            if (arrow.playerOwned) {
+                for (int m = 0; m < mobs.length; m++) {
+                    Mob target = mobs[m];
+                    if (target == null || !target.alive || target.dying) continue;
+                    float dx = target.x - arrow.x, dy = target.y + 0.5f - arrow.y,
+                          dz = target.z - arrow.z;
+                    float radius = target.type == SPIDER ? 0.9f : 0.55f;
+                    if (dx * dx + dy * dy + dz * dz >= radius * radius) continue;
+                    target.health -= 4;
+                    if (target.health <= 0) {
+                        dropForDeath(target);
+                        beginDeath(target);
+                    } else {
+                        target.hurtTicks = 10;
+                        target.setHurt(true);
+                        target.fleeTicks = 35;
+                    }
+                    hitMob = true;
+                    break;
+                }
+            }
+            if (hitMob) {
+                arrow.active = false;
+                arrow.root.setRenderingEnable(false);
+                continue;
+            }
             float dx = arrow.x - world.playerX;
             float dy = arrow.y - targetY;
             float dz = arrow.z - world.playerZ;
-            if (dx * dx + dy * dy + dz * dz < 0.30f * 0.30f) {
+            if (!arrow.playerOwned && dx * dx + dy * dy + dz * dz < 0.30f * 0.30f) {
                 if (damage < 2) damage = 2;
                 arrow.active = false;
             } else if (world.isSolidAt(bx, by, bz) || arrow.life > 70 || by < 0) {
+                if (arrow.playerOwned && world.isSolidAt(bx, by, bz))
+                    drops.spawn(ItemCatalog.ARROW, bx, by, bz);
                 arrow.active = false;
             }
             if (!arrow.active) arrow.root.setRenderingEnable(false);
@@ -687,6 +803,7 @@ final class MobSystem {
         final Group root = new Group();
         final Group pitch = new Group();
         boolean active;
+        boolean playerOwned;
         int life;
         float x, y, z, vx, vy, vz;
 
@@ -856,9 +973,13 @@ final class MobSystem {
             this.skinMaterial = appearance.getMaterial();
             this.furMaterial = fur == null ? null : fur.getMaterial();
             root.addChild(pose);
-            if (type == ZOMBIE) buildZombie(appearance, true);
+            if (type == ZOMBIE || type == PIG_ZOMBIE) buildZombie(appearance, true);
             else if (type == SKELETON) buildZombie(appearance, false);
             else if (type == CREEPER) buildCreeper(appearance);
+            else if (type == SPIDER) buildSpider(appearance);
+            else if (type == SLIME) buildSlime(appearance);
+            else if (type == GHAST) buildGhast(appearance);
+            else if (type == CHICKEN) buildChicken(appearance);
             else buildQuadruped(appearance, type == PIG, fur);
             fireTexArray = new VertexArray(8, 2, 2);
             fireMesh = makeFireMesh(fire, fireTexArray, fireTexCoords);
@@ -916,17 +1037,20 @@ final class MobSystem {
                         0.0f, 0.0625f, -0.125f);
                 head.setTranslation(0.0f, 1.125f, -0.5f);
                 pose.addChild(head);
-                // Indev renders sheep fleece as a second, inflated model pass.
-                fleece[0] = new Group();
-                head.addChild(fleece[0]);
-                addPart(fleece[0], 0, 0, 7.2f, 7.2f, 7.2f, 6, 6, 6,
-                        0.0f, 0.0f, 0.0f, 0, 0, 1, 0, fur,
-                        0.0f, 0.0625f, -0.0625f);
-                fleece[1] = new Group();
-                pose.addChild(fleece[1]);
-                addPart(fleece[1], 28, 8, 11.5f, 19.5f, 9.5f, 8, 16, 6,
-                        0.0f, 1.1875f, 0.125f, -90.0f, 1, 0, 0, fur,
-                        0.0f, 0.125f, -0.25f);
+                // Sheep fleece is a separate inflated pass; cows use the same
+                // compact quadruped frame without that wool overlay.
+                if (fur != null) {
+                    fleece[0] = new Group();
+                    head.addChild(fleece[0]);
+                    addPart(fleece[0], 0, 0, 7.2f, 7.2f, 7.2f, 6, 6, 6,
+                            0.0f, 0.0f, 0.0f, 0, 0, 1, 0, fur,
+                            0.0f, 0.0625f, -0.0625f);
+                    fleece[1] = new Group();
+                    pose.addChild(fleece[1]);
+                    addPart(fleece[1], 28, 8, 11.5f, 19.5f, 9.5f, 8, 16, 6,
+                            0.0f, 1.1875f, 0.125f, -90.0f, 1, 0, 0, fur,
+                            0.0f, 0.125f, -0.25f);
+                }
                 addLegs(12, 0.75f, 0.1875f, fur);
             }
         }
@@ -1028,6 +1152,62 @@ final class MobSystem {
                 addPart(leg, 0, 16, 4, 6.5f, 4, 4, 6, 4,
                         0.0f, -0.171875f, 0.0f, 0, 0, 1, 0);
                 legs[i] = leg;
+            }
+        }
+
+        private void buildChicken(Appearance appearance) {
+            addPart(pose, 28, 8, 6, 8, 6, 6, 8, 6,
+                    0.0f, 0.72f, 0.0f, -90.0f, 1, 0, 0, appearance,
+                    0.0f, 0.0f, 0.0f);
+            addPart(head, 0, 0, 5, 6, 5, 5, 6, 5,
+                    0.0f, 0.0f, 0.0f, 0.0f, 0, 1, 0, appearance,
+                    0.0f, 0.0f, 0.0f);
+            head.setTranslation(0.0f, 0.95f, -0.20f);
+            pose.addChild(head);
+            addPart(head, 24, 0, 2, 2, 2, 2, 2, 2,
+                    0.0f, -0.12f, -0.17f, 0.0f, 0, 1, 0, appearance);
+            for (int i = 0; i < 2; i++) {
+                Group leg = new Group();
+                leg.setTranslation(i == 0 ? 0.1f : -0.1f, 0.35f, 0.0f);
+                pose.addChild(leg);
+                addPart(leg, 0, 16, 2, 4, 2, 2, 4, 2,
+                        0.0f, -0.06f, 0.0f, 0, 0, 1, 0, appearance);
+                legs[i] = leg;
+            }
+        }
+
+        private void buildSpider(Appearance appearance) {
+            addPart(pose, 0, 0, 10, 6, 12, 10, 6, 12,
+                    0.0f, 0.48f, 0.12f, 0, 0, 1, 0, appearance);
+            addPart(head, 32, 0, 8, 6, 8, 8, 6, 8,
+                    0.0f, 0.0f, 0.0f, 0, 0, 1, 0, appearance);
+            head.setTranslation(0.0f, 0.5f, -0.32f);
+            pose.addChild(head);
+            for (int i = 0; i < 8; i++) {
+                boolean left = (i & 1) == 0;
+                int row = i >> 1;
+                float z = 0.38f - row * 0.25f;
+                float x = left ? 0.20f : -0.20f;
+                float angle = (left ? -1.0f : 1.0f) * (25.0f + row * 12.0f);
+                addPart(pose, 0, 16, 10, 2, 2, 10, 2, 2,
+                        x, 0.42f, z, angle, 0, 1, 0, appearance);
+            }
+        }
+
+        private void buildSlime(Appearance appearance) {
+            addPart(pose, 0, 0, 8, 8, 8, 8, 8, 8,
+                    0.0f, 0.5f, 0.0f, 0, 0, 1, 0, appearance);
+        }
+
+        private void buildGhast(Appearance appearance) {
+            addPart(pose, 0, 0, 16, 16, 16, 16, 16, 16,
+                    0.0f, 1.0f, 0.0f, 0, 0, 1, 0, appearance);
+            for (int i = 0; i < 9; i++) {
+                float x = ((i % 3) - 1) * 0.30f;
+                float z = ((i / 3) - 1) * 0.30f;
+                float length = 8.0f + (i % 3) * 2.0f;
+                addPart(pose, 0, 16, 2, length, 2, 2, 10, 2,
+                        x, 0.42f - length / 32.0f, z, 0, 0, 1, 0, appearance);
             }
         }
 

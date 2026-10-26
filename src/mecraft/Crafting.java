@@ -9,7 +9,11 @@ final class Crafting {
     static final int BASIC_RECIPES = 4;
     static final int DOOR = BASIC_RECIPES;
     static final int TOOL_RECIPES = BASIC_RECIPES + 1;
-    static final int RECIPE_COUNT = TOOL_RECIPES + ItemCatalog.TOOL_KINDS * ItemCatalog.TOOL_TIERS;
+    private static final int TOOL_RECIPE_COUNT = ItemCatalog.TOOL_KINDS * ItemCatalog.TOOL_TIERS;
+    private static final int FOOD_AND_ITEM_RECIPES = 6;
+    private static final int ARMOR_RECIPES = 4 * 4;
+    static final int RECIPE_COUNT = TOOL_RECIPES + TOOL_RECIPE_COUNT +
+                                    FOOD_AND_ITEM_RECIPES + ARMOR_RECIPES;
 
     static final int[] OUTPUT = new int[RECIPE_COUNT];
     static final int[] OUTPUT_COUNT = new int[RECIPE_COUNT];
@@ -33,21 +37,52 @@ final class Crafting {
                 setRecipe(recipe, ItemCatalog.tool(kind, tier), 1, name,
                           material, materialCount, ItemCatalog.STICK, stickCount);
             }
+        int extra = TOOL_RECIPES + TOOL_RECIPE_COUNT;
+        setRecipe(extra++, ItemCatalog.BREAD, 1, "Pan", ItemCatalog.WHEAT, 3);
+        setRecipe(extra++, ItemCatalog.MUSHROOM_STEW, 1, "Estofado de setas",
+                ItemCatalog.BOWL, 1, Block.BROWN_MUSHROOM, 1,
+                Block.RED_MUSHROOM, 1);
+        setRecipe(extra++, ItemCatalog.BOW, 1, "Arco", ItemCatalog.STICK, 3,
+                ItemCatalog.STRING, 3);
+        setRecipe(extra++, ItemCatalog.ARROW, 4, "4 Flechas", ItemCatalog.FLINT, 1,
+                ItemCatalog.STICK, 1, ItemCatalog.FEATHER, 1);
+        setRecipe(extra++, ItemCatalog.FLINT_AND_STEEL, 1, "Pedernal y acero",
+                ItemCatalog.IRON_INGOT, 1, ItemCatalog.FLINT, 1);
+        setRecipe(extra++, ItemCatalog.GOLDEN_APPLE, 1, "Manzana dorada",
+                ItemCatalog.APPLE, 1, ItemCatalog.GOLD_INGOT, 8);
+        int[] armorItems = new int[] {
+            ItemCatalog.LEATHER_HELMET, ItemCatalog.LEATHER_CHESTPLATE,
+            ItemCatalog.LEATHER_LEGGINGS, ItemCatalog.LEATHER_BOOTS,
+            ItemCatalog.IRON_HELMET, ItemCatalog.IRON_CHESTPLATE,
+            ItemCatalog.IRON_LEGGINGS, ItemCatalog.IRON_BOOTS,
+            ItemCatalog.DIAMOND_HELMET, ItemCatalog.DIAMOND_CHESTPLATE,
+            ItemCatalog.DIAMOND_LEGGINGS, ItemCatalog.DIAMOND_BOOTS,
+            ItemCatalog.GOLD_HELMET, ItemCatalog.GOLD_CHESTPLATE,
+            ItemCatalog.GOLD_LEGGINGS, ItemCatalog.GOLD_BOOTS
+        };
+        int[] armorMaterials = new int[] {
+            ItemCatalog.LEATHER, ItemCatalog.LEATHER, ItemCatalog.LEATHER, ItemCatalog.LEATHER,
+            ItemCatalog.IRON_INGOT, ItemCatalog.IRON_INGOT, ItemCatalog.IRON_INGOT, ItemCatalog.IRON_INGOT,
+            ItemCatalog.DIAMOND, ItemCatalog.DIAMOND, ItemCatalog.DIAMOND, ItemCatalog.DIAMOND,
+            ItemCatalog.GOLD_INGOT, ItemCatalog.GOLD_INGOT, ItemCatalog.GOLD_INGOT, ItemCatalog.GOLD_INGOT
+        };
+        int[] armorCounts = new int[] { 5,8,7,4, 5,8,7,4, 5,8,7,4, 5,8,7,4 };
+        for (int i = 0; i < armorItems.length; i++)
+            setRecipe(extra++, armorItems[i], 1, ItemCatalog.name(armorItems[i]),
+                    armorMaterials[i], armorCounts[i]);
         }
     }
 
     private Crafting() { }
 
     private static void setRecipe(int recipe, int output, int outputCount, String name,
-                                  int first, int firstCount, int second, int secondCount) {
+                                  int... ingredients) {
         OUTPUT[recipe] = output;
         OUTPUT_COUNT[recipe] = outputCount;
         NAME[recipe] = name;
         int offset = recipe * 8;
-        INGREDIENTS[offset] = first;
-        INGREDIENTS[offset + 1] = firstCount;
-        INGREDIENTS[offset + 2] = second;
-        INGREDIENTS[offset + 3] = secondCount;
+        for (int i = 0; i < ingredients.length && i < 8; i++)
+            INGREDIENTS[offset + i] = ingredients[i];
     }
 
     static int count(boolean workbench) {

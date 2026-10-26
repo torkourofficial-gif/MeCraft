@@ -139,6 +139,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private int diagnosticScroll;
     private int recipeSelection;
     private int recipeScroll;
+    private int inventoryPage;
     private int creativeSelection;
     private int miningX = -1, miningY = -1, miningZ = -1;
     private float miningDamage;
@@ -796,11 +797,34 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 return;
             }
         }
-        if (world.mode == 0 && selected == ItemCatalog.PORK_RAW) {
+        if (selected == ItemCatalog.BOW) {
+            if ((world.mode == 1 || inventory[ItemCatalog.ARROW] > 0) &&
+                    renderer.shootPlayerArrow(world, cameraPitch)) {
+                if (world.mode == 0) inventory[ItemCatalog.ARROW]--;
+                renderer.swingHand();
+                copyInventoryToWorld();
+                world.save();
+                repaint();
+            }
+            return;
+        }
+        if (selected == ItemCatalog.FLINT_AND_STEEL) {
+            igniteBlock();
+            return;
+        }
+        if (selected == ItemCatalog.EMPTY_BUCKET || selected == ItemCatalog.WATER_BUCKET ||
+                selected == ItemCatalog.LAVA_BUCKET) {
+            useBucket(selected);
+            return;
+        }
+        if (world.mode == 0 && ItemCatalog.isFood(selected)) {
             if (inventory[selected] > 0 && world.health < 20) {
-                world.health += 3;
+                world.health += ItemCatalog.foodHealing(selected);
                 if (world.health > 20) world.health = 20;
                 inventory[selected]--;
+                if (selected == ItemCatalog.MUSHROOM_STEW &&
+                        inventory[ItemCatalog.BOWL] < ItemCatalog.maxStack(ItemCatalog.BOWL))
+                    inventory[ItemCatalog.BOWL]++;
                 if (inventory[selected] == 0) restoreHotbarItem(selected);
                 if (renderer != null) renderer.swingHand();
                 copyInventoryToWorld();
@@ -809,6 +833,44 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             return;
         }
         placeBlock();
+    }
+
+    private void igniteBlock() {
+        int[] target = trace(5.0f);
+        if (target == null || target[3] == Integer.MIN_VALUE) return;
+        int x = target[0] + target[3], y = target[1] + target[4], z = target[2] + target[5];
+        if (y <= 0 || y >= VoxelWorld.HEIGHT || !Block.replaceable(world.get(x, y, z)) ||
+                !Block.solid(world.get(x, y - 1, z))) return;
+        if (!world.set(x, y, z, Block.FIRE)) return;
+        renderer.swingHand();
+        renderer.sync(world);
+        copyInventoryToWorld();
+        world.save();
+    }
+
+    private void useBucket(int selected) {
+        int[] target = trace(5.0f);
+        if (target == null) return;
+        int x = target[0], y = target[1], z = target[2];
+        if (selected == ItemCatalog.EMPTY_BUCKET && world.get(x, y, z) == Block.WATER) {
+            if (world.set(x, y, z, Block.AIR)) {
+                if (world.mode == 0) inventory[selected]--;
+                inventory[world.nether ? ItemCatalog.LAVA_BUCKET : ItemCatalog.WATER_BUCKET]++;
+            }
+        } else if (selected != ItemCatalog.EMPTY_BUCKET) {
+            x += target[3]; y += target[4]; z += target[5];
+            if (y <= 0 || y >= VoxelWorld.HEIGHT ||
+                    !Block.replaceable(world.get(x, y, z))) return;
+            if (world.set(x, y, z, Block.WATER)) {
+                if (world.mode == 0) inventory[selected]--;
+                inventory[ItemCatalog.EMPTY_BUCKET]++;
+            }
+        } else return;
+        if (inventory[selected] <= 0) restoreHotbarItem(selected);
+        renderer.swingHand();
+        renderer.sync(world);
+        copyInventoryToWorld();
+        world.save();
     }
 
     private void travelThroughPortal() {
@@ -857,6 +919,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         state = workbench ? WORKBENCH : INVENTORY;
         recipeSelection = 0;
         recipeScroll = 0;
+        inventoryPage = 0;
         clearKeys();
         repaint();
     }
@@ -893,6 +956,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (recipeSelection < recipeScroll) recipeScroll = recipeSelection;
         if (recipeSelection >= recipeScroll + 6) recipeScroll = recipeSelection - 5;
         repaint();
+    }
+
+    private void moveInventoryPage(int delta) {
+        int pages = inventoryPageCount();
+        inventoryPage = (inventoryPage + delta + pages) % pages;
+        repaint();
+    }
+
+    private int inventoryPageCount() {
+        int visibleBlocks = 0;
+        for (int id = 1; id < Block.DECORATIVE_START; id++)
+            if (id != Block.WATER && id != Block.BEDROCK) visibleBlocks++;
+        int pageSize = 27 - visibleBlocks - 1;
+        int items = ItemCatalog.COUNT - Block.COUNT;
+        return Math.max(1, (items + pageSize - 1) / pageSize);
     }
 
     /** Short ray march; returns hit voxel and the previous empty voxel offset. */
@@ -1119,6 +1197,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             if (keyCode == KEY_POUND || keyCode == KEY_NUM0) closeCrafting();
             else if (keyCode == KEY_NUM2 || action == UP) moveRecipeSelection(-1);
             else if (keyCode == KEY_NUM8 || action == DOWN) moveRecipeSelection(1);
+            else if (keyCode == KEY_NUM4 || action == LEFT) moveInventoryPage(-1);
+            else if (keyCode == KEY_NUM6 || action == RIGHT) moveInventoryPage(1);
             else if (keyCode == KEY_NUM5 || action == FIRE) craftSelected();
             return;
         }
@@ -1387,12 +1467,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private int creativeItemCount() {
-        return Block.CREATIVE_PALETTE.length + ItemCatalog.WOOL_COLOR_COUNT;
+        return Block.CREATIVE_PALETTE.length + ItemCatalog.COUNT - Block.COUNT;
     }
 
     private int creativeItemAt(int index) {
         if (index < Block.CREATIVE_PALETTE.length) return Block.CREATIVE_PALETTE[index];
-        return ItemCatalog.WOOL_COLOR_START + index - Block.CREATIVE_PALETTE.length;
+        return Block.COUNT + index - Block.CREATIVE_PALETTE.length;
     }
 
     private void moveWorldSelection(int delta) {
@@ -2164,6 +2244,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         g.setColor(35, 35, 35);
         g.drawString(Language.text(workbench ? "Recetas de la mesa" : "Crafteo 2x2"),
                 left + panelW / 2, top + 1, Graphics.TOP | Graphics.HCENTER);
+        g.drawString((inventoryPage + 1) + "/" + inventoryPageCount(),
+                left + panelW - 7, top + 1, Graphics.TOP | Graphics.RIGHT);
         g.setClip(0, 0, w, h);
         for (int row = 0; row < 6; row++) {
             int recipe = first + row;
@@ -2205,7 +2287,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         g.setColor(35, 35, 35);
         g.drawString(Language.text(available ? "5 crear" : "No disponible"),
                 w / 2, top + panelH + 2, Graphics.TOP | Graphics.HCENTER);
-        g.drawString(Language.text("# cerrar  |  2/8 lista"), w / 2, top + panelH + 15,
+        g.drawString(Language.text("# cerrar  |  2/8 recetas  4/6 objetos"), w / 2, top + panelH + 15,
                 Graphics.TOP | Graphics.HCENTER);
     }
 
@@ -2221,7 +2303,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             if (visibleBlocks++ == cell) return id;
         }
         if (cell == visibleBlocks) return Block.DOOR;
-        int item = Block.COUNT + cell - visibleBlocks - 1;
+        int pageSize = 27 - visibleBlocks - 1;
+        int item = Block.COUNT + inventoryPage * pageSize + cell - visibleBlocks - 1;
         return item < ItemCatalog.COUNT ? item : -1;
     }
 

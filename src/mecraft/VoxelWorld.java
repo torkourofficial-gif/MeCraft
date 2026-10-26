@@ -29,6 +29,8 @@ final class VoxelWorld {
     private static final int MCF7_ITEM_COUNT = 47;
     private static final int MCF8_ITEM_COUNT = 48;
     private static final int MCF9_ITEM_COUNT = 51;
+    private static final int PRE_ALPHA_BLOCK_COUNT = 81;
+    private static final int ALPHA_ITEM_SAVE_MAGIC = 0x4D434645; // MCFE
     private static final int INFDEV_EDIT_MAGIC = 0x49464431;
     private static final int INFDEV_EDIT_POINTER_MAGIC = 0x49465031;
     private static final int INFDEV_EDIT_PAGE_MAGIC = 0x49465047;
@@ -750,12 +752,13 @@ final class VoxelWorld {
 
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(blocks.length * 2 + 64);
             DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(0x4D434644); // MCFD: explicit dimension state
+            out.writeInt(ALPHA_ITEM_SAVE_MAGIC); // MCFE: Alpha item catalog and dimension state
             out.writeInt(seed);
             out.writeByte(mode);
             out.writeUTF(worldName == null ? "Mundo" : worldName);
             out.writeBoolean(nether);
             out.writeByte(selectedSlot);
+            out.writeShort(inventory.length);
             for (int i = 0; i < inventory.length; i++) out.writeByte(inventory[i]);
             for (int i = 0; i < hotbar.length; i++) out.writeByte(hotbar[i]);
             for (int i = 0; i < itemDamage.length; i++) out.writeShort(itemDamage[i]);
@@ -946,34 +949,47 @@ final class VoxelWorld {
                 format != 0x4D434634 && format != 0x4D434635 && format != 0x4D434636 &&
                 format != 0x4D434637 && format != 0x4D434638 && format != 0x4D434639 &&
                 format != 0x4D434641 && format != 0x4D434642 && format != 0x4D434643 &&
-                format != 0x4D434644) return null;
+                format != 0x4D434644 && format != ALPHA_ITEM_SAVE_MAGIC) return null;
             int seed = in.readInt();
             int mode = in.readByte();
-            boolean namedFormat = format == 0x4D434642 || format == 0x4D434643 || format == 0x4D434644;
+            boolean namedFormat = format == 0x4D434642 || format == 0x4D434643 ||
+                                  format == 0x4D434644 || format == ALPHA_ITEM_SAVE_MAGIC;
             VoxelWorld world = new VoxelWorld(seed, mode);
             world.worldName = namedFormat ? in.readUTF() : "Mundo guardado";
-            boolean explicitDimensionFormat = format == 0x4D434644;
+            boolean alphaItemFormat = format == ALPHA_ITEM_SAVE_MAGIC;
+            boolean explicitDimensionFormat = format == 0x4D434644 || alphaItemFormat;
             boolean savedNether = explicitDimensionFormat ? in.readBoolean() :
                                   "NETHER".equalsIgnoreCase(world.worldName);
             world.setNetherDimension(savedNether);
             world.saveStoreName = storeName;
             world.selectedSlot = in.readByte();
-            boolean currentFormat = format == 0x4D434641 || format == 0x4D434642 || format == 0x4D434643 || explicitDimensionFormat;
-            boolean latestFormat = format == 0x4D434643 || explicitDimensionFormat;
+            boolean currentFormat = format == 0x4D434641 || format == 0x4D434642 ||
+                                    format == 0x4D434643 || explicitDimensionFormat;
+            boolean latestFormat = format == 0x4D434643 || format == 0x4D434644 || alphaItemFormat;
             if (format == 0x4D434635 || format == 0x4D434636 || format == 0x4D434637 ||
                 format == 0x4D434638 || format == 0x4D434639 || currentFormat) {
-                int inventoryLength = latestFormat ? world.inventory.length :
-                                      (currentFormat ? world.inventory.length - ItemCatalog.WOOL_COLOR_COUNT :
-                                      (format == 0x4D434639 ? MCF9_ITEM_COUNT :
-                                      (format == 0x4D434638 ? MCF8_ITEM_COUNT :
-                                       (format == 0x4D434637 ? MCF7_ITEM_COUNT : MCF6_ITEM_COUNT))));
+                int inventoryLength;
+                if (alphaItemFormat) inventoryLength = in.readUnsignedShort();
+                else if (format == 0x4D434644 || format == 0x4D434643)
+                    inventoryLength = ItemCatalog.ALPHA_ITEM_START - (Block.COUNT - PRE_ALPHA_BLOCK_COUNT);
+                else if (currentFormat)
+                    inventoryLength = ItemCatalog.ALPHA_ITEM_START -
+                            (Block.COUNT - PRE_ALPHA_BLOCK_COUNT) - ItemCatalog.WOOL_COLOR_COUNT;
+                else if (latestFormat) inventoryLength = world.inventory.length;
+                else if (format == 0x4D434639) inventoryLength = MCF9_ITEM_COUNT;
+                else if (format == 0x4D434638) inventoryLength = MCF8_ITEM_COUNT;
+                else if (format == 0x4D434637) inventoryLength = MCF7_ITEM_COUNT;
+                else inventoryLength = MCF6_ITEM_COUNT;
                 for (int i = 0; i < inventoryLength; i++) {
                     int newId = currentFormat ? i : (format == 0x4D434639 ? i :
                                 (format == 0x4D434638 ? (i < 18 ? i : i + 1) :
                                  (format == 0x4D434637 ? (i < 17 ? i : i + 2) :
                                   (i < MCF6_BLOCK_COUNT ? i : i + 4))));
                     if (!currentFormat && newId >= 19) newId += Block.COUNT - 19;
-                    world.inventory[newId] = in.readUnsignedByte();
+                    else if (currentFormat && !alphaItemFormat && newId >= PRE_ALPHA_BLOCK_COUNT)
+                        newId += Block.COUNT - PRE_ALPHA_BLOCK_COUNT;
+                    int count = in.readUnsignedByte();
+                    if (newId < world.inventory.length) world.inventory[newId] = count;
                 }
                 for (int i = 0; i < world.hotbar.length; i++) {
                     int id = in.readUnsignedByte();
@@ -983,6 +999,8 @@ final class VoxelWorld {
                     else if (format != 0x4D434637 && format != 0x4D434638 &&
                              format != 0x4D434639 && id >= MCF6_BLOCK_COUNT) id += 4;
                     if (!currentFormat && id >= 19) id += Block.COUNT - 19;
+                    else if (currentFormat && !alphaItemFormat && id >= PRE_ALPHA_BLOCK_COUNT)
+                        id += Block.COUNT - PRE_ALPHA_BLOCK_COUNT;
                     world.hotbar[i] = id > Block.AIR && id < ItemCatalog.COUNT ? id : Block.DIRT;
                 }
                 for (int i = 0; i < inventoryLength; i++) {
@@ -991,7 +1009,10 @@ final class VoxelWorld {
                                  (format == 0x4D434637 ? (i < 17 ? i : i + 2) :
                                   (i < MCF6_BLOCK_COUNT ? i : i + 4))));
                     if (!currentFormat && newId >= 19) newId += Block.COUNT - 19;
-                    world.itemDamage[newId] = in.readUnsignedShort();
+                    else if (currentFormat && !alphaItemFormat && newId >= PRE_ALPHA_BLOCK_COUNT)
+                        newId += Block.COUNT - PRE_ALPHA_BLOCK_COUNT;
+                    int damage = in.readUnsignedShort();
+                    if (newId < world.itemDamage.length) world.itemDamage[newId] = damage;
                 }
             } else if (format == 0x4D434633 || format == 0x4D434634) {
                 for (int i = 0; i < Block.LEGACY_COUNT; i++) world.inventory[i] = in.readUnsignedByte();

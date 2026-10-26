@@ -48,6 +48,27 @@ final class Block {
     static final int CACTUS_TOP_TILE = 71;
     static final byte SNOW = (byte)findTileBlock(66);
     static final byte PORTAL = (byte)findTileBlock(14);
+    static final byte FIRE = (byte)findTileBlock(31);
+    static final byte FURNACE = (byte)findTileBlock(62);
+    static final byte LEVER = (byte)findTileBlock(96);
+    static final byte REDSTONE_TORCH_ON = (byte)findTileBlock(99);
+    static final byte PUMPKIN = (byte)findTileBlock(102);
+    static final byte NETHERRACK = (byte)findTileBlock(103);
+    static final byte SOUL_SAND = (byte)findTileBlock(104);
+    static final byte GLOWSTONE = (byte)findTileBlock(105);
+    static final byte REDSTONE_TORCH_OFF = (byte)findTileBlock(115);
+    static final byte GOLD_ORE = (byte)findTileBlock(32);
+    static final byte GRAVEL = (byte)findTileBlock(19);
+    static final byte DIAMOND_ORE = (byte)findTileBlock(50);
+    static final byte REDSTONE_ORE = (byte)findTileBlock(51);
+    static final byte GOLD_BLOCK = (byte)findTileBlock(39);
+    static final byte IRON_BLOCK = (byte)findTileBlock(38);
+    static final byte DIAMOND_BLOCK = (byte)findTileBlock(40);
+    static final byte CLAY_BLOCK = (byte)findTileBlock(72);
+    static final byte OBSIDIAN = (byte)findTileBlock(37);
+    static final byte GLASS = (byte)findTileBlock(49);
+    static final byte BROWN_MUSHROOM = (byte)findTileBlock(29);
+    static final byte RED_MUSHROOM = (byte)findTileBlock(28);
 
     private static int findTileBlock(int tile) {
         for (int i = DECORATIVE_START; i < TILE.length; i++)
@@ -68,11 +89,23 @@ final class Block {
                                             97,98,99,100,101,112,128 };
         for (int i = 0; i < lowerAtlasTiles.length; i++) {
             int tile = lowerAtlasTiles[i];
-            if (!isExistingTile(tile) && hasAtlasTexture(tile)) temporary[count++] = tile;
+            if (!isExistingTile(tile) && hasAtlasTexture(tile) && !containsTile(temporary, count, tile))
+                temporary[count++] = tile;
+        }
+        int[] alphaSpecialTiles = new int[] { 31,62,96,99,102,103,104,105,115 };
+        for (int i = 0; i < alphaSpecialTiles.length; i++) {
+            int tile = alphaSpecialTiles[i];
+            if (!isExistingTile(tile) && hasAtlasTexture(tile) && !containsTile(temporary, count, tile))
+                temporary[count++] = tile;
         }
         int[] result = new int[count];
         System.arraycopy(temporary, 0, result, 0, count);
         return result;
+    }
+
+    private static boolean containsTile(int[] tiles, int count, int tile) {
+        for (int i = 0; i < count; i++) if (tiles[i] == tile) return true;
+        return false;
     }
 
     private static int[] makeCreativePalette() {
@@ -92,6 +125,8 @@ final class Block {
 
     private static boolean hasAtlasTexture(int tile) {
         if (tile < 0 || tile >= 256) return false;
+        if (tile == 31 || tile == 62 || tile == 96 || tile == 99 || tile == 102 ||
+            tile == 103 || tile == 104 || tile == 105 || tile == 115) return true;
         return TEXTURED_TILE_ROWS[tile >> 4].charAt(tile & 15) != '.';
     }
 
@@ -126,12 +161,53 @@ final class Block {
         };
         System.arraycopy(basic, 0, result, 0, basic.length);
         for (int i = 0; i < EXTRA_TILES.length; i++) {
-            result[DECORATIVE_START + i] = EXTRA_TILES[i] == 14 ? "Portal del Nether" :
-                    EXTRA_TILES[i] == 97 ? "Puerta de madera" :
-                    EXTRA_TILES[i] == 70 ? "Cactus" : EXTRA_TILES[i] == 66 ? "Nieve" :
-                    new StringBuffer().append("Decoración ").append(EXTRA_TILES[i]).toString();
+            result[DECORATIVE_START + i] = alphaBlockName(EXTRA_TILES[i]);
         }
         return result;
+    }
+
+    private static String alphaBlockName(int tile) {
+        if (tile == 14) return "Portal del Nether";
+        if (tile == 28) return "Seta roja";
+        if (tile == 29) return "Seta marrón";
+        if (tile == 31) return "Fuego";
+        if (tile == 32) return "Mena de oro";
+        if (tile == 35) return "Estantería";
+        if (tile == 36) return "Piedra musgosa";
+        if (tile == 37) return "Obsidiana";
+        if (tile == 38) return "Bloque de hierro";
+        if (tile == 39) return "Bloque de oro";
+        if (tile == 40) return "Bloque de diamante";
+        if (tile == 48) return "Esponja";
+        if (tile == 49) return "Cristal";
+        if (tile == 50) return "Mena de diamante";
+        if (tile == 51) return "Mena de redstone";
+        if (tile == 62) return "Horno";
+        if (tile == 65) return "Generador de mobs";
+        if (tile == 66) return "Nieve";
+        if (tile == 67) return "Hielo";
+        if (tile == 70) return "Cactus";
+        if (tile == 72) return "Arcilla";
+        if (tile == 73) return "Caña de azúcar";
+        if (tile == 74) return "Tocadiscos";
+        if (tile == 81) return "Cartel";
+        if (tile == 83) return "Escalera";
+        if (tile == 84) return "Cable de redstone";
+        if (tile == 85) return "Cofre";
+        if (tile == 86) return "Bloque de oro";
+        if (tile == 87) return "Bloque de hierro";
+        if (tile == 88) return "Cultivo";
+        if (tile == 96) return "Palanca";
+        if (tile == 97) return "Puerta de madera";
+        if (tile == 98) return "Puerta de hierro";
+        if (tile == 99 || tile == 115) return "Antorcha de redstone";
+        if (tile == 102) return "Calabaza";
+        if (tile == 103) return "Roca abisal";
+        if (tile == 104) return "Arena de almas";
+        if (tile == 105) return "Piedra luminosa";
+        if (tile == 112) return "Riel";
+        if (tile == 128) return "Riel";
+        return new StringBuffer().append("Bloque Alpha ").append(tile).toString();
     }
 
     private Block() { }
@@ -141,7 +217,8 @@ final class Block {
     }
 
     static boolean isFlower(byte id) {
-        return id == RED_FLOWER || id == YELLOW_FLOWER || id == TORCH || id == PORTAL;
+        return id == RED_FLOWER || id == YELLOW_FLOWER || id == TORCH || id == PORTAL ||
+               id == FIRE || id == BROWN_MUSHROOM || id == RED_MUSHROOM;
     }
 
     static boolean replaceable(byte id) {
@@ -186,9 +263,16 @@ final class Block {
         return id != AIR && id != WATER && id != BEDROCK && id != TNT && id != PORTAL;
     }
 
-    static byte dropId(byte id) {
+    static int dropId(byte id) {
         if (id == GRASS || id == FARMLAND) return DIRT;
-        return id == STONE ? COBBLESTONE : id;
+        if (id == STONE) return COBBLESTONE;
+        if (id == COAL) return ItemCatalog.COAL_ITEM;
+        if (id == DIAMOND_ORE) return ItemCatalog.DIAMOND;
+        if (id == REDSTONE_ORE || id == REDSTONE_TORCH_ON || id == REDSTONE_TORCH_OFF)
+            return ItemCatalog.REDSTONE;
+        if (id == GLOWSTONE) return ItemCatalog.GLOWSTONE_DUST;
+        if (id == CLAY_BLOCK) return ItemCatalog.CLAY;
+        return id;
     }
 
     private static int hardnessTenths(byte id) {
@@ -203,6 +287,10 @@ final class Block {
         if (id == CRAFTING_TABLE) return 25;
         if (id == WOOL) return 8;
         if (id == COAL || id == IRON) return 30;
+        if (id == GOLD_ORE || id == DIAMOND_ORE || id == REDSTONE_ORE) return 30;
+        if (id == GOLD_BLOCK || id == IRON_BLOCK || id == DIAMOND_BLOCK) return 50;
+        if (id == OBSIDIAN) return 100;
+        if (id == GLASS) return 3;
         if (id == DOOR) return 30;
         if (id == COBBLESTONE) return 20;
         if (id == FARMLAND) return 6;
@@ -241,6 +329,7 @@ final class Block {
     /** Indev terrain tile for the renderer's face order: top, x-, x+, z-, z+, bottom. */
     static int faceTile(byte id, int face) {
         if (id == DOOR) return face == 0 || face == 5 ? 81 : 97;
+        if (id == FURNACE) return face == 0 || face == 5 ? 61 : 62;
         if (face == 0) return topTile(id);
         if (id == TNT && face == 5) return 10;
         if (face == 5) {
