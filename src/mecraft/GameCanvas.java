@@ -1763,6 +1763,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         } catch (Throwable unavailableAtlas) {
             for (int i = 0; i < blockIcons.length; i++) blockIcons[i] = null;
         }
+        try {
+            Image portalSource = GameAssets.image("portal.png");
+            int[] portalPixels = new int[16 * 16];
+            portalSource.getRGB(portalPixels, 0, 16, 0, 0, 16, 16);
+            blockIcons[Block.PORTAL] = Image.createRGBImage(portalPixels, 16, 16, true);
+            itemIcons[Block.PORTAL] = blockIcons[Block.PORTAL];
+            mutedItemIcons[Block.PORTAL] = makeMutedIcon(blockIcons[Block.PORTAL]);
+        } catch (Throwable unavailablePortalTexture) {
+            blockIcons[Block.PORTAL] = null;
+            itemIcons[Block.PORTAL] = null;
+            mutedItemIcons[Block.PORTAL] = null;
+        }
         source = null;
         Image woolSource = null;
         try {

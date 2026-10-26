@@ -656,10 +656,20 @@ final class VoxelWorld {
             for (int u = 1; u <= 2; u++) {
                 int px = frame[3] == 0 ? frame[0] + u : frame[0];
                 int pz = frame[3] == 0 ? frame[2] : frame[2] + u;
-                set(px, frame[1] + v, pz, Block.PORTAL);
+                if (!set(px, frame[1] + v, pz, Block.PORTAL) &&
+                        get(px, frame[1] + v, pz) != Block.PORTAL) return false;
             }
         }
+        // All six portal cells can straddle chunk boundaries; invalidate the
+        // full visible mesh set instead of rebuilding only the last cell's chunk.
+        fullRebuild = true;
         return true;
+    }
+
+    int portalAxisAt(int x, int y, int z) {
+        if (get(x - 1, y, z) == Block.PORTAL || get(x + 1, y, z) == Block.PORTAL) return 0;
+        if (get(x, y, z - 1) == Block.PORTAL || get(x, y, z + 1) == Block.PORTAL) return 1;
+        return 0;
     }
 
     boolean touchesPortal(float px, float py, float pz) {

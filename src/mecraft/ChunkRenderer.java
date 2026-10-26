@@ -95,6 +95,11 @@ final class ChunkRenderer {
     private final Image terrainImage;
     private final Texture2D atlas;
     private final Texture2D itemAtlas;
+    private final Texture2D[] portalFrames = new Texture2D[8];
+    private final Appearance portalAppearance;
+    private int portalFrameSize = 16;
+    private int portalAnimationTick;
+    private int portalAnimationFrame;
     private final Appearance[] tileAppearances = new Appearance[TILE_COUNT];
     private final Appearance flowerAppearance;
     private final Appearance heldItemAppearance;
@@ -133,6 +138,8 @@ final class ChunkRenderer {
         atlas = new Texture2D(image);
         atlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         atlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
+        makePortalFrames(GameAssets.image("portal.png"));
+        portalAppearance = createPortalAppearance(portalFrames[0]);
         flowerAppearance = createFlowerAppearance();
         heldItemAppearance = createFirstPersonAppearance(atlas, true, true, true);
         Image itemSource = GameAssets.image("items.png");
@@ -385,6 +392,11 @@ final class ChunkRenderer {
 
     /** Indev first-person swing curve, sampled once per 50 ms game tick. */
     void updateHandAnimation() {
+        if (++portalAnimationTick >= 2) {
+            portalAnimationTick = 0;
+            portalAnimationFrame = (portalAnimationFrame + 1) & 7;
+            portalAppearance.setTexture(0, portalFrames[portalAnimationFrame]);
+        }
         if (handSwinging) {
             handSwingTicks++;
             if (handSwingTicks >= 8) {
@@ -1038,6 +1050,7 @@ final class ChunkRenderer {
     private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {
         FaceBuilder[] builders = new FaceBuilder[TILE_COUNT];
         FlowerBuilder flowers = null;
+        PortalBuilder portals = null;
         int x0 = cx * VoxelWorld.CHUNK_XZ;
         int y0 = cy * VoxelWorld.CHUNK_Y;
         int z0 = cz * VoxelWorld.CHUNK_XZ;
@@ -1053,7 +1066,11 @@ final class ChunkRenderer {
                     int localIndex = (((y - y0) * VoxelWorld.CHUNK_XZ) + (z - z0)) *
                             VoxelWorld.CHUNK_XZ + (x - x0);
                     chunkVoxelScratch[localIndex] = id;
-                    if (Block.isFlower(id)) {
+                    if (id == Block.PORTAL) {
+                        if (portals == null) portals = new PortalBuilder();
+                        portals.add(x - x0, y - y0, z - z0,
+                                world.portalAxisAt(x, y, z), portalFrameSize);
+                    } else if (Block.isFlower(id)) {
                         if (flowers == null) flowers = new FlowerBuilder();
                         flowers.add(x - x0, y - y0, z - z0, Block.sideTile(id));
                     } else if (id == Block.DOOR) {
@@ -1162,8 +1179,9 @@ final class ChunkRenderer {
         int count = 0;
         for (int i = 0; i < builders.length; i++) if (builders[i] != null) count++;
         int flowerCount = flowers == null ? 0 : 1;
-        if (count + flowerCount == 0) return null;
-        Mesh[] meshes = new Mesh[count + flowerCount];
+        int portalCount = portals == null ? 0 : 1;
+        if (count + flowerCount + portalCount == 0) return null;
+        Mesh[] meshes = new Mesh[count + flowerCount + portalCount];
         int at = 0;
         for (int i = 0; i < builders.length; i++) {
             if (builders[i] == null) continue;
@@ -1172,6 +1190,7 @@ final class ChunkRenderer {
             builders[i] = null;
         }
         if (flowers != null) meshes[at++] = makeFlowerMesh(flowers, flowerAppearance);
+        if (portals != null) meshes[at++] = makePortalMesh(portals);
         Chunk chunk = new Chunk();
         chunk.meshes = meshes;
         int wx = x0, wy = y0, wz = z0;
@@ -1239,6 +1258,56 @@ final class ChunkRenderer {
         int[] strips = new int[vertexCount / 4];
         for (int i = 0; i < strips.length; i++) strips[i] = 4;
         return new Mesh(vertices, new TriangleStripArray(0, strips), appearance);
+    }
+
+    private Mesh makePortalMesh(PortalBuilder data) {
+        int vertexCount = data.vertexCount;
+        VertexArray positions = new VertexArray(vertexCount, 3, 2);
+        positions.set(0, vertexCount, data.p);
+        VertexArray texCoords = new VertexArray(vertexCount, 2, 2);
+        texCoords.set(0, vertexCount, data.uv);
+        VertexBuffer vertices = new VertexBuffer();
+        vertices.setPositions(positions, 1.0f / 256.0f, null);
+        vertices.setTexCoords(0, texCoords, 1.0f / portalFrameSize, null);
+        int[] strips = new int[vertexCount / 4];
+        for (int i = 0; i < strips.length; i++) strips[i] = 4;
+        return new Mesh(vertices, new TriangleStripArray(0, strips), portalAppearance);
+    }
+
+    private void makePortalFrames(Image source) {
+        portalFrameSize = source.getWidth();
+        if (portalFrameSize <= 0 || source.getHeight() < portalFrameSize * 8) {
+            portalFrameSize = source.getHeight() / 8;
+        }
+        if (portalFrameSize <= 0) throw new IllegalArgumentException("portal.png sin 8 frames");
+        int[] pixels = new int[portalFrameSize * portalFrameSize];
+        for (int frame = 0; frame < 8; frame++) {
+            source.getRGB(pixels, 0, portalFrameSize, 0, frame * portalFrameSize,
+                    portalFrameSize, portalFrameSize);
+            Image image = Image.createRGBImage(pixels, portalFrameSize, portalFrameSize, true);
+            Texture2D texture = new Texture2D(new Image2D(Image2D.RGBA, image));
+            texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
+            texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
+            portalFrames[frame] = texture;
+        }
+    }
+
+    private Appearance createPortalAppearance(Texture2D texture) {
+        Appearance appearance = new Appearance();
+        appearance.setTexture(0, texture);
+        Material material = new Material();
+        material.setColor(Material.AMBIENT, 0xFFFFFFFF);
+        material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
+        appearance.setMaterial(material);
+        PolygonMode polygon = new PolygonMode();
+        polygon.setCulling(PolygonMode.CULL_NONE);
+        polygon.setShading(PolygonMode.SHADE_FLAT);
+        appearance.setPolygonMode(polygon);
+        CompositingMode compositing = new CompositingMode();
+        compositing.setAlphaThreshold(0.01f);
+        compositing.setBlending(CompositingMode.ALPHA);
+        appearance.setCompositingMode(compositing);
+        return appearance;
     }
 
     private Appearance tileAppearance(int tile) {
@@ -1328,6 +1397,49 @@ final class ChunkRenderer {
     }
 
     private static final class Chunk { Mesh[] meshes; }
+
+    /** One full-cell portal plane, sharing the eight-frame portal material. */
+    private static final class PortalBuilder {
+        short[] p = new short[48];
+        short[] uv = new short[32];
+        int vertexCount;
+
+        void add(int x, int y, int z, int axis, int frameSize) {
+            ensure(vertexCount + 4);
+            int x0 = x * 256, x1 = x0 + 256;
+            int y0 = y * 256, y1 = y0 + 256;
+            int z0 = z * 256, z1 = z0 + 256;
+            int u1 = frameSize;
+            if (axis == 0) {
+                int plane = z0 + 128;
+                vertex(x0,y0,plane, 0,frameSize); vertex(x0,y1,plane, 0,0);
+                vertex(x1,y0,plane, u1,frameSize); vertex(x1,y1,plane, u1,0);
+            } else {
+                int plane = x0 + 128;
+                vertex(plane,y0,z0, 0,frameSize); vertex(plane,y1,z0, 0,0);
+                vertex(plane,y0,z1, u1,frameSize); vertex(plane,y1,z1, u1,0);
+            }
+        }
+
+        private void vertex(int x, int y, int z, int u, int v) {
+            int pi = vertexCount * 3;
+            p[pi] = (short)x; p[pi + 1] = (short)y; p[pi + 2] = (short)z;
+            int ti = vertexCount * 2;
+            uv[ti] = (short)u; uv[ti + 1] = (short)v;
+            vertexCount++;
+        }
+
+        private void ensure(int needed) {
+            if (needed <= p.length / 3) return;
+            int size = p.length / 3;
+            while (size < needed) size <<= 1;
+            short[] nextP = new short[size * 3];
+            short[] nextUv = new short[size * 2];
+            System.arraycopy(p, 0, nextP, 0, vertexCount * 3);
+            System.arraycopy(uv, 0, nextUv, 0, vertexCount * 2);
+            p = nextP; uv = nextUv;
+        }
+    }
 
     /** Two crossed, alpha-cutout quads per flower, grouped by chunk and type. */
     private static final class FlowerBuilder {

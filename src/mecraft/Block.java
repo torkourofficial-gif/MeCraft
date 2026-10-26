@@ -108,6 +108,9 @@ final class Block {
         // Reuse their stable block IDs for Alpha's sapling and lava blocks.
         replaceTile(result, 3, 237);
         replaceTile(result, 5, 15);
+        // Tile 14 is the Alpha portal, animated from portal.png rather than
+        // the static terrain atlas. Reuse a nameless placeholder's stable ID.
+        replaceTile(result, 22, 14);
         // Alpha's inactive furnace uses a special atlas tile that is outside
         // the normal block range. Reuse an unnamed placeholder slot to keep
         // COUNT (and the item IDs stored after the block range) stable.
@@ -145,7 +148,7 @@ final class Block {
 
     private static boolean hasAtlasTexture(int tile) {
         if (tile < 0 || tile >= 256) return false;
-        if (tile == 31 || tile == 61 || tile == 62 || tile == 96 || tile == 99 || tile == 102 ||
+        if (tile == 14 || tile == 31 || tile == 61 || tile == 62 || tile == 96 || tile == 99 || tile == 102 ||
             tile == 103 || tile == 104 || tile == 105 || tile == 115) return true;
         return TEXTURED_TILE_ROWS[tile >> 4].charAt(tile & 15) != '.';
     }
