@@ -76,13 +76,37 @@ final class Crafting {
     private Crafting() { }
 
     private static void setRecipe(int recipe, int output, int outputCount, String name,
-                                  int... ingredients) {
+                                  int item1, int count1) {
+        setRecipe(recipe, output, outputCount, name, item1, count1, 0, 0, 0, 0, 0, 0);
+    }
+
+    private static void setRecipe(int recipe, int output, int outputCount, String name,
+                                  int item1, int count1, int item2, int count2) {
+        setRecipe(recipe, output, outputCount, name, item1, count1, item2, count2, 0, 0, 0, 0);
+    }
+
+    private static void setRecipe(int recipe, int output, int outputCount, String name,
+                                  int item1, int count1, int item2, int count2,
+                                  int item3, int count3) {
+        setRecipe(recipe, output, outputCount, name,
+                  item1, count1, item2, count2, item3, count3, 0, 0);
+    }
+
+    private static void setRecipe(int recipe, int output, int outputCount, String name,
+                                  int item1, int count1, int item2, int count2,
+                                  int item3, int count3, int item4, int count4) {
         OUTPUT[recipe] = output;
         OUTPUT_COUNT[recipe] = outputCount;
         NAME[recipe] = name;
         int offset = recipe * 8;
-        for (int i = 0; i < ingredients.length && i < 8; i++)
-            INGREDIENTS[offset + i] = ingredients[i];
+        INGREDIENTS[offset] = item1;
+        INGREDIENTS[offset + 1] = count1;
+        INGREDIENTS[offset + 2] = item2;
+        INGREDIENTS[offset + 3] = count2;
+        INGREDIENTS[offset + 4] = item3;
+        INGREDIENTS[offset + 5] = count3;
+        INGREDIENTS[offset + 6] = item4;
+        INGREDIENTS[offset + 7] = count4;
     }
 
     static int count(boolean workbench) {
