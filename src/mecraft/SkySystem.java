@@ -26,8 +26,9 @@ final class SkySystem {
     private final Background skyBackground;
     private final Mesh stars;
     private final Material starsMaterial;
-    private final Image2D skyGradient;
-    private final byte[] gradientPixels = new byte[GRADIENT_HEIGHT * 3];
+    private final byte[] gradientColors = new byte[GRADIENT_HEIGHT * 3];
+    private Image2D skyGradient;
+    private byte[] gradientPixels;
     private int viewportWidth;
     private int viewportHeight;
     private int lastGradientSky = -1;
@@ -59,9 +60,8 @@ final class SkySystem {
         stars = makeStars(starAppearance);
         celestialRotation.addChild(stars);
 
-        skyGradient = new Image2D(Image2D.RGB, 1, GRADIENT_HEIGHT);
-        updateGradient(1.0f, 0xFF82B8E8);
         resize(width, height);
+        updateGradient(1.0f, 0xFF82B8E8);
     }
 
     void resize(int width, int height) {
@@ -69,6 +69,10 @@ final class SkySystem {
                 (width == viewportWidth && height == viewportHeight)) return;
         viewportWidth = width;
         viewportHeight = height;
+        skyGradient = new Image2D(Image2D.RGB, width, height);
+        gradientPixels = new byte[width * height * 3];
+        lastGradientSky = -1;
+        lastDaylightLevel = -1;
         skyBackground.setImage(skyGradient);
         skyBackground.setImageMode(Background.BORDER, Background.BORDER);
         skyBackground.setCrop(0, 0, width, height);
@@ -104,6 +108,7 @@ final class SkySystem {
 
     /** Build a tiny 2D color gradient, refreshed only when its palette changes. */
     private void updateGradient(float daylight, int skyColor) {
+        if (skyGradient == null || viewportWidth <= 0 || viewportHeight <= 0) return;
         int skyR = skyColor >> 16 & 255;
         int skyG = skyColor >> 8 & 255;
         int skyB = skyColor & 255;
@@ -121,11 +126,31 @@ final class SkySystem {
             float t = y / (float)(GRADIENT_HEIGHT - 1);
             float blend = t * t * (3.0f - 2.0f * t);
             int at = y * 3;
-            gradientPixels[at] = (byte)(topR + (int)((skyR - topR) * blend));
-            gradientPixels[at + 1] = (byte)(topG + (int)((skyG - topG) * blend));
-            gradientPixels[at + 2] = (byte)(topB + (int)((skyB - topB) * blend));
+            gradientColors[at] = (byte)(topR + (int)((skyR - topR) * blend));
+            gradientColors[at + 1] = (byte)(topG + (int)((skyG - topG) * blend));
+            gradientColors[at + 2] = (byte)(topB + (int)((skyB - topB) * blend));
         }
-        skyGradient.set(0, 0, 1, GRADIENT_HEIGHT, gradientPixels);
+        int output = 0;
+        for (int y = 0; y < viewportHeight; y++) {
+            float sample = y * (GRADIENT_HEIGHT - 1.0f) /
+                    (viewportHeight > 1 ? viewportHeight - 1.0f : 1.0f);
+            int low = (int)sample;
+            int high = low < GRADIENT_HEIGHT - 1 ? low + 1 : low;
+            float fraction = sample - low;
+            int lowAt = low * 3, highAt = high * 3;
+            int red = (gradientColors[lowAt] & 255) +
+                    (int)(((gradientColors[highAt] & 255) - (gradientColors[lowAt] & 255)) * fraction);
+            int green = (gradientColors[lowAt + 1] & 255) +
+                    (int)(((gradientColors[highAt + 1] & 255) - (gradientColors[lowAt + 1] & 255)) * fraction);
+            int blue = (gradientColors[lowAt + 2] & 255) +
+                    (int)(((gradientColors[highAt + 2] & 255) - (gradientColors[lowAt + 2] & 255)) * fraction);
+            for (int x = 0; x < viewportWidth; x++) {
+                gradientPixels[output++] = (byte)red;
+                gradientPixels[output++] = (byte)green;
+                gradientPixels[output++] = (byte)blue;
+            }
+        }
+        skyGradient.set(0, 0, viewportWidth, viewportHeight, gradientPixels);
         lastGradientSky = quantizedSky;
         lastDaylightLevel = daylightLevel;
     }
