@@ -577,6 +577,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void saveIfNeeded() {
+        if (state == CHEST_INVENTORY) saveChestContents();
         if (world != null && state != MENU && state != ERROR) {
             copyInventoryToWorld();
             world.save();
