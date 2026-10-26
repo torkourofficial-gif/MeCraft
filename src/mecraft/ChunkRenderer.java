@@ -23,6 +23,7 @@ import javax.microedition.m3g.World;
 /** Builds shared-texture chunk meshes on demand for the visible part of the world. */
 final class ChunkRenderer {
     private static final int STREAM_RADIUS = 2;
+    private static final int CHUNKS_PER_FRAME = 1;
     static final int CACHE_SIZE = (STREAM_RADIUS * 2 + 1) * (STREAM_RADIUS * 2 + 1) * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
@@ -76,6 +77,8 @@ final class ChunkRenderer {
     private int torchScanRevision = Integer.MIN_VALUE;
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
+    private final boolean[] desiredVisibleChunks = new boolean[CACHE_SIZE];
+    private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
     private final int[] chunkWorldX = new int[CACHE_SIZE];
     private final int[] chunkWorldY = new int[CACHE_SIZE];
     private final int[] chunkWorldZ = new int[CACHE_SIZE];
@@ -880,7 +883,7 @@ final class ChunkRenderer {
             if (Math.abs(chunkWorldX[i] - cx) > (lx == 0 || lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0) ||
                 Math.abs(chunkWorldY[i] - cy) > (ly == 0 || ly == VoxelWorld.CHUNK_Y - 1 ? 1 : 0) ||
                 Math.abs(chunkWorldZ[i] - cz) > (lz == 0 || lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0)) continue;
-            replaceChunk(world, i, chunkWorldX[i], chunkWorldY[i], chunkWorldZ[i]);
+            dirtyChunks[i] = true;
         }
     }
 
@@ -894,6 +897,7 @@ final class ChunkRenderer {
         chunks[i] = buildChunk(world, cx, cy, cz);
         chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
         residentChunks[i] = true;
+        dirtyChunks[i] = false;
         if (chunks[i] != null) {
             for (int m = 0; m < chunks[i].meshes.length; m++) terrain.addChild(chunks[i].meshes[m]);
         }
@@ -909,6 +913,7 @@ final class ChunkRenderer {
             chunks[i] = null;
         }
         residentChunks[i] = false;
+        dirtyChunks[i] = false;
     }
 
     /** Keep M3G buffers only for chunks intersecting the camera frustum. */
@@ -926,6 +931,7 @@ final class ChunkRenderer {
         int centerX = floorDiv((int)eyeX, VoxelWorld.CHUNK_XZ);
         int centerZ = floorDiv((int)eyeZ, VoxelWorld.CHUNK_XZ);
         int span = STREAM_RADIUS * 2 + 1;
+        for (int i = 0; i < CACHE_SIZE; i++) desiredVisibleChunks[i] = false;
         for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++) {
             for (int rz = 0; rz < span; rz++) {
                 for (int rx = 0; rx < span; rx++) {
@@ -945,10 +951,31 @@ final class ChunkRenderer {
                     boolean sameChunk = residentChunks[i] && chunkWorldX[i] == cx &&
                         chunkWorldY[i] == cy && chunkWorldZ[i] == cz;
                     if (residentChunks[i] && (!visible || !sameChunk)) removeChunk(i);
-                    if (visible && !sameChunk) replaceChunk(world, i, cx, cy, cz);
-                    else if (!visible && residentChunks[i]) removeChunk(i);
+                    if (visible && (!sameChunk || dirtyChunks[i])) {
+                        if (!sameChunk) {
+                            chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
+                        }
+                        desiredVisibleChunks[i] = true;
+                    }
                 }
             }
+        }
+
+        // Build the nearest missing sector only, spreading M3G allocation and
+        // greedy meshing over successive game frames when a new area appears.
+        for (int build = 0; build < CHUNKS_PER_FRAME; build++) {
+            int best = -1;
+            float bestDistance = Float.MAX_VALUE;
+            for (int i = 0; i < CACHE_SIZE; i++) {
+                if (!desiredVisibleChunks[i] || (residentChunks[i] && !dirtyChunks[i])) continue;
+                float dx = chunkWorldX[i] * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeX;
+                float dy = chunkWorldY[i] * VoxelWorld.CHUNK_Y + VoxelWorld.CHUNK_Y * 0.5f - eyeY;
+                float dz = chunkWorldZ[i] * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
+                float distance = dx * dx + dz * dz + dy * dy * 2.0f;
+                if (distance < bestDistance) { bestDistance = distance; best = i; }
+            }
+            if (best < 0) break;
+            replaceChunk(world, best, chunkWorldX[best], chunkWorldY[best], chunkWorldZ[best]);
         }
     }
 

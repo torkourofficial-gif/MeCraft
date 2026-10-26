@@ -5,7 +5,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.util.Random;
 import javax.microedition.rms.RecordStore;
 import javax.microedition.rms.RecordStoreException;
 
@@ -39,11 +38,20 @@ final class VoxelWorld {
     private static final int FLUID_QUEUE_SIZE = 2048;
     private final short[] fluidQueue = new short[FLUID_QUEUE_SIZE];
     private final byte[] fluidQueued = new byte[(BLOCK_COUNT + 7) / 8];
-    /** Temporary generation-only map; discarded before play to keep the heap small. */
-    private byte[] generationSurface;
-    private final byte[] proceduralChunk = new byte[InfdevTerrain.CHUNK_VOLUME];
-    private int proceduralChunkX = Integer.MIN_VALUE;
-    private int proceduralChunkZ = Integer.MIN_VALUE;
+    private static final int PROCEDURAL_CACHE_SIZE = 4;
+    private final byte[][] proceduralChunks = new byte[][] {
+        new byte[InfdevTerrain.CHUNK_VOLUME], new byte[InfdevTerrain.CHUNK_VOLUME],
+        new byte[InfdevTerrain.CHUNK_VOLUME], new byte[InfdevTerrain.CHUNK_VOLUME]
+    };
+    private final int[] proceduralChunkX = new int[] {
+        Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE
+    };
+    private final int[] proceduralChunkZ = new int[] {
+        Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE
+    };
+    private final int[] proceduralHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
+    private final byte[] proceduralBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
+    private int proceduralCacheCursor;
     private final int[] editX = new int[INFDEV_EDIT_LIMIT];
     private final int[] editY = new int[INFDEV_EDIT_LIMIT];
     private final int[] editZ = new int[INFDEV_EDIT_LIMIT];
@@ -111,12 +119,17 @@ final class VoxelWorld {
 
     private byte proceduralBlock(int x, int y, int z) {
         int cx = floorChunk(x), cz = floorChunk(z);
-        if (cx != proceduralChunkX || cz != proceduralChunkZ) {
-            InfdevTerrain.generate(seed, cx, cz, proceduralChunk);
-            proceduralChunkX = cx; proceduralChunkZ = cz;
+        int cache = -1;
+        for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
+            if (proceduralChunkX[i] == cx && proceduralChunkZ[i] == cz) { cache = i; break; }
+        }
+        if (cache < 0) {
+            cache = proceduralCacheCursor++ & (PROCEDURAL_CACHE_SIZE - 1);
+            InfdevTerrain.generate(seed, cx, cz, proceduralChunks[cache], proceduralHeights, proceduralBiomes);
+            proceduralChunkX[cache] = cx; proceduralChunkZ[cache] = cz;
         }
         int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
-        return proceduralChunk[(lz * CHUNK_XZ + lx) * HEIGHT + y];
+        return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
     }
 
     private int findEdit(int x, int y, int z) {
@@ -473,13 +486,14 @@ final class VoxelWorld {
     private void generate() {
         for (int cz = 0; cz < CHUNKS_Z; cz++) {
             for (int cx = 0; cx < CHUNKS_X; cx++) {
-                InfdevTerrain.generate(seed, cx, cz, proceduralChunk);
-                proceduralChunkX = cx; proceduralChunkZ = cz;
+                int cache = proceduralCacheCursor++ & (PROCEDURAL_CACHE_SIZE - 1);
+                InfdevTerrain.generate(seed, cx, cz, proceduralChunks[cache], proceduralHeights, proceduralBiomes);
+                proceduralChunkX[cache] = cx; proceduralChunkZ[cache] = cz;
                 for (int z = 0; z < CHUNK_XZ; z++) {
                     for (int x = 0; x < CHUNK_XZ; x++) {
                         int wx = cx * CHUNK_XZ + x, wz = cz * CHUNK_XZ + z;
                         for (int y = 0; y < HEIGHT; y++)
-                            blocks[index(wx, y, wz)] = proceduralChunk[(z * CHUNK_XZ + x) * HEIGHT + y];
+                            blocks[index(wx, y, wz)] = proceduralChunks[cache][(z * CHUNK_XZ + x) * HEIGHT + y];
                     }
                 }
             }
@@ -490,143 +504,11 @@ final class VoxelWorld {
         yaw = 0f;
     }
 
-    private void generateLegacy() {
-        Random random = new Random(seed);
-        int centerX = WIDTH / 2;
-        int centerZ = DEPTH / 2;
-        generationSurface = new byte[WIDTH * DEPTH];
-        for (int z = 0; z < DEPTH; z++) {
-            for (int x = 0; x < WIDTH; x++) {
-                int dx = x - centerX;
-                int dz = z - centerZ;
-                int radial = (dx * dx * 100 / (centerX * centerX)) +
-                             (dz * dz * 100 / (centerZ * centerZ));
-                int noise = noise(x, z, seed);
-                int height = 10 + noise / 4 - Math.max(0, radial - 20) / 12;
-                if (height < 3) height = 3;
-                if (height > 17) height = 17;
-                generationSurface[z * WIDTH + x] = (byte)height;
-                boolean beach = height <= SEA_LEVEL + 1;
-
-                for (int y = 0; y <= height; y++) {
-                    byte id;
-                    if (y == 0) id = Block.BEDROCK;
-                    else if (y == height) id = beach ? Block.SAND : Block.GRASS;
-                    else if (y >= height - 3) id = beach ? Block.SAND : Block.DIRT;
-                    else if (y < 5 && random.nextInt(13) == 0) id = Block.COAL;
-                    else if (y < 5 && random.nextInt(47) == 0) id = Block.IRON;
-                    else id = Block.STONE;
-                    blocks[index(x, y, z)] = id;
-                }
-                for (int y = height + 1; y <= SEA_LEVEL; y++) {
-                    blocks[index(x, y, z)] = Block.WATER;
-                }
-            }
-        }
-
-        carveCaves(random);
-
-        // Sparse, deterministic trees keep the small island readable at phone resolution.
-        for (int z = 4; z < DEPTH - 4; z += 5) {
-            for (int x = 4; x < WIDTH - 4; x += 5) {
-                if (Math.abs(x - centerX) <= 2 && Math.abs(z - centerZ) <= 2) continue;
-                if (random.nextInt(4) != 0) continue;
-                int y = surfaceY(x, z);
-                if (get(x, y, z) != Block.GRASS || y + 5 >= HEIGHT) continue;
-                for (int t = 1; t <= 3; t++) blocks[index(x, y + t, z)] = Block.LOG;
-                for (int oz = -2; oz <= 2; oz++) {
-                    for (int ox = -2; ox <= 2; ox++) {
-                        for (int oy = 2; oy <= 4; oy++) {
-                            if (Math.abs(ox) + Math.abs(oz) + (oy == 4 ? 1 : 0) > 3) continue;
-                            int lx = x + ox, ly = y + oy, lz = z + oz;
-                            if (get(lx, ly, lz) == Block.AIR) blocks[index(lx, ly, lz)] = Block.LEAVES;
-                        }
-                    }
-                }
-            }
-        }
-        placeFlowers(random, centerX, centerZ);
-        playerX = centerX + 0.5f;
-        playerZ = centerZ + 0.5f;
-        playerY = surfaceY(centerX, centerZ) + 1.0f;
-        yaw = 0f;
-        generationSurface = null;
-    }
-
-    /** Carve a few short, low-cost tunnels below the island's surface. */
-    private void carveCaves(Random random) {
-        for (int cave = 0; cave < 10; cave++) {
-            float x = 3 + random.nextInt(WIDTH - 6);
-            float z = 3 + random.nextInt(DEPTH - 6);
-            int surface = surfaceY((int)x, (int)z);
-            int maxY = surface - 4;
-            if (maxY > 12) maxY = 12;
-            if (maxY < 3) continue;
-            float y = 2 + random.nextInt(maxY - 1);
-            float angle = random.nextFloat() * (float)(Math.PI * 2.0);
-            float slope = random.nextFloat() * 0.24f - 0.12f;
-            float radius = 1.05f + random.nextFloat() * 0.3f;
-            float verticalRadius = 1.0f + random.nextFloat() * 0.25f;
-            int steps = 3 + random.nextInt(4);
-
-            for (int step = 0; step < steps; step++) {
-                x += (float)Math.cos(angle) * 0.8f;
-                z += (float)Math.sin(angle) * 0.8f;
-                y += slope;
-                angle += random.nextFloat() * 0.5f - 0.25f;
-                int cx = (int)x, cy = (int)y, cz = (int)z;
-                int extent = (int)radius + 1;
-                for (int dy = -1; dy <= 1; dy++) {
-                    for (int dz = -extent; dz <= extent; dz++) {
-                        for (int dx = -extent; dx <= extent; dx++) {
-                            int bx = cx + dx, by = cy + dy, bz = cz + dz;
-                            if (by <= 1 || by >= HEIGHT - 1 || bx <= 1 || bx >= WIDTH - 2 ||
-                                bz <= 1 || bz >= DEPTH - 2) continue;
-                            float horizontal = (dx * dx + dz * dz) / (radius * radius);
-                            float vertical = dy * dy / (verticalRadius * verticalRadius);
-                            if (horizontal + vertical > 1.0f || by >= surfaceY(bx, bz) - 1) continue;
-                            byte block = get(bx, by, bz);
-                            if (block == Block.STONE || block == Block.DIRT ||
-                                block == Block.COAL || block == Block.IRON) {
-                                blocks[index(bx, by, bz)] = Block.AIR;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /** Scatter both Indev flower variants over clear grass patches. */
-    private void placeFlowers(Random random, int centerX, int centerZ) {
-        for (int z = 2; z < DEPTH - 2; z++) {
-            for (int x = 2; x < WIDTH - 2; x++) {
-                if (Math.abs(x - centerX) <= 3 && Math.abs(z - centerZ) <= 3) continue;
-                if (random.nextInt(34) != 0) continue;
-                int y = surfaceY(x, z);
-                if (get(x, y, z) != Block.GRASS || y + 1 >= HEIGHT ||
-                    get(x, y + 1, z) != Block.AIR) continue;
-                blocks[index(x, y + 1, z)] = random.nextInt(2) == 0 ?
-                    Block.RED_FLOWER : Block.YELLOW_FLOWER;
-            }
-        }
-    }
-
     int surfaceY(int x, int z) {
-        if (generationSurface != null && x >= 0 && x < WIDTH && z >= 0 && z < DEPTH) {
-            return generationSurface[z * WIDTH + x] & 255;
-        }
         for (int y = HEIGHT - 1; y >= 0; y--) {
             if (get(x, y, z) != Block.AIR && get(x, y, z) != Block.WATER) return y;
         }
         return SEA_LEVEL;
-    }
-
-    private static int noise(int x, int z, int seed) {
-        int n = x * 73428767 ^ z * 912931 ^ seed * 42317861;
-        n = (n ^ (n >>> 13)) * 1274126177;
-        n ^= n >>> 16;
-        return (n & 7) - 3;
     }
 
     void save() {
@@ -790,7 +672,7 @@ final class VoxelWorld {
         }
     }
 
-    /** MCF1–MCF5 used block/item ID 13 for the removed furnace. */
+    /** MCF1?MCF5 used block/item ID 13 for the removed furnace. */
     private void migrateLegacyFurnaces() {
         inventory[13] = 0;
         for (int i = 0; i < hotbar.length; i++) {
@@ -891,4 +773,3 @@ final class VoxelWorld {
         return result;
     }
 }
-

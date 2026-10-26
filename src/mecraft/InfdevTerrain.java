@@ -1,101 +1,197 @@
 package mecraft;
 
-/**
- * Deterministic terrain sampler for the experimental Infdev world.
- *
- * Coordinates are world coordinates, so neighboring chunks can be generated
- * independently and in any order. The sampler intentionally allocates no
- * per-column objects and uses integer hashing to stay friendly to CLDC.
- */
+/** Deterministic, column-oriented terrain generation for streamed Infdev chunks. */
 final class InfdevTerrain {
     static final int CHUNK_SIZE = 16;
     static final int WORLD_HEIGHT = VoxelWorld.HEIGHT;
     static final int SEA_LEVEL = VoxelWorld.SEA_LEVEL;
     static final int CHUNK_VOLUME = CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT;
 
+    private static final int OCEAN = 0;
+    private static final int PLAINS = 1;
+    private static final int DESERT = 2;
+    private static final int DARK_FOREST = 3;
+    private static final int JUNGLE = 4;
+    private static final int REGION_SIZE = 24;
+
     private InfdevTerrain() { }
 
-    /** Fills a reusable chunk buffer with Y as the contiguous axis. */
-    static void generate(int seed, int chunkX, int chunkZ, byte[] blocks) {
-        if (blocks == null || blocks.length < CHUNK_VOLUME) return;
+    /**
+     * Fills a reusable chunk buffer. Heights and biome ids are calculated once
+     * per column, then caves and decorations are applied in regional passes.
+     */
+    static void generate(int seed, int chunkX, int chunkZ, byte[] blocks,
+                         int[] heights, byte[] biomes) {
+        if (blocks == null || blocks.length < CHUNK_VOLUME || heights == null ||
+            heights.length < CHUNK_SIZE * CHUNK_SIZE || biomes == null ||
+            biomes.length < CHUNK_SIZE * CHUNK_SIZE) return;
         int originX = chunkX * CHUNK_SIZE;
         int originZ = chunkZ * CHUNK_SIZE;
+
         for (int z = 0; z < CHUNK_SIZE; z++) {
             int worldZ = originZ + z;
             for (int x = 0; x < CHUNK_SIZE; x++) {
                 int worldX = originX + x;
-                int height = surfaceHeight(seed, worldX, worldZ);
-                int column = (z * CHUNK_SIZE + x) * WORLD_HEIGHT;
+                int column = z * CHUNK_SIZE + x;
+                int biome = biomeAt(seed, worldX, worldZ);
+                int height = surfaceHeight(seed, worldX, worldZ, biome);
+                heights[column] = height;
+                biomes[column] = (byte)biome;
+                int top = biome == DESERT || biome == OCEAN ? Block.SAND : Block.GRASS;
+                int fill = biome == DESERT || biome == OCEAN ? Block.SAND : Block.DIRT;
+                int at = column * WORLD_HEIGHT;
                 for (int y = 0; y < WORLD_HEIGHT; y++) {
-                    blocks[column + y] = terrainAtHeight(seed, worldX, y, worldZ, height);
+                    byte id;
+                    if (y == 0) id = Block.BEDROCK;
+                    else if (y > height) id = y <= SEA_LEVEL ? Block.WATER : Block.AIR;
+                    else if (y == height) id = (byte)top;
+                    else if (y >= height - 3) id = (byte)fill;
+                    else if (y < 8 && (hash(seed ^ 0x5F356495, worldX, y, worldZ) & 31) == 0) id = Block.COAL;
+                    else if (y < 5 && (hash(seed ^ 0x4B1D2A37, worldX, y, worldZ) & 95) == 0) id = Block.IRON;
+                    else id = Block.STONE;
+                    blocks[at + y] = id;
                 }
             }
         }
-    }
 
-    static byte blockAt(int seed, int x, int y, int z) {
-        if (y < 0 || y >= WORLD_HEIGHT) return Block.AIR;
-        if (y == 0) return Block.BEDROCK;
-        return terrainAtHeight(seed, x, y, z, surfaceHeight(seed, x, z));
-    }
-
-    private static byte terrainAtHeight(int seed, int x, int y, int z, int height) {
-        if (y == 0) return Block.BEDROCK;
-        byte terrain;
-        if (y > height) terrain = y <= SEA_LEVEL ? Block.WATER : Block.AIR;
-        else if (y == height) terrain = height <= SEA_LEVEL + 1 ? Block.SAND : Block.GRASS;
-        else if (y >= height - 3) terrain = height <= SEA_LEVEL + 1 ? Block.SAND : Block.DIRT;
-        else if (y < 5 && hash(seed ^ 0x5F356495, x, y, z) % 23 == 0) terrain = Block.COAL;
-        else if (y < 5 && hash(seed ^ 0x4B1D2A37, x, y, z) % 61 == 0) terrain = Block.IRON;
-        else terrain = Block.STONE;
-        if (terrain == Block.AIR || y > height) return treeBlock(seed, x, y, z, terrain);
-        return terrain;
-    }
-
-    private static byte treeBlock(int seed, int x, int y, int z, byte terrain) {
-        int cellX = floorDiv(x - 4, 9);
-        int cellZ = floorDiv(z - 4, 9);
-        for (int dz = -1; dz <= 1; dz++) {
-            for (int dx = -1; dx <= 1; dx++) {
-                int tx = (cellX + dx) * 9 + 4;
-                int tz = (cellZ + dz) * 9 + 4;
-                if (hash(seed ^ 0x16A5B, cellX + dx, 0, cellZ + dz) % 4 != 0) continue;
-                int ty = surfaceHeight(seed, tx, tz);
-                if (ty <= SEA_LEVEL + 1) continue;
-                if (x == tx && z == tz && y > ty && y <= ty + 3) return Block.LOG;
-                int canopy = Math.abs(x - tx) + Math.abs(z - tz);
-                if (terrain == Block.AIR && canopy <= 2 && y >= ty + 2 && y <= ty + 4 &&
-                    (y != ty + 4 || canopy <= 1)) return Block.LEAVES;
-            }
-        }
-        return terrain;
+        carveCaves(seed, originX, originZ, heights, blocks);
+        decorate(seed, originX, originZ, heights, biomes, blocks);
     }
 
     static int surfaceHeight(int seed, int x, int z) {
-        int broad = sample(seed, x, z, 64);
-        int detail = sample(seed ^ 0x2C9277B5, x, z, 16);
-        int height = 10 + broad / 3 + detail / 5;
+        return surfaceHeight(seed, x, z, biomeAt(seed, x, z));
+    }
+
+    private static int biomeAt(int seed, int x, int z) {
+        int temperature = valueNoise(seed ^ 211, x, z, 256);
+        if (temperature < 46) return OCEAN;
+        if (temperature < 164) return PLAINS;
+        if (temperature < 215) return DESERT;
+        return valueNoise(seed ^ 97, x, z, 192) < 128 ? DARK_FOREST : JUNGLE;
+    }
+
+    private static int surfaceHeight(int seed, int x, int z, int biome) {
+        int n1 = valueNoise(seed ^ 11, x, z, 32) - 128;
+        int n2 = valueNoise(seed ^ 37, x, z, 12) - 128;
+        int n3 = valueNoise(seed ^ 73, x, z, 4) - 128;
+        int variation = (n1 * 9 + n2 * 5 + n3 * 2) >> 7;
+        int height;
+        if (biome == OCEAN) height = 5 + variation / 3;
+        else if (biome == DESERT) height = 10 + variation;
+        else if (biome == DARK_FOREST || biome == JUNGLE) height = 12 + variation;
+        else height = 10 + variation;
         if (height < 3) return 3;
-        if (height > WORLD_HEIGHT - 7) return WORLD_HEIGHT - 7;
+        if (height > WORLD_HEIGHT - 5) return WORLD_HEIGHT - 5;
         return height;
     }
 
-    private static int sample(int seed, int x, int z, int scale) {
-        int x0 = floorDiv(x, scale) * scale;
-        int z0 = floorDiv(z, scale) * scale;
-        int fx = (x - x0) * 256 / scale;
-        int fz = (z - z0) * 256 / scale;
-        int a = lattice(seed, x0, z0);
-        int b = lattice(seed, x0 + scale, z0);
-        int c = lattice(seed, x0, z0 + scale);
-        int d = lattice(seed, x0 + scale, z0 + scale);
+    /** Smooth bilinear value noise, returning 0..255 without floating point. */
+    private static int valueNoise(int seed, int x, int z, int scale) {
+        int gx = floorDiv(x, scale), gz = floorDiv(z, scale);
+        int fx = smooth((x - gx * scale) * 256 / scale);
+        int fz = smooth((z - gz * scale) * 256 / scale);
+        int a = lattice(seed, gx, gz);
+        int b = lattice(seed, gx + 1, gz);
+        int c = lattice(seed, gx, gz + 1);
+        int d = lattice(seed, gx + 1, gz + 1);
         int top = a + ((b - a) * fx >> 8);
         int bottom = c + ((d - c) * fx >> 8);
         return top + ((bottom - top) * fz >> 8);
     }
 
+    private static int smooth(int value) {
+        return value * value * (768 - 2 * value) >> 16;
+    }
+
     private static int lattice(int seed, int x, int z) {
-        return hash(seed, x, 0, z) % 9 - 4;
+        return hash(seed, x, 0, z) >>> 24;
+    }
+
+    private static void carveCaves(int seed, int originX, int originZ, int[] heights, byte[] blocks) {
+        int firstCellX = floorDiv(originX - 12, REGION_SIZE);
+        int lastCellX = floorDiv(originX + CHUNK_SIZE + 12, REGION_SIZE);
+        int firstCellZ = floorDiv(originZ - 12, REGION_SIZE);
+        int lastCellZ = floorDiv(originZ + CHUNK_SIZE + 12, REGION_SIZE);
+        for (int rz = firstCellZ; rz <= lastCellZ; rz++) {
+            for (int rx = firstCellX; rx <= lastCellX; rx++) {
+                int regionHash = hash(seed ^ 0x35A76D21, rx, 0, rz);
+                if ((regionHash & 3) != 0) continue;
+                int centerX = rx * REGION_SIZE + 5 + ((regionHash >>> 4) & 15);
+                int centerZ = rz * REGION_SIZE + 5 + ((regionHash >>> 9) & 15);
+                int centerY = 3 + ((regionHash >>> 14) & 7);
+                int radius = 3 + ((regionHash >>> 20) & 3);
+                int verticalRadius = 2 + ((regionHash >>> 24) & 1);
+                int minX = Math.max(originX, centerX - radius);
+                int maxX = Math.min(originX + CHUNK_SIZE - 1, centerX + radius);
+                int minZ = Math.max(originZ, centerZ - radius);
+                int maxZ = Math.min(originZ + CHUNK_SIZE - 1, centerZ + radius);
+                for (int z = minZ; z <= maxZ; z++) {
+                    for (int x = minX; x <= maxX; x++) {
+                        int dx = x - centerX, dz = z - centerZ;
+                        int horizontal = dx * dx + dz * dz;
+                        if (horizontal > radius * radius) continue;
+                        int column = (z - originZ) * CHUNK_SIZE + x - originX;
+                        for (int y = Math.max(2, centerY - verticalRadius);
+                             y <= centerY + verticalRadius && y < heights[column] - 3; y++) {
+                            int dy = y - centerY;
+                            if (horizontal * verticalRadius * verticalRadius +
+                                dy * dy * radius * radius >
+                                radius * radius * verticalRadius * verticalRadius) continue;
+                            blocks[column * WORLD_HEIGHT + y] = Block.AIR;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static void decorate(int seed, int originX, int originZ, int[] heights,
+                                 byte[] biomes, byte[] blocks) {
+        int firstCellX = floorDiv(originX - 2 - 4, 9);
+        int lastCellX = floorDiv(originX + CHUNK_SIZE + 1 - 4, 9);
+        int firstCellZ = floorDiv(originZ - 2 - 4, 9);
+        int lastCellZ = floorDiv(originZ + CHUNK_SIZE + 1 - 4, 9);
+        for (int rz = firstCellZ; rz <= lastCellZ; rz++) {
+            for (int rx = firstCellX; rx <= lastCellX; rx++) {
+                int tx = rx * 9 + 4, tz = rz * 9 + 4;
+                int biome = biomeAt(seed, tx, tz);
+                int treeHash = hash(seed ^ 0x16A5B, rx, 0, rz);
+                int chance = biome == JUNGLE ? 3 : biome == DARK_FOREST ? 2 : biome == PLAINS ? 7 : 0;
+                if (chance == 0 || (treeHash & 15) >= chance) continue;
+                int ty = surfaceHeight(seed, tx, tz, biome);
+                if (ty <= SEA_LEVEL + 1 || ty + 4 >= WORLD_HEIGHT) continue;
+                for (int oy = 1; oy <= 4; oy++) {
+                    for (int dz = -2; dz <= 2; dz++) {
+                        for (int dx = -2; dx <= 2; dx++) {
+                            int wx = tx + dx, wz = tz + dz;
+                            if (wx < originX || wx >= originX + CHUNK_SIZE ||
+                                wz < originZ || wz >= originZ + CHUNK_SIZE) continue;
+                            boolean trunk = dx == 0 && dz == 0 && oy <= 3;
+                            boolean leaf = Math.abs(dx) + Math.abs(dz) <= 2 &&
+                                (oy != 4 || Math.abs(dx) + Math.abs(dz) <= 1);
+                            if (!trunk && !leaf) continue;
+                            int column = (wz - originZ) * CHUNK_SIZE + wx - originX;
+                            int at = column * WORLD_HEIGHT + ty + oy;
+                            if (trunk || blocks[at] == Block.AIR) blocks[at] = trunk ? Block.LOG : Block.LEAVES;
+                        }
+                    }
+                }
+            }
+        }
+
+        for (int z = 0; z < CHUNK_SIZE; z++) {
+            for (int x = 0; x < CHUNK_SIZE; x++) {
+                int column = z * CHUNK_SIZE + x;
+                int height = heights[column];
+                if (biomes[column] == OCEAN || biomes[column] == DESERT) continue;
+                if ((hash(seed ^ 0x73B91, originX + x, height, originZ + z) & 63) != 0 ||
+                    height + 1 >= WORLD_HEIGHT) continue;
+                int at = column * WORLD_HEIGHT + height + 1;
+                if (blocks[at] == Block.AIR)
+                    blocks[at] = (hash(seed, originX + x, 1, originZ + z) & 1) == 0 ?
+                        Block.RED_FLOWER : Block.YELLOW_FLOWER;
+            }
+        }
     }
 
     private static int hash(int seed, int x, int y, int z) {

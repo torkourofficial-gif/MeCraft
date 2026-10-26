@@ -7,13 +7,20 @@ around the player so exploration does not increase mesh memory use.
 
 ## Terrain foundation
 
-`InfdevTerrain` samples height from world coordinates and a seed. Each 16 x 16
-horizontal chunk can therefore be generated in any order and neighboring chunks
-agree at their borders. The generator uses integer interpolation and hashing,
-reuses a caller-provided byte buffer, and creates no per-column objects. The
-streaming renderer reuses a fixed slot grid and rebuilds a slot when its global
-chunk coordinate changes. This adapts the coordinate-based generation and
-bounded streaming ideas in `minicraft_3d` without copying its implementation.
+`InfdevTerrain` samples height from world coordinates and a seed. Its biome
+climate noise selects ocean, plains, desert, dark forest, and jungle; three
+smoothed noise scales shape each surface. Regional ellipsoid caves and
+coordinate-anchored trees stay consistent across chunk borders. Each 16 x 16
+chunk can be generated in any order. Column heights and biomes are computed
+once, then terrain, caves, and decoration are written in separate passes into
+reused buffers. This adapts the biome, multiscale-noise, and regional-feature
+patterns in `minicraft_3d` without copying its implementation.
+
+The renderer reuses a fixed slot grid and rebuilds a slot when its global chunk
+coordinate changes. It now builds only the closest missing visible chunk each
+frame; four generated-neighbor buffers avoid repeating terrain generation
+while greedy meshing reads across chunk edges. The fixed camera radius bounds
+both mesh memory and work queued after crossing a chunk border.
 
 ## Integration still needed
 
