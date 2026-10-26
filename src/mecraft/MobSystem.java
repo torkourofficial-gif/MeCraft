@@ -588,6 +588,8 @@ final class MobSystem {
 
     private void move(Mob mob, VoxelWorld world) {
         boolean walking = mob.chasing || mob.walkTicks > 0 || mob.fleeTicks > 0;
+        boolean airborne = mob.verticalVelocity != 0.0f ||
+                !Block.solid(world.get(floor(mob.x), floor(mob.y) - 1, floor(mob.z)));
         float speed = isHostile(mob.type) ? (mob.type == CREEPER ? 0.018f : 0.026f) : 0.014f;
         if (!isHostile(mob.type) && mob.fleeTicks > 0) speed *= 1.6f;
         if (!walking) speed = 0.0f;
@@ -597,9 +599,15 @@ final class MobSystem {
         float nx = mob.x + (float)Math.sin(radians) * speed + mob.motionX;
         float nz = mob.z + (float)Math.cos(radians) * speed + mob.motionZ;
         if (canMove(world, mob, nx, mob.z)) mob.x = nx;
-        else { mob.targetYaw += 75.0f; mob.motionX = 0.0f; }
+        else {
+            if (!airborne) mob.targetYaw += 75.0f;
+            mob.motionX = 0.0f;
+        }
         if (canMove(world, mob, mob.x, nz)) mob.z = nz;
-        else { mob.targetYaw -= 140.0f; mob.motionZ = 0.0f; }
+        else {
+            if (!airborne) mob.targetYaw -= 140.0f;
+            mob.motionZ = 0.0f;
+        }
         mob.motionX *= 0.91f;
         mob.motionZ *= 0.91f;
         float movedX = mob.x - oldX;
@@ -615,7 +623,7 @@ final class MobSystem {
         } else {
             mob.walkAmount = 0.0f;
         }
-        float ground = world.surfaceY(floor(mob.x), floor(mob.z)) + 1.0f;
+        float ground = solidGround(world, floor(mob.x), floor(mob.z)) + 1.0f;
         if (mob.verticalVelocity != 0.0f || mob.y > ground) {
             mob.y += mob.verticalVelocity;
             mob.verticalVelocity *= 0.98f;
@@ -633,7 +641,13 @@ final class MobSystem {
         int bx = (int)x, bz = (int)z;
         int feet = (int)mob.y;
         if (world.isSolidAt(bx, feet, bz) || world.isSolidAt(bx, feet + 1, bz)) return false;
-        return world.isSolidAt(bx, feet - 1, bz);
+        return true;
+    }
+
+    private int solidGround(VoxelWorld world, int x, int z) {
+        int y = world.surfaceY(x, z);
+        while (y > 0 && !Block.solid(world.get(x, y, z))) y--;
+        return y;
     }
 
     private void animate(Mob mob) {
@@ -1206,18 +1220,19 @@ final class MobSystem {
             // legs, two horns and the small udder mesh.
             addPart(pose, 18, 4, 12, 18, 10, 12, 18, 10,
                     0.0f, 1.1875f, 0.125f, -90.0f, 1, 0, 0, appearance,
-                    0.0f, -0.125f, -0.0625f);
+                    0.0f, 0.0625f, -0.125f);
             head.setTranslation(0.0f, 1.25f, -0.5f);
             pose.addChild(head);
             addPart(head, 0, 0, 8, 8, 6, 8, 8, 6,
-                    0.0f, 0.0f, -0.0625f, 0, 0, 1, 0, appearance);
+                    0.0f, 0.0f, -0.1875f, 0, 0, 1, 0, appearance);
             addPart(head, 22, 0, 1, 3, 1, 1, 3, 1,
                     0.21875f, 0.28125f, -0.15625f, 0, 0, 1, 0, appearance);
             addPart(head, 22, 0, 1, 3, 1, 1, 3, 1,
                     -0.28125f, 0.28125f, -0.15625f, 0, 0, 1, 0, appearance,
                     0.0f, 0.0f, 0.0f, true);
             addPart(pose, 52, 0, 4, 6, 2, 4, 6, 2,
-                    0.0f, 0.4375f, 0.4375f, 0, 0, 1, 0, appearance);
+                    0.0f, 0.625f, 0.375f, 0, 0, 1, 0, appearance,
+                    0.0f, 0.0f, 0.0625f);
             for (int i = 0; i < 4; i++) {
                 float side = (i & 1) == 0 ? -1.0f : 1.0f;
                 float front = i < 2 ? 0.4375f : -0.375f;
