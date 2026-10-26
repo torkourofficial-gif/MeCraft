@@ -152,7 +152,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private int hurtTicks;
     private int cactusDamageCooldown;
     private int netherLavaDamageCooldown;
-    private int portalCooldown;
+    private int portalChargeTicks;
+    private static final int PORTAL_CHARGE_TICKS = 100;
     private Image waterTint;
     private Image hurtTint;
     private Image pauseTint;
@@ -258,8 +259,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 world.mode == 1 && flying, descendHeld, sprint);
         if (sprinting && playerPhysics.hasHorizontalCollision()) sprinting = false;
         if (world.mode == 0 && fallDamage > 0) damagePlayer(fallDamage);
-        if (portalCooldown > 0) portalCooldown--;
-        else if (world.touchesPortal(world.playerX, world.playerY, world.playerZ)) travelThroughPortal();
+        if (world.touchesPortal(world.playerX, world.playerY, world.playerZ)) {
+            if (++portalChargeTicks >= PORTAL_CHARGE_TICKS) {
+                portalChargeTicks = 0;
+                travelThroughPortal();
+            }
+        } else {
+            // Leaving even briefly cancels the transfer, so the player can step
+            // out of the destination portal during the same five-second window.
+            portalChargeTicks = 0;
+        }
         if (state != PLAYING) return;
         int mobDamage = renderer.updateMobs(world);
         if (world.mode == 0 && mobDamage > 0) damagePlayer(mobDamage);
@@ -399,7 +408,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 renderer = null;
                 System.gc();
             }
+            stage = "generando el terreno";
             world = new VoxelWorld((int)(System.currentTimeMillis() ^ System.currentTimeMillis() >>> 32), mode);
+            stage = "inicializando inventario y posición";
             world.worldName = name == null || name.trim().length() == 0 ? "Mundo" : name.trim();
             // Nether access is reached through a wool portal in the normal world.
             world.saveStoreName = VoxelWorld.nextWorldStoreName();
@@ -415,6 +426,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             netherLavaDamageCooldown = 0;
             resetInventory(mode);
             copyInventoryToWorld();
+            stage = "guardando el mundo recién creado";
             world.save();
             stage = "cargando /mecraft/textures.png y creando escena M3G";
             renderer = new ChunkRenderer(getWidth(), getHeight());
@@ -944,14 +956,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
         if (destination == null) {
             world.switchDimension();
-            portalCooldown = 10;
+            portalChargeTicks = 0;
             return;
         }
         int[] d = destination;
         world.playerX = d[3] == 0 ? d[0] + 2.5f : d[0] + 0.5f;
         world.playerZ = d[3] == 0 ? d[2] + 0.5f : d[2] + 2.5f;
         world.playerY = d[1] + 1.05f;
-        portalCooldown = 30;
+        portalChargeTicks = 0;
         resetMining();
         renderer.sync(world);
         renderer.updateDayNight(world);
@@ -2219,6 +2231,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (world.mode == 1)
             g.drawString(Language.text(flying ? "Volando  5 subir  0 bajar" : "5 dos veces: volar"),
                     centerX, 13, Graphics.TOP | Graphics.HCENTER);
+        if (portalChargeTicks > 0) {
+            int seconds = (PORTAL_CHARGE_TICKS - portalChargeTicks + 19) / 20;
+            g.drawString(Language.text("Portal: sal para cancelar") + " " + seconds + "s",
+                    centerX, 27, Graphics.TOP | Graphics.HCENTER);
+        }
     }
 
     private void drawHearts(Graphics g) {

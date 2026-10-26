@@ -55,7 +55,8 @@ final class Language {
         "Guardar y menú", "Guardar y salir", "Etapa", "Tipo", "Mensaje",
         "no informado", "no disponible", "arriba", "abajo", "izquierda", "derecha",
         "Perfil solicitado por la app (JAD)", "Perfiles que soporta el emulador",
-        "Config solicitada (JAD)", "Config que soporta el emulador"
+        "Config solicitada (JAD)", "Config que soporta el emulador",
+        "Portal: sal para cancelar"
     };
 
     private static final String[] ENGLISH_TEXT = new String[] {
@@ -101,7 +102,8 @@ final class Language {
         "Game over!", "Generate new level...", "Load level..", "Save and menu",
         "Save and quit", "Stage", "Type", "Message", "not reported", "unavailable",
         "up", "down", "left", "right", "App profile (JAD)", "Profiles supported by emulator",
-        "Requested config (JAD)", "Config supported by emulator"
+        "Requested config (JAD)", "Config supported by emulator",
+        "Portal: step out to cancel"
     };
 
     private Language() { }
