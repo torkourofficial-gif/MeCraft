@@ -269,8 +269,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             damagePlayer(1);
             cactusDamageCooldown = 10;
         }
-        if (world.mode == 0 && netherLavaDamageCooldown == 0 &&
-            (playerPhysics.touchesLava(world) || world.nether && playerPhysics.isInWater(world))) {
+        boolean touchingLava = playerPhysics.touchesLava(world);
+        if (world.nether && playerPhysics.isInWater(world)) touchingLava = true;
+        if (world.mode == 0 && netherLavaDamageCooldown == 0 && touchingLava) {
             damagePlayer(2);
             netherLavaDamageCooldown = 10;
         }
