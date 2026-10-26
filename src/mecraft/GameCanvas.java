@@ -126,6 +126,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private int hurtTicks;
     private int cactusDamageCooldown;
     private int netherLavaDamageCooldown;
+    private int portalCooldown;
     private Image waterTint;
     private Image hurtTint;
     private Image pauseTint;
@@ -222,6 +223,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 world.mode == 1 && flying, descendHeld, sprint);
         if (sprinting && playerPhysics.hasHorizontalCollision()) sprinting = false;
         if (world.mode == 0 && fallDamage > 0) damagePlayer(fallDamage);
+        if (portalCooldown > 0) portalCooldown--;
+        else if (world.touchesPortal(world.playerX, world.playerY, world.playerZ)) travelThroughPortal();
+        if (state != PLAYING) return;
         int mobDamage = renderer.updateMobs(world);
         if (world.mode == 0 && mobDamage > 0) damagePlayer(mobDamage);
         if (cactusDamageCooldown > 0) cactusDamageCooldown--;
@@ -349,9 +353,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             }
             world = new VoxelWorld((int)(System.currentTimeMillis() ^ System.currentTimeMillis() >>> 32), mode);
             world.worldName = name == null || name.trim().length() == 0 ? "Mundo" : name.trim();
-            // Secret Alpha-era variant: naming a world NETHER starts it in the
-            // hidden hell dimension without adding another world-list entry.
-            world.setNetherDimension("NETHER".equalsIgnoreCase(world.worldName));
+            // Nether access is reached through a wool portal in the normal world.
             world.saveStoreName = VoxelWorld.nextWorldStoreName();
             copyHotbarFromWorld();
             playerPhysics.reset();
@@ -745,6 +747,19 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private void useSelectedItem() {
         if (world == null) return;
         int selected = hotbar[world.selectedSlot];
+        if (ItemCatalog.isTool(selected) && ItemCatalog.kind(selected) == ItemCatalog.PICKAXE) {
+            int[] target = trace(5.0f);
+            if (target != null && world.activatePortalAtWool(target[0], target[1], target[2])) {
+                renderer.swingHand();
+                if (world.mode == 0) damageTool(selected, 1);
+                renderer.sync(world);
+                resetMining();
+                copyInventoryToWorld();
+                world.save();
+                repaint();
+                return;
+            }
+        }
         if (world.mode == 0 && selected == ItemCatalog.PORK_RAW) {
             if (inventory[selected] > 0 && world.health < 20) {
                 world.health += 3;
@@ -758,6 +773,47 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             return;
         }
         placeBlock();
+    }
+
+    private void travelThroughPortal() {
+        int sx = (int)world.playerX, sy = (int)world.playerY, sz = (int)world.playerZ;
+        int[] source = null;
+        for (int y = sy - 1; y <= sy + 2 && source == null; y++)
+            for (int z = sz - 1; z <= sz + 1 && source == null; z++)
+                for (int x = sx - 1; x <= sx + 1 && source == null; x++)
+                    source = world.portalFrameAt(x, y, z);
+        int axis = source == null ? 0 : source[3];
+        float tx = world.nether ? world.playerX * 8.0f : world.playerX / 8.0f;
+        float tz = world.nether ? world.playerZ * 8.0f : world.playerZ / 8.0f;
+        world.switchDimension();
+        int[] destination = world.findPortalNear((int)tx, (int)tz);
+        if (destination == null) {
+            int bx = (int)tx, bz = (int)tz;
+            if (bx < 2) bx = 2;
+            if (bz < 2) bz = 2;
+            if (bx > VoxelWorld.WIDTH - 6) bx = VoxelWorld.WIDTH - 6;
+            if (bz > VoxelWorld.DEPTH - 6) bz = VoxelWorld.DEPTH - 6;
+            int by = world.surfaceY(bx + 1, bz + 1) + 1;
+            if (by < 1) by = 1;
+            if (by > VoxelWorld.HEIGHT - 6) by = VoxelWorld.HEIGHT - 6;
+            destination = world.createPortalAt(bx, by, bz, axis);
+        }
+        if (destination == null) {
+            world.switchDimension();
+            portalCooldown = 10;
+            return;
+        }
+        int[] d = destination;
+        world.playerX = d[3] == 0 ? d[0] + 2.5f : d[0] + 0.5f;
+        world.playerZ = d[3] == 0 ? d[2] + 0.5f : d[2] + 2.5f;
+        world.playerY = d[1] + 1.05f;
+        portalCooldown = 30;
+        resetMining();
+        renderer.sync(world);
+        renderer.updateDayNight(world);
+        renderer.updateCamera(world, cameraPitch);
+        copyInventoryToWorld();
+        world.save();
     }
 
     private void openCrafting(boolean workbench) {

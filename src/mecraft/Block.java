@@ -47,6 +47,7 @@ final class Block {
     static final byte CACTUS = (byte)findTileBlock(70);
     static final int CACTUS_TOP_TILE = 71;
     static final byte SNOW = (byte)findTileBlock(66);
+    static final byte PORTAL = (byte)findTileBlock(14);
 
     private static int findTileBlock(int tile) {
         for (int i = DECORATIVE_START; i < TILE.length; i++)
@@ -82,7 +83,7 @@ final class Block {
             if (id != WATER && id != BEDROCK) temporary[count++] = id;
         }
         for (int id = DECORATIVE_START; id < COUNT; id++) {
-            if (hasAtlasTexture(TILE[id])) temporary[count++] = id;
+            if (hasAtlasTexture(TILE[id]) && id != (PORTAL & 255)) temporary[count++] = id;
         }
         int[] palette = new int[count];
         System.arraycopy(temporary, 0, palette, 0, count);
@@ -125,7 +126,8 @@ final class Block {
         };
         System.arraycopy(basic, 0, result, 0, basic.length);
         for (int i = 0; i < EXTRA_TILES.length; i++) {
-            result[DECORATIVE_START + i] = EXTRA_TILES[i] == 97 ? "Puerta de madera" :
+            result[DECORATIVE_START + i] = EXTRA_TILES[i] == 14 ? "Portal del Nether" :
+                    EXTRA_TILES[i] == 97 ? "Puerta de madera" :
                     EXTRA_TILES[i] == 70 ? "Cactus" : EXTRA_TILES[i] == 66 ? "Nieve" :
                     new StringBuffer().append("Decoración ").append(EXTRA_TILES[i]).toString();
         }
@@ -139,11 +141,12 @@ final class Block {
     }
 
     static boolean isFlower(byte id) {
-        return id == RED_FLOWER || id == YELLOW_FLOWER || id == TORCH;
+        return id == RED_FLOWER || id == YELLOW_FLOWER || id == TORCH || id == PORTAL;
     }
 
     static boolean replaceable(byte id) {
-        return id == AIR || id == WATER || id == RED_FLOWER || id == YELLOW_FLOWER;
+        return id == AIR || id == WATER || id == RED_FLOWER || id == YELLOW_FLOWER ||
+               id == PORTAL;
     }
 
     /** Mining time in 50 ms game-loop steps when standing on dry ground. */
@@ -180,7 +183,7 @@ final class Block {
     }
 
     static boolean dropsItem(byte id) {
-        return id != AIR && id != WATER && id != BEDROCK && id != TNT;
+        return id != AIR && id != WATER && id != BEDROCK && id != TNT && id != PORTAL;
     }
 
     static byte dropId(byte id) {

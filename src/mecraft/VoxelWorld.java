@@ -32,11 +32,18 @@ final class VoxelWorld {
     private static final int INFDEV_EDIT_MAGIC = 0x49464431;
     private static final int INFDEV_EDIT_POINTER_MAGIC = 0x49465031;
     private static final int INFDEV_EDIT_PAGE_MAGIC = 0x49465047;
+    private static final int INFDEV_EDIT_PAGE_MAGIC_V2 = 0x49464432;
+    private static final int DIMENSION_STORE_MAGIC = 0x4D43444D; // MCDM
+    private static final int DIMENSION_PAGE_MAGIC = 0x4D434450; // MCDP
+    private static final int DIMENSION_PAGE_BYTES = 16000;
     private static final int INFDEV_EDITS_PER_PAGE = 128;
     static final int DAY_LENGTH = 24000;
 
-    final byte[] blocks = new byte[BLOCK_COUNT];
-    private final byte[] waterLevels = new byte[BLOCK_COUNT];
+    byte[] blocks = new byte[BLOCK_COUNT];
+    private byte[] waterLevels = new byte[BLOCK_COUNT];
+    private byte[] otherDimensionBlocks;
+    private byte[] otherDimensionWaterLevels;
+    private boolean otherDimensionIsNether;
     private final byte[] explosionBits = new byte[(BLOCK_COUNT + 7) / 8];
     private static final int FLUID_QUEUE_SIZE = 2048;
     private final short[] fluidQueue = new short[FLUID_QUEUE_SIZE];
@@ -55,6 +62,7 @@ final class VoxelWorld {
     private int[] editZ = new int[128];
     private byte[] editId = new byte[128];
     private byte[] editMeta = new byte[128];
+    private boolean[] editNether = new boolean[128];
     private int[] editLookup = new int[256];
     private int editCount;
     private int editGeneration;
@@ -137,26 +145,36 @@ final class VoxelWorld {
     }
 
     private int findEdit(int x, int y, int z) {
-        int hash = x * 73428767 ^ y * 912931 ^ z * 42317861;
+        return findEdit(x, y, z, nether);
+    }
+
+    private int findEdit(int x, int y, int z, boolean dimension) {
+        int hash = editHash(x, y, z, dimension);
         int slot = hash & (editLookup.length - 1);
         for (int probe = 0; probe < editLookup.length; probe++) {
             int value = editLookup[slot];
             if (value == 0) return -1;
             int i = value - 1;
-            if (editX[i] == x && editY[i] == y && editZ[i] == z) return i;
+            if (editX[i] == x && editY[i] == y && editZ[i] == z &&
+                editNether[i] == dimension) return i;
             slot = (slot + 1) & (editLookup.length - 1);
         }
         return -1;
     }
 
     private int ensureEdit(int x, int y, int z) {
-        int i = findEdit(x, y, z);
+        return ensureEdit(x, y, z, nether);
+    }
+
+    private int ensureEdit(int x, int y, int z, boolean dimension) {
+        int i = findEdit(x, y, z, dimension);
         if (i >= 0) return i;
         if (editCount == editX.length) growEditArrays();
         if ((editCount + 1) * 2 > editLookup.length) rehashEdits(editLookup.length * 2);
         i = editCount++;
         editX[i] = x; editY[i] = y; editZ[i] = z;
-        int slot = (x * 73428767 ^ y * 912931 ^ z * 42317861) & (editLookup.length - 1);
+        editNether[i] = dimension;
+        int slot = editHash(x, y, z, dimension) & (editLookup.length - 1);
         while (editLookup[slot] != 0) slot = (slot + 1) & (editLookup.length - 1);
         editLookup[slot] = i + 1;
         return i;
@@ -166,22 +184,29 @@ final class VoxelWorld {
         int size = editX.length * 2;
         int[] nx = new int[size], ny = new int[size], nz = new int[size];
         byte[] ni = new byte[size], nm = new byte[size];
+        boolean[] nd = new boolean[size];
         System.arraycopy(editX, 0, nx, 0, editCount);
         System.arraycopy(editY, 0, ny, 0, editCount);
         System.arraycopy(editZ, 0, nz, 0, editCount);
         System.arraycopy(editId, 0, ni, 0, editCount);
         System.arraycopy(editMeta, 0, nm, 0, editCount);
-        editX = nx; editY = ny; editZ = nz; editId = ni; editMeta = nm;
+        System.arraycopy(editNether, 0, nd, 0, editCount);
+        editX = nx; editY = ny; editZ = nz; editId = ni; editMeta = nm; editNether = nd;
     }
 
     private void rehashEdits(int size) {
         int[] lookup = new int[size];
         for (int i = 0; i < editCount; i++) {
-            int slot = (editX[i] * 73428767 ^ editY[i] * 912931 ^ editZ[i] * 42317861) & (size - 1);
+            int slot = editHash(editX[i], editY[i], editZ[i], editNether[i]) & (size - 1);
             while (lookup[slot] != 0) slot = (slot + 1) & (size - 1);
             lookup[slot] = i + 1;
         }
         editLookup = lookup;
+    }
+
+    private int editHash(int x, int y, int z, boolean inNether) {
+        int hash = x * 73428767 ^ y * 912931 ^ z * 42317861;
+        return inNether ? hash ^ 0x6D2B79F5 : hash;
     }
 
     private int metadataAt(int x, int y, int z) {
@@ -541,15 +566,142 @@ final class VoxelWorld {
 
     void setNetherDimension(boolean enabled) {
         if (nether == enabled) return;
-        nether = enabled;
+        if (otherDimensionBlocks != null && otherDimensionIsNether == enabled) {
+            byte[] oldBlocks = blocks;
+            byte[] oldWater = waterLevels;
+            blocks = otherDimensionBlocks;
+            waterLevels = otherDimensionWaterLevels;
+            otherDimensionBlocks = oldBlocks;
+            otherDimensionWaterLevels = oldWater;
+            otherDimensionIsNether = !enabled;
+            nether = enabled;
+        } else if (otherDimensionBlocks == null) {
+            otherDimensionBlocks = blocks;
+            otherDimensionWaterLevels = waterLevels;
+            otherDimensionIsNether = !enabled;
+            nether = enabled;
+            blocks = new byte[BLOCK_COUNT];
+            waterLevels = new byte[BLOCK_COUNT];
+            generate();
+        } else {
+            return;
+        }
         for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
             proceduralChunkX[i] = Integer.MIN_VALUE;
             proceduralChunkZ[i] = Integer.MIN_VALUE;
         }
         proceduralCacheCursor = 0;
-        generate();
+        fluidQueueHead = fluidQueueTail = fluidQueueCount = fluidTickDelay = fluidDirection = 0;
+        for (int i = 0; i < fluidQueued.length; i++) fluidQueued[i] = 0;
+        queueSavedFlowingWater();
         fullRebuild = true;
         revision++;
+    }
+
+    void switchDimension() { setNetherDimension(!nether); }
+
+    /** Activates the classic 4x5 wool frame when the player uses a pickaxe on it. */
+    boolean activatePortalAtWool(int x, int y, int z) {
+        if (get(x, y, z) != Block.WOOL) return false;
+        int[] frame = findPortalFrameForWool(x, y, z);
+        if (frame == null) return false;
+        for (int v = 1; v <= 3; v++) {
+            for (int u = 1; u <= 2; u++) {
+                int px = frame[3] == 0 ? frame[0] + u : frame[0];
+                int pz = frame[3] == 0 ? frame[2] : frame[2] + u;
+                set(px, frame[1] + v, pz, Block.PORTAL);
+            }
+        }
+        return true;
+    }
+
+    boolean touchesPortal(float px, float py, float pz) {
+        int minX = floorBlock(px - 0.31f), maxX = floorBlock(px + 0.31f);
+        int minY = floorBlock(py), maxY = floorBlock(py + 1.8f);
+        int minZ = floorBlock(pz - 0.31f), maxZ = floorBlock(pz + 0.31f);
+        for (int y = minY; y <= maxY; y++)
+            for (int z = minZ; z <= maxZ; z++)
+                for (int x = minX; x <= maxX; x++)
+                    if (get(x, y, z) == Block.PORTAL) return true;
+        return false;
+    }
+
+    int[] portalFrameAt(int x, int y, int z) {
+        if (get(x, y, z) != Block.PORTAL) return null;
+        for (int axis = 0; axis < 2; axis++) {
+            for (int u = 1; u <= 2; u++) {
+                int bx = axis == 0 ? x - u : x;
+                int bz = axis == 0 ? z : z - u;
+                for (int v = 1; v <= 3; v++) {
+                    int by = y - v;
+                    if (matchesPortalFrame(bx, by, bz, axis))
+                        return new int[] { bx, by, bz, axis };
+                }
+            }
+        }
+        return null;
+    }
+
+    int[] findPortalNear(int x, int z) {
+        for (int radius = 0; radius <= 8; radius++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                for (int dx = -radius; dx <= radius; dx++) {
+                    if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
+                    for (int y = 1; y < HEIGHT - 1; y++) {
+                        int[] frame = portalFrameAt(x + dx, y, z + dz);
+                        if (frame != null) return frame;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    int[] createPortalAt(int baseX, int baseY, int baseZ, int axis) {
+        if (baseY <= 0 || baseY + 4 >= HEIGHT || (axis != 0 && axis != 1)) return null;
+        for (int v = 0; v <= 4; v++) {
+            for (int u = 0; u <= 3; u++) {
+                boolean frameBlock = v == 0 || v == 4 || u == 0 || u == 3;
+                byte id = frameBlock ? Block.WOOL : Block.PORTAL;
+                int x = axis == 0 ? baseX + u : baseX;
+                int z = axis == 0 ? baseZ : baseZ + u;
+                if (!set(x, baseY + v, z, id) && get(x, baseY + v, z) != id) return null;
+            }
+        }
+        return new int[] { baseX, baseY, baseZ, axis };
+    }
+
+    private int[] findPortalFrameForWool(int x, int y, int z) {
+        for (int axis = 0; axis < 2; axis++) {
+            int firstU = axis == 0 ? x - 3 : z - 3;
+            int lastU = axis == 0 ? x : z;
+            for (int baseU = firstU; baseU <= lastU; baseU++) {
+                for (int baseY = y - 4; baseY <= y; baseY++) {
+                    int bx = axis == 0 ? baseU : x;
+                    int bz = axis == 0 ? z : baseU;
+                    if (baseY <= 0 || baseY + 4 >= HEIGHT) continue;
+                    if (matchesPortalFrame(bx, baseY, bz, axis))
+                        return new int[] { bx, baseY, bz, axis };
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean matchesPortalFrame(int bx, int by, int bz, int axis) {
+        if (by <= 0 || by + 4 >= HEIGHT) return false;
+        for (int v = 0; v <= 4; v++) {
+            for (int u = 0; u <= 3; u++) {
+                int x = axis == 0 ? bx + u : bx;
+                int z = axis == 0 ? bz : bz + u;
+                byte id = get(x, by + v, z);
+                if (v == 0 || v == 4 || u == 0 || u == 3) {
+                    boolean corner = (u == 0 || u == 3) && (v == 0 || v == 4);
+                    if (id != Block.WOOL && (!corner || !Block.replaceable(id))) return false;
+                } else if (id != Block.AIR && id != Block.PORTAL) return false;
+            }
+        }
+        return true;
     }
 
     int surfaceY(int x, int z) {
@@ -583,9 +735,9 @@ final class VoxelWorld {
                 int start = page * INFDEV_EDITS_PER_PAGE;
                 int count = editCount - start;
                 if (count > INFDEV_EDITS_PER_PAGE) count = INFDEV_EDITS_PER_PAGE;
-                ByteArrayOutputStream pageBytes = new ByteArrayOutputStream(16 + count * 11);
+                ByteArrayOutputStream pageBytes = new ByteArrayOutputStream(16 + count * 12);
                 DataOutputStream pageOut = new DataOutputStream(pageBytes);
-                pageOut.writeInt(INFDEV_EDIT_PAGE_MAGIC);
+                pageOut.writeInt(INFDEV_EDIT_PAGE_MAGIC_V2);
                 pageOut.writeInt(generation);
                 pageOut.writeInt(page);
                 pageOut.writeInt(pageCount);
@@ -598,10 +750,11 @@ final class VoxelWorld {
 
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(blocks.length * 2 + 64);
             DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(0x4D434643); // MCFC: named worlds with colored wool
+            out.writeInt(0x4D434644); // MCFD: explicit dimension state
             out.writeInt(seed);
             out.writeByte(mode);
             out.writeUTF(worldName == null ? "Mundo" : worldName);
+            out.writeBoolean(nether);
             out.writeByte(selectedSlot);
             for (int i = 0; i < inventory.length; i++) out.writeByte(inventory[i]);
             for (int i = 0; i < hotbar.length; i++) out.writeByte(hotbar[i]);
@@ -624,6 +777,7 @@ final class VoxelWorld {
             store.setRecord(1, data, 0, data.length);
             editGeneration = generation;
             deleteOldEditPages(store, generation);
+            saveOtherDimension(storeName);
         } catch (Exception ignored) {
             // A failed save must not terminate play on devices with tiny RMS limits.
         } catch (OutOfMemoryError ignored) {
@@ -635,9 +789,122 @@ final class VoxelWorld {
         }
     }
 
+    private void saveOtherDimension(String storeName) {
+        if (otherDimensionBlocks == null || otherDimensionWaterLevels == null) return;
+        RecordStore dimStore = null;
+        try {
+            dimStore = RecordStore.openRecordStore(storeName + "-dim", true);
+            RecordEnumeration oldRecords = dimStore.enumerateRecords(null, null, false);
+            int[] oldIds = new int[dimStore.getNumRecords()];
+            int oldCount = 0;
+            while (oldRecords.hasNextElement()) oldIds[oldCount++] = oldRecords.nextRecordId();
+            oldRecords.destroy();
+            for (int i = 0; i < oldCount; i++) dimStore.deleteRecord(oldIds[i]);
+            int totalBytes = BLOCK_COUNT * 2;
+            int pageCount = (totalBytes + DIMENSION_PAGE_BYTES - 1) / DIMENSION_PAGE_BYTES;
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream(10);
+            DataOutputStream out = new DataOutputStream(bytes);
+            out.writeInt(DIMENSION_STORE_MAGIC);
+            out.writeBoolean(otherDimensionIsNether);
+            out.writeInt(totalBytes);
+            out.writeShort(pageCount);
+            out.flush();
+            byte[] data = bytes.toByteArray();
+            dimStore.addRecord(data, 0, data.length);
+            for (int page = 0; page < pageCount; page++) {
+                int offset = page * DIMENSION_PAGE_BYTES;
+                int length = totalBytes - offset;
+                if (length > DIMENSION_PAGE_BYTES) length = DIMENSION_PAGE_BYTES;
+                ByteArrayOutputStream pageBytes = new ByteArrayOutputStream(length + 10);
+                DataOutputStream pageOut = new DataOutputStream(pageBytes);
+                pageOut.writeInt(DIMENSION_PAGE_MAGIC);
+                pageOut.writeShort(page);
+                pageOut.writeShort(length);
+                for (int i = 0; i < length; i++) {
+                    int source = offset + i;
+                    pageOut.writeByte(source < BLOCK_COUNT ? otherDimensionBlocks[source] :
+                                      otherDimensionWaterLevels[source - BLOCK_COUNT]);
+                }
+                pageOut.flush();
+                byte[] pageData = pageBytes.toByteArray();
+                dimStore.addRecord(pageData, 0, pageData.length);
+            }
+        } catch (Exception ignored) {
+        } catch (OutOfMemoryError ignored) {
+        } finally {
+            if (dimStore != null) try { dimStore.closeRecordStore(); } catch (RecordStoreException ignored) { }
+        }
+    }
+
+    private static void loadOtherDimension(String storeName, VoxelWorld world) {
+        RecordStore dimStore = null;
+        try {
+            dimStore = RecordStore.openRecordStore(storeName + "-dim", false);
+            if (dimStore.getNumRecords() == 0) return;
+            byte[] data = null;
+            RecordEnumeration headers = dimStore.enumerateRecords(null, null, false);
+            try {
+                while (headers.hasNextElement()) {
+                    byte[] candidate = dimStore.getRecord(headers.nextRecordId());
+                    if (candidate.length >= 11 &&
+                        new DataInputStream(new ByteArrayInputStream(candidate)).readInt() == DIMENSION_STORE_MAGIC) {
+                        data = candidate;
+                        break;
+                    }
+                }
+            } finally {
+                headers.destroy();
+            }
+            if (data == null) return;
+            DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
+            if (in.readInt() != DIMENSION_STORE_MAGIC) return;
+            boolean otherNether = in.readBoolean();
+            int totalBytes = in.readInt();
+            int pageCount = in.readUnsignedShort();
+            if (otherNether == world.nether || totalBytes != BLOCK_COUNT * 2 ||
+                pageCount != (totalBytes + DIMENSION_PAGE_BYTES - 1) / DIMENSION_PAGE_BYTES ||
+                dimStore.getNumRecords() != pageCount + 1) return;
+            byte[] otherBlocks = new byte[BLOCK_COUNT];
+            byte[] otherWater = new byte[BLOCK_COUNT];
+            boolean[] loaded = new boolean[pageCount];
+            RecordEnumeration pages = dimStore.enumerateRecords(null, null, false);
+            try {
+                while (pages.hasNextElement()) {
+                    int id = pages.nextRecordId();
+                    byte[] pageData = dimStore.getRecord(id);
+                    DataInputStream pageIn = new DataInputStream(new ByteArrayInputStream(pageData));
+                    int pageMagic = pageIn.readInt();
+                    if (pageMagic != DIMENSION_PAGE_MAGIC) continue;
+                    int page = pageIn.readUnsignedShort();
+                    int length = pageIn.readUnsignedShort();
+                    int offset = page * DIMENSION_PAGE_BYTES;
+                    if (page < 0 || page >= pageCount || loaded[page] ||
+                        length != Math.min(DIMENSION_PAGE_BYTES, totalBytes - offset) ||
+                        pageIn.available() != length) return;
+                    for (int i = 0; i < length; i++) {
+                        int target = offset + i;
+                        byte value = pageIn.readByte();
+                        if (target < BLOCK_COUNT) otherBlocks[target] = value;
+                        else otherWater[target - BLOCK_COUNT] = value;
+                    }
+                    loaded[page] = true;
+                }
+            } finally {
+                pages.destroy();
+            }
+            for (int i = 0; i < loaded.length; i++) if (!loaded[i]) return;
+            world.otherDimensionIsNether = otherNether;
+            world.otherDimensionBlocks = otherBlocks;
+            world.otherDimensionWaterLevels = otherWater;
+        } catch (Exception ignored) {
+        } finally {
+            if (dimStore != null) try { dimStore.closeRecordStore(); } catch (RecordStoreException ignored) { }
+        }
+    }
+
     private void writeEdit(DataOutputStream out, int i) throws IOException {
         out.writeInt(editX[i]); out.writeByte(editY[i]); out.writeInt(editZ[i]);
-        out.writeByte(editId[i]); out.writeByte(editMeta[i]);
+        out.writeByte(editId[i]); out.writeByte(editMeta[i]); out.writeBoolean(editNether[i]);
     }
 
     private static void deleteOldEditPages(RecordStore store, int keepGeneration) {
@@ -652,7 +919,9 @@ final class VoxelWorld {
                 byte[] data = store.getRecord(recordId);
                 if (data.length < 8) continue;
                 DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
-                if (in.readInt() == INFDEV_EDIT_PAGE_MAGIC && in.readInt() != keepGeneration)
+                int magic = in.readInt();
+                if ((magic == INFDEV_EDIT_PAGE_MAGIC || magic == INFDEV_EDIT_PAGE_MAGIC_V2) &&
+                    in.readInt() != keepGeneration)
                     remove[count++] = recordId;
             }
             records.destroy(); records = null;
@@ -676,17 +945,21 @@ final class VoxelWorld {
             if (format != 0x4D434631 && format != 0x4D434632 && format != 0x4D434633 &&
                 format != 0x4D434634 && format != 0x4D434635 && format != 0x4D434636 &&
                 format != 0x4D434637 && format != 0x4D434638 && format != 0x4D434639 &&
-                format != 0x4D434641 && format != 0x4D434642 && format != 0x4D434643) return null;
+                format != 0x4D434641 && format != 0x4D434642 && format != 0x4D434643 &&
+                format != 0x4D434644) return null;
             int seed = in.readInt();
             int mode = in.readByte();
-            boolean namedFormat = format == 0x4D434642 || format == 0x4D434643;
+            boolean namedFormat = format == 0x4D434642 || format == 0x4D434643 || format == 0x4D434644;
             VoxelWorld world = new VoxelWorld(seed, mode);
             world.worldName = namedFormat ? in.readUTF() : "Mundo guardado";
-            world.setNetherDimension("NETHER".equalsIgnoreCase(world.worldName));
+            boolean explicitDimensionFormat = format == 0x4D434644;
+            boolean savedNether = explicitDimensionFormat ? in.readBoolean() :
+                                  "NETHER".equalsIgnoreCase(world.worldName);
+            world.setNetherDimension(savedNether);
             world.saveStoreName = storeName;
             world.selectedSlot = in.readByte();
-            boolean currentFormat = format == 0x4D434641 || format == 0x4D434642 || format == 0x4D434643;
-            boolean latestFormat = format == 0x4D434643;
+            boolean currentFormat = format == 0x4D434641 || format == 0x4D434642 || format == 0x4D434643 || explicitDimensionFormat;
+            boolean latestFormat = format == 0x4D434643 || explicitDimensionFormat;
             if (format == 0x4D434635 || format == 0x4D434636 || format == 0x4D434637 ||
                 format == 0x4D434638 || format == 0x4D434639 || currentFormat) {
                 int inventoryLength = latestFormat ? world.inventory.length :
@@ -763,6 +1036,7 @@ final class VoxelWorld {
             }
             if (editPageCount > 0 && editPageCount <= store.getNumRecords())
                 loadEditPages(store, world, editGeneration, editPageCount);
+            if (explicitDimensionFormat) loadOtherDimension(storeName, world);
             world.editGeneration = editGeneration;
             if (format != 0x4D434636 && format != 0x4D434637 && format != 0x4D434638 &&
                 format != 0x4D434639 && !currentFormat)
@@ -791,18 +1065,22 @@ final class VoxelWorld {
                 byte[] data = store.getRecord(recordId);
                 if (data.length < 18) continue;
                 DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
-                if (in.readInt() != INFDEV_EDIT_PAGE_MAGIC || in.readInt() != generation) continue;
+                int pageMagic = in.readInt();
+                if ((pageMagic != INFDEV_EDIT_PAGE_MAGIC && pageMagic != INFDEV_EDIT_PAGE_MAGIC_V2) ||
+                    in.readInt() != generation) continue;
                 int page = in.readInt();
                 int storedPageCount = in.readInt();
                 int count = in.readUnsignedShort();
                 if (page < 0 || page >= pageCount || storedPageCount != pageCount ||
-                    count > INFDEV_EDITS_PER_PAGE || loaded[page] || in.available() < count * 11)
+                    count > INFDEV_EDITS_PER_PAGE || loaded[page] ||
+                    in.available() < count * (pageMagic == INFDEV_EDIT_PAGE_MAGIC_V2 ? 12 : 11))
                     continue;
                 loaded[page] = true;
                 for (int i = 0; i < count; i++) {
                     int x = in.readInt(), y = in.readUnsignedByte(), z = in.readInt();
                     byte id = in.readByte(), meta = in.readByte();
-                    int edit = world.ensureEdit(x, y, z);
+                    boolean dimension = pageMagic == INFDEV_EDIT_PAGE_MAGIC_V2 ? in.readBoolean() : world.nether;
+                    int edit = world.ensureEdit(x, y, z, dimension);
                     if (edit >= 0) { world.editId[edit] = id; world.editMeta[edit] = meta; }
                 }
             }
@@ -837,6 +1115,7 @@ final class VoxelWorld {
             return false;
         try {
             RecordStore.deleteRecordStore(storeName);
+            try { RecordStore.deleteRecordStore(storeName + "-dim"); } catch (RecordStoreException ignored) { }
             return true;
         } catch (RecordStoreException ignored) {
             return false;
