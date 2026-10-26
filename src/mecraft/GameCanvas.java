@@ -1610,6 +1610,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                         iconPixels[y * 16 + x] = sourcePixels[sourceY * 14 + sourceX];
                     }
                 }
+                if (block == Block.LEAVES) AlphaTint.apply(iconPixels, AlphaTint.LEAVES);
                 blockIcons[block] = Image.createRGBImage(iconPixels, 16, 16, true);
                 itemIcons[block] = blockIcons[block];
                 mutedItemIcons[block] = makeMutedIcon(blockIcons[block]);

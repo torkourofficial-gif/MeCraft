@@ -172,6 +172,7 @@ final class DroppedItemSystem {
             int blockId = ItemCatalog.isColoredWool(id) ? Block.WOOL : id;
             writeTexture(slot, blockId);
             setVertexColor(slot, ItemCatalog.isColoredWool(id) ? ItemCatalog.woolColor(id) : 0);
+            if (!ItemCatalog.isColoredWool(id)) setAlphaVertexTint(slot, blockId);
         } else writeSpriteTexture(slot, id);
     }
 
@@ -441,6 +442,24 @@ final class DroppedItemSystem {
             colors[at++] = (byte)(rgb >> 8);
             colors[at++] = (byte)rgb;
             colors[at++] = (byte)255;
+        }
+        colorArray.set(0, VERTEX_COUNT, colors);
+    }
+
+    private void setAlphaVertexTint(int slot, int id) {
+        int at = slot * VERTICES_PER_ITEM * 4;
+        for (int face = 0; face < 6; face++) {
+            int tint = id == Block.GRASS && face == 0 ? AlphaTint.GRASS_TOP :
+                    (id == Block.LEAVES ? AlphaTint.LEAVES : 0xFFFFFFFF);
+            int r = (tint >> 16) & 255;
+            int g = (tint >> 8) & 255;
+            int b = tint & 255;
+            for (int vertex = 0; vertex < 4; vertex++) {
+                colors[at++] = (byte)r;
+                colors[at++] = (byte)g;
+                colors[at++] = (byte)b;
+                colors[at++] = (byte)255;
+            }
         }
         colorArray.set(0, VERTEX_COUNT, colors);
     }

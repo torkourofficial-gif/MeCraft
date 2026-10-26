@@ -132,12 +132,12 @@ final class ChunkRenderer {
         atlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         atlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         flowerAppearance = createFlowerAppearance();
-        heldItemAppearance = createFirstPersonAppearance(atlas, true, true);
+        heldItemAppearance = createFirstPersonAppearance(atlas, true, true, true);
         Image itemSource = GameAssets.image("items.png");
         itemAtlas = new Texture2D(new Image2D(Image2D.RGBA, itemSource));
         itemAtlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         itemAtlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
-        itemSpriteAppearance = createFirstPersonAppearance(itemAtlas, true, false);
+        itemSpriteAppearance = createFirstPersonAppearance(itemAtlas, true, false, false);
         ItemSpriteData itemData = makeItemSpriteMesh();
         itemSpriteMesh = itemData.mesh;
         itemSpriteTexCoordArray = itemData.texCoords;
@@ -483,6 +483,9 @@ final class ChunkRenderer {
             int at = 0;
             for (int i = 0; i < builders.length; i++) {
                 if (builders[i] == null) continue;
+                if (id == Block.GRASS && i == 0) tintFaceBuilder(builders[i], AlphaTint.GRASS_TOP);
+                else if (id == Block.LEAVES && (i == 52 || i == 53))
+                    tintFaceBuilder(builders[i], AlphaTint.LEAVES);
                 Mesh mesh = makeMesh(builders[i], heldItemAppearance);
                 // Center the cube at the hand anchor and keep it slightly smaller
                 // than Indev's 0.4 inventory-render scale.
@@ -693,12 +696,13 @@ final class ChunkRenderer {
     }
 
     private Appearance createFirstPersonAppearance(Texture2D texture,
-            boolean alphaBlending, boolean cullBackFaces) {
+            boolean alphaBlending, boolean cullBackFaces, boolean vertexColors) {
         Appearance appearance = new Appearance();
         if (texture != null) appearance.setTexture(0, texture);
         Material material = new Material();
         material.setColor(Material.AMBIENT, 0xFFFFFFFF);
         material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
+        if (vertexColors) material.setVertexColorTrackingEnable(true);
         appearance.setMaterial(material);
         PolygonMode polygon = new PolygonMode();
         polygon.setCulling(cullBackFaces ? PolygonMode.CULL_BACK : PolygonMode.CULL_NONE);
@@ -1232,8 +1236,8 @@ final class ChunkRenderer {
             else if (tile == 235) sourceTile = 105; // Alpha glowstone
             terrainImage.getRGB(pixels, 0, 16, (sourceTile & 15) * 16,
                     (sourceTile >> 4) * 16, 16, 16);
-            if (tile == 0) tintAlphaTexture(pixels, 0xFF7FB238);
-            else if (tile == 52 || tile == 53) tintAlphaTexture(pixels, 0xFF48B518);
+            if (tile == 0) AlphaTint.apply(pixels, AlphaTint.GRASS_TOP);
+            else if (tile == 52 || tile == 53) AlphaTint.apply(pixels, AlphaTint.LEAVES);
         }
         Image tileImage = Image.createRGBImage(pixels, 16, 16, true);
         Texture2D texture = new Texture2D(new Image2D(Image2D.RGBA, tileImage));
@@ -1254,21 +1258,16 @@ final class ChunkRenderer {
         return Block.renderTile(id, face, woolColor);
     }
 
-    /** Alpha stored grass and foliage as grayscale tiles and tinted them at render time. */
-    private void tintAlphaTexture(int[] pixels, int tint) {
+    private void tintFaceBuilder(FaceBuilder data, int tint) {
         int tr = (tint >> 16) & 255;
         int tg = (tint >> 8) & 255;
         int tb = tint & 255;
-        for (int i = 0; i < pixels.length; i++) {
-            int pixel = pixels[i];
-            int alpha = pixel >>> 24;
-            if (alpha == 0) continue;
-            int r = (pixel >> 16) & 255;
-            int g = (pixel >> 8) & 255;
-            int b = pixel & 255;
-            int luminance = (r * 77 + g * 150 + b * 29) >> 8;
-            pixels[i] = (alpha << 24) | (luminance * tr / 255 << 16) |
-                    (luminance * tg / 255 << 8) | (luminance * tb / 255);
+        for (int i = 0; i < data.vertexCount; i++) {
+            int at = i * 4;
+            int shade = data.c[at] & 255;
+            data.c[at] = (byte)(shade * tr / 255);
+            data.c[at + 1] = (byte)(shade * tg / 255);
+            data.c[at + 2] = (byte)(shade * tb / 255);
         }
     }
 
