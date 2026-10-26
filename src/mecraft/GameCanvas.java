@@ -1011,7 +1011,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
         if (state == SETTINGS) {
             int action = gameAction(keyCode);
-            if (keyCode == KEY_NUM2 || action == UP || keyCode == KEY_NUM8 || action == DOWN) {
+            if (keyCode == KEY_NUM2 || action == UP) {
+                settingsSelection = (settingsSelection + 4) % 5;
+                repaint();
+            } else if (keyCode == KEY_NUM8 || action == DOWN) {
                 settingsSelection = (settingsSelection + 1) % 5;
                 repaint();
             } else if (settingsSelection == 0 && (keyCode == KEY_NUM4 || action == LEFT)) changeFrameSkip(-1);
