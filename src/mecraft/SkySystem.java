@@ -20,14 +20,11 @@ import javax.microedition.m3g.VertexBuffer;
 final class SkySystem {
     private static final float FIXED_SCALE = 1.0f / 256.0f;
     private static final int STAR_COUNT = 500;
-    private static final int[] OCEAN_TRIANGLE_ORDER = new int[] { 0, 1, 2, 0, 2, 3 };
     private final Group yawCounter = new Group();
     private final Group celestialRotation = new Group();
     private final Background skyBackground;
     private final Mesh stars;
     private final Material starsMaterial;
-    private final Material oceanMaterial;
-    private final Mesh oceanPlane;
     private final int cloudWidth;
     private final int cloudHeight;
     private final byte[] cloudAlpha;
@@ -80,13 +77,6 @@ final class SkySystem {
             cloudAlpha[i] = (byte)(sourcePixels[i] >>> 24);
         sourcePixels = null;
         resize(width, height);
-
-        Appearance oceanAppearance = makeOceanAppearance();
-        oceanMaterial = oceanAppearance.getMaterial();
-        oceanMaterial.setColor(Material.AMBIENT, 0xFFD8F1FF);
-        oceanMaterial.setColor(Material.DIFFUSE, 0xFFD8F1FF);
-        oceanPlane = makeOceanPlane(oceanAppearance);
-        yawCounter.addChild(oceanPlane);
     }
 
     void resize(int width, int height) {
@@ -127,9 +117,6 @@ final class SkySystem {
         celestialRotation.setOrientation(celestialAngle * 57.29578f,
                 1.0f, 0.0f, 0.0f);
         renderCloudBackground(world.dayTime, cloudYaw, pitch, daylight, skyColor);
-        oceanPlane.setTranslation(-world.playerX,
-                VoxelWorld.SEA_LEVEL + 1.0f - (world.playerY + 1.62f), -world.playerZ);
-
         float night = 1.0f - daylight;
         float starLevel = night * night;
         boolean starsVisible = starLevel > 0.015f;
@@ -259,63 +246,6 @@ final class SkySystem {
         short[] p = triangleQuad(corners, 3);
         short[] uv = triangleQuadUV();
         return mesh(p, uv, FIXED_SCALE, 1.0f / 256.0f, appearance);
-    }
-
-    /** Indev fills the area beyond the finite island with a distant water plane. */
-    private Appearance makeOceanAppearance() throws IOException {
-        Image terrain = GameAssets.terrain();
-        int tile = Block.atlasTile(Block.WATER);
-        int[] pixels = new int[16 * 16];
-        terrain.getRGB(pixels, 0, 16, (tile & 15) * 16, (tile >> 4) * 16, 16, 16);
-        Image waterImage = Image.createRGBImage(pixels, 16, 16, true);
-        Texture2D waterTexture = new Texture2D(new Image2D(Image2D.RGBA, waterImage));
-        waterTexture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
-        waterTexture.setWrapping(Texture2D.WRAP_REPEAT, Texture2D.WRAP_REPEAT);
-        return alphaAppearance(waterTexture);
-    }
-
-    private Mesh makeOceanPlane(Appearance appearance) {
-        short[] positions = new short[24 * 3];
-        short[] texCoords = new short[24 * 2];
-        int pAt = 0, uvAt = 0;
-        int margin = 2048;
-        int maxX = VoxelWorld.WIDTH, maxZ = VoxelWorld.DEPTH;
-        // Indev's out-of-bounds ocean renderer fills only the space outside
-        // the finite map. These four strips begin exactly at the island edge.
-        pAt = addOceanQuad(positions, texCoords, pAt, uvAt,
-                -margin, -margin, 0, maxZ + margin); uvAt += 12;
-        pAt = addOceanQuad(positions, texCoords, pAt, uvAt,
-                maxX, -margin, maxX + margin, maxZ + margin); uvAt += 12;
-        pAt = addOceanQuad(positions, texCoords, pAt, uvAt,
-                0, -margin, maxX, 0); uvAt += 12;
-        addOceanQuad(positions, texCoords, pAt, uvAt,
-                0, maxZ, maxX, maxZ + margin);
-
-        VertexArray positionArray = new VertexArray(24, 3, 2);
-        positionArray.set(0, 24, positions);
-        VertexArray texCoordArray = new VertexArray(24, 2, 2);
-        texCoordArray.set(0, 24, texCoords);
-        VertexBuffer vertices = new VertexBuffer();
-        vertices.setPositions(positionArray, 1.0f / 8.0f, null);
-        vertices.setTexCoords(0, texCoordArray, 1.0f / 256.0f, null);
-        return new Mesh(vertices, new TriangleStripArray(0,
-                new int[] { 3, 3, 3, 3, 3, 3, 3, 3 }), appearance);
-    }
-
-    private int addOceanQuad(short[] positions, short[] texCoords, int pAt, int uvAt,
-            int x0, int z0, int x1, int z1) {
-        for (int i = 0; i < OCEAN_TRIANGLE_ORDER.length; i++) {
-            int corner = OCEAN_TRIANGLE_ORDER[i];
-            int x = corner == 0 || corner == 3 ? x0 : x1;
-            int z = corner < 2 ? z0 : z1;
-            positions[pAt++] = (short)(x * 8);
-            positions[pAt++] = 0;
-            positions[pAt++] = (short)(z * 8);
-            // 256 UV units per 2048 world blocks, matching Indev's tiling.
-            texCoords[uvAt++] = (short)(x / 8);
-            texCoords[uvAt++] = (short)(z / 8);
-        }
-        return pAt;
     }
 
     private Mesh makeStars(Appearance appearance) {

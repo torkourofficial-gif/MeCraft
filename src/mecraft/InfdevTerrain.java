@@ -7,11 +7,12 @@ final class InfdevTerrain {
     static final int SEA_LEVEL = VoxelWorld.SEA_LEVEL;
     static final int CHUNK_VOLUME = CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT;
 
-    private static final int SNOWY = 0;
+    private static final int OCEAN = 0;
     private static final int PLAINS = 1;
     private static final int DESERT = 2;
     private static final int DARK_FOREST = 3;
     private static final int JUNGLE = 4;
+    private static final int SNOWY = 5;
     private static final int REGION_SIZE = 24;
 
     private InfdevTerrain() { }
@@ -37,13 +38,15 @@ final class InfdevTerrain {
                 int height = surfaceHeight(seed, worldX, worldZ, biome);
                 heights[column] = height;
                 biomes[column] = (byte)biome;
-                int top = biome == DESERT ? Block.SAND : biome == SNOWY ? Block.SNOW : Block.GRASS;
-                int fill = biome == DESERT ? Block.SAND : Block.DIRT;
+                int top = biome == DESERT || biome == OCEAN ? Block.SAND :
+                    biome == SNOWY ? Block.SNOW : Block.GRASS;
+                int fill = biome == DESERT || biome == OCEAN ? Block.SAND : Block.DIRT;
                 int at = column * WORLD_HEIGHT;
                 for (int y = 0; y < WORLD_HEIGHT; y++) {
                     byte id;
                     if (y == 0) id = Block.BEDROCK;
-                    else if (y > height) id = Block.AIR;
+                    else if (y > height) id = biome == OCEAN && y <= SEA_LEVEL ?
+                        Block.WATER : Block.AIR;
                     else if (y == height) id = (byte)top;
                     else if (y >= height - 3) id = (byte)fill;
                     else if (y < 8 && (hash(seed ^ 0x5F356495, worldX, y, worldZ) & 31) == 0) id = Block.COAL;
@@ -64,7 +67,8 @@ final class InfdevTerrain {
 
     private static int biomeAt(int seed, int x, int z) {
         int temperature = valueNoise(seed ^ 211, x, z, 256);
-        if (temperature < 46) return SNOWY;
+        if (temperature < 24) return SNOWY;
+        if (temperature < 64) return OCEAN;
         if (temperature < 164) return PLAINS;
         if (temperature < 215) return DESERT;
         return valueNoise(seed ^ 97, x, z, 192) < 128 ? DARK_FOREST : JUNGLE;
@@ -76,7 +80,8 @@ final class InfdevTerrain {
         int n3 = valueNoise(seed ^ 73, x, z, 4) - 128;
         int variation = (n1 * 9 + n2 * 5 + n3 * 2) >> 7;
         int height;
-        if (biome == SNOWY) height = 12 + variation;
+        if (biome == OCEAN) height = 5 + (variation >> 1);
+        else if (biome == SNOWY) height = 12 + variation;
         else if (biome == DESERT) height = 10 + variation;
         else if (biome == DARK_FOREST || biome == JUNGLE) height = 12 + variation;
         else height = 10 + variation;
@@ -155,6 +160,7 @@ final class InfdevTerrain {
             for (int rx = firstCellX; rx <= lastCellX; rx++) {
                 int tx = rx * 9 + 4, tz = rz * 9 + 4;
                 int biome = biomeAt(seed, tx, tz);
+                if (biome == OCEAN) continue;
                 int treeHash = hash(seed ^ 0x16A5B, rx, 0, rz);
                 int chance = biome == JUNGLE ? 3 : biome == DARK_FOREST ? 2 : biome == PLAINS ? 7 : 0;
                 if (chance == 0 || (treeHash & 15) >= chance) continue;
@@ -184,6 +190,7 @@ final class InfdevTerrain {
                 int column = z * CHUNK_SIZE + x;
                 int height = heights[column];
                 int biome = biomes[column] & 255;
+                if (biome == OCEAN) continue;
                 if (biome == DESERT) {
                     if ((hash(seed ^ 0xCA275, originX + x, height, originZ + z) & 31) == 0 &&
                         height + 2 < WORLD_HEIGHT) {

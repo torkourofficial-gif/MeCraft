@@ -8,9 +8,10 @@ around the player so exploration does not increase mesh memory use.
 ## Terrain foundation
 
 `InfdevTerrain` samples height from world coordinates and a seed. Its biome
-climate noise selects snowy land, plains, desert, dark forest, and jungle; there
-is no ocean water fill. Three smoothed noise scales shape each surface. Desert
-chunks can grow one or two block cactus plants. Regional ellipsoid caves and
+climate noise selects ocean, snowy land, plains, desert, dark forest, and jungle.
+Ocean basins fill with water up to the sea level; they are generated terrain, not
+a distant plane masking the world's edge. Three smoothed noise scales shape
+each surface. Desert chunks can grow one or two block cactus plants. Regional ellipsoid caves and
 coordinate-anchored trees stay consistent across chunk borders. Each 16 x 16
 chunk can be generated in any order. Column heights and biomes are computed
 once, then terrain, caves, and decoration are written in separate passes into
