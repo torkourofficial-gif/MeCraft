@@ -2116,7 +2116,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             drawDirtBackground(g);
             return;
         }
-        if (menuPanorama == null || panoramaWidth != w || panoramaHeight != h) {
+        // Refresh the perspective cube view periodically instead of allocating
+        // a new frame on every repaint.
+        if (menuPanorama == null || panoramaWidth != w || panoramaHeight != h ||
+                panoramaTick % 5 == 0) {
             try {
                 menuPanorama = buildMenuPanorama(h);
                 panoramaWidth = w;
@@ -2126,131 +2129,104 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             }
         }
         if (menuPanorama == null) {
-            // Keep the menu usable on devices whose heap cannot allocate the
-            // temporary panorama buffer.
             drawDirtBackground(g);
             return;
         }
-
-        int panoW = menuPanorama.getWidth();
-        int offset = (panoramaTick / 5) % panoW;
-        if (offset + w <= panoW) {
-            g.drawRegion(menuPanorama, offset, 0, w, h, Sprite.TRANS_NONE,
-                    0, 0, Graphics.TOP | Graphics.LEFT);
-        } else {
-            int first = panoW - offset;
-            g.drawRegion(menuPanorama, offset, 0, first, h, Sprite.TRANS_NONE,
-                    0, 0, Graphics.TOP | Graphics.LEFT);
-            g.drawRegion(menuPanorama, 0, 0, w - first, h, Sprite.TRANS_NONE,
-                    first, 0, Graphics.TOP | Graphics.LEFT);
-        }
+        g.drawImage(menuPanorama, 0, 0, Graphics.TOP | Graphics.LEFT);
     }
 
     /**
-     * Converts a 2:1 equirectangular image or a common cubemap cross/strip
-     * into a low-cost 2:1 panorama cache. The panorama then scrolls by
-     * cropping it, avoiding per-frame 3D work and extra image allocations.
+     * Maps the six square faces in the supplied 3x2 Minecraft panorama atlas
+     * onto a perspective cube view. The atlas has four side faces in reading
+     * order, followed by sky (bottom-middle) and ground (bottom-right).
+     * A small software-rendered frame is cached between menu updates.
      */
     private Image buildMenuPanorama(int targetHeight) {
         if (skybox == null || targetHeight <= 0) return null;
-        int targetWidth = targetHeight * 2;
+        int w = getWidth();
+        int h = targetHeight;
         int sw = skybox.getWidth(), sh = skybox.getHeight();
-        if (sw <= 0 || sh <= 0) return null;
+        if (w <= 0 || sw < 700 || sh < 500) return null;
 
-        int[] source = new int[sw * sh];
-        skybox.getRGB(source, 0, sw, 0, 0, sw, sh);
-        int[] output = new int[targetWidth * targetHeight];
-
-        boolean equirect = sw >= sh * 2 - 2 && sw <= sh * 2 + 2;
-        int face = 0;
-        boolean cross = sw % 4 == 0 && sh % 3 == 0 && sw / 4 == sh / 3;
-        boolean strip = sw % 3 == 0 && sh % 2 == 0 && sw / 3 == sh / 2;
-        int faceSize = cross ? sw / 4 : (strip ? sw / 3 : 0);
-
-        if (equirect) {
-            for (int y = 0; y < targetHeight; y++) {
-                int sy = y * sh / targetHeight;
-                for (int x = 0; x < targetWidth; x++) {
-                    int sx = (x * sw / targetWidth) % sw;
-                    output[y * targetWidth + x] = source[sy * sw + sx];
-                }
-            }
-        } else if (cross || strip) {
-            // Cube-face order is +X, -X, +Y, -Y, +Z, -Z.
-            // A cross uses the conventional 4x3 net; a 3x2 atlas is row-major.
-            double[] sinLon = new double[targetWidth];
-            double[] cosLon = new double[targetWidth];
-            double[] sinLat = new double[targetHeight];
-            double[] cosLat = new double[targetHeight];
-            for (int x = 0; x < targetWidth; x++) {
-                double lon = ((x + 0.5) / targetWidth) * Math.PI * 2.0 - Math.PI;
-                sinLon[x] = Math.sin(lon);
-                cosLon[x] = Math.cos(lon);
-            }
-            for (int y = 0; y < targetHeight; y++) {
-                double lat = Math.PI / 2.0 - ((y + 0.5) / targetHeight) * Math.PI;
-                sinLat[y] = Math.sin(lat);
-                cosLat[y] = Math.cos(lat);
-            }
-            for (int y = 0; y < targetHeight; y++) {
-                double dy = sinLat[y];
-                for (int x = 0; x < targetWidth; x++) {
-                    double dx = cosLat[y] * sinLon[x];
-                    double dz = cosLat[y] * cosLon[x];
-                    double ax = Math.abs(dx), ay = Math.abs(dy), az = Math.abs(dz);
-                    int faceIndex;
-                    double u, v, major;
-                    if (ax >= ay && ax >= az) {
-                        major = ax;
-                        if (dx >= 0.0) { faceIndex = 0; u = -dz / major; }
-                        else { faceIndex = 1; u = dz / major; }
-                        v = -dy / major;
-                    } else if (ay >= ax && ay >= az) {
-                        major = ay;
-                        if (dy >= 0.0) { faceIndex = 2; u = dx / major; v = dz / major; }
-                        else { faceIndex = 3; u = dx / major; v = -dz / major; }
-                    } else {
-                        major = az;
-                        if (dz >= 0.0) { faceIndex = 4; u = dx / major; }
-                        else { faceIndex = 5; u = -dx / major; }
-                        v = -dy / major;
-                    }
-                    int fx, fy;
-                    if (cross) {
-                        if (faceIndex == 0) { fx = 2; fy = 1; }
-                        else if (faceIndex == 1) { fx = 0; fy = 1; }
-                        else if (faceIndex == 2) { fx = 1; fy = 0; }
-                        else if (faceIndex == 3) { fx = 1; fy = 2; }
-                        else if (faceIndex == 4) { fx = 1; fy = 1; }
-                        else { fx = 3; fy = 1; }
-                    } else {
-                        fx = faceIndex % 3;
-                        fy = faceIndex / 3;
-                    }
-                    int px = fx * faceSize + (int)((u + 1.0) * 0.5 * (faceSize - 1));
-                    int py = fy * faceSize + (int)((v + 1.0) * 0.5 * (faceSize - 1));
-                    if (px < 0) px = 0;
-                    if (px >= sw) px = sw - 1;
-                    if (py < 0) py = 0;
-                    if (py >= sh) py = sh - 1;
-                    output[y * targetWidth + x] = source[py * sw + px];
-                }
-            }
-        } else {
-            // Unknown layout: center-crop the source into a usable panorama.
-            for (int y = 0; y < targetHeight; y++) {
-                int sy = y * sh / targetHeight;
-                for (int x = 0; x < targetWidth; x++) {
-                    int sx = (x * sw / targetWidth) % sw;
-                    output[y * targetWidth + x] = source[sy * sw + sx];
+        // This asset is a screenshot/export of a 3x2 cubemap atlas. Exclude
+        // the "Panorama" header and credits footer; sample the six 257px faces.
+        int faceSize = Math.min(sw / 3, (sh - 24) / 2);
+        if (faceSize < 32) return null;
+        int[] src = new int[sw * sh];
+        skybox.getRGB(src, 0, sw, 0, 0, sw, sh);
+        int[] faces = new int[6 * faceSize * faceSize];
+        int[] cellX = new int[] { 0, 258, 515, 0, 258, 515 };
+        int[] cellY = new int[] { 12, 12, 12, 269, 269, 269 };
+        for (int f = 0; f < 6; f++) {
+            for (int y = 0; y < faceSize; y++) {
+                int sy = cellY[f] + y;
+                if (sy >= sh) sy = sh - 1;
+                for (int x = 0; x < faceSize; x++) {
+                    int sx = cellX[f] + x;
+                    if (sx >= sw) sx = sw - 1;
+                    faces[f * faceSize * faceSize + y * faceSize + x] = src[sy * sw + sx];
                 }
             }
         }
+        src = null;
 
-        Image result = Image.createRGBImage(output, targetWidth, targetHeight, true);
-        source = null;
-        output = null;
-        return result;
+        // Render at half resolution, then enlarge with nearest-neighbour
+        // sampling to keep the software cube feasible on small Java ME devices.
+        int rw = (w + 1) / 2;
+        int rh = (h + 1) / 2;
+        int[] low = new int[rw * rh];
+        double yaw = (panoramaTick / 5) * Math.PI / 180.0;
+        double pitch = -0.035;
+        double fovScale = Math.tan(Math.toRadians(32.0));
+        double aspect = (double)rw / (double)rh;
+        for (int y = 0; y < rh; y++) {
+            double sy = (1.0 - 2.0 * (y + 0.5) / rh) * fovScale;
+            for (int x = 0; x < rw; x++) {
+                double sx = (2.0 * (x + 0.5) / rw - 1.0) * fovScale * aspect;
+                double vx = sx * Math.cos(yaw) + Math.sin(yaw);
+                double vy = sy * Math.cos(pitch) + Math.sin(pitch) *
+                        (sx * Math.sin(yaw) - Math.cos(yaw));
+                double vz = sx * Math.sin(yaw) - Math.cos(yaw);
+                double ax = Math.abs(vx), ay = Math.abs(vy), az = Math.abs(vz);
+                int face;
+                double u, v, major;
+                if (ay >= ax && ay >= az) {
+                    major = ay;
+                    if (vy >= 0) { face = 4; u = vx / major; v = vz / major; }
+                    else { face = 5; u = vx / major; v = -vz / major; }
+                } else if (ax >= az) {
+                    major = ax;
+                    if (vx >= 0) { face = 1; u = -vz / major; v = -vy / major; }
+                    else { face = 3; u = vz / major; v = -vy / major; }
+                } else {
+                    major = az;
+                    if (vz >= 0) { face = 2; u = vx / major; v = -vy / major; }
+                    else { face = 0; u = -vx / major; v = -vy / major; }
+                }
+                // Atlas cells: 0/1/2/3 are the four horizon directions;
+                // cell 4 is sky and cell 5 is ground.
+                int atlasFace;
+                if (face == 4) atlasFace = 4;
+                else if (face == 5) atlasFace = 5;
+                else atlasFace = face;
+                int tx = (int)((u + 1.0) * 0.5 * (faceSize - 1));
+                int ty = (int)((v + 1.0) * 0.5 * (faceSize - 1));
+                if (tx < 0) tx = 0; else if (tx >= faceSize) tx = faceSize - 1;
+                if (ty < 0) ty = 0; else if (ty >= faceSize) ty = faceSize - 1;
+                low[y * rw + x] = faces[atlasFace * faceSize * faceSize + ty * faceSize + tx];
+            }
+        }
+        faces = null;
+
+        int[] output = new int[w * h];
+        for (int y = 0; y < h; y++) {
+            int ly = y / 2;
+            for (int x = 0; x < w; x++) {
+                output[y * w + x] = low[ly * rw + x / 2];
+            }
+        }
+        low = null;
+        return Image.createRGBImage(output, w, h, true);
     }
 
     private void drawDirtBackground(Graphics g) {
