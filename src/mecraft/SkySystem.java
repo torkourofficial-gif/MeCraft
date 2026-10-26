@@ -19,24 +19,19 @@ import javax.microedition.m3g.VertexBuffer;
 /** Indev-style sky objects, kept in a small fixed set of M3G meshes. */
 final class SkySystem {
     private static final float FIXED_SCALE = 1.0f / 256.0f;
-    private static final float NORMAL_TAN_HALF_FOV = (float)Math.tan(34.0 * Math.PI / 180.0);
     private static final int STAR_COUNT = 500;
-    private static final int CLOUD_BAND_HEIGHT = 160;
-    private static final int CLOUD_COLOR_STEP = 8;
+    private static final int GRADIENT_HEIGHT = 64;
     private final Group yawCounter = new Group();
     private final Group celestialRotation = new Group();
     private final Background skyBackground;
     private final Mesh stars;
     private final Material starsMaterial;
-    private final int cloudWidth;
-    private final byte[] cloudAlpha;
-    private Image2D cloudBackground;
-    private byte[] cloudPixels;
-    private float tanHalfFov = NORMAL_TAN_HALF_FOV;
+    private final Image2D skyGradient;
+    private final byte[] gradientPixels = new byte[GRADIENT_HEIGHT * 3];
     private int viewportWidth;
     private int viewportHeight;
-    private int lastCloudTint;
-    private int lastSkyColor;
+    private int lastGradientSky = -1;
+    private int lastDaylightLevel = -1;
     private boolean starColorReady;
     private int lastStarColor;
     private boolean starVisibilityReady;
@@ -64,17 +59,8 @@ final class SkySystem {
         stars = makeStars(starAppearance);
         celestialRotation.addChild(stars);
 
-        Image cloudImage = GameAssets.image("clouds.png");
-        cloudWidth = cloudImage.getWidth();
-        int cloudHeight = cloudImage.getHeight();
-        int[] sourcePixels = new int[cloudWidth * cloudHeight];
-        cloudImage.getRGB(sourcePixels, 0, cloudWidth, 0, 0, cloudWidth, cloudHeight);
-        cloudAlpha = new byte[sourcePixels.length];
-        for (int i = 0; i < sourcePixels.length; i++)
-            cloudAlpha[i] = (byte)(sourcePixels[i] >>> 24);
-        sourcePixels = null;
-        cloudPixels = new byte[cloudWidth * CLOUD_BAND_HEIGHT * 3];
-        cloudBackground = new Image2D(Image2D.RGB, cloudWidth, CLOUD_BAND_HEIGHT);
+        skyGradient = new Image2D(Image2D.RGB, 1, GRADIENT_HEIGHT);
+        updateGradient(1.0f, 0xFF82B8E8);
         resize(width, height);
     }
 
@@ -83,24 +69,17 @@ final class SkySystem {
                 (width == viewportWidth && height == viewportHeight)) return;
         viewportWidth = width;
         viewportHeight = height;
-        skyBackground.setImage(cloudBackground);
-        skyBackground.setImageMode(Background.REPEAT, Background.BORDER);
+        skyBackground.setImage(skyGradient);
+        skyBackground.setImageMode(Background.BORDER, Background.BORDER);
         skyBackground.setCrop(0, 0, width, height);
     }
 
-    void setFieldOfView(float fieldOfView) {
-        float next = (float)Math.tan(fieldOfView * Math.PI / 360.0);
-        if (Math.abs(next - tanHalfFov) < 0.0001f) return;
-        tanHalfFov = next;
-    }
-
-    void update(VoxelWorld world, float yaw, float cloudYaw, float pitch,
-            float celestialAngle,
+    void update(VoxelWorld world, float yaw, float celestialAngle,
             float daylight, int skyColor) {
         yawCounter.setOrientation(-yaw, 0.0f, 1.0f, 0.0f);
         celestialRotation.setOrientation(celestialAngle * 57.29578f,
                 1.0f, 0.0f, 0.0f);
-        renderCloudBackground(world.dayTime, cloudYaw, pitch, daylight, skyColor);
+        updateGradient(daylight, skyColor);
         float night = 1.0f - daylight;
         float starLevel = night * night;
         boolean starsVisible = starLevel > 0.015f;
@@ -123,47 +102,32 @@ final class SkySystem {
         }
     }
 
-    /** Composite a small 2D cloud strip; M3G scrolls it as a repeated background. */
-    private void renderCloudBackground(int dayTime, float yawDegrees,
-            float pitchDegrees, float daylight, int skyColor) {
-        int skyR = quantizeColor(skyColor >> 16 & 255);
-        int skyG = quantizeColor(skyColor >> 8 & 255);
-        int skyB = quantizeColor(skyColor & 255);
-        int quantizedSky = 0xFF000000 | (skyR << 16) | (skyG << 8) | skyB;
-        int cloudTint = quantizeColor((int)(190.0f + daylight * 65.0f));
-        if (cloudTint != lastCloudTint || quantizedSky != lastSkyColor) {
-            for (int y = 0; y < CLOUD_BAND_HEIGHT; y++) {
-                int source = y * cloudWidth;
-                int target = source * 3;
-                for (int x = 0; x < cloudWidth; x++) {
-                    int alpha = cloudAlpha[source + x] & 255;
-                    if (alpha <= 12) alpha = 0;
-                    int inverse = 255 - alpha;
-                    cloudPixels[target++] = (byte)((skyR * inverse + cloudTint * alpha) / 255);
-                    cloudPixels[target++] = (byte)((skyG * inverse + cloudTint * alpha) / 255);
-                    cloudPixels[target++] = (byte)((skyB * inverse + cloudTint * alpha) / 255);
-                }
-            }
-            cloudBackground.set(0, 0, cloudWidth, CLOUD_BAND_HEIGHT, cloudPixels);
-            skyBackground.setColor(quantizedSky);
-            lastCloudTint = cloudTint;
-            lastSkyColor = quantizedSky;
+    /** Build a tiny 2D color gradient, refreshed only when its palette changes. */
+    private void updateGradient(float daylight, int skyColor) {
+        int skyR = skyColor >> 16 & 255;
+        int skyG = skyColor >> 8 & 255;
+        int skyB = skyColor & 255;
+        int quantizedSky = (skyR >> 3) << 10 | (skyG >> 3) << 5 | (skyB >> 3);
+        int daylightLevel = (int)(daylight * 16.0f + 0.5f);
+        if (daylightLevel < 0) daylightLevel = 0;
+        if (daylightLevel > 16) daylightLevel = 16;
+        if (quantizedSky == lastGradientSky && daylightLevel == lastDaylightLevel) return;
+
+        float day = daylightLevel / 16.0f;
+        int topR = (int)(8.0f + 40.0f * day);
+        int topG = (int)(13.0f + 94.0f * day);
+        int topB = (int)(35.0f + 167.0f * day);
+        for (int y = 0; y < GRADIENT_HEIGHT; y++) {
+            float t = y / (float)(GRADIENT_HEIGHT - 1);
+            float blend = t * t * (3.0f - 2.0f * t);
+            int at = y * 3;
+            gradientPixels[at] = (byte)(topR + (int)((skyR - topR) * blend));
+            gradientPixels[at + 1] = (byte)(topG + (int)((skyG - topG) * blend));
+            gradientPixels[at + 2] = (byte)(topB + (int)((skyB - topB) * blend));
         }
-
-        int dayShift = (int)(dayTime * 0.00375f);
-        int yawShift = (int)(yawDegrees * cloudWidth / 360.0f);
-        int cropX = -yawShift - dayShift;
-        int cropY = -(int)(pitchDegrees * 0.35f);
-        float fovScale = tanHalfFov / NORMAL_TAN_HALF_FOV;
-        int cropWidth = (int)(viewportWidth * fovScale);
-        int cropHeight = (int)(viewportHeight * fovScale);
-        if (cropWidth < 1) cropWidth = 1;
-        if (cropHeight < 1) cropHeight = 1;
-        skyBackground.setCrop(cropX, cropY, cropWidth, cropHeight);
-    }
-
-    private int quantizeColor(int value) {
-        return value / CLOUD_COLOR_STEP * CLOUD_COLOR_STEP;
+        skyGradient.set(0, 0, 1, GRADIENT_HEIGHT, gradientPixels);
+        lastGradientSky = quantizedSky;
+        lastDaylightLevel = daylightLevel;
     }
 
     private Mesh skyQuad(float y, float halfSize, Appearance appearance) {

@@ -203,7 +203,6 @@ final class ChunkRenderer {
         scene.addChild(droppedItems.tntFlashMesh);
         scene.addChild(cameraPivot);
         scene.setActiveCamera(camera);
-        sky.setColor(0xFF82B8E8);
         sky.setDepthClearEnable(true);
         scene.setBackground(sky);
         sunlight.setMode(Light.AMBIENT);
@@ -253,7 +252,6 @@ final class ChunkRenderer {
         tanVerticalFov = (float)Math.tan(cameraFov * Math.PI / 360.0);
         tanHorizontalFov = tanVerticalFov * (float)builtWidth / (float)builtHeight;
         camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight, 0.1f, CAMERA_FAR);
-        skyObjects.setFieldOfView(cameraFov);
     }
 
     float fieldOfView() { return cameraFov; }
@@ -263,7 +261,7 @@ final class ChunkRenderer {
         cameraPivot.setTranslation(world.playerX, world.playerY + 1.62f, world.playerZ);
         // M3G cameras look down local -Z; 180 degrees makes yaw zero face +Z.
         cameraPivot.setOrientation(world.yaw + 180.0f, 0.0f, 1.0f, 0.0f);
-        skyObjects.update(world, world.yaw + 180.0f, world.yaw, pitch,
+        skyObjects.update(world, world.yaw + 180.0f,
                 ((float)world.dayTime / (float)VoxelWorld.DAY_LENGTH - 0.15f) * 6.2831855f,
                 currentDaylight, currentSkyColor);
         camera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
@@ -816,7 +814,6 @@ final class ChunkRenderer {
         // Keep moonlight visible on small, low-brightness phone displays.
         sunlight.setIntensity(0.28f + sun * 0.72f);
         currentSkyColor = blendColor(0xFF26354A, 0xFF82B8E8, sun);
-        sky.setColor(currentSkyColor);
         updateTorchLights(world);
     }
 
