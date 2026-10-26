@@ -33,6 +33,7 @@ final class MobSystem {
 
     private final Mob[] mobs = new Mob[MOB_COUNT];
     private final Arrow[] arrows = new Arrow[3];
+    private final Group scene;
     private final DroppedItemSystem drops;
     private final ParticleSystem particles;
     private final Appearance fireAppearance;
@@ -46,6 +47,7 @@ final class MobSystem {
     private int nextArrow;
 
     MobSystem(Group scene, DroppedItemSystem drops, ParticleSystem particles) throws IOException {
+        this.scene = scene;
         this.drops = drops;
         this.particles = particles;
         fireAppearance = skin(texture(GameAssets.image("fire.png")));
