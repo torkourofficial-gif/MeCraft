@@ -37,6 +37,7 @@ final class Crafting {
                 setRecipe(recipe, ItemCatalog.tool(kind, tier), 1, name,
                           material, materialCount, ItemCatalog.STICK, stickCount);
             }
+        }
         int extra = TOOL_RECIPES + TOOL_RECIPE_COUNT;
         setRecipe(extra++, ItemCatalog.BREAD, 1, "Pan", ItemCatalog.WHEAT, 3);
         setRecipe(extra++, ItemCatalog.MUSHROOM_STEW, 1, "Estofado de setas",
@@ -70,7 +71,6 @@ final class Crafting {
         for (int i = 0; i < armorItems.length; i++)
             setRecipe(extra++, armorItems[i], 1, ItemCatalog.name(armorItems[i]),
                     armorMaterials[i], armorCounts[i]);
-        }
     }
 
     private Crafting() { }
