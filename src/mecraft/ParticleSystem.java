@@ -137,6 +137,13 @@ final class ParticleSystem {
     }
 
     void update(VoxelWorld world, float yawDegrees, float pitchDegrees) {
+        // Particle vertices are stored as signed 16-bit fixed-point values.
+        // Keep them near the origin so they remain representable after the
+        // player has flown far from the initial spawn in an infinite world.
+        float originX = world.playerX;
+        float originY = world.playerY;
+        float originZ = world.playerZ;
+        mesh.setTranslation(originX, originY, originZ);
         double yaw = yawDegrees * Math.PI / 180.0;
         double pitch = pitchDegrees * Math.PI / 180.0;
         float rightX = (float)Math.cos(yaw);
@@ -172,27 +179,29 @@ final class ParticleSystem {
             } else {
                 setParticleColor(i, 0);
             }
-            writeQuad(i, rightX, rightZ, upX, upY, upZ);
+            writeQuad(i, rightX, rightZ, upX, upY, upZ,
+                    originX, originY, originZ);
         }
         positionArray.set(0, VERTICES, positions);
         texCoordArray.set(0, VERTICES, texCoords);
         colorArray.set(0, VERTICES, colors);
     }
 
-    private void writeQuad(int particle, float rx, float rz, float ux, float uy, float uz) {
+    private void writeQuad(int particle, float rx, float rz, float ux, float uy, float uz,
+            float originX, float originY, float originZ) {
         float half = size[particle];
-        float x0 = x[particle] - rx * half - ux * half;
-        float y0 = y[particle] - uy * half;
-        float z0 = z[particle] - rz * half - uz * half;
-        float x1 = x[particle] + rx * half - ux * half;
-        float y1 = y[particle] - uy * half;
-        float z1 = z[particle] + rz * half - uz * half;
-        float x2 = x[particle] - rx * half + ux * half;
-        float y2 = y[particle] + uy * half;
-        float z2 = z[particle] - rz * half + uz * half;
-        float x3 = x[particle] + rx * half + ux * half;
-        float y3 = y[particle] + uy * half;
-        float z3 = z[particle] + rz * half + uz * half;
+        float x0 = x[particle] - originX - rx * half - ux * half;
+        float y0 = y[particle] - originY - uy * half;
+        float z0 = z[particle] - originZ - rz * half - uz * half;
+        float x1 = x[particle] - originX + rx * half - ux * half;
+        float y1 = y[particle] - originY - uy * half;
+        float z1 = z[particle] - originZ + rz * half - uz * half;
+        float x2 = x[particle] - originX - rx * half + ux * half;
+        float y2 = y[particle] - originY + uy * half;
+        float z2 = z[particle] - originZ - rz * half + uz * half;
+        float x3 = x[particle] - originX + rx * half + ux * half;
+        float y3 = y[particle] - originY + uy * half;
+        float z3 = z[particle] - originZ + rz * half + uz * half;
         int v = particle * 12;
         putPosition(v, x0, y0, z0); putPosition(v + 3, x1, y1, z1);
         putPosition(v + 6, x2, y2, z2); putPosition(v + 9, x3, y3, z3);
