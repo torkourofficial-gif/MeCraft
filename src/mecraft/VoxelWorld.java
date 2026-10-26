@@ -12,9 +12,9 @@ import javax.microedition.rms.RecordStoreException;
 /** Infinite, seed-generated terrain with an editable saved starting area. */
 final class VoxelWorld {
     static final int WIDTH = 48;
-    static final int HEIGHT = 24;
+    static final int HEIGHT = 32;
     static final int DEPTH = 48;
-    static final int SEA_LEVEL = 7;
+    static final int SEA_LEVEL = 13;
     static final int CHUNK_XZ = 16;
     static final int CHUNK_Y = 8;
     static final int CHUNKS_X = WIDTH / CHUNK_XZ;
@@ -31,6 +31,7 @@ final class VoxelWorld {
     private static final int MCF9_ITEM_COUNT = 51;
     private static final int PRE_ALPHA_BLOCK_COUNT = 81;
     private static final int ALPHA_ITEM_SAVE_MAGIC = 0x4D434645; // MCFE
+    private static final int DEEP_WORLD_SAVE_MAGIC = 0x4D434646; // MCFF
     private static final int INFDEV_EDIT_MAGIC = 0x49464431;
     private static final int INFDEV_EDIT_POINTER_MAGIC = 0x49465031;
     private static final int INFDEV_EDIT_PAGE_MAGIC = 0x49465047;
@@ -814,7 +815,8 @@ final class VoxelWorld {
 
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(blocks.length * 2 + 64);
             DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(ALPHA_ITEM_SAVE_MAGIC); // MCFE: Alpha item catalog and dimension state
+            out.writeInt(DEEP_WORLD_SAVE_MAGIC); // MCFF: MCFE data with expanded world height
+            out.writeByte(HEIGHT);
             out.writeInt(seed);
             out.writeByte(mode);
             out.writeUTF(worldName == null ? "Mundo" : worldName);
@@ -926,11 +928,14 @@ final class VoxelWorld {
             boolean otherNether = in.readBoolean();
             int totalBytes = in.readInt();
             int pageCount = in.readUnsignedShort();
-            if (otherNether == world.nether || totalBytes != BLOCK_COUNT * 2 ||
+            int savedHeight = totalBytes / (WIDTH * DEPTH * 2);
+            int oldBlockCount = WIDTH * DEPTH * savedHeight;
+            if (otherNether == world.nether || savedHeight < 8 || savedHeight > HEIGHT ||
+                totalBytes != oldBlockCount * 2 ||
                 pageCount != (totalBytes + DIMENSION_PAGE_BYTES - 1) / DIMENSION_PAGE_BYTES ||
                 dimStore.getNumRecords() != pageCount + 1) return;
-            byte[] otherBlocks = new byte[BLOCK_COUNT];
-            byte[] otherWater = new byte[BLOCK_COUNT];
+            byte[] savedBlocks = new byte[oldBlockCount];
+            byte[] savedWater = new byte[oldBlockCount];
             boolean[] loaded = new boolean[pageCount];
             RecordEnumeration pages = dimStore.enumerateRecords(null, null, false);
             try {
@@ -949,8 +954,8 @@ final class VoxelWorld {
                     for (int i = 0; i < length; i++) {
                         int target = offset + i;
                         byte value = pageIn.readByte();
-                        if (target < BLOCK_COUNT) otherBlocks[target] = value;
-                        else otherWater[target - BLOCK_COUNT] = value;
+                        if (target < oldBlockCount) savedBlocks[target] = value;
+                        else savedWater[target - oldBlockCount] = value;
                     }
                     loaded[page] = true;
                 }
@@ -958,6 +963,10 @@ final class VoxelWorld {
                 pages.destroy();
             }
             for (int i = 0; i < loaded.length; i++) if (!loaded[i]) return;
+            byte[] otherBlocks = new byte[BLOCK_COUNT];
+            byte[] otherWater = new byte[BLOCK_COUNT];
+            int shift = otherNether ? 0 : HEIGHT - savedHeight;
+            expandSavedHeight(savedBlocks, savedWater, savedHeight, shift, otherBlocks, otherWater);
             world.otherDimensionIsNether = otherNether;
             world.otherDimensionBlocks = otherBlocks;
             world.otherDimensionWaterLevels = otherWater;
@@ -1011,18 +1020,21 @@ final class VoxelWorld {
             byte[] data = store.getRecord(1);
             DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
             int format = in.readInt();
+            boolean deepWorldFormat = format == DEEP_WORLD_SAVE_MAGIC;
             if (format != 0x4D434631 && format != 0x4D434632 && format != 0x4D434633 &&
                 format != 0x4D434634 && format != 0x4D434635 && format != 0x4D434636 &&
                 format != 0x4D434637 && format != 0x4D434638 && format != 0x4D434639 &&
                 format != 0x4D434641 && format != 0x4D434642 && format != 0x4D434643 &&
-                format != 0x4D434644 && format != ALPHA_ITEM_SAVE_MAGIC) return null;
+                format != 0x4D434644 && format != ALPHA_ITEM_SAVE_MAGIC && !deepWorldFormat) return null;
+            int savedHeight = deepWorldFormat ? in.readUnsignedByte() : 24;
+            if (savedHeight < 8 || savedHeight > HEIGHT) return null;
             int seed = in.readInt();
             int mode = in.readByte();
             boolean namedFormat = format == 0x4D434642 || format == 0x4D434643 ||
-                                  format == 0x4D434644 || format == ALPHA_ITEM_SAVE_MAGIC;
+                                  format == 0x4D434644 || format == ALPHA_ITEM_SAVE_MAGIC || deepWorldFormat;
             VoxelWorld world = new VoxelWorld(seed, mode);
             world.worldName = namedFormat ? in.readUTF() : "Mundo guardado";
-            boolean alphaItemFormat = format == ALPHA_ITEM_SAVE_MAGIC;
+            boolean alphaItemFormat = format == ALPHA_ITEM_SAVE_MAGIC || deepWorldFormat;
             boolean explicitDimensionFormat = format == 0x4D434644 || alphaItemFormat;
             boolean savedNether = explicitDimensionFormat ? in.readBoolean() :
                                   "NETHER".equalsIgnoreCase(world.worldName);
@@ -1102,17 +1114,24 @@ final class VoxelWorld {
             if (format == 0x4D434638 || format == 0x4D434639 || currentFormat) {
                 world.dayTime = in.readUnsignedShort() % DAY_LENGTH;
             }
-            in.readFully(world.blocks);
-            if (world.nether) world.convertLegacyNetherWater();
+            int oldBlockCount = WIDTH * savedHeight * DEPTH;
+            byte[] savedBlocks = new byte[oldBlockCount];
+            byte[] savedWater = new byte[oldBlockCount];
+            in.readFully(savedBlocks);
             if (format == 0x4D434634 || format == 0x4D434635 || format == 0x4D434636 ||
                 format == 0x4D434637 || format == 0x4D434638 || format == 0x4D434639 ||
                 currentFormat)
-                in.readFully(world.waterLevels);
+                in.readFully(savedWater);
+            int heightShift = world.nether ? 0 : HEIGHT - savedHeight;
+            expandSavedHeight(savedBlocks, savedWater, savedHeight, heightShift,
+                    world.blocks, world.waterLevels);
+            if (heightShift > 0) world.playerY += heightShift;
             int editGeneration = 0, editPageCount = 0;
             if (in.available() >= 6 && in.readInt() == INFDEV_EDIT_MAGIC) {
                 int count = in.readUnsignedShort();
                 for (int i = 0; i < count; i++) {
                     int x = in.readInt(), y = in.readUnsignedByte(), z = in.readInt();
+                    y += heightShift;
                     byte id = in.readByte(), meta = in.readByte();
                     int edit = world.ensureEdit(x, y, z);
                     if (edit >= 0) { world.editId[edit] = id; world.editMeta[edit] = meta; }
@@ -1123,7 +1142,7 @@ final class VoxelWorld {
                 }
             }
             if (editPageCount > 0 && editPageCount <= store.getNumRecords())
-                loadEditPages(store, world, editGeneration, editPageCount);
+                loadEditPages(store, world, editGeneration, editPageCount, heightShift);
             if (world.nether) world.convertLegacyNetherWater();
             if (explicitDimensionFormat) loadOtherDimension(storeName, world);
             world.editGeneration = editGeneration;
@@ -1142,8 +1161,40 @@ final class VoxelWorld {
         }
     }
 
+    private static void expandSavedHeight(byte[] oldBlocks, byte[] oldWater, int oldHeight,
+                                          int shift, byte[] newBlocks, byte[] newWater) {
+        if (shift == 0) {
+            for (int y = 0; y < oldHeight; y++) {
+                int oldLayer = y * WIDTH * DEPTH;
+                int newLayer = oldLayer;
+                System.arraycopy(oldBlocks, oldLayer, newBlocks, newLayer, WIDTH * DEPTH);
+                System.arraycopy(oldWater, oldLayer, newWater, newLayer, WIDTH * DEPTH);
+            }
+            return;
+        }
+        for (int i = 0; i < newBlocks.length; i++) {
+            newBlocks[i] = Block.AIR;
+            newWater[i] = 0;
+        }
+        for (int z = 0; z < DEPTH; z++) {
+            for (int x = 0; x < WIDTH; x++) {
+                newBlocks[(z * WIDTH) + x] = Block.BEDROCK;
+                for (int y = 1; y < shift; y++)
+                    newBlocks[(y * DEPTH + z) * WIDTH + x] = Block.STONE;
+                for (int y = 1; y < oldHeight; y++) {
+                    int oldIndex = (y * DEPTH + z) * WIDTH + x;
+                    int newY = y + shift;
+                    if (newY >= HEIGHT) continue;
+                    int newIndex = (newY * DEPTH + z) * WIDTH + x;
+                    newBlocks[newIndex] = oldBlocks[oldIndex];
+                    newWater[newIndex] = oldWater[oldIndex];
+                }
+            }
+        }
+    }
+
     private static void loadEditPages(RecordStore store, VoxelWorld world,
-                                      int generation, int pageCount) {
+                                      int generation, int pageCount, int heightShift) {
         RecordEnumeration records = null;
         boolean[] loaded = new boolean[pageCount];
         try {
@@ -1166,7 +1217,7 @@ final class VoxelWorld {
                     continue;
                 loaded[page] = true;
                 for (int i = 0; i < count; i++) {
-                    int x = in.readInt(), y = in.readUnsignedByte(), z = in.readInt();
+                    int x = in.readInt(), y = in.readUnsignedByte() + heightShift, z = in.readInt();
                     byte id = in.readByte(), meta = in.readByte();
                     boolean dimension = pageMagic == INFDEV_EDIT_PAGE_MAGIC_V2 ? in.readBoolean() : world.nether;
                     int edit = world.ensureEdit(x, y, z, dimension);

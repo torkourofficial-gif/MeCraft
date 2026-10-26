@@ -1300,7 +1300,13 @@ final class MobSystem {
         }
 
         private void buildSpider(Appearance appearance, Appearance eyes) {
-            addPart(pose, 0, 0, 6, 6, 6, 6, 6, 6,
+            // Alpha's spider body and legs use the opposite vertical model axis
+            // from the head. Keep them in a flipped group so the head stays upright.
+            Group body = new Group();
+            body.setTranslation(0.0f, 1.125f, 0.0f);
+            body.setOrientation(180.0f, 1.0f, 0.0f, 0.0f);
+            pose.addChild(body);
+            addPart(body, 0, 0, 6, 6, 6, 6, 6, 6,
                     0.0f, 0.5625f, 0.0f, 0, 0, 1, 0, appearance);
             head.setTranslation(0.0f, 0.5625f, -0.1875f);
             pose.addChild(head);
@@ -1309,7 +1315,7 @@ final class MobSystem {
             if (eyes != null)
                 addPart(head, 32, 4, 8, 8, 8, 8, 8, 8,
                         0.0f, 0.0f, -0.252f, 0, 0, 1, 0, eyes);
-            addPart(pose, 0, 12, 10, 8, 12, 10, 8, 12,
+            addPart(body, 0, 12, 10, 8, 12, 10, 8, 12,
                     0.0f, 0.5625f, 0.5625f, 0, 0, 1, 0, appearance);
             for (int i = 0; i < 8; i++) {
                 boolean left = (i & 1) == 0;
@@ -1319,7 +1325,7 @@ final class MobSystem {
                 Group leg = new Group();
                 leg.setTranslation(side * 0.25f, 0.5625f, z);
                 leg.setOrientation(side * (row == 0 || row == 3 ? 45.0f : 33.3f), 0, 0, 1);
-                pose.addChild(leg);
+                body.addChild(leg);
                 Group swing = new Group();
                 leg.addChild(swing);
                 addPart(swing, 18, 0, 16, 2, 2, 16, 2, 2,

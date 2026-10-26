@@ -138,12 +138,12 @@ final class InfdevTerrain {
         int n3 = valueNoise(seed ^ 73, x, z, 4) - 128;
         int variation = (n1 * 9 + n2 * 5 + n3 * 2) >> 7;
         int height;
-        if (biome == OCEAN) height = 5 + (variation >> 1);
-        else if (biome == SNOWY) height = 12 + variation;
-        else if (biome == DESERT) height = 10 + variation;
-        else if (biome == DARK_FOREST || biome == JUNGLE) height = 12 + variation;
-        else height = 10 + variation;
-        if (height < 3) return 3;
+        if (biome == OCEAN) height = 13 + (variation >> 1);
+        else if (biome == SNOWY) height = 20 + variation;
+        else if (biome == DESERT) height = 18 + variation;
+        else if (biome == DARK_FOREST || biome == JUNGLE) height = 20 + variation;
+        else height = 18 + variation;
+        if (height < 11) return 11;
         if (height > WORLD_HEIGHT - 5) return WORLD_HEIGHT - 5;
         return height;
     }
@@ -191,12 +191,12 @@ final class InfdevTerrain {
         for (int rz = firstCellZ; rz <= lastCellZ; rz++) {
             for (int rx = firstCellX; rx <= lastCellX; rx++) {
                 int regionHash = hash(seed ^ 0x35A76D21, rx, 0, rz);
-                if ((regionHash & 3) != 0) continue;
+                if ((regionHash & 1) != 0) continue;
                 int centerX = rx * REGION_SIZE + 5 + ((regionHash >>> 4) & 15);
                 int centerZ = rz * REGION_SIZE + 5 + ((regionHash >>> 9) & 15);
-                int centerY = 3 + ((regionHash >>> 14) & 7);
-                int radius = 3 + ((regionHash >>> 20) & 3);
-                int verticalRadius = 2 + ((regionHash >>> 24) & 1);
+                int centerY = 8 + ((regionHash >>> 14) & 15);
+                int radius = 4 + ((regionHash >>> 20) & 3);
+                int verticalRadius = 2 + ((regionHash >>> 24) & 2);
                 int minX = Math.max(originX, centerX - radius);
                 int maxX = Math.min(originX + CHUNK_SIZE - 1, centerX + radius);
                 int minZ = Math.max(originZ, centerZ - radius);
@@ -207,8 +207,9 @@ final class InfdevTerrain {
                         int horizontal = dx * dx + dz * dz;
                         if (horizontal > radius * radius) continue;
                         int column = (z - originZ) * CHUNK_SIZE + x - originX;
-                        for (int y = Math.max(2, centerY - verticalRadius);
-                             y <= centerY + verticalRadius && y < heights[column] - 3; y++) {
+                        int caveCeiling = Math.min(centerY + verticalRadius, heights[column] - 3);
+                        for (int y = Math.max(3, centerY - verticalRadius);
+                             y <= caveCeiling && y < WORLD_HEIGHT - 1; y++) {
                             int dy = y - centerY;
                             if (horizontal * verticalRadius * verticalRadius +
                                 dy * dy * radius * radius >
