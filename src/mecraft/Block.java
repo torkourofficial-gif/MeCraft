@@ -38,7 +38,8 @@ final class Block {
         0,2,1,18,20,52,17,34,33,4,59,16,12,13,64,21,43,60,80,87
     };
     private static final int[] EXTRA_TILES = makeExtraTiles();
-    static final int COUNT = DECORATIVE_START + EXTRA_TILES.length;
+    static final byte CHEST = (byte)(DECORATIVE_START + EXTRA_TILES.length);
+    static final int COUNT = DECORATIVE_START + EXTRA_TILES.length + 1;
     static final int[] TILE = makeTiles();
     static final String[] NAME = makeNames();
     static final int[] CREATIVE_PALETTE = makeCreativePalette();
@@ -172,6 +173,7 @@ final class Block {
         int[] basic = new int[] { 0,0,2,1,18,205,20,52,17,34,33,4,59,16,2,12,13,80,64,8 };
         System.arraycopy(basic, 0, result, 0, basic.length);
         for (int i = 0; i < EXTRA_TILES.length; i++) result[DECORATIVE_START + i] = EXTRA_TILES[i];
+        result[CHEST] = 4; // Caja de madera: tablones como textura de bloque.
         return result;
     }
 
@@ -298,6 +300,7 @@ final class Block {
     }
 
     static int dropId(byte id) {
+        if (id == CHEST) return CHEST;
         if (id == GRASS || id == FARMLAND) return DIRT;
         if (id == STONE) return COBBLESTONE;
         if (id == COAL) return ItemCatalog.COAL_ITEM;
@@ -322,7 +325,7 @@ final class Block {
         if (id == GRASS) return 6;
         if (id == STONE) return 15;
         if (id == LOG || id == PLANKS) return 20;
-        if (id == CRAFTING_TABLE) return 25;
+        if (id == CRAFTING_TABLE || id == CHEST) return 25;
         if (id == WOOL) return 8;
         if (id == COAL || id == IRON) return 30;
         if (id == GOLD_ORE || id == DIAMOND_ORE || id == REDSTONE_ORE) return 30;
@@ -343,6 +346,7 @@ final class Block {
     }
 
     static int topTile(byte id) {
+        if (id == CHEST) return 4;
         if (id == TNT) return 9;
         if (id == CACTUS) return CACTUS_TOP_TILE;
         if (isDecorative(id)) return TILE[id & 255];
@@ -354,6 +358,7 @@ final class Block {
     }
 
     static int sideTile(byte id) {
+        if (id == CHEST) return 4;
         if (id == DOOR) return 97;
         if (id == TNT) return 8;
         if (isDecorative(id)) return TILE[id & 255];
