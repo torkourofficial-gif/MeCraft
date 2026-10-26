@@ -654,9 +654,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (id == Block.CHEST) {
             loadChestContents(x, y, z);
             for (int i = 0; i < chestItems.length; i++) {
-                if (chestItems[i] > 0 && chestCounts[i] > 0)
-                    renderer.spawnDroppedItem(chestItems[i], x, y, z);
+                int item = chestItems[i], amount = chestCounts[i];
+                if (item > 0 && amount > 0) {
+                    int room = Math.max(0, 64 - inventory[item]);
+                    int moved = Math.min(room, amount);
+                    inventory[item] += moved;
+                    // Overflow still appears in the world as a dropped stack.
+                    if (amount > moved) renderer.spawnDroppedItem(item, x, y, z);
+                }
             }
+            copyInventoryToWorld();
             clearChestContents();
         }
         if (id == Block.DOOR) {
