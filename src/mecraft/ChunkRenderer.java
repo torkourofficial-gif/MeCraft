@@ -1389,13 +1389,6 @@ final class ChunkRenderer {
             ensure(vertexCount + 4);
             int u0 = 1, v0 = 1;
             int u1 = 1 + width * 16, v1 = 1 + height * 16;
-            // Shift only the grass side sample down by one atlas pixel. Without
-            // this inset correction, the repeating UV seam leaks the top edge
-            // into the lowest row of the side texture.
-            if (tile == Block.sideTile(Block.GRASS) && face >= 1 && face <= 4) {
-                v0++;
-                v1++;
-            }
             int shade = face == 0 ? 255 : (face == 5 ? 135 : (face <= 2 ? 205 : 180));
             if (face == 0) {
                 vertex(x,y+1,z, u0,v1,shade); vertex(x,y+1,z+height, u0,v0,shade);
