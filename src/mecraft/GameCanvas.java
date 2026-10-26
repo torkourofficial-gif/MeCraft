@@ -2046,8 +2046,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 (world.mode == 1 || inventory[id] > 0)) drawIcon(g, id, x, y + 3, false);
             if (world.mode == 0 && inventory[id] > 0) {
                 if (!ItemCatalog.isTool(id)) {
-                    g.setColor(255, 255, 255);
-                    g.drawString(Integer.toString(inventory[id]), x + 17, y + 20, Graphics.RIGHT | Graphics.BOTTOM);
+                    drawOutlinedCount(g, Integer.toString(inventory[id]), x + 17, y + 20,
+                            Graphics.RIGHT | Graphics.BOTTOM);
                 } else drawDurability(g, id, x + 2, y + 19);
             }
         }
@@ -2176,8 +2176,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             int sy = top + 199;
             drawInventoryCell(g, hotbar[slot], sx, sy);
             if (hotbar[slot] > 0 && inventory[hotbar[slot]] > 0 && !ItemCatalog.isTool(hotbar[slot])) {
-                g.setColor(255, 255, 255);
-                g.drawString(Integer.toString(inventory[hotbar[slot]]), sx + 16, sy + 16,
+                drawOutlinedCount(g, Integer.toString(inventory[hotbar[slot]]), sx + 16, sy + 16,
                         Graphics.RIGHT | Graphics.BOTTOM);
             }
         }
@@ -2257,12 +2256,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (world.mode == 1 || amount > 0) {
             drawIcon(g, id, x + 1, y + 1, false);
             if (world.mode == 0 && amount > 1 && !ItemCatalog.isTool(id)) {
-                g.setColor(255, 255, 255);
-                g.drawString(Integer.toString(amount), x + 17, y + 17,
+                drawOutlinedCount(g, Integer.toString(amount), x + 17, y + 17,
                         Graphics.RIGHT | Graphics.BOTTOM);
             }
             if (ItemCatalog.isTool(id) && amount > 0) drawDurability(g, id, x + 1, y + 16);
         }
+    }
+
+    private void drawOutlinedCount(Graphics g, String text, int x, int y, int anchor) {
+        g.setColor(0, 0, 0);
+        g.drawString(text, x - 1, y, anchor);
+        g.drawString(text, x + 1, y, anchor);
+        g.drawString(text, x, y - 1, anchor);
+        g.drawString(text, x, y + 1, anchor);
+        g.setColor(255, 255, 255);
+        g.drawString(text, x, y, anchor);
     }
 
     private void drawIcon(Graphics g, int id, int x, int y, boolean muted) {
