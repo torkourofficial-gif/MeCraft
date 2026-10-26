@@ -2177,16 +2177,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         int[] low = new int[rw * rh];
         double yaw = panoramaTick * 0.04 * Math.PI / 180.0;
         double pitch = -0.035;
+        // Trigonometric values are constant for the whole frame. Calculate
+        // them once rather than invoking Math.sin/cos for every output pixel.
+        double cosYaw = Math.cos(yaw);
+        double sinYaw = Math.sin(yaw);
+        double cosPitch = Math.cos(pitch);
+        double sinPitch = Math.sin(pitch);
         double fovScale = Math.tan(Math.toRadians(32.0));
         double aspect = (double)rw / (double)rh;
         for (int y = 0; y < rh; y++) {
             double sy = (1.0 - 2.0 * (y + 0.5) / rh) * fovScale;
             for (int x = 0; x < rw; x++) {
                 double sx = (2.0 * (x + 0.5) / rw - 1.0) * fovScale * aspect;
-                double vx = sx * Math.cos(yaw) + Math.sin(yaw);
-                double vy = sy * Math.cos(pitch) + Math.sin(pitch) *
-                        (sx * Math.sin(yaw) - Math.cos(yaw));
-                double vz = sx * Math.sin(yaw) - Math.cos(yaw);
+                double vx = sx * cosYaw + sinYaw;
+                double vy = sy * cosPitch + sinPitch * (sx * sinYaw - cosYaw);
+                double vz = sx * sinYaw - cosYaw;
                 double ax = Math.abs(vx), ay = Math.abs(vy), az = Math.abs(vz);
                 int face;
                 double u, v, major;
@@ -2224,7 +2229,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
         int[] output = new int[w * h];
         for (int y = 0; y < h; y++) {
-            int ly = y / 2;
+            // Both dimensions were rendered at quarter resolution. Using
+            // y / 2 here walked past the low-resolution buffer and could
+            // throw on taller screens, causing the panorama to disappear.
+            int ly = y / 4;
+            if (ly >= rh) ly = rh - 1;
             for (int x = 0; x < w; x++) {
                 output[y * w + x] = low[ly * rw + x / 4];
             }
