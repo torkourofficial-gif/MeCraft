@@ -1217,7 +1217,7 @@ final class MobSystem {
 
         private void buildCow(Appearance appearance) {
             // Alpha ModelCow: an 8x8x6 head, 12x18x10 body, four 4x12x4
-            // legs, two horns and the small udder mesh.
+            // legs and two horns.
             addPart(pose, 18, 4, 12, 18, 10, 12, 18, 10,
                     0.0f, 1.1875f, 0.125f, -90.0f, 1, 0, 0, appearance,
                     0.0f, 0.0625f, -0.125f);
@@ -1230,9 +1230,6 @@ final class MobSystem {
             addPart(head, 22, 0, 1, 3, 1, 1, 3, 1,
                     -0.28125f, 0.28125f, -0.15625f, 0, 0, 1, 0, appearance,
                     0.0f, 0.0f, 0.0f, true);
-            addPart(pose, 52, 0, 4, 6, 2, 4, 6, 2,
-                    0.0f, 0.625f, 0.375f, 0, 0, 1, 0, appearance,
-                    0.0f, 0.0f, 0.0625f);
             for (int i = 0; i < 4; i++) {
                 float side = (i & 1) == 0 ? -1.0f : 1.0f;
                 float front = i < 2 ? 0.4375f : -0.375f;
