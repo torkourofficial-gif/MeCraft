@@ -269,7 +269,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             damagePlayer(1);
             cactusDamageCooldown = 10;
         }
-        boolean touchingLava = playerPhysics.touchesLava(world);
+        boolean touchingLava = playerTouchesLava();
         if (world.nether && playerPhysics.isInWater(world)) touchingLava = true;
         if (world.mode == 0 && netherLavaDamageCooldown == 0 && touchingLava) {
             damagePlayer(2);
@@ -315,6 +315,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (world == null || world.nether) return false;
         return world.get(floorBlock(world.playerX), floorBlock(world.playerY + PLAYER_EYE_HEIGHT),
                          floorBlock(world.playerZ)) == Block.WATER;
+    }
+
+    private boolean playerTouchesLava() {
+        float x = world.playerX, y = world.playerY, z = world.playerZ;
+        int minX = floorBlock(x - PLAYER_RADIUS), maxX = floorBlock(x + PLAYER_RADIUS);
+        int minY = floorBlock(y), maxY = floorBlock(y + PLAYER_HEIGHT - 0.0001f);
+        int minZ = floorBlock(z - PLAYER_RADIUS), maxZ = floorBlock(z + PLAYER_RADIUS);
+        for (int by = minY; by <= maxY; by++)
+            for (int bx = minX; bx <= maxX; bx++)
+                for (int bz = minZ; bz <= maxZ; bz++)
+                    if (world.get(bx, by, bz) == Block.LAVA) return true;
+        return false;
     }
 
     private void damagePlayer(int amount) {
