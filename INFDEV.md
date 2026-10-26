@@ -29,8 +29,8 @@ both mesh memory and work queued after crossing a chunk border.
 
 `VoxelWorld.get` now synthesizes terrain outside the original 48 x 48 editable
 save window, while placement and mining use a sparse saved edit overlay there.
-The original saved region still loads with its existing format. The overlay has
-a fixed 1024-block capacity to fit within small J2ME RMS record limits; when it is
-full, further edits outside the original region are rejected. Extending edits
-with per-chunk RMS records is the next persistence improvement. Water simulation
-also remains active only in the original save window.
+The original saved region still loads with its existing format. The sparse edit
+overlay grows as needed and is persisted in small, generation-tagged RMS pages,
+so edits outside the original region are no longer capped by one large RMS
+record. Plains generate flowers at eight times the previous rate. Water
+simulation also remains active only in the original save window.

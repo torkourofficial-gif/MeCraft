@@ -221,7 +221,8 @@ final class InfdevTerrain {
                     continue;
                 }
                 if (biome == SNOWY) continue;
-                if ((hash(seed ^ 0x73B91, originX + x, height, originZ + z) & 63) != 0 ||
+                int flowerMask = biome == PLAINS ? 7 : 63;
+                if ((hash(seed ^ 0x73B91, originX + x, height, originZ + z) & flowerMask) != 0 ||
                     height + 1 >= WORLD_HEIGHT) continue;
                 int at = column * WORLD_HEIGHT + height + 1;
                 if (blocks[at] == Block.AIR)

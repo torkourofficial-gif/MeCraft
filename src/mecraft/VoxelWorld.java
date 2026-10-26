@@ -6,6 +6,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import javax.microedition.rms.RecordStore;
+import javax.microedition.rms.RecordEnumeration;
 import javax.microedition.rms.RecordStoreException;
 
 /** Infinite, seed-generated terrain with an editable saved starting area. */
@@ -28,8 +29,10 @@ final class VoxelWorld {
     private static final int MCF7_ITEM_COUNT = 47;
     private static final int MCF8_ITEM_COUNT = 48;
     private static final int MCF9_ITEM_COUNT = 51;
-    private static final int INFDEV_EDIT_LIMIT = 1024;
     private static final int INFDEV_EDIT_MAGIC = 0x49464431;
+    private static final int INFDEV_EDIT_POINTER_MAGIC = 0x49465031;
+    private static final int INFDEV_EDIT_PAGE_MAGIC = 0x49465047;
+    private static final int INFDEV_EDITS_PER_PAGE = 128;
     static final int DAY_LENGTH = 24000;
 
     final byte[] blocks = new byte[BLOCK_COUNT];
@@ -47,13 +50,14 @@ final class VoxelWorld {
     private final int[] proceduralHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     private final byte[] proceduralBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     private int proceduralCacheCursor;
-    private final int[] editX = new int[INFDEV_EDIT_LIMIT];
-    private final int[] editY = new int[INFDEV_EDIT_LIMIT];
-    private final int[] editZ = new int[INFDEV_EDIT_LIMIT];
-    private final byte[] editId = new byte[INFDEV_EDIT_LIMIT];
-    private final byte[] editMeta = new byte[INFDEV_EDIT_LIMIT];
-    private final short[] editLookup = new short[2048];
+    private int[] editX = new int[128];
+    private int[] editY = new int[128];
+    private int[] editZ = new int[128];
+    private byte[] editId = new byte[128];
+    private byte[] editMeta = new byte[128];
+    private int[] editLookup = new int[256];
     private int editCount;
+    private int editGeneration;
     final int[] inventory = new int[ItemCatalog.COUNT];
     final int[] itemDamage = new int[ItemCatalog.COUNT];
     final int[] hotbar = new int[] {
@@ -135,7 +139,7 @@ final class VoxelWorld {
         int hash = x * 73428767 ^ y * 912931 ^ z * 42317861;
         int slot = hash & (editLookup.length - 1);
         for (int probe = 0; probe < editLookup.length; probe++) {
-            int value = editLookup[slot] & 65535;
+            int value = editLookup[slot];
             if (value == 0) return -1;
             int i = value - 1;
             if (editX[i] == x && editY[i] == y && editZ[i] == z) return i;
@@ -147,17 +151,36 @@ final class VoxelWorld {
     private int ensureEdit(int x, int y, int z) {
         int i = findEdit(x, y, z);
         if (i >= 0) return i;
-        if (editCount == editX.length) return -1;
+        if (editCount == editX.length) growEditArrays();
+        if ((editCount + 1) * 2 > editLookup.length) rehashEdits(editLookup.length * 2);
         i = editCount++;
         editX[i] = x; editY[i] = y; editZ[i] = z;
         int slot = (x * 73428767 ^ y * 912931 ^ z * 42317861) & (editLookup.length - 1);
         while (editLookup[slot] != 0) slot = (slot + 1) & (editLookup.length - 1);
-        editLookup[slot] = (short)(i + 1);
+        editLookup[slot] = i + 1;
         return i;
     }
 
-    private int editsRequired(int x, int y, int z) {
-        return inside(x, z) || findEdit(x, y, z) >= 0 ? 0 : 1;
+    private void growEditArrays() {
+        int size = editX.length * 2;
+        int[] nx = new int[size], ny = new int[size], nz = new int[size];
+        byte[] ni = new byte[size], nm = new byte[size];
+        System.arraycopy(editX, 0, nx, 0, editCount);
+        System.arraycopy(editY, 0, ny, 0, editCount);
+        System.arraycopy(editZ, 0, nz, 0, editCount);
+        System.arraycopy(editId, 0, ni, 0, editCount);
+        System.arraycopy(editMeta, 0, nm, 0, editCount);
+        editX = nx; editY = ny; editZ = nz; editId = ni; editMeta = nm;
+    }
+
+    private void rehashEdits(int size) {
+        int[] lookup = new int[size];
+        for (int i = 0; i < editCount; i++) {
+            int slot = (editX[i] * 73428767 ^ editY[i] * 912931 ^ editZ[i] * 42317861) & (size - 1);
+            while (lookup[slot] != 0) slot = (slot + 1) & (size - 1);
+            lookup[slot] = i + 1;
+        }
+        editLookup = lookup;
     }
 
     private int metadataAt(int x, int y, int z) {
@@ -266,9 +289,6 @@ final class VoxelWorld {
         if ((doorMetadata(x, y, z) & 8) != 0) y--;
         if (get(x, y, z) != Block.DOOR) return false;
         boolean hasUpper = y + 1 < HEIGHT && get(x, y + 1, z) == Block.DOOR;
-        int editsNeeded = editsRequired(x, y, z);
-        if (hasUpper) editsNeeded += editsRequired(x, y + 1, z);
-        if (editCount + editsNeeded > editX.length) return false;
         if (!setBlock(x, y, z, Block.AIR, 0)) return false;
         if (hasUpper && !setBlock(x, y + 1, z, Block.AIR, 0)) return false;
         fullRebuild = true;
@@ -520,6 +540,39 @@ final class VoxelWorld {
     void save() {
         RecordStore store = null;
         try {
+            String storeName = saveStoreName == null ? "mecraft-save" : saveStoreName;
+            store = RecordStore.openRecordStore(storeName, true);
+            if (store.getNumRecords() == 0) store.addRecord(new byte[0], 0, 0);
+            ByteArrayOutputStream infoBytes = new ByteArrayOutputStream(40);
+            DataOutputStream info = new DataOutputStream(infoBytes);
+            info.writeInt(0x4D434249); // MCBI: compact world-list metadata
+            info.writeByte(mode);
+            info.writeUTF(worldName == null ? "Mundo" : worldName);
+            info.flush();
+            byte[] infoData = infoBytes.toByteArray();
+            if (store.getNumRecords() < 2) store.addRecord(infoData, 0, infoData.length);
+            else store.setRecord(2, infoData, 0, infoData.length);
+
+            int oldGeneration = editGeneration;
+            int generation = oldGeneration + 1;
+            int pageCount = (editCount + INFDEV_EDITS_PER_PAGE - 1) / INFDEV_EDITS_PER_PAGE;
+            for (int page = 0; page < pageCount; page++) {
+                int start = page * INFDEV_EDITS_PER_PAGE;
+                int count = editCount - start;
+                if (count > INFDEV_EDITS_PER_PAGE) count = INFDEV_EDITS_PER_PAGE;
+                ByteArrayOutputStream pageBytes = new ByteArrayOutputStream(16 + count * 11);
+                DataOutputStream pageOut = new DataOutputStream(pageBytes);
+                pageOut.writeInt(INFDEV_EDIT_PAGE_MAGIC);
+                pageOut.writeInt(generation);
+                pageOut.writeInt(page);
+                pageOut.writeInt(pageCount);
+                pageOut.writeShort(count);
+                for (int i = start; i < start + count; i++) writeEdit(pageOut, i);
+                pageOut.flush();
+                byte[] pageData = pageBytes.toByteArray();
+                store.addRecord(pageData, 0, pageData.length);
+            }
+
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(blocks.length * 2 + 64);
             DataOutputStream out = new DataOutputStream(bytes);
             out.writeInt(0x4D434643); // MCFC: named worlds with colored wool
@@ -539,27 +592,15 @@ final class VoxelWorld {
             out.write(blocks);
             out.write(waterLevels);
             out.writeInt(INFDEV_EDIT_MAGIC);
-            out.writeShort(editCount);
-            for (int i = 0; i < editCount; i++) {
-                out.writeInt(editX[i]); out.writeByte(editY[i]); out.writeInt(editZ[i]);
-                out.writeByte(editId[i]); out.writeByte(editMeta[i]);
-            }
+            out.writeShort(0); // Edits live in bounded RMS pages below.
+            out.writeInt(INFDEV_EDIT_POINTER_MAGIC);
+            out.writeInt(generation);
+            out.writeInt(pageCount);
             out.flush();
             byte[] data = bytes.toByteArray();
-
-            String storeName = saveStoreName == null ? "mecraft-save" : saveStoreName;
-            store = RecordStore.openRecordStore(storeName, true);
-            if (store.getNumRecords() == 0) store.addRecord(data, 0, data.length);
-            else store.setRecord(1, data, 0, data.length);
-            ByteArrayOutputStream infoBytes = new ByteArrayOutputStream(40);
-            DataOutputStream info = new DataOutputStream(infoBytes);
-            info.writeInt(0x4D434249); // MCBI: compact world-list metadata
-            info.writeByte(mode);
-            info.writeUTF(worldName == null ? "Mundo" : worldName);
-            info.flush();
-            byte[] infoData = infoBytes.toByteArray();
-            if (store.getNumRecords() < 2) store.addRecord(infoData, 0, infoData.length);
-            else store.setRecord(2, infoData, 0, infoData.length);
+            store.setRecord(1, data, 0, data.length);
+            editGeneration = generation;
+            deleteOldEditPages(store, generation);
         } catch (Exception ignored) {
             // A failed save must not terminate play on devices with tiny RMS limits.
         } catch (OutOfMemoryError ignored) {
@@ -568,6 +609,34 @@ final class VoxelWorld {
             if (store != null) {
                 try { store.closeRecordStore(); } catch (RecordStoreException ignored) { }
             }
+        }
+    }
+
+    private void writeEdit(DataOutputStream out, int i) throws IOException {
+        out.writeInt(editX[i]); out.writeByte(editY[i]); out.writeInt(editZ[i]);
+        out.writeByte(editId[i]); out.writeByte(editMeta[i]);
+    }
+
+    private static void deleteOldEditPages(RecordStore store, int keepGeneration) {
+        RecordEnumeration records = null;
+        try {
+            records = store.enumerateRecords(null, null, false);
+            int[] remove = new int[store.getNumRecords()];
+            int count = 0;
+            while (records.hasNextElement()) {
+                int recordId = records.nextRecordId();
+                if (recordId <= 2) continue;
+                byte[] data = store.getRecord(recordId);
+                if (data.length < 8) continue;
+                DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
+                if (in.readInt() == INFDEV_EDIT_PAGE_MAGIC && in.readInt() != keepGeneration)
+                    remove[count++] = recordId;
+            }
+            records.destroy(); records = null;
+            for (int i = 0; i < count; i++) store.deleteRecord(remove[i]);
+        } catch (Exception ignored) {
+        } finally {
+            if (records != null) try { records.destroy(); } catch (Exception ignored) { }
         }
     }
 
@@ -654,6 +723,7 @@ final class VoxelWorld {
                 format == 0x4D434637 || format == 0x4D434638 || format == 0x4D434639 ||
                 currentFormat)
                 in.readFully(world.waterLevels);
+            int editGeneration = 0, editPageCount = 0;
             if (in.available() >= 6 && in.readInt() == INFDEV_EDIT_MAGIC) {
                 int count = in.readUnsignedShort();
                 for (int i = 0; i < count; i++) {
@@ -662,7 +732,14 @@ final class VoxelWorld {
                     int edit = world.ensureEdit(x, y, z);
                     if (edit >= 0) { world.editId[edit] = id; world.editMeta[edit] = meta; }
                 }
+                if (in.available() >= 12 && in.readInt() == INFDEV_EDIT_POINTER_MAGIC) {
+                    editGeneration = in.readInt();
+                    editPageCount = in.readInt();
+                }
             }
+            if (editPageCount > 0 && editPageCount <= store.getNumRecords())
+                loadEditPages(store, world, editGeneration, editPageCount);
+            world.editGeneration = editGeneration;
             if (format != 0x4D434636 && format != 0x4D434637 && format != 0x4D434638 &&
                 format != 0x4D434639 && !currentFormat)
                 world.migrateLegacyFurnaces();
@@ -675,6 +752,39 @@ final class VoxelWorld {
             if (store != null) {
                 try { store.closeRecordStore(); } catch (RecordStoreException ignored) { }
             }
+        }
+    }
+
+    private static void loadEditPages(RecordStore store, VoxelWorld world,
+                                      int generation, int pageCount) {
+        RecordEnumeration records = null;
+        boolean[] loaded = new boolean[pageCount];
+        try {
+            records = store.enumerateRecords(null, null, false);
+            while (records.hasNextElement()) {
+                int recordId = records.nextRecordId();
+                if (recordId <= 2) continue;
+                byte[] data = store.getRecord(recordId);
+                if (data.length < 18) continue;
+                DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
+                if (in.readInt() != INFDEV_EDIT_PAGE_MAGIC || in.readInt() != generation) continue;
+                int page = in.readInt();
+                int storedPageCount = in.readInt();
+                int count = in.readUnsignedShort();
+                if (page < 0 || page >= pageCount || storedPageCount != pageCount ||
+                    count > INFDEV_EDITS_PER_PAGE || loaded[page] || in.available() < count * 11)
+                    continue;
+                loaded[page] = true;
+                for (int i = 0; i < count; i++) {
+                    int x = in.readInt(), y = in.readUnsignedByte(), z = in.readInt();
+                    byte id = in.readByte(), meta = in.readByte();
+                    int edit = world.ensureEdit(x, y, z);
+                    if (edit >= 0) { world.editId[edit] = id; world.editMeta[edit] = meta; }
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (records != null) try { records.destroy(); } catch (Exception ignored) { }
         }
     }
 
