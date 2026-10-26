@@ -31,7 +31,7 @@ final class Language {
         "5 confirmar  0 cancelar", "Crear mundo", "Nombre", "Modo",
         "5 editar/cambiar/elegir", "Noche", "Día", "Volando  5 subir  0 bajar",
         "5 dos veces: volar", "Recetas de la mesa", "Crafteo 2x2", "5 crear",
-        "No disponible", "# cerrar  |  2/8 lista", "Bloques creativos",
+        "No disponible", "# cerrar  |  2/8 lista", "Inventario creativo",
         "4/6 mover  2/8 fila  5 tomar  # cerrar", "Menú del juego",
         "2/8 elegir   5 aceptar   0 menú", "2/8 ver detalles  5 volver",
         "Pulsa 5 para volver", "Aire", "Césped", "Tierra", "Piedra", "Arena",

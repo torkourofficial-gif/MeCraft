@@ -1471,8 +1471,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private int creativeItemAt(int index) {
+        int toolItems = 1 + ItemCatalog.TOOL_KINDS * ItemCatalog.TOOL_TIERS;
+        if (index < toolItems) return Block.COUNT + index;
+        index -= toolItems;
         if (index < Block.CREATIVE_PALETTE.length) return Block.CREATIVE_PALETTE[index];
-        return Block.COUNT + index - Block.CREATIVE_PALETTE.length;
+        index -= Block.CREATIVE_PALETTE.length;
+        return ItemCatalog.IRON_INGOT + index;
     }
 
     private void moveWorldSelection(int delta) {
@@ -2324,7 +2328,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         int first = creativeSelection / pageSize * pageSize;
         int pageCount = (creativeItemCount() + pageSize - 1) / pageSize;
         g.setColor(35, 35, 35);
-        g.drawString(Language.text("Bloques creativos"), w / 2, top + 3, Graphics.TOP | Graphics.HCENTER);
+        g.drawString(Language.text("Inventario creativo"), w / 2, top + 3, Graphics.TOP | Graphics.HCENTER);
         for (int cell = 0; cell < pageSize; cell++) {
             int paletteIndex = first + cell;
             if (paletteIndex >= creativeItemCount()) break;
