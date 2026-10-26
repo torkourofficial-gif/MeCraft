@@ -43,7 +43,7 @@ final class Block {
     static final String[] NAME = makeNames();
     static final int[] CREATIVE_PALETTE = makeCreativePalette();
     /** Uses the original wooden-door tile already present in the terrain atlas. */
-    static final byte CHEST = (byte)findTileBlock(128); // Reuse an otherwise decorative atlas slot to preserve saved item IDs.
+    static final byte CHEST = (byte)findTileBlock(85); // Original chest tile in the terrain atlas.
     static final byte DOOR = (byte)findTileBlock(97);
     static final byte CACTUS = (byte)findTileBlock(70);
     static final int CACTUS_TOP_TILE = 71;
