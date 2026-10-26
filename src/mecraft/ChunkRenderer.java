@@ -1108,13 +1108,14 @@ final class ChunkRenderer {
         }
 
         int count = 0;
-        for (int i = 0; i < builders.length; i++) if (builders[i] != null) count++;
+        for (int i = 0; i < builders.length; i++)
+            if (builders[i] != null && builders[i].vertexCount > 0) count++;
         int flowerCount = flowers == null ? 0 : 1;
         if (count + flowerCount == 0) return null;
         Mesh[] meshes = new Mesh[count + flowerCount];
         int at = 0;
         for (int i = 0; i < builders.length; i++) {
-            if (builders[i] == null) continue;
+            if (builders[i] == null || builders[i].vertexCount == 0) continue;
             meshes[at++] = makeMesh(builders[i], tileAppearance(i), 1.0f / 16.0f);
             builders[i].reset();
         }
