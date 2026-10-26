@@ -20,6 +20,7 @@ import javax.microedition.m3g.VertexBuffer;
 final class SkySystem {
     private static final float FIXED_SCALE = 1.0f / 256.0f;
     private static final int STAR_COUNT = 500;
+    private static final long CLOUD_REFRESH_MS = 100L;
     private final Group yawCounter = new Group();
     private final Group celestialRotation = new Group();
     private final Background skyBackground;
@@ -41,6 +42,8 @@ final class SkySystem {
     private int lastCloudShift;
     private int lastCloudTint;
     private int lastSkyColor;
+    private float lastTanHalfFov;
+    private long lastCloudRenderTime;
     private boolean starColorReady;
     private int lastStarColor;
     private boolean starVisibilityReady;
@@ -117,7 +120,6 @@ final class SkySystem {
         if (Math.abs(next - tanHalfFov) < 0.0001f) return;
         tanHalfFov = next;
         updateScreenRays();
-        cloudFrameReady = false;
     }
 
     void update(VoxelWorld world, float yaw, float cloudYaw, float pitch,
@@ -152,6 +154,15 @@ final class SkySystem {
     /** Rasterize Indev's cloud map into the sky background at 1 texel / 8 blocks. */
     private void renderCloudBackground(int dayTime, float yawDegrees,
             float pitchDegrees, float daylight, int skyColor) {
+        int shift = (int)(dayTime * 0.00375f);
+        int cloudTint = (int)(190.0f + daylight * 65.0f);
+        long now = System.currentTimeMillis();
+        if (cloudFrameReady && yawDegrees == lastCloudYaw &&
+                pitchDegrees == lastCloudPitch && shift == lastCloudShift &&
+                cloudTint == lastCloudTint && skyColor == lastSkyColor &&
+                tanHalfFov == lastTanHalfFov) return;
+        if (cloudFrameReady && now - lastCloudRenderTime < CLOUD_REFRESH_MS) return;
+
         // Keep the cloud panorama fixed at the world origin: translation and
         // pitch never affect it. Horizontal camera yaw changes the sampled
         // world direction, so the image scrolls oppositely to the player turn.
@@ -171,11 +182,6 @@ final class SkySystem {
         float virtualEyeY = VoxelWorld.HEIGHT * 0.5f;
         float cloudLevel = VoxelWorld.HEIGHT + 10.0f - virtualEyeY;
         float focal = viewportHeight / (2.0f * tanHalfFov);
-        int shift = (int)(dayTime * 0.00375f);
-        int cloudTint = (int)(190.0f + daylight * 65.0f);
-        if (cloudFrameReady && yawDegrees == lastCloudYaw &&
-                pitchDegrees == lastCloudPitch && shift == lastCloudShift &&
-                cloudTint == lastCloudTint && skyColor == lastSkyColor) return;
         int skyR = skyColor >> 16 & 255;
         int skyG = skyColor >> 8 & 255;
         int skyB = skyColor & 255;
@@ -226,6 +232,8 @@ final class SkySystem {
         lastCloudShift = shift;
         lastCloudTint = cloudTint;
         lastSkyColor = skyColor;
+        lastTanHalfFov = tanHalfFov;
+        lastCloudRenderTime = now;
         cloudFrameReady = true;
     }
 

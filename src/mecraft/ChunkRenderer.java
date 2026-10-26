@@ -29,6 +29,7 @@ final class ChunkRenderer {
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
     private static final float CAMERA_FAR = 88.0f;
     private static final float CHUNK_RADIUS = 12.0f;
+    private static final float CHUNK_RETENTION_TAN_MARGIN = 0.12f;
     private static final float NORMAL_FOV = 68.0f;
     private static final float SPRINT_FOV = 76.0f;
     private float cameraFov = NORMAL_FOV;
@@ -965,9 +966,17 @@ final class ChunkRenderer {
                         depth - CHUNK_RADIUS <= CAMERA_FAR &&
                         Math.abs(horizontal) <= Math.max(0.0f, depth) * tanHorizontalFov + CHUNK_RADIUS &&
                         Math.abs(vertical) <= Math.max(0.0f, depth) * tanVertical + CHUNK_RADIUS;
+                    // Keep a narrow off-screen buffer so small camera turns do
+                    // not repeatedly destroy and rebuild the same M3G meshes.
+                    boolean retained = depth + CHUNK_RADIUS >= 0.1f &&
+                        depth - CHUNK_RADIUS <= CAMERA_FAR &&
+                        Math.abs(horizontal) <= Math.max(0.0f, depth) *
+                            (tanHorizontalFov + CHUNK_RETENTION_TAN_MARGIN) + CHUNK_RADIUS &&
+                        Math.abs(vertical) <= Math.max(0.0f, depth) *
+                            (tanVertical + CHUNK_RETENTION_TAN_MARGIN) + CHUNK_RADIUS;
                     boolean sameChunk = residentChunks[i] && chunkWorldX[i] == cx &&
                         chunkWorldY[i] == cy && chunkWorldZ[i] == cz;
-                    if (residentChunks[i] && (!visible || !sameChunk)) removeChunk(i);
+                    if (residentChunks[i] && (!retained || !sameChunk)) removeChunk(i);
                     if (visible && (!sameChunk || dirtyChunks[i])) {
                         if (!sameChunk) {
                             chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
