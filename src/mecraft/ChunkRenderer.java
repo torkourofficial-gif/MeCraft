@@ -1141,7 +1141,8 @@ final class ChunkRenderer {
         int at = 0;
         for (int i = 0; i < builders.length; i++) {
             if (builders[i] == null) continue;
-            meshes[at++] = makeMesh(builders[i], tileAppearance(i), 1.0f / 16.0f);
+            float textureScale = i == Block.sideTile(Block.GRASS) ? 0.999f / 16.0f : 1.0f / 16.0f;
+            meshes[at++] = makeMesh(builders[i], tileAppearance(i), textureScale);
             builders[i] = null;
         }
         if (flowers != null) meshes[at++] = makeFlowerMesh(flowers, flowerAppearance);
@@ -1389,6 +1390,13 @@ final class ChunkRenderer {
             ensure(vertexCount + 4);
             int u0 = 1, v0 = 1;
             int u1 = 1 + width * 16, v1 = 1 + height * 16;
+            if (tile == Block.sideTile(Block.GRASS) && face >= 1 && face <= 4) {
+                // Alpha samples within the grass-side tile, ending at 15.99px.
+                // These meshes use repeat-wrapped 16px textures, so start at 0
+                // and scale the 16px edge just inside the repeat seam.
+                u0 = 0; v0 = 0;
+                u1 = width * 16; v1 = height * 16;
+            }
             int shade = face == 0 ? 255 : (face == 5 ? 135 : (face <= 2 ? 205 : 180));
             if (face == 0) {
                 vertex(x,y+1,z, u0,v1,shade); vertex(x,y+1,z+height, u0,v0,shade);
