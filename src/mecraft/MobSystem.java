@@ -15,14 +15,17 @@ import javax.microedition.m3g.TriangleStripArray;
 import javax.microedition.m3g.VertexArray;
 import javax.microedition.m3g.VertexBuffer;
 
-/** Small, fixed-pool Indev mob models and movement for the 4 MiB target. */
+/** Bounded, lazy-loaded Indev mob models and movement for the 4 MiB target. */
 final class MobSystem {
     private static final int PIG = 0;
     private static final int SHEEP = 1;
     private static final int ZOMBIE = 2;
     private static final int CREEPER = 3;
     private static final int SKELETON = 4;
-    private static final int MOB_COUNT = 6;
+    private static final int MOB_COUNT = 8;
+    private static final float DESPAWN_DISTANCE_SQUARED = 32.0f * 32.0f;
+    private static final int PASSIVE_RESPAWN_INTERVAL = 80;
+    private static final int HOSTILE_RESPAWN_INTERVAL = 100;
     private static final int FIRE_FRAME_COUNT = 8;
     private static final int FIRE_FRAME_UV_HEIGHT = 32;
     // Small overlaps at moving joints prevent visible seams between closed cuboids.
@@ -33,6 +36,8 @@ final class MobSystem {
     private final DroppedItemSystem drops;
     private final ParticleSystem particles;
     private final Appearance fireAppearance;
+    private final Texture2D[] mobTextures = new Texture2D[5];
+    private Texture2D fleeceTexture;
     private final Random random = new Random(1L);
     private int worldSeed = Integer.MIN_VALUE;
     private int tick;
@@ -48,14 +53,8 @@ final class MobSystem {
             texture("pig.png"), texture("sheep.png"), texture("zombie.png"),
             texture("creeper.png"), texture("skeleton.png")
         };
-        Texture2D fleeceTexture = texture("sheep_fur.png");
-        for (int i = 0; i < mobs.length; i++) {
-            int type = i == 0 ? PIG : (i == 1 ? SHEEP : (i < 4 ? ZOMBIE : i == 4 ? CREEPER : SKELETON));
-            Appearance fleece = type == SHEEP ? skin(fleeceTexture) : null;
-            mobs[i] = new Mob(type, skin(skinTextures[type]), fleece, fireAppearance);
-            mobs[i].root.setRenderingEnable(false);
-            scene.addChild(mobs[i].root);
-        }
+        System.arraycopy(skinTextures, 0, mobTextures, 0, skinTextures.length);
+        fleeceTexture = texture("sheep_fur.png");
         Appearance arrowAppearance = skin(skinTextures[SKELETON]);
         for (int i = 0; i < arrows.length; i++) {
             arrows[i] = new Arrow(arrowAppearance);
@@ -67,13 +66,16 @@ final class MobSystem {
     int update(VoxelWorld world) {
         if (worldSeed != world.seed) reset(world);
         tick++;
+        unloadDistantMobs(world);
+        if (tick % PASSIVE_RESPAWN_INTERVAL == 0) respawnPassiveMob(world);
         updateHostileCycle(world);
         if (attackCooldown > 0) attackCooldown--;
         int playerDamage = 0;
         for (int i = 0; i < mobs.length; i++) {
             Mob mob = mobs[i];
+            if (mob == null) continue;
             if (mob.dying) {
-                updateDeath(mob);
+                updateDeath(i, mob);
                 continue;
             }
             if (!mob.alive) continue;
@@ -162,7 +164,7 @@ final class MobSystem {
         float closestDistance = 4.0f;
         for (int i = 0; i < mobs.length; i++) {
             Mob mob = mobs[i];
-            if (!mob.alive) continue;
+            if (mob == null || !mob.alive) continue;
             float height = isHostile(mob.type) ? 1.8f : (mob.type == PIG ? 0.9f : 1.3f);
             float width = isHostile(mob.type) ? 0.6f : 0.9f;
             float along = rayBox(originX, originY, originZ, dirX, dirY, dirZ,
@@ -210,7 +212,7 @@ final class MobSystem {
         float reach = radius * 2.0f;
         for (int i = 0; i < mobs.length; i++) {
             Mob mob = mobs[i];
-            if (!mob.alive) continue;
+            if (mob == null || !mob.alive) continue;
             float dx = mob.x - x, dy = mob.y + 0.5f - y, dz = mob.z - z;
             float distance = (float)Math.sqrt(dx * dx + dy * dy + dz * dz);
             float impact = 1.0f - distance / reach;
@@ -294,16 +296,15 @@ final class MobSystem {
         mob.root.setRenderingEnable(true);
     }
 
-    private void updateDeath(Mob mob) {
+    private void updateDeath(int slot, Mob mob) {
         mob.deathTicks++;
         float progress = mob.deathTicks / 20.0f;
         if (progress > 1.0f) progress = 1.0f;
         float roll = (float)Math.sqrt(progress) * 90.0f;
         mob.pose.setOrientation(roll, 0.0f, 0.0f, 1.0f);
         if (mob.deathTicks >= 20) {
-            mob.dying = false;
-            mob.root.setRenderingEnable(false);
             particles.spawnMobDeath(mob.x, mob.y, mob.z);
+            releaseMob(slot);
         }
     }
 
@@ -313,49 +314,99 @@ final class MobSystem {
         attackCooldown = 0;
         zombiesNightActive = false;
         for (int i = 0; i < arrows.length; i++) arrows[i].active = false;
+        for (int i = 0; i < mobs.length; i++) releaseMob(i);
         random.setSeed(world.seed ^ 0x51ED270B);
         for (int i = 0; i < mobs.length; i++) {
-            Mob mob = mobs[i];
-            mob.health = isHostile(mob.type) ? 20 : 10;
-            mob.hurtTicks = 0;
-            mob.dying = false;
-            mob.deathTicks = 0;
-            mob.fireTicks = 0;
-            mob.fireMesh.setRenderingEnable(false);
-            mob.pose.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
-            mob.verticalVelocity = 0.0f;
-            mob.motionX = mob.motionZ = 0.0f;
-            mob.walkPhase = mob.walkAmount = 0.0f;
-            mob.setHurt(false);
-            mob.setFlashWhite(false);
-            mob.setSheared(false);
-            mob.alive = !isHostile(mob.type);
-            mob.root.setRenderingEnable(mob.alive);
-            int attempts = 0;
-            int x = (int)world.playerX, z = (int)world.playerZ;
-            do {
-                int radius = isHostile(mob.type) ? 9 + random.nextInt(10) : 4 + random.nextInt(12);
-                int angle = random.nextInt(360);
-                x = (int)world.playerX + (int)(Math.cos(angle * Math.PI / 180.0) * radius);
-                z = (int)world.playerZ + (int)(Math.sin(angle * Math.PI / 180.0) * radius);
-                attempts++;
-            } while ((!validSpawn(world, x, z) || tooClose(mob, x + 0.5f, z + 0.5f)) && attempts < 48);
-            int ground = world.surfaceY(x, z);
-            mob.x = x + 0.5f;
-            mob.z = z + 0.5f;
-            mob.y = ground + 1.0f;
-            mob.yaw = random.nextInt(360);
-            mob.targetYaw = mob.yaw;
-            mob.age = random.nextInt(100);
-            mob.nextWander = 20 + random.nextInt(100);
-            mob.attackDelay = 0;
-            mob.fuseTicks = 0;
-            mob.fleeTicks = 0;
-            mob.walkTicks = 0;
-            mob.chasing = false;
-            mob.root.setTranslation(mob.x, mob.y, mob.z);
-            mob.root.setOrientation(modelYaw(mob.yaw), 0.0f, 1.0f, 0.0f);
+            if (isHostile(mobTypeForSlot(i))) continue;
+            spawnPassive(world, createMob(i));
         }
+    }
+
+    private int mobTypeForSlot(int slot) {
+        if (slot == 0 || slot == 2) return PIG;
+        if (slot == 1 || slot == 3) return SHEEP;
+        if (slot == 4 || slot == 5) return ZOMBIE;
+        return slot == 6 ? CREEPER : SKELETON;
+    }
+
+    private Mob createMob(int slot) {
+        Mob mob = mobs[slot];
+        if (mob != null) return mob;
+        int type = mobTypeForSlot(slot);
+        Appearance fleece = type == SHEEP ? skin(fleeceTexture) : null;
+        mob = new Mob(type, skin(mobTextures[type]), fleece, fireAppearance);
+        mobs[slot] = mob;
+        scene.addChild(mob.root);
+        return mob;
+    }
+
+    private void releaseMob(int slot) {
+        Mob mob = mobs[slot];
+        if (mob == null) return;
+        mob.fireMesh.setRenderingEnable(false);
+        mob.root.setRenderingEnable(false);
+        scene.removeChild(mob.root);
+        mobs[slot] = null;
+    }
+
+    /** Remove distant actors from the active world and clear their transient state. */
+    private void unloadDistantMobs(VoxelWorld world) {
+        for (int i = 0; i < mobs.length; i++) {
+            Mob mob = mobs[i];
+            if (mob == null || !mob.alive || mob.dying) continue;
+            float dx = mob.x - world.playerX;
+            float dy = mob.y - world.playerY;
+            float dz = mob.z - world.playerZ;
+            if (dx * dx + dy * dy + dz * dz <= DESPAWN_DISTANCE_SQUARED) continue;
+            releaseMob(i);
+        }
+    }
+
+    /** Keep the local passive population full by recycling unloaded or dead slots. */
+    private void respawnPassiveMob(VoxelWorld world) {
+        for (int i = 0; i < mobs.length; i++) {
+            Mob mob = mobs[i];
+            if (isHostile(mobTypeForSlot(i)) || (mob != null && (mob.alive || mob.dying))) continue;
+            spawnPassive(world, createMob(i));
+            return;
+        }
+    }
+
+    private void spawnPassive(VoxelWorld world, Mob mob) {
+        int x = (int)world.playerX, z = (int)world.playerZ;
+        int attempts = 0;
+        do {
+            int radius = 4 + random.nextInt(16);
+            int angle = random.nextInt(360);
+            x = (int)world.playerX + (int)(Math.cos(angle * Math.PI / 180.0) * radius);
+            z = (int)world.playerZ + (int)(Math.sin(angle * Math.PI / 180.0) * radius);
+            attempts++;
+        } while ((!validSpawn(world, x, z) || tooClose(mob, x + 0.5f, z + 0.5f)) && attempts < 48);
+        mob.x = x + 0.5f;
+        mob.z = z + 0.5f;
+        mob.y = world.surfaceY(x, z) + 1.0f;
+        mob.yaw = random.nextInt(360);
+        mob.targetYaw = mob.yaw;
+        mob.age = random.nextInt(100);
+        mob.health = 10;
+        mob.deathTicks = mob.fireTicks = mob.burnDamageTicks = 0;
+        mob.attackDelay = mob.fuseTicks = mob.fleeTicks = mob.hurtTicks = 0;
+        mob.verticalVelocity = mob.motionX = mob.motionZ = 0.0f;
+        mob.walkPhase = mob.walkAmount = 0.0f;
+        mob.walkTicks = 0;
+        mob.chasing = false;
+        mob.dying = false;
+        mob.nextWander = tick + 20 + random.nextInt(100);
+        mob.fireMesh.setRenderingEnable(false);
+        mob.pose.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
+        mob.setHurt(false);
+        mob.setFlashWhite(false);
+        mob.setSheared(false);
+        mob.root.setTranslation(mob.x, mob.y, mob.z);
+        mob.root.setScale(1.0f, 1.0f, 1.0f);
+        mob.root.setOrientation(modelYaw(mob.yaw), 0.0f, 1.0f, 0.0f);
+        mob.alive = true;
+        mob.root.setRenderingEnable(true);
     }
 
     /** Zombies/skeletons burn under open daylight; creepers remain night-only. */
@@ -364,11 +415,9 @@ final class MobSystem {
         if (!night) {
             for (int i = 0; i < mobs.length; i++) {
                 Mob mob = mobs[i];
-                if (!isHostile(mob.type) || mob.dying) continue;
+                if (!isHostile(mobTypeForSlot(i)) || mob == null || mob.dying) continue;
                 if (mob.type == CREEPER) {
-                    mob.alive = false;
-                    mob.fireMesh.setRenderingEnable(false);
-                    mob.root.setRenderingEnable(false);
+                    releaseMob(i);
                 } else if (mob.alive && mob.fireTicks == 0 && hasSkyExposure(world, mob)) {
                     mob.fireTicks = 300;
                     mob.burnDamageTicks = 20;
@@ -377,11 +426,24 @@ final class MobSystem {
             zombiesNightActive = false;
             return;
         }
-        if (zombiesNightActive) return;
+        if (zombiesNightActive) {
+            if (tick % HOSTILE_RESPAWN_INTERVAL == 0) {
+                for (int i = 0; i < mobs.length; i++) {
+                    Mob mob = mobs[i];
+                    if (isHostile(mobTypeForSlot(i)) &&
+                        (mob == null || (!mob.alive && !mob.dying))) {
+                        spawnZombie(world, createMob(i));
+                        break;
+                    }
+                }
+            }
+            return;
+        }
         zombiesNightActive = true;
         for (int i = 0; i < mobs.length; i++) {
             Mob mob = mobs[i];
-            if (!isHostile(mob.type)) continue;
+            if (!isHostile(mobTypeForSlot(i))) continue;
+            if (mob == null) mob = createMob(i);
             if (mob.dying) continue;
             if (mob.alive) {
                 mob.fireTicks = 0;
@@ -445,7 +507,7 @@ final class MobSystem {
     private boolean tooClose(Mob mob, float x, float z) {
         for (int i = 0; i < mobs.length; i++) {
             Mob other = mobs[i];
-            if (other == mob || !other.alive || other.y <= 0.0f) continue;
+            if (other == null || other == mob || !other.alive || other.y <= 0.0f) continue;
             float dx = other.x - x, dz = other.z - z;
             if (dx * dx + dz * dz < 9.0f) return true;
         }
