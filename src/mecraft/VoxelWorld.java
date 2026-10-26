@@ -11,6 +11,16 @@ import javax.microedition.rms.RecordStoreException;
 
 /** Infinite, seed-generated terrain with an editable saved starting area. */
 final class VoxelWorld {
+    private static String generationDiagnosticStage = "generación sin iniciar";
+
+    static void setGenerationDiagnosticStage(String stage) {
+        generationDiagnosticStage = stage;
+    }
+
+    static String getGenerationDiagnosticStage() {
+        return generationDiagnosticStage;
+    }
+
     static final int WIDTH = 48;
     static final int HEIGHT = 32;
     static final int DEPTH = 48;
@@ -111,13 +121,19 @@ final class VoxelWorld {
     }
 
     VoxelWorld(int seed, int mode) {
+        setGenerationDiagnosticStage("VoxelWorld: asignando semilla");
         this.seed = seed;
+        setGenerationDiagnosticStage("VoxelWorld: asignando modo");
         this.mode = mode;
+        setGenerationDiagnosticStage("VoxelWorld: inicializando caché procedural");
         for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
+            setGenerationDiagnosticStage("VoxelWorld: inicializando caché [" + i + "]");
             proceduralChunkX[i] = Integer.MIN_VALUE;
             proceduralChunkZ[i] = Integer.MIN_VALUE;
         }
+        setGenerationDiagnosticStage("VoxelWorld: entrando en generate()");
         generate();
+        setGenerationDiagnosticStage("VoxelWorld: generate() terminó; posicionando jugador");
     }
 
     private int index(int x, int y, int z) {
@@ -575,32 +591,48 @@ final class VoxelWorld {
     }
 
     private void generate() {
+        setGenerationDiagnosticStage("VoxelWorld.generate: preparando bucle de chunks");
         for (int cz = 0; cz < CHUNKS_Z; cz++) {
+            setGenerationDiagnosticStage("VoxelWorld.generate: comenzando fila de chunks cz=" + cz);
             for (int cx = 0; cx < CHUNKS_X; cx++) {
+                setGenerationDiagnosticStage("VoxelWorld.generate: reservando caché para chunk cx=" + cx + ", cz=" + cz);
                 int cache = proceduralCacheCursor++ & (PROCEDURAL_CACHE_SIZE - 1);
+                setGenerationDiagnosticStage("VoxelWorld.generate: generando chunk cx=" + cx + ", cz=" + cz);
                 generateChunk(cx, cz, proceduralChunks[cache]);
+                setGenerationDiagnosticStage("VoxelWorld.generate: guardando coordenadas del chunk cx=" + cx + ", cz=" + cz);
                 proceduralChunkX[cache] = cx; proceduralChunkZ[cache] = cz;
                 for (int z = 0; z < CHUNK_XZ; z++) {
+                    setGenerationDiagnosticStage("VoxelWorld.generate: copiando chunk cx=" + cx + ", cz=" + cz + ", z=" + z);
                     for (int x = 0; x < CHUNK_XZ; x++) {
                         int wx = cx * CHUNK_XZ + x, wz = cz * CHUNK_XZ + z;
-                        for (int y = 0; y < HEIGHT; y++)
+                        for (int y = 0; y < HEIGHT; y++) {
+                            setGenerationDiagnosticStage("VoxelWorld.generate: copiando bloque x=" + wx + ", y=" + y + ", z=" + wz);
                             blocks[index(wx, y, wz)] = proceduralChunks[cache][(z * CHUNK_XZ + x) * HEIGHT + y];
+                        }
                     }
                 }
             }
         }
+        setGenerationDiagnosticStage("VoxelWorld.generate: asignando posición X del jugador");
         playerX = WIDTH / 2 + 0.5f;
+        setGenerationDiagnosticStage("VoxelWorld.generate: asignando posición Z del jugador");
         playerZ = DEPTH / 2 + 0.5f;
+        setGenerationDiagnosticStage("VoxelWorld.generate: calculando altura inicial del jugador");
         playerY = (nether ? InfdevTerrain.netherFloorHeight(seed, WIDTH / 2, DEPTH / 2) :
                 InfdevTerrain.surfaceHeight(seed, WIDTH / 2, DEPTH / 2)) + 1.0f;
+        setGenerationDiagnosticStage("VoxelWorld.generate: asignando yaw inicial");
         yaw = 0f;
     }
 
     private void generateChunk(int cx, int cz, byte[] target) {
-        if (nether)
+        setGenerationDiagnosticStage("VoxelWorld.generateChunk: validando dimensión; chunk cx=" + cx + ", cz=" + cz);
+        if (nether) {
+            setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generateNether; cx=" + cx + ", cz=" + cz);
             InfdevTerrain.generateNether(seed, cx, cz, target, proceduralHeights);
-        else
+        } else {
+            setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generate; cx=" + cx + ", cz=" + cz);
             InfdevTerrain.generate(seed, cx, cz, target, proceduralHeights, proceduralBiomes);
+        }
     }
 
     void setNetherDimension(boolean enabled) {
