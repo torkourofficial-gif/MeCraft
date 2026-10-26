@@ -96,6 +96,7 @@ final class VoxelWorld {
     private int fluidQueueTail;
     private int fluidQueueCount;
     private int fluidTickDelay;
+    private int lavaTickCounter;
     private int fluidDirection;
 
     void tickTime() {
@@ -267,7 +268,7 @@ final class VoxelWorld {
         waterLevels[i] = (byte)color;
         changedX = x; changedY = y; changedZ = z;
         revision++;
-        scheduleWaterNeighbors(x, y, z);
+        scheduleFluidNeighbors(x, y, z);
         return true;
     }
 
@@ -342,7 +343,7 @@ final class VoxelWorld {
                         float dx = bx + 0.5f - x, dy = by + 0.5f - y, dz = bz + 0.5f - z;
                         if (dx * dx + dy * dy + dz * dz > radiusSquared) continue;
                         byte id = get(bx, by, bz);
-                        if (id == Block.AIR || id == Block.BEDROCK || id == Block.WATER) continue;
+                        if (id == Block.AIR || id == Block.BEDROCK || Block.isFluid(id)) continue;
                         if (id == Block.TNT) drops.spawnPrimedTnt(bx, by, bz, 10 + randomInt(20));
                         else if (Block.dropsItem(id) && randomFloat() < 0.3f)
                             drops.spawn(dropItemId(bx, by, bz), bx, by, bz);
@@ -416,7 +417,7 @@ final class VoxelWorld {
     private float explosionResistance(byte id) {
         if (id == Block.BEDROCK) return 10000.0f;
         if (id == Block.STONE || id == Block.COBBLESTONE || id == Block.IRON) return 2.0f;
-        if (id == Block.WATER) return 100.0f;
+        if (Block.isFluid(id)) return 100.0f;
         return 0.0f;
     }
 
@@ -438,81 +439,116 @@ final class VoxelWorld {
     private boolean setBlock(int x, int y, int z, byte id, int fluidLevel) {
         if (y <= 0 || y >= HEIGHT) return false;
         if (id < 0 || id >= Block.COUNT) return false;
-        if (get(x, y, z) == id && (id != Block.WATER || metadataAt(x, y, z) == fluidLevel)) return false;
+        if (get(x, y, z) == id && (!Block.isFluid(id) || metadataAt(x, y, z) == fluidLevel)) return false;
         if (inside(x, z)) {
             int i = index(x, y, z);
             blocks[i] = id;
-            waterLevels[i] = id == Block.WATER ? (byte)fluidLevel : 0;
+            waterLevels[i] = Block.isFluid(id) ? (byte)fluidLevel : 0;
         } else {
             int edit = ensureEdit(x, y, z);
             if (edit < 0) return false;
             editId[edit] = id;
-            editMeta[edit] = id == Block.WATER ? (byte)fluidLevel : 0;
+            editMeta[edit] = Block.isFluid(id) ? (byte)fluidLevel : 0;
         }
         changedX = x;
         changedY = y;
         changedZ = z;
         revision++;
-        scheduleWaterNeighbors(x, y, z);
+        scheduleFluidNeighbors(x, y, z);
         return true;
     }
 
-    private boolean setFlowingWater(int x, int y, int z, int level) {
-        if (!Block.replaceable(get(x, y, z)) || level > 7) return false;
-        return setBlock(x, y, z, Block.WATER, level);
+    int fluidLevel(int x, int y, int z) {
+        return Block.isFluid(get(x, y, z)) ? metadataAt(x, y, z) & 15 : -1;
     }
 
-    /** Bounded Indev water updates; each scheduled cell spreads no more than one block per interval. */
+    private boolean setFlowingFluid(int x, int y, int z, byte fluid, int level) {
+        if (level > 7) return false;
+        byte old = get(x, y, z);
+        if (old == fluid) {
+            int oldLevel = metadataAt(x, y, z) & 15;
+            return oldLevel > level && setBlock(x, y, z, fluid, level);
+        }
+        if (!Block.replaceable(old)) return false;
+        return setBlock(x, y, z, fluid, level);
+    }
+
+    /** Alpha-style scheduled liquid spread: water updates quickly, lava slowly. */
     void updateFluids() {
         if (++fluidTickDelay < 5) return;
         fluidTickDelay = 0;
-        while (fluidQueueCount > 0) {
+        lavaTickCounter += 5;
+        boolean lavaDue = lavaTickCounter >= 30;
+        if (lavaDue) lavaTickCounter = 0;
+        int pending = fluidQueueCount;
+        while (pending-- > 0 && fluidQueueCount > 0) {
             int i = fluidQueue[fluidQueueHead] & 0xFFFF;
             fluidQueueHead++;
             if (fluidQueueHead == FLUID_QUEUE_SIZE) fluidQueueHead = 0;
             fluidQueueCount--;
             setFluidQueued(i, false);
-            if (blocks[i] != Block.WATER) continue;
+            byte fluid = blocks[i];
+            if (!Block.isFluid(fluid)) continue;
+            if (fluid == Block.LAVA && !lavaDue) {
+                scheduleFluid(i);
+                continue;
+            }
             int x = i % WIDTH;
             int z = (i / WIDTH) % DEPTH;
             int y = i / (WIDTH * DEPTH);
-            int level = waterLevels[i] & 0xFF;
+            int level = waterLevels[i] & 15;
 
-            if (y > 1 && get(x, y - 1, z) == Block.AIR) {
-                if (setFlowingWater(x, y - 1, z, level)) scheduleWater(i);
-                return;
+            if (fluid == Block.LAVA && touchesWater(x, y, z)) {
+                setBlock(x, y, z, level == 0 ? Block.OBSIDIAN : Block.COBBLESTONE, 0);
+                continue;
             }
-            if (level >= 7) continue;
+
+            if (y > 1 && canFluidEnter(get(x, y - 1, z), fluid)) {
+                if (setFlowingFluid(x, y - 1, z, fluid, level)) scheduleFluid(i);
+                continue;
+            }
+            int maxSideLevel = fluid == Block.LAVA ? 4 : 7;
+            if (level >= maxSideLevel) continue;
             for (int direction = 0; direction < 4; direction++) {
                 int side = (fluidDirection + direction) & 3;
                 int nx = x + (side == 0 ? -1 : (side == 1 ? 1 : 0));
                 int nz = z + (side == 2 ? -1 : (side == 3 ? 1 : 0));
                 if (nx <= 0 || nx >= WIDTH - 1 || nz <= 0 || nz >= DEPTH - 1) continue;
-                if (get(nx, y, nz) != Block.AIR || get(nx, y - 1, nz) == Block.AIR) continue;
+                if (!canFluidEnter(get(nx, y, nz), fluid) || get(nx, y - 1, nz) == Block.AIR) continue;
                 fluidDirection = (side + 1) & 3;
-                if (setFlowingWater(nx, y, nz, level + 1)) scheduleWater(i);
-                return;
+                if (setFlowingFluid(nx, y, nz, fluid, level + 1)) scheduleFluid(i);
+                continue;
             }
         }
     }
 
-    private void scheduleWaterNeighbors(int x, int y, int z) {
-        scheduleWater(x, y, z);
-        scheduleWater(x, y - 1, z);
-        scheduleWater(x, y + 1, z);
-        scheduleWater(x - 1, y, z);
-        scheduleWater(x + 1, y, z);
-        scheduleWater(x, y, z - 1);
-        scheduleWater(x, y, z + 1);
+    private boolean canFluidEnter(byte id, byte fluid) {
+        return id == Block.AIR || Block.isFlower(id) || id == fluid;
     }
 
-    private void scheduleWater(int x, int y, int z) {
+    private boolean touchesWater(int x, int y, int z) {
+        return get(x - 1, y, z) == Block.WATER || get(x + 1, y, z) == Block.WATER ||
+               get(x, y - 1, z) == Block.WATER || get(x, y + 1, z) == Block.WATER ||
+               get(x, y, z - 1) == Block.WATER || get(x, y, z + 1) == Block.WATER;
+    }
+
+    private void scheduleFluidNeighbors(int x, int y, int z) {
+        scheduleFluid(x, y, z);
+        scheduleFluid(x, y - 1, z);
+        scheduleFluid(x, y + 1, z);
+        scheduleFluid(x - 1, y, z);
+        scheduleFluid(x + 1, y, z);
+        scheduleFluid(x, y, z - 1);
+        scheduleFluid(x, y, z + 1);
+    }
+
+    private void scheduleFluid(int x, int y, int z) {
         if (x < 0 || x >= WIDTH || z < 0 || z >= DEPTH || y < 0 || y >= HEIGHT) return;
-        scheduleWater(index(x, y, z));
+        scheduleFluid(index(x, y, z));
     }
 
-    private void scheduleWater(int i) {
-        if (blocks[i] != Block.WATER || isFluidQueued(i) || fluidQueueCount == FLUID_QUEUE_SIZE) return;
+    private void scheduleFluid(int i) {
+        if (!Block.isFluid(blocks[i]) || isFluidQueued(i) || fluidQueueCount == FLUID_QUEUE_SIZE) return;
         fluidQueue[fluidQueueTail] = (short)i;
         fluidQueueTail++;
         if (fluidQueueTail == FLUID_QUEUE_SIZE) fluidQueueTail = 0;
@@ -531,9 +567,9 @@ final class VoxelWorld {
         else fluidQueued[byteIndex] = (byte)(fluidQueued[byteIndex] & ~bit);
     }
 
-    private void queueSavedFlowingWater() {
+    private void queueSavedFlowingFluids() {
         for (int i = 0; i < blocks.length; i++) {
-            if (blocks[i] == Block.WATER && waterLevels[i] != 0) scheduleWater(i);
+            if (Block.isFluid(blocks[i]) && waterLevels[i] != 0) scheduleFluid(i);
         }
     }
 
@@ -594,13 +630,22 @@ final class VoxelWorld {
         }
         proceduralCacheCursor = 0;
         fluidQueueHead = fluidQueueTail = fluidQueueCount = fluidTickDelay = fluidDirection = 0;
+        lavaTickCounter = 0;
         for (int i = 0; i < fluidQueued.length; i++) fluidQueued[i] = 0;
-        queueSavedFlowingWater();
+        if (nether) convertLegacyNetherWater();
+        queueSavedFlowingFluids();
         fullRebuild = true;
         revision++;
     }
 
     void switchDimension() { setNetherDimension(!nether); }
+
+    private void convertLegacyNetherWater() {
+        for (int i = 0; i < blocks.length; i++)
+            if (blocks[i] == Block.WATER) blocks[i] = Block.LAVA;
+        for (int i = 0; i < editCount; i++)
+            if (editNether[i] && editId[i] == Block.WATER) editId[i] = Block.LAVA;
+    }
 
     /** Activates the classic 4x5 wool frame when the player uses a pickaxe on it. */
     boolean activatePortalAtWool(int x, int y, int z) {
@@ -709,7 +754,7 @@ final class VoxelWorld {
     int surfaceY(int x, int z) {
         if (nether) return InfdevTerrain.netherFloorHeight(seed, x, z);
         for (int y = HEIGHT - 1; y >= 0; y--) {
-            if (get(x, y, z) != Block.AIR && get(x, y, z) != Block.WATER) return y;
+            if (get(x, y, z) != Block.AIR && !Block.isFluid(get(x, y, z))) return y;
         }
         return SEA_LEVEL;
     }
@@ -899,6 +944,10 @@ final class VoxelWorld {
             world.otherDimensionIsNether = otherNether;
             world.otherDimensionBlocks = otherBlocks;
             world.otherDimensionWaterLevels = otherWater;
+            if (otherNether) {
+                for (int i = 0; i < otherBlocks.length; i++)
+                    if (otherBlocks[i] == Block.WATER) otherBlocks[i] = Block.LAVA;
+            }
         } catch (Exception ignored) {
         } finally {
             if (dimStore != null) try { dimStore.closeRecordStore(); } catch (RecordStoreException ignored) { }
@@ -1037,6 +1086,7 @@ final class VoxelWorld {
                 world.dayTime = in.readUnsignedShort() % DAY_LENGTH;
             }
             in.readFully(world.blocks);
+            if (world.nether) world.convertLegacyNetherWater();
             if (format == 0x4D434634 || format == 0x4D434635 || format == 0x4D434636 ||
                 format == 0x4D434637 || format == 0x4D434638 || format == 0x4D434639 ||
                 currentFormat)
@@ -1057,12 +1107,13 @@ final class VoxelWorld {
             }
             if (editPageCount > 0 && editPageCount <= store.getNumRecords())
                 loadEditPages(store, world, editGeneration, editPageCount);
+            if (world.nether) world.convertLegacyNetherWater();
             if (explicitDimensionFormat) loadOtherDimension(storeName, world);
             world.editGeneration = editGeneration;
             if (format != 0x4D434636 && format != 0x4D434637 && format != 0x4D434638 &&
                 format != 0x4D434639 && !currentFormat)
                 world.migrateLegacyFurnaces();
-            world.queueSavedFlowingWater();
+            world.queueSavedFlowingFluids();
             world.revision++;
             return world;
         } catch (Exception ignored) {

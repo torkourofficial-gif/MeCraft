@@ -1271,6 +1271,7 @@ final class ChunkRenderer {
     }
 
     private int renderWorldTile(VoxelWorld world, byte id, int face, int woolColor) {
+        if (id == Block.LAVA) return 234;
         if (world.nether) {
             if (id == Block.STONE) return 232;
             if (id == Block.SAND) return 233;

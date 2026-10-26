@@ -39,6 +39,18 @@ final class PlayerPhysics {
         return false;
     }
 
+    boolean touchesLava(VoxelWorld world) {
+        float x = world.playerX, y = world.playerY, z = world.playerZ;
+        int minX = floor(x - RADIUS), maxX = floor(x + RADIUS);
+        int minY = floor(y), maxY = floor(y + HEIGHT - EPSILON);
+        int minZ = floor(z - RADIUS), maxZ = floor(z + RADIUS);
+        for (int by = minY; by <= maxY; by++)
+            for (int bx = minX; bx <= maxX; bx++)
+                for (int bz = minZ; bz <= maxZ; bz++)
+                    if (world.get(bx, by, bz) == Block.LAVA) return true;
+        return false;
+    }
+
     void clearVerticalMotion() {
         motionY = 0.0f;
         fallDistance = 0.0f;
@@ -314,7 +326,8 @@ final class PlayerPhysics {
         for (int by = fromY; by <= toY; by++) {
             for (int bx = minX; bx <= maxX; bx++) {
                 for (int bz = minZ; bz <= maxZ; bz++) {
-                    if (world.get(bx, by, bz) == Block.WATER && minY < by + 0.91f && maxY > by) return true;
+                    byte id = world.get(bx, by, bz);
+                    if (id == Block.WATER && minY < by + 0.91f && maxY > by) return true;
                 }
             }
         }

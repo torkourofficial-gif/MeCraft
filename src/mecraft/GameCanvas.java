@@ -243,7 +243,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         world.tickTime();
         renderer.updateDayNight(world);
 
-        if (!world.nether) world.updateFluids();
+        world.updateFluids();
         float forward = 0.0f;
         float strafe = 0.0f;
         if (keys[2]) forward += 1.0f;
@@ -269,8 +269,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             damagePlayer(1);
             cactusDamageCooldown = 10;
         }
-        if (world.mode == 0 && world.nether && netherLavaDamageCooldown == 0 &&
-            playerPhysics.isInWater(world)) {
+        if (world.mode == 0 && netherLavaDamageCooldown == 0 &&
+            (playerPhysics.touchesLava(world) || world.nether && playerPhysics.isInWater(world))) {
             damagePlayer(2);
             netherLavaDamageCooldown = 10;
         }
@@ -590,7 +590,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (target == null) { resetMining(); return; }
         int x = target[0], y = target[1], z = target[2];
         byte id = world.get(x, y, z);
-        if (id == Block.AIR || id == Block.BEDROCK || id == Block.WATER) { resetMining(); return; }
+        if (id == Block.AIR || id == Block.BEDROCK || Block.isFluid(id)) { resetMining(); return; }
         // Indev TNT is primed by the attack; it never drops or breaks as a
         // regular block. Replace it with the fuse entity immediately.
         if (id == Block.TNT) {
@@ -745,6 +745,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             return;
         }
         if (block == Block.TORCH && !Block.solid(world.get(x, y - 1, z))) return;
+        if (!canPlaceAlphaPlant((byte)block, x, y, z)) return;
         float px = world.playerX, py = world.playerY, pz = world.playerZ;
         if (x + 1.0f > px - PLAYER_RADIUS && x < px + PLAYER_RADIUS &&
             z + 1.0f > pz - PLAYER_RADIUS && z < pz + PLAYER_RADIUS &&
@@ -760,6 +761,28 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             if (inventory[selectedItem] == 0) restoreHotbarItem(selectedItem);
         }
         renderer.sync(world);
+    }
+
+    private boolean canPlaceAlphaPlant(byte block, int x, int y, int z) {
+        byte below = world.get(x, y - 1, z);
+        if (block == Block.SAPLING) return below == Block.GRASS || below == Block.DIRT;
+        if (block == Block.CROPS) return below == Block.FARMLAND;
+        if (block == Block.REED) {
+            if (below != Block.GRASS && below != Block.DIRT && below != Block.SAND &&
+                    below != Block.REED) return false;
+            return world.get(x - 1, y - 1, z) == Block.WATER ||
+                   world.get(x + 1, y - 1, z) == Block.WATER ||
+                   world.get(x, y - 1, z - 1) == Block.WATER ||
+                   world.get(x, y - 1, z + 1) == Block.WATER;
+        }
+        if (block == Block.CACTUS) {
+            if (below != Block.SAND && below != Block.CACTUS) return false;
+            return !Block.solid(world.get(x - 1, y, z)) &&
+                   !Block.solid(world.get(x + 1, y, z)) &&
+                   !Block.solid(world.get(x, y, z - 1)) &&
+                   !Block.solid(world.get(x, y, z + 1));
+        }
+        return true;
     }
 
     /** Mirrors Alpha ItemDoor's yaw quadrant and nearby-wall hinge selection. */
@@ -852,16 +875,25 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         int[] target = trace(5.0f);
         if (target == null) return;
         int x = target[0], y = target[1], z = target[2];
-        if (selected == ItemCatalog.EMPTY_BUCKET && world.get(x, y, z) == Block.WATER) {
+        byte hit = world.get(x, y, z);
+        if (selected == ItemCatalog.EMPTY_BUCKET && Block.isFluid(hit) &&
+                world.fluidLevel(x, y, z) == 0) {
             if (world.set(x, y, z, Block.AIR)) {
                 if (world.mode == 0) inventory[selected]--;
-                inventory[world.nether ? ItemCatalog.LAVA_BUCKET : ItemCatalog.WATER_BUCKET]++;
+                inventory[hit == Block.LAVA || world.nether && hit == Block.WATER ?
+                        ItemCatalog.LAVA_BUCKET : ItemCatalog.WATER_BUCKET]++;
             }
         } else if (selected != ItemCatalog.EMPTY_BUCKET) {
             x += target[3]; y += target[4]; z += target[5];
             if (y <= 0 || y >= VoxelWorld.HEIGHT ||
                     !Block.replaceable(world.get(x, y, z))) return;
-            if (world.set(x, y, z, Block.WATER)) {
+            if (world.nether && selected == ItemCatalog.WATER_BUCKET) {
+                if (world.mode == 0) {
+                    inventory[selected]--;
+                    inventory[ItemCatalog.EMPTY_BUCKET]++;
+                }
+            } else if (world.set(x, y, z,
+                    selected == ItemCatalog.LAVA_BUCKET ? Block.LAVA : Block.WATER)) {
                 if (world.mode == 0) inventory[selected]--;
                 inventory[ItemCatalog.EMPTY_BUCKET]++;
             }
@@ -967,7 +999,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private int inventoryPageCount() {
         int visibleBlocks = 0;
         for (int id = 1; id < Block.DECORATIVE_START; id++)
-            if (id != Block.WATER && id != Block.BEDROCK) visibleBlocks++;
+            if (id != Block.WATER && id != Block.BEDROCK && id != Block.LAVA) visibleBlocks++;
         int pageSize = 27 - visibleBlocks - 1;
         int items = ItemCatalog.COUNT - Block.COUNT;
         return Math.max(1, (items + pageSize - 1) / pageSize);
@@ -990,7 +1022,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             float z = oz + (float)(dirZ * d);
             int bx = floorBlock(x), by = floorBlock(y), bz = floorBlock(z);
             byte id = world.get(bx, by, bz);
-            if (id != Block.AIR && id != Block.WATER) {
+            if (id != Block.AIR && !Block.isFluid(id)) {
                 int[] hit = traceResult;
                 hit[0] = bx; hit[1] = by; hit[2] = bz;
                 hit[3] = oldX - bx; hit[4] = oldY - by; hit[5] = oldZ - bz;
@@ -2303,7 +2335,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private int inventoryCellItem(int cell) {
         int visibleBlocks = 0;
         for (int id = 1; id < Block.DECORATIVE_START; id++) {
-            if (id == Block.WATER || id == Block.BEDROCK) continue;
+            if (id == Block.WATER || id == Block.BEDROCK || id == Block.LAVA) continue;
             if (visibleBlocks++ == cell) return id;
         }
         if (cell == visibleBlocks) return Block.DOOR;

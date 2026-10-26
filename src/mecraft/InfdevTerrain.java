@@ -92,7 +92,7 @@ final class InfdevTerrain {
                     byte block;
                     if (y == 0 || y == WORLD_HEIGHT - 1) block = Block.BEDROCK;
                     else if (y <= floor || y >= roof) block = Block.STONE;
-                    else if (y <= 5) block = Block.WATER;
+                    else if (y <= 5) block = Block.LAVA;
                     else block = Block.AIR;
                     blocks[base + y] = block;
                 }
