@@ -441,6 +441,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         } catch (OutOfMemoryError exhausted) {
             showError("No hay memoria suficiente para crear el mundo. Libera memoria y vuelve a intentarlo.");
         } catch (Throwable problem) {
+            if ("generando el terreno".equals(stage)) {
+                stage = VoxelWorld.getGenerationDiagnosticStage();
+            }
             showDiagnostic(stage, problem);
         }
     }
