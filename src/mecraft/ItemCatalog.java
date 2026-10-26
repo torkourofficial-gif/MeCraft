@@ -161,9 +161,9 @@ final class ItemCatalog {
         if (kind == PICKAXE) return block == Block.STONE || block == Block.COBBLESTONE ||
                                     block == Block.COAL || block == Block.IRON;
         if (kind == SHOVEL) return block == Block.GRASS || block == Block.DIRT ||
-                                    block == Block.SAND || block == Block.FARMLAND;
+                                    block == Block.SAND || block == Block.FARMLAND || block == Block.SNOW;
         if (kind == AXE) return block == Block.LOG || block == Block.PLANKS ||
-                                  block == Block.CRAFTING_TABLE || block == Block.DOOR;
+                                  block == Block.CRAFTING_TABLE || block == Block.DOOR || block == Block.CACTUS;
         return kind == SWORD;
     }
 }

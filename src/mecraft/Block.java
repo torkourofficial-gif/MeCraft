@@ -44,6 +44,8 @@ final class Block {
     static final int[] CREATIVE_PALETTE = makeCreativePalette();
     /** Uses the original wooden-door tile already present in the terrain atlas. */
     static final byte DOOR = (byte)findTileBlock(97);
+    static final byte CACTUS = (byte)findTileBlock(94);
+    static final byte SNOW = (byte)findTileBlock(66);
 
     private static int findTileBlock(int tile) {
         for (int i = DECORATIVE_START; i < TILE.length; i++)
@@ -123,6 +125,7 @@ final class Block {
         System.arraycopy(basic, 0, result, 0, basic.length);
         for (int i = 0; i < EXTRA_TILES.length; i++) {
             result[DECORATIVE_START + i] = EXTRA_TILES[i] == 97 ? "Puerta de madera" :
+                    EXTRA_TILES[i] == 94 ? "Cactus" : EXTRA_TILES[i] == 66 ? "Nieve" :
                     new StringBuffer().append("Decoración ").append(EXTRA_TILES[i]).toString();
         }
         return result;
@@ -188,6 +191,7 @@ final class Block {
         if (id == BEDROCK) return -1;
         if (isFlower(id) || id == TNT) return 0;
         if (id == LEAVES) return 2;
+        if (id == SNOW || id == CACTUS) return 5;
         if (id == DIRT || id == SAND) return 5;
         if (id == GRASS) return 6;
         if (id == STONE) return 15;

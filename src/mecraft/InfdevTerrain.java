@@ -7,7 +7,7 @@ final class InfdevTerrain {
     static final int SEA_LEVEL = VoxelWorld.SEA_LEVEL;
     static final int CHUNK_VOLUME = CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT;
 
-    private static final int OCEAN = 0;
+    private static final int SNOWY = 0;
     private static final int PLAINS = 1;
     private static final int DESERT = 2;
     private static final int DARK_FOREST = 3;
@@ -37,13 +37,13 @@ final class InfdevTerrain {
                 int height = surfaceHeight(seed, worldX, worldZ, biome);
                 heights[column] = height;
                 biomes[column] = (byte)biome;
-                int top = biome == DESERT || biome == OCEAN ? Block.SAND : Block.GRASS;
-                int fill = biome == DESERT || biome == OCEAN ? Block.SAND : Block.DIRT;
+                int top = biome == DESERT ? Block.SAND : biome == SNOWY ? Block.SNOW : Block.GRASS;
+                int fill = biome == DESERT ? Block.SAND : Block.DIRT;
                 int at = column * WORLD_HEIGHT;
                 for (int y = 0; y < WORLD_HEIGHT; y++) {
                     byte id;
                     if (y == 0) id = Block.BEDROCK;
-                    else if (y > height) id = y <= SEA_LEVEL ? Block.WATER : Block.AIR;
+                    else if (y > height) id = Block.AIR;
                     else if (y == height) id = (byte)top;
                     else if (y >= height - 3) id = (byte)fill;
                     else if (y < 8 && (hash(seed ^ 0x5F356495, worldX, y, worldZ) & 31) == 0) id = Block.COAL;
@@ -64,7 +64,7 @@ final class InfdevTerrain {
 
     private static int biomeAt(int seed, int x, int z) {
         int temperature = valueNoise(seed ^ 211, x, z, 256);
-        if (temperature < 46) return OCEAN;
+        if (temperature < 46) return SNOWY;
         if (temperature < 164) return PLAINS;
         if (temperature < 215) return DESERT;
         return valueNoise(seed ^ 97, x, z, 192) < 128 ? DARK_FOREST : JUNGLE;
@@ -76,7 +76,7 @@ final class InfdevTerrain {
         int n3 = valueNoise(seed ^ 73, x, z, 4) - 128;
         int variation = (n1 * 9 + n2 * 5 + n3 * 2) >> 7;
         int height;
-        if (biome == OCEAN) height = 5 + variation / 3;
+        if (biome == SNOWY) height = 12 + variation;
         else if (biome == DESERT) height = 10 + variation;
         else if (biome == DARK_FOREST || biome == JUNGLE) height = 12 + variation;
         else height = 10 + variation;
@@ -159,7 +159,7 @@ final class InfdevTerrain {
                 int chance = biome == JUNGLE ? 3 : biome == DARK_FOREST ? 2 : biome == PLAINS ? 7 : 0;
                 if (chance == 0 || (treeHash & 15) >= chance) continue;
                 int ty = surfaceHeight(seed, tx, tz, biome);
-                if (ty <= SEA_LEVEL + 1 || ty + 4 >= WORLD_HEIGHT) continue;
+                if (ty <= SEA_LEVEL + 1 || ty + 4 >= WORLD_HEIGHT || biome == SNOWY) continue;
                 for (int oy = 1; oy <= 4; oy++) {
                     for (int dz = -2; dz <= 2; dz++) {
                         for (int dx = -2; dx <= 2; dx++) {
@@ -183,7 +183,17 @@ final class InfdevTerrain {
             for (int x = 0; x < CHUNK_SIZE; x++) {
                 int column = z * CHUNK_SIZE + x;
                 int height = heights[column];
-                if (biomes[column] == OCEAN || biomes[column] == DESERT) continue;
+                int biome = biomes[column] & 255;
+                if (biome == DESERT) {
+                    if ((hash(seed ^ 0xCA275, originX + x, height, originZ + z) & 31) == 0 &&
+                        height + 2 < WORLD_HEIGHT) {
+                        int cactusHeight = 1 + ((hash(seed, originX + x, 2, originZ + z) >>> 8) & 1);
+                        for (int i = 1; i <= cactusHeight; i++)
+                            blocks[column * WORLD_HEIGHT + height + i] = Block.CACTUS;
+                    }
+                    continue;
+                }
+                if (biome == SNOWY) continue;
                 if ((hash(seed ^ 0x73B91, originX + x, height, originZ + z) & 63) != 0 ||
                     height + 1 >= WORLD_HEIGHT) continue;
                 int at = column * WORLD_HEIGHT + height + 1;
