@@ -22,9 +22,7 @@ and regional-feature patterns in `minicraft_3d` without copying its implementati
 The renderer reuses a fixed slot grid and rebuilds a slot when its global chunk
 coordinate changes. It now builds only the closest missing visible chunk each
 frame; eight generated-neighbor buffers avoid repeating terrain generation
-while greedy meshing reads across chunk edges. Per-tile face builders and the
-crossed-plant builder are reused between chunk rebuilds to reduce garbage
-collection. The fixed camera radius bounds
+while greedy meshing reads across chunk edges. The fixed camera radius bounds
 both mesh memory and work queued after crossing a chunk border.
 
 ## Integration still needed
@@ -32,7 +30,7 @@ both mesh memory and work queued after crossing a chunk border.
 `VoxelWorld.get` now synthesizes terrain outside the original 48 x 48 editable
 save window, while placement and mining use a sparse saved edit overlay there.
 The original saved region still loads with its existing format. The overlay has
-a fixed 512-block capacity to fit within small J2ME RMS record limits; when it is
+a fixed 1024-block capacity to fit within small J2ME RMS record limits; when it is
 full, further edits outside the original region are rejected. Extending edits
 with per-chunk RMS records is the next persistence improvement. Water simulation
 also remains active only in the original save window.

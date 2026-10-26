@@ -28,7 +28,7 @@ final class VoxelWorld {
     private static final int MCF7_ITEM_COUNT = 47;
     private static final int MCF8_ITEM_COUNT = 48;
     private static final int MCF9_ITEM_COUNT = 51;
-    private static final int INFDEV_EDIT_LIMIT = 512;
+    private static final int INFDEV_EDIT_LIMIT = 1024;
     private static final int INFDEV_EDIT_MAGIC = 0x49464431;
     static final int DAY_LENGTH = 24000;
 
@@ -52,7 +52,7 @@ final class VoxelWorld {
     private final int[] editZ = new int[INFDEV_EDIT_LIMIT];
     private final byte[] editId = new byte[INFDEV_EDIT_LIMIT];
     private final byte[] editMeta = new byte[INFDEV_EDIT_LIMIT];
-    private final short[] editLookup = new short[1024];
+    private final short[] editLookup = new short[2048];
     private int editCount;
     final int[] inventory = new int[ItemCatalog.COUNT];
     final int[] itemDamage = new int[ItemCatalog.COUNT];
@@ -154,6 +154,10 @@ final class VoxelWorld {
         while (editLookup[slot] != 0) slot = (slot + 1) & (editLookup.length - 1);
         editLookup[slot] = (short)(i + 1);
         return i;
+    }
+
+    private int editsRequired(int x, int y, int z) {
+        return inside(x, z) || findEdit(x, y, z) >= 0 ? 0 : 1;
     }
 
     private int metadataAt(int x, int y, int z) {
@@ -261,9 +265,12 @@ final class VoxelWorld {
         if (get(x, y, z) != Block.DOOR) return false;
         if ((doorMetadata(x, y, z) & 8) != 0) y--;
         if (get(x, y, z) != Block.DOOR) return false;
-        setBlock(x, y, z, Block.AIR, 0);
-        if (y + 1 < HEIGHT && get(x, y + 1, z) == Block.DOOR)
-            setBlock(x, y + 1, z, Block.AIR, 0);
+        boolean hasUpper = y + 1 < HEIGHT && get(x, y + 1, z) == Block.DOOR;
+        int editsNeeded = editsRequired(x, y, z);
+        if (hasUpper) editsNeeded += editsRequired(x, y + 1, z);
+        if (editCount + editsNeeded > editX.length) return false;
+        if (!setBlock(x, y, z, Block.AIR, 0)) return false;
+        if (hasUpper && !setBlock(x, y + 1, z, Block.AIR, 0)) return false;
         fullRebuild = true;
         return true;
     }

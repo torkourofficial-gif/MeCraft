@@ -533,8 +533,11 @@ final class GameCanvas extends Canvas implements Runnable {
         // Indev TNT is primed by the attack; it never drops or breaks as a
         // regular block. Replace it with the fuse entity immediately.
         if (id == Block.TNT) {
+            if (!world.set(x, y, z, Block.AIR)) {
+                miningDamage = 0.99f;
+                return;
+            }
             renderer.spawnPrimedTnt(x, y, z, 80);
-            world.set(x, y, z, Block.AIR);
             renderer.swingHand();
             renderer.sync(world);
             resetMining();
@@ -544,11 +547,14 @@ final class GameCanvas extends Canvas implements Runnable {
         if (id == Block.DOOR) {
             int meta = world.doorMetadata(x, y, z);
             int lowerY = (meta & 8) != 0 ? y - 1 : y;
+            if (!world.removeDoor(x, y, z)) {
+                miningDamage = 0.99f;
+                return;
+            }
             if (world.mode == 0)
                 renderer.spawnDroppedItem(Block.DOOR, x, lowerY, z);
             renderer.spawnBlockDestroy(x, lowerY, z, 97);
             renderer.swingHand();
-            world.removeDoor(x, y, z);
             if (world.mode == 0)
                 damageTool(hotbar[world.selectedSlot],
                         ItemCatalog.durabilityCost(hotbar[world.selectedSlot]));
@@ -568,11 +574,15 @@ final class GameCanvas extends Canvas implements Runnable {
         if (miningDamage >= 1.0f) {
             int heldItem = hotbar[world.selectedSlot];
             boolean canHarvest = Block.canHarvest(id, heldItem);
+            int dropId = world.dropItemId(x, y, z);
+            if (!world.set(x, y, z, Block.AIR)) {
+                miningDamage = 0.99f;
+                return;
+            }
             if (world.mode == 0 && Block.dropsItem(id) && canHarvest)
-                renderer.spawnDroppedItem(world.dropItemId(x, y, z), x, y, z);
+                renderer.spawnDroppedItem(dropId, x, y, z);
             renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
             renderer.swingHand();
-            world.set(x, y, z, Block.AIR);
             if (y + 1 < VoxelWorld.HEIGHT &&
                 world.get(x, y + 1, z) == Block.DOOR && !Block.solid(world.get(x, y, z))) {
                 if (world.mode == 0) renderer.spawnDroppedItem(Block.DOOR, x, y + 1, z);
@@ -2032,18 +2042,27 @@ final class GameCanvas extends Canvas implements Runnable {
         int direction = Math.abs(ay) > Math.abs(ax) && Math.abs(ay) >= Math.abs(az) ? 1 :
                         (Math.abs(az) > Math.abs(ax) ? 2 : 0);
         float x = miningX, y = miningY, z = miningZ;
+        boolean projected;
         if (direction == 0) {
             float face = x + (ax > 0 ? 1.0f : 0.0f);
-            if (!projectPoint(face, y, z, 0) || !projectPoint(face, y, z + 1, 1) ||
-                !projectPoint(face, y + 1, z + 1, 2) || !projectPoint(face, y + 1, z, 3)) return;
+            projected = projectPoint(face, y, z, 0) && projectPoint(face, y, z + 1, 1) &&
+                projectPoint(face, y + 1, z + 1, 2) && projectPoint(face, y + 1, z, 3);
         } else if (direction == 1) {
             float face = y + (ay > 0 ? 1.0f : 0.0f);
-            if (!projectPoint(x, face, z, 0) || !projectPoint(x + 1, face, z, 1) ||
-                !projectPoint(x + 1, face, z + 1, 2) || !projectPoint(x, face, z + 1, 3)) return;
+            projected = projectPoint(x, face, z, 0) && projectPoint(x + 1, face, z, 1) &&
+                projectPoint(x + 1, face, z + 1, 2) && projectPoint(x, face, z + 1, 3);
         } else {
             float face = z + (az > 0 ? 1.0f : 0.0f);
-            if (!projectPoint(x, y, face, 0) || !projectPoint(x + 1, y, face, 1) ||
-                !projectPoint(x + 1, y + 1, face, 2) || !projectPoint(x, y + 1, face, 3)) return;
+            projected = projectPoint(x, y, face, 0) && projectPoint(x + 1, y, face, 1) &&
+                projectPoint(x + 1, y + 1, face, 2) && projectPoint(x, y + 1, face, 3);
+        }
+        if (!projected) {
+            int cx = getWidth() / 2, cy = getHeight() / 2;
+            int half = Math.max(5, Math.min(getWidth(), getHeight()) / 48);
+            crackScreenX[0] = cx - half; crackScreenY[0] = cy - half;
+            crackScreenX[1] = cx + half; crackScreenY[1] = cy - half;
+            crackScreenX[2] = cx + half; crackScreenY[2] = cy + half;
+            crackScreenX[3] = cx - half; crackScreenY[3] = cy + half;
         }
 
         int lines = (CRACK_LINES.length / 4) * stage / 10;
@@ -2056,11 +2075,9 @@ final class GameCanvas extends Canvas implements Runnable {
             int x2 = faceX(CRACK_LINES[p + 2], CRACK_LINES[p + 3]);
             int y2 = faceY(CRACK_LINES[p + 2], CRACK_LINES[p + 3]);
             g.drawLine(x1, y1, x2, y2);
-            if (stage >= 7) {
-                g.setColor(185, 185, 185);
-                g.drawLine(x1 + 1, y1, x2 + 1, y2);
-                g.setColor(30, 30, 30);
-            }
+            g.setColor(205, 205, 205);
+            g.drawLine(x1, y1 + 1, x2, y2 + 1);
+            g.setColor(30, 30, 30);
         }
     }
 

@@ -76,8 +76,6 @@ final class ChunkRenderer {
     private int torchScanZ = Integer.MIN_VALUE;
     private int torchScanRevision = Integer.MIN_VALUE;
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
-    private final FaceBuilder[] chunkBuilders = new FaceBuilder[TILE_COUNT];
-    private final FlowerBuilder chunkFlowerBuilder = new FlowerBuilder();
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] desiredVisibleChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
@@ -982,10 +980,7 @@ final class ChunkRenderer {
     }
 
     private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {
-        FaceBuilder[] builders = chunkBuilders;
-        for (int i = 0; i < builders.length; i++)
-            if (builders[i] != null) builders[i].reset();
-        chunkFlowerBuilder.reset();
+        FaceBuilder[] builders = new FaceBuilder[TILE_COUNT];
         FlowerBuilder flowers = null;
         int x0 = cx * VoxelWorld.CHUNK_XZ;
         int y0 = cy * VoxelWorld.CHUNK_Y;
@@ -1003,10 +998,10 @@ final class ChunkRenderer {
                             VoxelWorld.CHUNK_XZ + (x - x0);
                     chunkVoxelScratch[localIndex] = id;
                     if (Block.isFlower(id)) {
-                        if (flowers == null) flowers = chunkFlowerBuilder;
+                        if (flowers == null) flowers = new FlowerBuilder();
                         flowers.add(x - x0, y - y0, z - z0, Block.sideTile(id));
                     } else if (id == Block.DOOR) {
-                        if (flowers == null) flowers = chunkFlowerBuilder;
+                        if (flowers == null) flowers = new FlowerBuilder();
                         flowers.addDoor(x - x0, y - y0, z - z0,
                                 world.doorMetadata(x, y, z));
                     }
@@ -1108,21 +1103,17 @@ final class ChunkRenderer {
         }
 
         int count = 0;
-        for (int i = 0; i < builders.length; i++)
-            if (builders[i] != null && builders[i].vertexCount > 0) count++;
+        for (int i = 0; i < builders.length; i++) if (builders[i] != null) count++;
         int flowerCount = flowers == null ? 0 : 1;
         if (count + flowerCount == 0) return null;
         Mesh[] meshes = new Mesh[count + flowerCount];
         int at = 0;
         for (int i = 0; i < builders.length; i++) {
-            if (builders[i] == null || builders[i].vertexCount == 0) continue;
+            if (builders[i] == null) continue;
             meshes[at++] = makeMesh(builders[i], tileAppearance(i), 1.0f / 16.0f);
-            builders[i].reset();
+            builders[i] = null;
         }
-        if (flowers != null) {
-            meshes[at++] = makeFlowerMesh(flowers, flowerAppearance);
-            flowers.reset();
-        }
+        if (flowers != null) meshes[at++] = makeFlowerMesh(flowers, flowerAppearance);
         Chunk chunk = new Chunk();
         chunk.meshes = meshes;
         int wx = x0, wy = y0, wz = z0;
@@ -1255,8 +1246,6 @@ final class ChunkRenderer {
         short[] uv = new short[32];
         int vertexCount;
 
-        void reset() { vertexCount = 0; }
-
         void add(int x, int y, int z, int tile) {
             ensure(vertexCount + 8);
             int x0 = x * 256 + 77, x1 = x * 256 + 179;
@@ -1328,8 +1317,6 @@ final class ChunkRenderer {
         int faceCount;
 
         FaceBuilder(int tile) { this.tile = tile; }
-
-        void reset() { vertexCount = faceCount = 0; }
 
         /** Add one tiled rectangle produced by the chunk's greedy face scan. */
         void addRect(int x, int y, int z, int width, int height, int face) {
