@@ -10,7 +10,7 @@ final class Crafting {
     static final int DOOR = BASIC_RECIPES;
     static final int TOOL_RECIPES = BASIC_RECIPES + 1;
     private static final int TOOL_RECIPE_COUNT = ItemCatalog.TOOL_KINDS * ItemCatalog.TOOL_TIERS;
-    private static final int FOOD_AND_ITEM_RECIPES = 6;
+    private static final int FOOD_AND_ITEM_RECIPES = 7;
     private static final int ARMOR_RECIPES = 4 * 4;
     static final int RECIPE_COUNT = TOOL_RECIPES + TOOL_RECIPE_COUNT +
                                     FOOD_AND_ITEM_RECIPES + ARMOR_RECIPES;
@@ -51,6 +51,7 @@ final class Crafting {
                 ItemCatalog.IRON_INGOT, 1, ItemCatalog.FLINT, 1);
         setRecipe(extra++, ItemCatalog.GOLDEN_APPLE, 1, "Manzana dorada",
                 ItemCatalog.APPLE, 1, ItemCatalog.GOLD_INGOT, 8);
+        setRecipe(extra++, Block.CHEST, 1, "Cofre", Block.PLANKS, 8);
         int[] armorItems = new int[] {
             ItemCatalog.LEATHER_HELMET, ItemCatalog.LEATHER_CHESTPLATE,
             ItemCatalog.LEATHER_LEGGINGS, ItemCatalog.LEATHER_BOOTS,
