@@ -647,7 +647,7 @@ final class VoxelWorld {
             if (editNether[i] && editId[i] == Block.WATER) editId[i] = Block.LAVA;
     }
 
-    /** Activates the classic 4x5 wool frame when the player uses a pickaxe on it. */
+    /** Activates a black-wool 4x5 frame when the player uses a diamond sword. */
     boolean activatePortalAtWool(int x, int y, int z) {
         if (get(x, y, z) != Block.WOOL) return false;
         int[] frame = findPortalFrameForWool(x, y, z);
@@ -709,10 +709,15 @@ final class VoxelWorld {
         for (int v = 0; v <= 4; v++) {
             for (int u = 0; u <= 3; u++) {
                 boolean frameBlock = v == 0 || v == 4 || u == 0 || u == 3;
-                byte id = frameBlock ? Block.WOOL : Block.PORTAL;
                 int x = axis == 0 ? baseX + u : baseX;
                 int z = axis == 0 ? baseZ : baseZ + u;
-                if (!set(x, baseY + v, z, id) && get(x, baseY + v, z) != id) return null;
+                if (frameBlock) {
+                    if (get(x, baseY + v, z) != Block.WOOL ||
+                            woolColor(x, baseY + v, z) != WoolColors.BLACK) {
+                        if (!setWool(x, baseY + v, z, WoolColors.BLACK)) return null;
+                    }
+                } else if (!set(x, baseY + v, z, Block.PORTAL) &&
+                        get(x, baseY + v, z) != Block.PORTAL) return null;
             }
         }
         return new int[] { baseX, baseY, baseZ, axis };
@@ -744,7 +749,9 @@ final class VoxelWorld {
                 byte id = get(x, by + v, z);
                 if (v == 0 || v == 4 || u == 0 || u == 3) {
                     boolean corner = (u == 0 || u == 3) && (v == 0 || v == 4);
-                    if (id != Block.WOOL && (!corner || !Block.replaceable(id))) return false;
+                    if (id == Block.WOOL) {
+                        if (woolColor(x, by + v, z) != WoolColors.BLACK) return false;
+                    } else if (!corner || !Block.replaceable(id)) return false;
                 } else if (id != Block.AIR && id != Block.PORTAL) return false;
             }
         }

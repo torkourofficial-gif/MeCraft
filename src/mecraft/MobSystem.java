@@ -45,7 +45,7 @@ final class MobSystem {
     private final Appearance fireAppearance;
     private final Appearance spiderEyesAppearance;
     private final Texture2D[] mobTextures = new Texture2D[11];
-    private Texture2D fleeceTexture;
+    private final Texture2D[] fleeceTextures = new Texture2D[WoolColors.COUNT];
     private final Random random = new Random(1L);
     private int worldSeed = Integer.MIN_VALUE;
     private int tick;
@@ -68,7 +68,11 @@ final class MobSystem {
             texture("alpha_pigzombie.png")
         };
         System.arraycopy(skinTextures, 0, mobTextures, 0, skinTextures.length);
-        fleeceTexture = texture("sheep_fur.png");
+        Image fleeceImage = GameAssets.image("sheep_fur.png");
+        fleeceTextures[0] = texture(fleeceImage);
+        fleeceTextures[WoolColors.LIGHT_GRAY] =
+                texture(recolor(fleeceImage, WoolColors.LIGHT_GRAY));
+        fleeceTextures[WoolColors.BLACK] = texture(recolor(fleeceImage, WoolColors.BLACK));
         Appearance arrowAppearance = skin(skinTextures[SKELETON]);
         for (int i = 0; i < arrows.length; i++) {
             arrows[i] = new Arrow(arrowAppearance);
@@ -204,7 +208,8 @@ final class MobSystem {
             target.setSheared(true);
             int woolCount = 1 + random.nextInt(3);
             for (int i = 0; i < woolCount; i++) {
-                drops.spawn(Block.WOOL, floor(target.x), floor(target.y), floor(target.z));
+                drops.spawn(ItemCatalog.woolItem(target.woolColor),
+                        floor(target.x), floor(target.y), floor(target.z));
             }
         }
         target.health -= damage;
@@ -370,12 +375,29 @@ final class MobSystem {
         Mob mob = mobs[slot];
         if (mob != null) return mob;
         int type = mobTypeForSlot(slot);
-        Appearance fleece = type == SHEEP ? skin(fleeceTexture) : null;
+        int woolColor = type == SHEEP ? naturalSheepColor() : 0;
+        Appearance fleece = type == SHEEP ? skin(fleeceTextures[woolColor]) : null;
         mob = new Mob(type, skin(mobTextures[type]), fleece, fireAppearance,
                       type == SPIDER ? spiderEyesAppearance : null);
+        mob.woolColor = woolColor;
         mobs[slot] = mob;
         scene.addChild(mob.root);
         return mob;
+    }
+
+    private int naturalSheepColor() {
+        int roll = random.nextInt(100);
+        if (roll < 5) return WoolColors.BLACK;
+        if (roll < 10) return WoolColors.LIGHT_GRAY;
+        return 0;
+    }
+
+    private Image recolor(Image source, int color) {
+        int width = source.getWidth(), height = source.getHeight();
+        int[] pixels = new int[width * height];
+        source.getRGB(pixels, 0, width, 0, 0, width, height);
+        WoolColors.recolor(pixels, color);
+        return Image.createRGBImage(pixels, width, height, true);
     }
 
     private void releaseMob(int slot) {
@@ -1016,6 +1038,7 @@ final class MobSystem {
         boolean dying;
         boolean chasing;
         boolean sheared;
+        int woolColor;
         int walkTicks;
         int hurtTicks;
         float verticalVelocity;

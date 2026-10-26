@@ -5,6 +5,8 @@ import javax.microedition.lcdui.Image;
 /** Classic 16-color wool palette and texture recoloring helpers. */
 final class WoolColors {
     static final int COUNT = 16;
+    static final int LIGHT_GRAY = 8;
+    static final int BLACK = 15;
     private static final String[] NAMES = new String[] {
         "Blanca", "Naranja", "Magenta", "Azul claro", "Amarilla", "Lima",
         "Rosa", "Gris", "Gris claro", "Cian", "Morada", "Azul",

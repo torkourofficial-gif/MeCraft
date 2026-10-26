@@ -820,7 +820,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private void useSelectedItem() {
         if (world == null) return;
         int selected = hotbar[world.selectedSlot];
-        if (ItemCatalog.isTool(selected) && ItemCatalog.kind(selected) == ItemCatalog.PICKAXE) {
+        if (ItemCatalog.isTool(selected) && ItemCatalog.kind(selected) == ItemCatalog.SWORD &&
+                ItemCatalog.tier(selected) == ItemCatalog.DIAMOND_TIER) {
             int[] target = trace(5.0f);
             if (target != null && world.activatePortalAtWool(target[0], target[1], target[2])) {
                 renderer.swingHand();
