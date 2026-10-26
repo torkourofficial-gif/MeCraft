@@ -2,14 +2,20 @@ package mecraft;
 
 import java.io.IOException;
 import javax.microedition.lcdui.Canvas;
+import javax.microedition.lcdui.Command;
+import javax.microedition.lcdui.CommandListener;
+import javax.microedition.lcdui.Display;
+import javax.microedition.lcdui.Displayable;
 import javax.microedition.lcdui.Font;
 import javax.microedition.lcdui.Graphics;
 import javax.microedition.lcdui.Image;
+import javax.microedition.lcdui.TextBox;
+import javax.microedition.lcdui.TextField;
 import javax.microedition.lcdui.game.Sprite;
 import javax.microedition.m3g.Graphics3D;
 
 /** Game loop, phone controls, M3G view and compact HUD. */
-final class GameCanvas extends Canvas implements Runnable {
+final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private static final int MENU = 0;
     private static final int PLAYING = 1;
     private static final int PAUSED = 2;
@@ -44,9 +50,6 @@ final class GameCanvas extends Canvas implements Runnable {
         Block.DIRT, Block.STONE, Block.LOG, Block.SAND, Block.PLANKS,
         Block.LEAVES, Block.COAL, Block.IRON, Block.TORCH
     };
-    private static final String[] NAME_KEYPAD = new String[] {
-        " ", ".,?!", "abc", "def", "ghi", "jkl", "mno", "pqrs", "tuv", "wxyz"
-    };
     private static final String[] PAUSE_ROWS = new String[] {
         "Volver", "Guardar y menú", "Guardar y salir"
     };
@@ -75,10 +78,9 @@ final class GameCanvas extends Canvas implements Runnable {
     private int createSelection;
     private int newWorldMode;
     private String newWorldName = "Mundo 1";
-    private StringBuffer worldNameBuffer;
-    private int lastNameKey = -1;
-    private int lastNameLetter;
-    private long lastNameTapTime;
+    private TextBox worldNameInput;
+    private Command acceptWorldName;
+    private Command cancelWorldName;
     private int pauseSelection;
     private int gameOverSelection;
     private int gameOverTicks;
@@ -917,7 +919,6 @@ final class GameCanvas extends Canvas implements Runnable {
             return;
         }
         if (state == WORLD_NAME) {
-            handleWorldNameKey(keyCode);
             return;
         }
         if (state == SETTINGS) {
@@ -1173,12 +1174,7 @@ final class GameCanvas extends Canvas implements Runnable {
 
     private void activateCreateSelection() {
         if (createSelection == 0) {
-            worldNameBuffer = new StringBuffer(newWorldName == null ? "" : newWorldName);
-            lastNameKey = -1;
-            lastNameLetter = 0;
-            lastNameTapTime = 0L;
-            state = WORLD_NAME;
-            repaint();
+            openNativeWorldNameInput();
         } else if (createSelection == 1) {
             newWorldMode = 1 - newWorldMode;
             repaint();
@@ -1192,68 +1188,38 @@ final class GameCanvas extends Canvas implements Runnable {
         }
     }
 
-    /** Small multi-tap editor keeps world naming inside Canvas. */
-    private void handleWorldNameKey(int keyCode) {
-        if (keyCode == KEY_POUND) {
-            String value = worldNameBuffer == null ? "" : worldNameBuffer.toString().trim();
-            newWorldName = value.length() == 0 ? "Mundo " + (savedWorlds.length + 1) : value;
+    /** Opens MIDP's native text editor so hardware QWERTY keyboards work. */
+    private void openNativeWorldNameInput() {
+        try {
+            String initialName = newWorldName == null ? "" : newWorldName;
+            if (initialName.length() > 24) initialName = initialName.substring(0, 24);
+            worldNameInput = new TextBox("Nombre del mundo", initialName, 24, TextField.ANY);
+            acceptWorldName = new Command("Aceptar", Command.OK, 1);
+            cancelWorldName = new Command("Cancelar", Command.CANCEL, 2);
+            worldNameInput.addCommand(acceptWorldName);
+            worldNameInput.addCommand(cancelWorldName);
+            worldNameInput.setCommandListener(this);
+            state = WORLD_NAME;
+            Display.getDisplay(app).setCurrent(worldNameInput);
+        } catch (RuntimeException unavailable) {
+            worldNameInput = null;
             state = WORLD_CREATE;
-            lastNameKey = -1;
             repaint();
-            return;
         }
-        if (keyCode == KEY_STAR) {
-            if (worldNameBuffer != null && worldNameBuffer.length() > 0)
-                worldNameBuffer.deleteCharAt(worldNameBuffer.length() - 1);
-            lastNameKey = -1;
-            repaint();
-            return;
-        }
-        int digit = keypadDigit(keyCode);
-        if (digit < 0 || worldNameBuffer == null) return;
-        String letters = NAME_KEYPAD[digit];
-        if (letters.length() == 0) return;
-        long now = System.currentTimeMillis();
-        if (digit == lastNameKey && now - lastNameTapTime < 850L && worldNameBuffer.length() > 0) {
-            lastNameLetter = (lastNameLetter + 1) % letters.length();
-            worldNameBuffer.setCharAt(worldNameBuffer.length() - 1, letters.charAt(lastNameLetter));
-        } else if (worldNameBuffer.length() < 24) {
-            lastNameKey = digit;
-            lastNameLetter = 0;
-            worldNameBuffer.append(letters.charAt(0));
-        } else {
-            lastNameKey = -1;
-        }
-        lastNameKey = digit;
-        lastNameTapTime = now;
+    }
+
+    public synchronized void commandAction(Command command, Displayable displayable) {
+        if (displayable != worldNameInput || state != WORLD_NAME) return;
+        if (command == acceptWorldName) {
+            String value = worldNameInput.getString().trim();
+            newWorldName = value.length() == 0 ? "Mundo " + (savedWorlds.length + 1) : value;
+        } else if (command != cancelWorldName) return;
+        worldNameInput = null;
+        acceptWorldName = null;
+        cancelWorldName = null;
+        state = WORLD_CREATE;
+        Display.getDisplay(app).setCurrent(this);
         repaint();
-    }
-
-    private int keypadDigit(int keyCode) {
-        if (keyCode == KEY_NUM0) return 0;
-        if (keyCode == KEY_NUM1) return 1;
-        if (keyCode == KEY_NUM2) return 2;
-        if (keyCode == KEY_NUM3) return 3;
-        if (keyCode == KEY_NUM4) return 4;
-        if (keyCode == KEY_NUM5) return 5;
-        if (keyCode == KEY_NUM6) return 6;
-        if (keyCode == KEY_NUM7) return 7;
-        if (keyCode == KEY_NUM8) return 8;
-        if (keyCode == KEY_NUM9) return 9;
-        return -1;
-    }
-
-    private void drawWorldNameEditor(Graphics g) {
-        int w = getWidth(), h = getHeight();
-        drawDirtBackground(g);
-        drawInsetPanel(g, 12, h / 3, w - 24, h / 3);
-        g.setColor(255, 255, 255);
-        g.drawString("Nombre del mundo", w / 2, h / 3 + 14, Graphics.TOP | Graphics.HCENTER);
-        g.setColor(255, 240, 205);
-        String name = worldNameBuffer == null ? "" : worldNameBuffer.toString();
-        g.drawString(trimText(name, 20), w / 2, h / 3 + 48, Graphics.TOP | Graphics.HCENTER);
-        g.drawString("2-9 escribir  0 espacio", w / 2, h / 3 + 78, Graphics.TOP | Graphics.HCENTER);
-        g.drawString("* borrar  # aceptar", w / 2, h / 3 + 98, Graphics.TOP | Graphics.HCENTER);
     }
 
     private void activateSelection() {
@@ -1531,7 +1497,6 @@ final class GameCanvas extends Canvas implements Runnable {
                 drawError(g);
             }
         } else if (state == ERROR) drawError(g);
-        else if (state == WORLD_NAME) drawWorldNameEditor(g);
         else if (state == WORLD_SELECT) drawWorldSelect(g);
         else if (state == WORLD_DELETE) drawWorldDelete(g);
         else if (state == WORLD_CREATE) drawWorldCreate(g);
