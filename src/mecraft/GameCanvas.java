@@ -1,6 +1,12 @@
 package mecraft;
 
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import javax.microedition.rms.RecordStore;
+import javax.microedition.rms.RecordStoreException;
 import javax.microedition.lcdui.Canvas;
 import javax.microedition.lcdui.Command;
 import javax.microedition.lcdui.CommandListener;
@@ -31,6 +37,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private static final int WORLD_NAME = 12;
     private static final int SKIN_SELECT = 13;
     private static final int CONTROLS = 14;
+    private static final int CHEST_INVENTORY = 15;
     private static final int CONTROL_LOOK_UP = 0, CONTROL_LOOK_DOWN = 1;
     private static final int CONTROL_LOOK_LEFT = 2, CONTROL_LOOK_RIGHT = 3;
     private static final int CONTROL_FORWARD = 4, CONTROL_BACK = 5;
@@ -145,6 +152,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private int recipeSelection;
     private int recipeScroll;
     private int inventoryPage;
+    private final int[] chestItems = new int[27];
+    private final int[] chestCounts = new int[27];
+    private int chestX, chestY, chestZ, chestSelection;
+    private String chestStoreName;
     private int creativeSelection;
     private int miningX = -1, miningY = -1, miningZ = -1;
     private float miningDamage;
@@ -226,7 +237,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private int musicModeForState() {
         if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH ||
-                state == CREATIVE_INVENTORY || state == GAME_OVER) return MusicController.GAMEPLAY;
+                state == CREATIVE_INVENTORY || state == CHEST_INVENTORY || state == GAME_OVER) return MusicController.GAMEPLAY;
         if (state == MENU || state == WORLD_SELECT || state == WORLD_CREATE ||
                 state == WORLD_DELETE || state == WORLD_NAME || state == SETTINGS ||
                 state == SKIN_SELECT || state == CONTROLS) return MusicController.MENU;
@@ -639,6 +650,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             miningHitWait = 5;
             return;
         }
+        if (id == Block.CHEST) {
+            loadChestContents(x, y, z);
+            for (int i = 0; i < chestItems.length; i++) {
+                if (chestItems[i] > 0 && chestCounts[i] > 0)
+                    renderer.spawnDroppedItem(chestItems[i], x, y, z);
+            }
+            clearChestContents();
+        }
         if (id == Block.DOOR) {
             int meta = world.doorMetadata(x, y, z);
             int lowerY = (meta & 8) != 0 ? y - 1 : y;
@@ -737,6 +756,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         int[] target = trace(5.0f);
         if (target != null && world.get(target[0], target[1], target[2]) == Block.CRAFTING_TABLE) {
             openCrafting(true);
+            return;
+        }
+        if (target != null && world.get(target[0], target[1], target[2]) == Block.CHEST) {
+            openChest(target[0], target[1], target[2]);
             return;
         }
         if (target != null && world.get(target[0], target[1], target[2]) == Block.DOOR) {
@@ -981,6 +1004,107 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         world.save();
     }
 
+
+    private void openChest(int x, int y, int z) {
+        if (state != PLAYING || world == null) return;
+        chestX=x; chestY=y; chestZ=z; chestSelection=0;
+        loadChestContents(x,y,z);
+        state=CHEST_INVENTORY;
+        clearKeys();
+        repaint();
+    }
+
+    private String chestStoreName(int x, int y, int z) {
+        String base = world == null || world.saveStoreName == null ? "mecraft-save" : world.saveStoreName;
+        return "mcch" + Integer.toHexString((base + ":" + world.nether + ":" + x + ":" + y + ":" + z).hashCode());
+    }
+
+    private void loadChestContents(int x, int y, int z) {
+        chestStoreName=chestStoreName(x,y,z);
+        for(int i=0;i<27;i++){chestItems[i]=0;chestCounts[i]=0;}
+        RecordStore rs=null;
+        try {
+            rs=RecordStore.openRecordStore(chestStoreName,false);
+            if(rs.getNumRecords()>0){
+                byte[] data=rs.getRecord(1);
+                DataInputStream in=new DataInputStream(new ByteArrayInputStream(data));
+                if(in.readInt()==0x4D434843){
+                    for(int i=0;i<27;i++){chestItems[i]=in.readInt();chestCounts[i]=in.readInt();
+                        if(chestItems[i]<0||chestItems[i]>=ItemCatalog.COUNT||chestCounts[i]<0||chestCounts[i]>64){chestItems[i]=0;chestCounts[i]=0;}}
+                }
+                in.close();
+            }
+        } catch(Exception ignored) { }
+        finally { if(rs!=null) try{rs.closeRecordStore();}catch(Exception ignored){} }
+    }
+
+    private void saveChestContents() {
+        if(chestStoreName==null)return;
+        RecordStore rs=null;
+        try {
+            ByteArrayOutputStream bytes=new ByteArrayOutputStream(220);
+            DataOutputStream out=new DataOutputStream(bytes);
+            out.writeInt(0x4D434843);
+            for(int i=0;i<27;i++){out.writeInt(chestItems[i]);out.writeInt(chestCounts[i]);}
+            out.flush(); byte[] data=bytes.toByteArray();
+            rs=RecordStore.openRecordStore(chestStoreName,true);
+            if(rs.getNumRecords()==0)rs.addRecord(data,0,data.length);else rs.setRecord(1,data,0,data.length);
+            out.close();
+        } catch(Exception ignored) { }
+        finally {if(rs!=null)try{rs.closeRecordStore();}catch(Exception ignored){}}
+    }
+
+    private void clearChestContents() {
+        if(chestStoreName==null)return;
+        try{RecordStore.deleteRecordStore(chestStoreName);}catch(Exception ignored){}
+        chestStoreName=null;
+    }
+
+    private void transferChestSlot() {
+        if(world==null)return;
+        int slot=chestSelection, held=hotbar[world.selectedSlot];
+        if(chestItems[slot]>0){
+            int id=chestItems[slot], amount=chestCounts[slot];
+            if(inventory[id]<=0 || inventory[id]+amount<=64){
+                inventory[id]+=amount;
+                if(hotbarIndex(id)<0)hotbar[world.selectedSlot]=id;
+                chestItems[slot]=0;chestCounts[slot]=0;
+            } else {
+                int room=64-inventory[id]; if(room>0){inventory[id]+=room;chestCounts[slot]-=room;}
+            }
+        } else if(held>0 && held<ItemCatalog.COUNT && inventory[held]>0) {
+            chestItems[slot]=held;chestCounts[slot]=inventory[held];inventory[held]=0;
+            restoreHotbarItem(held);
+        }
+        copyInventoryToWorld(); saveChestContents(); repaint();
+    }
+
+    private void drawChest(Graphics g) {
+        int w=getWidth(), h=getHeight(), pw=176, ph=222;
+        int left=(w-pw)/2, top=(h-ph)/2;
+        if(containerTexture!=null && containerTexture.getWidth()>=pw && containerTexture.getHeight()>=ph)
+            g.drawRegion(containerTexture,0,0,pw,ph,Sprite.TRANS_NONE,left,top,Graphics.TOP|Graphics.LEFT);
+        else {g.setColor(198,198,198);g.fillRect(left,top,pw,ph);g.setColor(35,35,35);g.drawRect(left,top,pw-1,ph-1);}
+        g.setColor(35,35,35);g.drawString("Cofre",left+8,top+5,Graphics.TOP|Graphics.LEFT);
+        g.drawString("5: mover  #: cerrar",left+pw/2,top+ph+2,Graphics.TOP|Graphics.HCENTER);
+        int sx=left+8, sy=top+25;
+        for(int i=0;i<27;i++){
+            int x=sx+(i%9)*18,y=sy+(i/9)*18;
+            g.setColor(i==chestSelection?0xFFFF80:0x555555);g.fillRect(x,y,17,17);
+            g.setColor(0x222222);g.drawRect(x,y,16,16);
+            if(chestItems[i]>0){drawIcon(g,chestItems[i],x+1,y+1,false);
+                if(chestCounts[i]>1)drawOutlinedCount(g,Integer.toString(chestCounts[i]),x+16,y+16,Graphics.RIGHT|Graphics.BOTTOM);}
+        }
+        g.setColor(35,35,35);g.drawString("Inventario",left+8,top+87,Graphics.TOP|Graphics.LEFT);
+        for(int i=0;i<9;i++){
+            int id=hotbar[i], x=sx+i*18,y=top+105;
+            g.setColor(i==world.selectedSlot?0xFFFF80:0x555555);g.fillRect(x,y,17,17);
+            g.setColor(0x222222);g.drawRect(x,y,16,16);
+            if(id>0 && inventory[id]>0){drawIcon(g,id,x+1,y+1,false);
+                if(inventory[id]>1)drawOutlinedCount(g,Integer.toString(inventory[id]),x+16,y+16,Graphics.RIGHT|Graphics.BOTTOM);}
+        }
+    }
+
     private void openCrafting(boolean workbench) {
         if (state != PLAYING || world == null || (world.mode == 1 && !workbench)) return;
         state = workbench ? WORKBENCH : INVENTORY;
@@ -992,6 +1116,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void closeCrafting() {
+        if (state == CHEST_INVENTORY) { saveChestContents(); state = PLAYING; repaint(); return; }
         if (state != INVENTORY && state != WORKBENCH) return;
         state = PLAYING;
         repaint();
@@ -1259,8 +1384,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             else if (keyCode == KEY_NUM0) backToMenu();
             return;
         }
-        if (state == INVENTORY || state == WORKBENCH) {
+        if (state == CHEST_INVENTORY) {
             int action = gameAction(keyCode);
+            if (keyCode == KEY_POUND || keyCode == KEY_NUM0) closeCrafting();
+            else if (keyCode == KEY_NUM2 || action == UP) chestSelection = (chestSelection + 18) % 27;
+            else if (keyCode == KEY_NUM8 || action == DOWN) chestSelection = (chestSelection + 9) % 27;
+            else if (keyCode == KEY_NUM4 || action == LEFT) chestSelection = chestSelection % 9 == 0 ? chestSelection + 8 : chestSelection - 1;
+            else if (keyCode == KEY_NUM6 || action == RIGHT) chestSelection = chestSelection % 9 == 8 ? chestSelection - 8 : chestSelection + 1;
+            else if (keyCode == KEY_NUM5 || action == FIRE) transferChestSlot();
+            repaint();
+            return;
+        }
+        if (state == INVENTORY || state == WORKBENCH) {
             if (keyCode == KEY_POUND || keyCode == KEY_NUM0) closeCrafting();
             else if (keyCode == KEY_NUM2 || action == UP) moveRecipeSelection(-1);
             else if (keyCode == KEY_NUM8 || action == DOWN) moveRecipeSelection(1);
@@ -1897,6 +2032,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                     drawGameOver(g);
                 }
                 if (state == INVENTORY || state == WORKBENCH) drawCrafting(g, state == WORKBENCH);
+                if (state == CHEST_INVENTORY) drawChest(g);
                 if (state == CREATIVE_INVENTORY) drawCreativeInventory(g);
             } catch (OutOfMemoryError exhausted) {
                 showError("M3G agotó el heap. El diseño apunta a móviles con heap total de 4 MiB o más.");
