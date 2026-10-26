@@ -1018,7 +1018,10 @@ final class ChunkRenderer {
                             (tanVertical + CHUNK_RETENTION_TAN_MARGIN) + CHUNK_RADIUS;
                     boolean sameChunk = residentChunks[i] && chunkWorldX[i] == cx &&
                         chunkWorldY[i] == cy && chunkWorldZ[i] == cz;
-                    if (residentChunks[i] && (!retained || !sameChunk)) removeChunk(i);
+                    // Keep a built chunk resident while it remains in the player's stream grid.
+                    // Camera rotation must not evict off-screen chunks, or turning back
+                    // forces the same M3G meshes to be allocated and rebuilt repeatedly.
+                    if (residentChunks[i] && !sameChunk) removeChunk(i);
                     if (visible && (!sameChunk || dirtyChunks[i])) {
                         if (!sameChunk) {
                             chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
