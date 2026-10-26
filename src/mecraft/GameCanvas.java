@@ -2203,12 +2203,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                     if (vz >= 0) { face = 2; u = vx / major; v = -vy / major; }
                     else { face = 0; u = -vx / major; v = -vy / major; }
                 }
-                // Atlas cells: 0/1/2/3 are the four horizon directions;
-                // cell 4 is sky and cell 5 is ground.
+                // Atlas order is left, forward, right, rear, sky, ground.
+                // Convert cube directions (+X, -X, +Y, -Y, +Z, -Z)
+                // to the actual cell layout rather than assuming row-major faces.
                 int atlasFace;
                 if (face == 4) atlasFace = 4;
                 else if (face == 5) atlasFace = 5;
-                else atlasFace = face;
+                else if (face == 1) atlasFace = 2; // +X: right
+                else if (face == 3) atlasFace = 0; // -X: left
+                else if (face == 2) atlasFace = 3; // +Z: rear
+                else atlasFace = 1;                // -Z: forward
                 int tx = (int)((u + 1.0) * 0.5 * (faceSize - 1));
                 int ty = (int)((v + 1.0) * 0.5 * (faceSize - 1));
                 if (tx < 0) tx = 0; else if (tx >= faceSize) tx = faceSize - 1;
