@@ -19,6 +19,7 @@ final class PlayerPhysics {
     }
 
     boolean isOnGround() { return onGround; }
+    boolean hasHorizontalCollision() { return horizontalCollision; }
 
     boolean touchesCactus(VoxelWorld world) {
         float x = world.playerX, y = world.playerY, z = world.playerZ;

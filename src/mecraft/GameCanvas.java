@@ -89,8 +89,8 @@ final class GameCanvas extends Canvas implements Runnable {
     private boolean flying;
     private boolean hasJumpTap;
     private long lastJumpTap;
-    private boolean hasForwardTap;
-    private long lastForwardTap;
+    // Classic sprint double-tap window: seven 20 Hz gameplay ticks.
+    private int sprintToggleTimer;
     private boolean sprinting;
     private float cameraPitch = -5.0f;
     private boolean lookUp, lookDown, lookLeft, lookRight;
@@ -189,6 +189,7 @@ final class GameCanvas extends Canvas implements Runnable {
 
     private synchronized void updateGame() {
         if (!visible || state != PLAYING || world == null || renderer == null) return;
+        if (sprintToggleTimer > 0) sprintToggleTimer--;
         if (lookLeft) world.yaw += 3.0f;
         if (lookRight) world.yaw -= 3.0f;
         if (world.yaw < 0.0f) world.yaw += 360.0f;
@@ -209,9 +210,13 @@ final class GameCanvas extends Canvas implements Runnable {
         if (keys[8]) forward -= 1.0f;
         if (keys[6]) strafe += 1.0f;
         if (keys[4]) strafe -= 1.0f;
-        boolean sprint = sprinting && keys[2] && !keys[8];
+        boolean canKeepSprinting = keys[2] && !keys[8] &&
+                !(world.mode == 1 && flying) && !playerPhysics.isInWater(world);
+        if (sprinting && !canKeepSprinting) sprinting = false;
+        boolean sprint = sprinting;
         int fallDamage = playerPhysics.update(world, forward, strafe, jumpHeld,
                 world.mode == 1 && flying, descendHeld, sprint);
+        if (sprinting && playerPhysics.hasHorizontalCollision()) sprinting = false;
         if (world.mode == 0 && fallDamage > 0) damagePlayer(fallDamage);
         int mobDamage = renderer.updateMobs(world);
         if (world.mode == 0 && mobDamage > 0) damagePlayer(mobDamage);
@@ -337,8 +342,8 @@ final class GameCanvas extends Canvas implements Runnable {
             playerPhysics.reset();
             flying = false;
             hasJumpTap = false;
-            hasForwardTap = false;
             sprinting = false;
+            sprintToggleTimer = 0;
             airTicks = MAX_AIR;
             hurtTicks = 0;
             cactusDamageCooldown = 0;
@@ -377,8 +382,8 @@ final class GameCanvas extends Canvas implements Runnable {
             playerPhysics.reset();
             flying = false;
             hasJumpTap = false;
-            hasForwardTap = false;
             sprinting = false;
+            sprintToggleTimer = 0;
             airTicks = MAX_AIR;
             hurtTicks = 0;
             cactusDamageCooldown = 0;
@@ -985,14 +990,14 @@ final class GameCanvas extends Canvas implements Runnable {
         }
         if (keyCode == KEY_NUM2) {
             if (!keys[2]) {
-                long now = System.currentTimeMillis();
-                if (hasForwardTap && now - lastForwardTap <= 350L) {
+                boolean canStartSprint = playerPhysics.isOnGround() &&
+                        !(world.mode == 1 && flying) && !playerPhysics.isInWater(world);
+                if (canStartSprint && sprintToggleTimer > 0) {
                     sprinting = true;
-                    hasForwardTap = false;
+                    sprintToggleTimer = 0;
                 } else {
-                    hasForwardTap = true;
-                    lastForwardTap = now;
                     sprinting = false;
+                    sprintToggleTimer = canStartSprint ? 7 : 0;
                 }
             }
             keys[2] = true;
@@ -1446,7 +1451,7 @@ final class GameCanvas extends Canvas implements Runnable {
     private void clearKeys() {
         for (int i = 0; i < keys.length; i++) keys[i] = false;
         sprinting = false;
-        hasForwardTap = false;
+        sprintToggleTimer = 0;
         jumpHeld = false;
         descendHeld = false;
         lookUp = lookDown = lookLeft = lookRight = false;
