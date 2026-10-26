@@ -119,6 +119,7 @@ final class GameCanvas extends Canvas implements Runnable {
     private static final int MAX_AIR = 300;
     private int airTicks = MAX_AIR;
     private int hurtTicks;
+    private int cactusDamageCooldown;
     private Image waterTint;
     private Image hurtTint;
     private Image pauseTint;
@@ -210,6 +211,11 @@ final class GameCanvas extends Canvas implements Runnable {
         if (world.mode == 0 && fallDamage > 0) damagePlayer(fallDamage);
         int mobDamage = renderer.updateMobs(world);
         if (world.mode == 0 && mobDamage > 0) damagePlayer(mobDamage);
+        if (cactusDamageCooldown > 0) cactusDamageCooldown--;
+        if (world.mode == 0 && cactusDamageCooldown == 0 && playerPhysics.touchesCactus(world)) {
+            damagePlayer(1);
+            cactusDamageCooldown = 10;
+        }
         if (state != PLAYING) return;
         tickAirAndHurt();
         if (state != PLAYING) return;
@@ -275,6 +281,7 @@ final class GameCanvas extends Canvas implements Runnable {
         playerPhysics.reset();
         airTicks = MAX_AIR;
         hurtTicks = 0;
+        cactusDamageCooldown = 0;
     }
 
     private void enterGameOver() {
@@ -328,6 +335,7 @@ final class GameCanvas extends Canvas implements Runnable {
             hasJumpTap = false;
             airTicks = MAX_AIR;
             hurtTicks = 0;
+            cactusDamageCooldown = 0;
             resetInventory(mode);
             copyInventoryToWorld();
             world.save();
@@ -365,6 +373,7 @@ final class GameCanvas extends Canvas implements Runnable {
             hasJumpTap = false;
             airTicks = MAX_AIR;
             hurtTicks = 0;
+            cactusDamageCooldown = 0;
             copyHotbarFromWorld();
             resetInventory(world.mode);
             for (int i = 0; i < inventory.length; i++) inventory[i] = world.inventory[i];

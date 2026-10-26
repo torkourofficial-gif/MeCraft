@@ -20,6 +20,24 @@ final class PlayerPhysics {
 
     boolean isOnGround() { return onGround; }
 
+    boolean touchesCactus(VoxelWorld world) {
+        float x = world.playerX, y = world.playerY, z = world.playerZ;
+        float margin = 0.015f;
+        int minX = floor(x - RADIUS - margin), maxX = floor(x + RADIUS + margin);
+        int minY = floor(y + EPSILON), maxY = floor(y + HEIGHT - EPSILON);
+        int minZ = floor(z - RADIUS - margin), maxZ = floor(z + RADIUS + margin);
+        for (int by = minY; by <= maxY; by++) {
+            for (int bx = minX; bx <= maxX; bx++) {
+                if (x + RADIUS + margin <= bx || x - RADIUS - margin >= bx + 1.0f) continue;
+                for (int bz = minZ; bz <= maxZ; bz++) {
+                    if (z + RADIUS + margin <= bz || z - RADIUS - margin >= bz + 1.0f) continue;
+                    if (world.get(bx, by, bz) == Block.CACTUS) return true;
+                }
+            }
+        }
+        return false;
+    }
+
     void clearVerticalMotion() {
         motionY = 0.0f;
         fallDistance = 0.0f;

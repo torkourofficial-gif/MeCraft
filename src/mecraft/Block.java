@@ -44,7 +44,8 @@ final class Block {
     static final int[] CREATIVE_PALETTE = makeCreativePalette();
     /** Uses the original wooden-door tile already present in the terrain atlas. */
     static final byte DOOR = (byte)findTileBlock(97);
-    static final byte CACTUS = (byte)findTileBlock(94);
+    static final byte CACTUS = (byte)findTileBlock(70);
+    static final int CACTUS_TOP_TILE = 71;
     static final byte SNOW = (byte)findTileBlock(66);
 
     private static int findTileBlock(int tile) {
@@ -125,7 +126,7 @@ final class Block {
         System.arraycopy(basic, 0, result, 0, basic.length);
         for (int i = 0; i < EXTRA_TILES.length; i++) {
             result[DECORATIVE_START + i] = EXTRA_TILES[i] == 97 ? "Puerta de madera" :
-                    EXTRA_TILES[i] == 94 ? "Cactus" : EXTRA_TILES[i] == 66 ? "Nieve" :
+                    EXTRA_TILES[i] == 70 ? "Cactus" : EXTRA_TILES[i] == 66 ? "Nieve" :
                     new StringBuffer().append("Decoración ").append(EXTRA_TILES[i]).toString();
         }
         return result;
@@ -214,6 +215,7 @@ final class Block {
 
     static int topTile(byte id) {
         if (id == TNT) return 9;
+        if (id == CACTUS) return CACTUS_TOP_TILE;
         if (isDecorative(id)) return TILE[id & 255];
         if (id == GRASS) return 0;
         if (id == LOG) return 21;
@@ -240,6 +242,7 @@ final class Block {
         if (id == TNT && face == 5) return 10;
         if (face == 5) {
             if (id == GRASS) return TILE[DIRT];
+            if (id == CACTUS) return 2;
             if (id == CRAFTING_TABLE) return TILE[PLANKS];
             if (id == FARMLAND) return 2;
             return topTile(id);
