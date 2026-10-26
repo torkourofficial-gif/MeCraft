@@ -126,6 +126,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private MusicController music;
     private SkinGallery skinGallery;
     private Image title;
+    private Image skybox;
+    private Image menuPanorama;
+    private int panoramaTick;
+    private int panoramaWidth;
+    private int panoramaHeight;
     private Image guiTexture;
     private Image iconsTexture;
     private Image containerTexture;
@@ -210,6 +215,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             if (music != null) music.update(visible ? musicModeForState() : MusicController.OFF);
             if (visible && state == PLAYING) updateGame();
             if (visible && state == GAME_OVER && gameOverTicks < 12) gameOverTicks++;
+            if (visible && state == MENU) panoramaTick++;
             if (visible && (state != PLAYING || renderFrame++ % (frameSkip + 1) == 0)) repaint();
             long elapsed = System.currentTimeMillis() - start;
             long wait = 50L - elapsed;
@@ -1911,7 +1917,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void drawMenu(Graphics g) {
         int w = getWidth(), h = getHeight();
-        drawDirtBackground(g);
+        drawPanoramaBackground(g);
         int logoY = Math.max(8, h / 12);
         if (title != null) g.drawImage(title, w / 2, logoY, Graphics.TOP | Graphics.HCENTER);
         else {
@@ -2092,6 +2098,159 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         int textX = (w - textWidth) / 2;
         g.drawString(marker, textX, y + 3, Graphics.TOP | Graphics.LEFT);
         g.drawString(shownLabel, textX + font.stringWidth(marker), y + 3, Graphics.TOP | Graphics.LEFT);
+    }
+
+    /**
+     * Pocket Edition-style animated title panorama. Only the main menu uses
+     * this background; world, settings, controls and other submenus retain
+     * their existing dirt texture and panel rendering.
+     */
+    private void drawPanoramaBackground(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        if (w <= 0 || h <= 0) return;
+        if (skybox == null) {
+            try { skybox = GameAssets.image("skybox.png"); }
+            catch (Throwable ignored) { skybox = null; }
+        }
+        if (skybox == null) {
+            drawDirtBackground(g);
+            return;
+        }
+        if (menuPanorama == null || panoramaWidth != w || panoramaHeight != h) {
+            try {
+                menuPanorama = buildMenuPanorama(h);
+                panoramaWidth = w;
+                panoramaHeight = h;
+            } catch (Throwable ignored) {
+                menuPanorama = null;
+            }
+        }
+        if (menuPanorama == null) {
+            // Keep the menu usable on devices whose heap cannot allocate the
+            // temporary panorama buffer.
+            drawDirtBackground(g);
+            return;
+        }
+
+        int panoW = menuPanorama.getWidth();
+        int offset = (panoramaTick / 5) % panoW;
+        if (offset + w <= panoW) {
+            g.drawRegion(menuPanorama, offset, 0, w, h, Sprite.TRANS_NONE,
+                    0, 0, Graphics.TOP | Graphics.LEFT);
+        } else {
+            int first = panoW - offset;
+            g.drawRegion(menuPanorama, offset, 0, first, h, Sprite.TRANS_NONE,
+                    0, 0, Graphics.TOP | Graphics.LEFT);
+            g.drawRegion(menuPanorama, 0, 0, w - first, h, Sprite.TRANS_NONE,
+                    first, 0, Graphics.TOP | Graphics.LEFT);
+        }
+    }
+
+    /**
+     * Converts a 2:1 equirectangular image or a common cubemap cross/strip
+     * into a low-cost 2:1 panorama cache. The panorama then scrolls by
+     * cropping it, avoiding per-frame 3D work and extra image allocations.
+     */
+    private Image buildMenuPanorama(int targetHeight) {
+        if (skybox == null || targetHeight <= 0) return null;
+        int targetWidth = targetHeight * 2;
+        int sw = skybox.getWidth(), sh = skybox.getHeight();
+        if (sw <= 0 || sh <= 0) return null;
+
+        int[] source = new int[sw * sh];
+        skybox.getRGB(source, 0, sw, 0, 0, sw, sh);
+        int[] output = new int[targetWidth * targetHeight];
+
+        boolean equirect = sw >= sh * 2 - 2 && sw <= sh * 2 + 2;
+        int face = 0;
+        boolean cross = sw % 4 == 0 && sh % 3 == 0 && sw / 4 == sh / 3;
+        boolean strip = sw % 3 == 0 && sh % 2 == 0 && sw / 3 == sh / 2;
+        int faceSize = cross ? sw / 4 : (strip ? sw / 3 : 0);
+
+        if (equirect) {
+            for (int y = 0; y < targetHeight; y++) {
+                int sy = y * sh / targetHeight;
+                for (int x = 0; x < targetWidth; x++) {
+                    int sx = (x * sw / targetWidth) % sw;
+                    output[y * targetWidth + x] = source[sy * sw + sx];
+                }
+            }
+        } else if (cross || strip) {
+            // Cube-face order is +X, -X, +Y, -Y, +Z, -Z.
+            // A cross uses the conventional 4x3 net; a 3x2 atlas is row-major.
+            double[] sinLon = new double[targetWidth];
+            double[] cosLon = new double[targetWidth];
+            double[] sinLat = new double[targetHeight];
+            double[] cosLat = new double[targetHeight];
+            for (int x = 0; x < targetWidth; x++) {
+                double lon = ((x + 0.5) / targetWidth) * Math.PI * 2.0 - Math.PI;
+                sinLon[x] = Math.sin(lon);
+                cosLon[x] = Math.cos(lon);
+            }
+            for (int y = 0; y < targetHeight; y++) {
+                double lat = Math.PI / 2.0 - ((y + 0.5) / targetHeight) * Math.PI;
+                sinLat[y] = Math.sin(lat);
+                cosLat[y] = Math.cos(lat);
+            }
+            for (int y = 0; y < targetHeight; y++) {
+                double dy = sinLat[y];
+                for (int x = 0; x < targetWidth; x++) {
+                    double dx = cosLat[y] * sinLon[x];
+                    double dz = cosLat[y] * cosLon[x];
+                    double ax = Math.abs(dx), ay = Math.abs(dy), az = Math.abs(dz);
+                    int faceIndex;
+                    double u, v, major;
+                    if (ax >= ay && ax >= az) {
+                        major = ax;
+                        if (dx >= 0.0) { faceIndex = 0; u = -dz / major; }
+                        else { faceIndex = 1; u = dz / major; }
+                        v = -dy / major;
+                    } else if (ay >= ax && ay >= az) {
+                        major = ay;
+                        if (dy >= 0.0) { faceIndex = 2; u = dx / major; v = dz / major; }
+                        else { faceIndex = 3; u = dx / major; v = -dz / major; }
+                    } else {
+                        major = az;
+                        if (dz >= 0.0) { faceIndex = 4; u = dx / major; }
+                        else { faceIndex = 5; u = -dx / major; }
+                        v = -dy / major;
+                    }
+                    int fx, fy;
+                    if (cross) {
+                        if (faceIndex == 0) { fx = 2; fy = 1; }
+                        else if (faceIndex == 1) { fx = 0; fy = 1; }
+                        else if (faceIndex == 2) { fx = 1; fy = 0; }
+                        else if (faceIndex == 3) { fx = 1; fy = 2; }
+                        else if (faceIndex == 4) { fx = 1; fy = 1; }
+                        else { fx = 3; fy = 1; }
+                    } else {
+                        fx = faceIndex % 3;
+                        fy = faceIndex / 3;
+                    }
+                    int px = fx * faceSize + (int)((u + 1.0) * 0.5 * (faceSize - 1));
+                    int py = fy * faceSize + (int)((v + 1.0) * 0.5 * (faceSize - 1));
+                    if (px < 0) px = 0;
+                    if (px >= sw) px = sw - 1;
+                    if (py < 0) py = 0;
+                    if (py >= sh) py = sh - 1;
+                    output[y * targetWidth + x] = source[py * sw + px];
+                }
+            }
+        } else {
+            // Unknown layout: center-crop the source into a usable panorama.
+            for (int y = 0; y < targetHeight; y++) {
+                int sy = y * sh / targetHeight;
+                for (int x = 0; x < targetWidth; x++) {
+                    int sx = (x * sw / targetWidth) % sw;
+                    output[y * targetWidth + x] = source[sy * sw + sx];
+                }
+            }
+        }
+
+        Image result = Image.createRGBImage(output, targetWidth, targetHeight, true);
+        source = null;
+        output = null;
+        return result;
     }
 
     private void drawDirtBackground(Graphics g) {
