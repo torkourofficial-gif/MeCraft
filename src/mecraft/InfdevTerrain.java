@@ -101,9 +101,9 @@ final class InfdevTerrain {
                 int surfaceHash = hash(seed ^ 0x5A17, wx, floor, wz);
                 if ((surfaceHash & 15) == 0) blocks[surface] = Block.SAND;
                 if ((surfaceHash & 63) == 1 && floor + 2 < roof) {
-                    blocks[surface + WORLD_HEIGHT] = Block.STONE;
+                    blocks[surface + 1] = Block.STONE;
                     if ((surfaceHash & 128) != 0 && floor + 3 < roof)
-                        blocks[surface + WORLD_HEIGHT * 2] = Block.STONE;
+                        blocks[surface + 2] = Block.STONE;
                 }
                 int roofHash = hash(seed ^ 0x1057, wx, roof, wz);
                 if ((roofHash & 31) == 0 && roof > floor + 2) {
