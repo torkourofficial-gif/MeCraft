@@ -8,5 +8,7 @@ Los PNG que ya estaban en este repositorio se conservan sin modificar. `src/mecr
 
 `src/mecraft/sun.png`, `src/mecraft/moon.png` y `src/mecraft/clouds.png` proceden de `resources/terrain/` y `resources/` de [EaglerPorts/in-20100223](https://github.com/EaglerPorts/in-20100223). Las áreas negras opacas del sol y la luna se hicieron transparentes para el renderizado; `clouds.png` se conserva sin modificar. La titularidad y licencia de estas texturas corresponden a sus autores originales.
 
+`src/mecraft/textures.png` ahora usa el atlas `resources/terrain.png` de [EaglerPorts/a1.2.6](https://github.com/EaglerPorts/a1.2.6). El renderizador aplica tintes de color a los tiles en escala de grises del césped superior y de las dos variantes de hojas. La titularidad y licencia de las texturas corresponden a sus autores originales; el Nether y sus reglas de terreno son una adaptación independiente de la generación Alpha, incluida la roca abisal, la arena de almas, la lava, la piedra luminosa y la roca madre en suelo y techo.
+
 El código de MeCraft en `src/mecraft/` es una implementación original del demake para MIDP/M3G. Confirma los derechos/licencias de las texturas antes de redistribuir un `.jar` que las incluya.
 

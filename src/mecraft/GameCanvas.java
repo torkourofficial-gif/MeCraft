@@ -123,6 +123,7 @@ final class GameCanvas extends Canvas implements Runnable {
     private int airTicks = MAX_AIR;
     private int hurtTicks;
     private int cactusDamageCooldown;
+    private int netherLavaDamageCooldown;
     private Image waterTint;
     private Image hurtTint;
     private Image pauseTint;
@@ -130,6 +131,7 @@ final class GameCanvas extends Canvas implements Runnable {
 
     GameCanvas(MeCraft app) {
         this.app = app;
+        frameSkip = GameSettings.loadFrameSkip();
         try { music = new MusicController(); }
         catch (NoClassDefFoundError unsupported) { music = null; }
         setFullScreenMode(true);
@@ -203,7 +205,7 @@ final class GameCanvas extends Canvas implements Runnable {
         world.tickTime();
         renderer.updateDayNight(world);
 
-        world.updateFluids();
+        if (!world.nether) world.updateFluids();
         float forward = 0.0f;
         float strafe = 0.0f;
         if (keys[2]) forward += 1.0f;
@@ -221,9 +223,15 @@ final class GameCanvas extends Canvas implements Runnable {
         int mobDamage = renderer.updateMobs(world);
         if (world.mode == 0 && mobDamage > 0) damagePlayer(mobDamage);
         if (cactusDamageCooldown > 0) cactusDamageCooldown--;
+        if (netherLavaDamageCooldown > 0) netherLavaDamageCooldown--;
         if (world.mode == 0 && cactusDamageCooldown == 0 && playerPhysics.touchesCactus(world)) {
             damagePlayer(1);
             cactusDamageCooldown = 10;
+        }
+        if (world.mode == 0 && world.nether && netherLavaDamageCooldown == 0 &&
+            playerPhysics.isInWater(world)) {
+            damagePlayer(2);
+            netherLavaDamageCooldown = 10;
         }
         if (state != PLAYING) return;
         tickAirAndHurt();
@@ -262,7 +270,7 @@ final class GameCanvas extends Canvas implements Runnable {
     }
 
     private boolean cameraUnderwater() {
-        if (world == null) return false;
+        if (world == null || world.nether) return false;
         return world.get(floorBlock(world.playerX), floorBlock(world.playerY + PLAYER_EYE_HEIGHT),
                          floorBlock(world.playerZ)) == Block.WATER;
     }
@@ -292,6 +300,7 @@ final class GameCanvas extends Canvas implements Runnable {
         airTicks = MAX_AIR;
         hurtTicks = 0;
         cactusDamageCooldown = 0;
+        netherLavaDamageCooldown = 0;
     }
 
     private void enterGameOver() {
@@ -338,6 +347,9 @@ final class GameCanvas extends Canvas implements Runnable {
             }
             world = new VoxelWorld((int)(System.currentTimeMillis() ^ System.currentTimeMillis() >>> 32), mode);
             world.worldName = name == null || name.trim().length() == 0 ? "Mundo" : name.trim();
+            // Secret Alpha-era variant: naming a world NETHER starts it in the
+            // hidden hell dimension without adding another world-list entry.
+            world.setNetherDimension("NETHER".equalsIgnoreCase(world.worldName));
             world.saveStoreName = VoxelWorld.nextWorldStoreName();
             copyHotbarFromWorld();
             playerPhysics.reset();
@@ -348,6 +360,7 @@ final class GameCanvas extends Canvas implements Runnable {
             airTicks = MAX_AIR;
             hurtTicks = 0;
             cactusDamageCooldown = 0;
+            netherLavaDamageCooldown = 0;
             resetInventory(mode);
             copyInventoryToWorld();
             world.save();
@@ -388,6 +401,7 @@ final class GameCanvas extends Canvas implements Runnable {
             airTicks = MAX_AIR;
             hurtTicks = 0;
             cactusDamageCooldown = 0;
+            netherLavaDamageCooldown = 0;
             copyHotbarFromWorld();
             resetInventory(world.mode);
             for (int i = 0; i < inventory.length; i++) inventory[i] = world.inventory[i];
@@ -1082,6 +1096,7 @@ final class GameCanvas extends Canvas implements Runnable {
         frameSkip += delta;
         if (frameSkip < 0) frameSkip = 2;
         if (frameSkip > 2) frameSkip = 0;
+        GameSettings.saveFrameSkip(frameSkip);
         repaint();
     }
 

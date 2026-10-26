@@ -805,6 +805,13 @@ final class ChunkRenderer {
 
     /** Applies Indev's 24000-tick celestial curve and lights nearby torches with a fixed M3G pool. */
     void updateDayNight(VoxelWorld world) {
+        if (world.nether) {
+            currentDaylight = 0.32f;
+            currentSkyColor = 0xFF4A1717;
+            sunlight.setIntensity(0.45f);
+            updateTorchLights(world);
+            return;
+        }
         float angle = ((float)world.dayTime / (float)VoxelWorld.DAY_LENGTH - 0.15f) *
                       6.2831855f;
         float sun = (float)Math.cos(angle) * 1.5f + 0.5f;
@@ -1080,7 +1087,8 @@ final class ChunkRenderer {
                                 neighbor = chunkVoxelScratch[voxelIndex - CHUNK_AREA];
                             else neighbor = world.get(nx, ny, nz);
                             if (Block.faceVisible(id, neighbor))
-                                key = Block.renderTile(id, face, world.woolColor(x, y, z)) + 1;
+                                key = renderWorldTile(world, id, face,
+                                        world.woolColor(x, y, z)) + 1;
                         }
                         mask[row + a] = key;
                     }
@@ -1216,8 +1224,15 @@ final class ChunkRenderer {
                     (woolTile >> 4) * 16, 16, 16);
             WoolColors.recolor(pixels, tile - Block.WOOL_TINT_TILE_START);
         } else {
-            terrainImage.getRGB(pixels, 0, 16, (tile & 15) * 16,
-                    (tile >> 4) * 16, 16, 16);
+            int sourceTile = tile;
+            if (tile == 232) sourceTile = 103;      // Alpha netherrack
+            else if (tile == 233) sourceTile = 104; // Alpha soul sand
+            else if (tile == 234) sourceTile = 237; // Alpha still lava
+            else if (tile == 235) sourceTile = 105; // Alpha glowstone
+            terrainImage.getRGB(pixels, 0, 16, (sourceTile & 15) * 16,
+                    (sourceTile >> 4) * 16, 16, 16);
+            if (tile == 0) tintAlphaTexture(pixels, 0xFF7FB238);
+            else if (tile == 52 || tile == 53) tintAlphaTexture(pixels, 0xFF48B518);
         }
         Image tileImage = Image.createRGBImage(pixels, 16, 16, true);
         Texture2D texture = new Texture2D(new Image2D(Image2D.RGBA, tileImage));
@@ -1226,6 +1241,34 @@ final class ChunkRenderer {
         appearance = createBlockAppearance(texture);
         tileAppearances[tile] = appearance;
         return appearance;
+    }
+
+    private int renderWorldTile(VoxelWorld world, byte id, int face, int woolColor) {
+        if (world.nether) {
+            if (id == Block.STONE) return 232;
+            if (id == Block.SAND) return 233;
+            if (id == Block.WATER) return 234;
+            if (id == Block.COAL) return 235;
+        }
+        return Block.renderTile(id, face, woolColor);
+    }
+
+    /** Alpha stored grass and foliage as grayscale tiles and tinted them at render time. */
+    private void tintAlphaTexture(int[] pixels, int tint) {
+        int tr = (tint >> 16) & 255;
+        int tg = (tint >> 8) & 255;
+        int tb = tint & 255;
+        for (int i = 0; i < pixels.length; i++) {
+            int pixel = pixels[i];
+            int alpha = pixel >>> 24;
+            if (alpha == 0) continue;
+            int r = (pixel >> 16) & 255;
+            int g = (pixel >> 8) & 255;
+            int b = pixel & 255;
+            int luminance = (r * 77 + g * 150 + b * 29) >> 8;
+            pixels[i] = (alpha << 24) | (luminance * tr / 255 << 16) |
+                    (luminance * tg / 255 << 8) | (luminance * tb / 255);
+        }
     }
 
     private Appearance createBlockAppearance(Texture2D texture) {

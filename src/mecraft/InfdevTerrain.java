@@ -72,6 +72,57 @@ final class InfdevTerrain {
         return surfaceHeight(seed, x, z, biomeAt(seed, x, z));
     }
 
+    /** Compact Alpha-style Nether: netherrack floor, cave volume, lava sea and roof. */
+    static void generateNether(int seed, int chunkX, int chunkZ, byte[] blocks,
+                               int[] floorHeights) {
+        if (blocks == null || blocks.length < CHUNK_VOLUME || floorHeights == null ||
+            floorHeights.length < CHUNK_SIZE * CHUNK_SIZE) return;
+        int originX = chunkX * CHUNK_SIZE;
+        int originZ = chunkZ * CHUNK_SIZE;
+        for (int z = 0; z < CHUNK_SIZE; z++) {
+            for (int x = 0; x < CHUNK_SIZE; x++) {
+                int wx = originX + x, wz = originZ + z;
+                int column = z * CHUNK_SIZE + x;
+                int floor = netherFloorHeight(seed, wx, wz);
+                int roof = 16 + (valueNoise(seed ^ 0x3B91, wx, wz, 40) >> 5);
+                if (roof > WORLD_HEIGHT - 2) roof = WORLD_HEIGHT - 2;
+                floorHeights[column] = floor;
+                int base = column * WORLD_HEIGHT;
+                for (int y = 0; y < WORLD_HEIGHT; y++) {
+                    byte block;
+                    if (y == 0 || y == WORLD_HEIGHT - 1) block = Block.BEDROCK;
+                    else if (y <= floor || y >= roof) block = Block.STONE;
+                    else if (y <= 5) block = Block.WATER;
+                    else block = Block.AIR;
+                    blocks[base + y] = block;
+                }
+
+                int surface = base + floor;
+                int surfaceHash = hash(seed ^ 0x5A17, wx, floor, wz);
+                if ((surfaceHash & 15) == 0) blocks[surface] = Block.SAND;
+                if ((surfaceHash & 63) == 1 && floor + 2 < roof) {
+                    blocks[surface + WORLD_HEIGHT] = Block.STONE;
+                    if ((surfaceHash & 128) != 0 && floor + 3 < roof)
+                        blocks[surface + WORLD_HEIGHT * 2] = Block.STONE;
+                }
+                int roofHash = hash(seed ^ 0x1057, wx, roof, wz);
+                if ((roofHash & 31) == 0 && roof > floor + 2) {
+                    blocks[base + (roof - 1)] = Block.COAL;
+                    if (x > 0) blocks[(column - 1) * WORLD_HEIGHT + roof - 1] = Block.COAL;
+                    if (z > 0) blocks[(column - CHUNK_SIZE) * WORLD_HEIGHT + roof - 1] = Block.COAL;
+                }
+            }
+        }
+    }
+
+    static int netherFloorHeight(int seed, int x, int z) {
+        int broad = valueNoise(seed ^ 0x6A09, x, z, 36);
+        int detail = valueNoise(seed ^ 0xBB67, x, z, 12);
+        int floor = 3 + (broad * 6 >> 8) + (detail >> 6);
+        if (floor > 10) floor = 10;
+        return floor;
+    }
+
     private static int biomeAt(int seed, int x, int z) {
         int temperature = valueNoise(seed ^ 211, x, z, 256);
         if (temperature < 24) return SNOWY;

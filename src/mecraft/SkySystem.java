@@ -86,7 +86,7 @@ final class SkySystem {
         updateGradient(daylight, skyColor);
         float night = 1.0f - daylight;
         float starLevel = night * night;
-        boolean starsVisible = starLevel > 0.015f;
+        boolean starsVisible = !world.nether && starLevel > 0.015f;
         if (!starVisibilityReady || starsVisible != lastStarsVisible) {
             stars.setRenderingEnable(starsVisible);
             lastStarsVisible = starsVisible;

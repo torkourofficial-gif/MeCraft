@@ -67,6 +67,7 @@ final class VoxelWorld {
     int seed;
     int mode;
     String worldName = "Mundo";
+    boolean nether;
     String saveStoreName;
     int selectedSlot;
     int health = 20;
@@ -128,7 +129,7 @@ final class VoxelWorld {
         }
         if (cache < 0) {
             cache = proceduralCacheCursor++ & (PROCEDURAL_CACHE_SIZE - 1);
-            InfdevTerrain.generate(seed, cx, cz, proceduralChunks[cache], proceduralHeights, proceduralBiomes);
+            generateChunk(cx, cz, proceduralChunks[cache]);
             proceduralChunkX[cache] = cx; proceduralChunkZ[cache] = cz;
         }
         int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
@@ -513,7 +514,7 @@ final class VoxelWorld {
         for (int cz = 0; cz < CHUNKS_Z; cz++) {
             for (int cx = 0; cx < CHUNKS_X; cx++) {
                 int cache = proceduralCacheCursor++ & (PROCEDURAL_CACHE_SIZE - 1);
-                InfdevTerrain.generate(seed, cx, cz, proceduralChunks[cache], proceduralHeights, proceduralBiomes);
+                generateChunk(cx, cz, proceduralChunks[cache]);
                 proceduralChunkX[cache] = cx; proceduralChunkZ[cache] = cz;
                 for (int z = 0; z < CHUNK_XZ; z++) {
                     for (int x = 0; x < CHUNK_XZ; x++) {
@@ -526,11 +527,33 @@ final class VoxelWorld {
         }
         playerX = WIDTH / 2 + 0.5f;
         playerZ = DEPTH / 2 + 0.5f;
-        playerY = InfdevTerrain.surfaceHeight(seed, WIDTH / 2, DEPTH / 2) + 1.0f;
+        playerY = (nether ? InfdevTerrain.netherFloorHeight(seed, WIDTH / 2, DEPTH / 2) :
+                InfdevTerrain.surfaceHeight(seed, WIDTH / 2, DEPTH / 2)) + 1.0f;
         yaw = 0f;
     }
 
+    private void generateChunk(int cx, int cz, byte[] target) {
+        if (nether)
+            InfdevTerrain.generateNether(seed, cx, cz, target, proceduralHeights);
+        else
+            InfdevTerrain.generate(seed, cx, cz, target, proceduralHeights, proceduralBiomes);
+    }
+
+    void setNetherDimension(boolean enabled) {
+        if (nether == enabled) return;
+        nether = enabled;
+        for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
+            proceduralChunkX[i] = Integer.MIN_VALUE;
+            proceduralChunkZ[i] = Integer.MIN_VALUE;
+        }
+        proceduralCacheCursor = 0;
+        generate();
+        fullRebuild = true;
+        revision++;
+    }
+
     int surfaceY(int x, int z) {
+        if (nether) return InfdevTerrain.netherFloorHeight(seed, x, z);
         for (int y = HEIGHT - 1; y >= 0; y--) {
             if (get(x, y, z) != Block.AIR && get(x, y, z) != Block.WATER) return y;
         }
@@ -659,6 +682,7 @@ final class VoxelWorld {
             boolean namedFormat = format == 0x4D434642 || format == 0x4D434643;
             VoxelWorld world = new VoxelWorld(seed, mode);
             world.worldName = namedFormat ? in.readUTF() : "Mundo guardado";
+            world.setNetherDimension("NETHER".equalsIgnoreCase(world.worldName));
             world.saveStoreName = storeName;
             world.selectedSlot = in.readByte();
             boolean currentFormat = format == 0x4D434641 || format == 0x4D434642 || format == 0x4D434643;
