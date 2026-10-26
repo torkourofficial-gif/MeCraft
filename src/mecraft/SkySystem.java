@@ -19,31 +19,24 @@ import javax.microedition.m3g.VertexBuffer;
 /** Indev-style sky objects, kept in a small fixed set of M3G meshes. */
 final class SkySystem {
     private static final float FIXED_SCALE = 1.0f / 256.0f;
+    private static final float NORMAL_TAN_HALF_FOV = (float)Math.tan(34.0 * Math.PI / 180.0);
     private static final int STAR_COUNT = 500;
-    private static final long CLOUD_REFRESH_MS = 100L;
+    private static final int CLOUD_BAND_HEIGHT = 160;
+    private static final int CLOUD_COLOR_STEP = 8;
     private final Group yawCounter = new Group();
     private final Group celestialRotation = new Group();
     private final Background skyBackground;
     private final Mesh stars;
     private final Material starsMaterial;
     private final int cloudWidth;
-    private final int cloudHeight;
     private final byte[] cloudAlpha;
     private Image2D cloudBackground;
-    private byte[] backgroundPixels;
-    private float[] screenX;
-    private float[] screenY;
-    private float tanHalfFov = (float)Math.tan(34.0 * Math.PI / 180.0);
+    private byte[] cloudPixels;
+    private float tanHalfFov = NORMAL_TAN_HALF_FOV;
     private int viewportWidth;
     private int viewportHeight;
-    private boolean cloudFrameReady;
-    private float lastCloudYaw;
-    private float lastCloudPitch;
-    private int lastCloudShift;
     private int lastCloudTint;
     private int lastSkyColor;
-    private float lastTanHalfFov;
-    private long lastCloudRenderTime;
     private boolean starColorReady;
     private int lastStarColor;
     private boolean starVisibilityReady;
@@ -73,53 +66,32 @@ final class SkySystem {
 
         Image cloudImage = GameAssets.image("clouds.png");
         cloudWidth = cloudImage.getWidth();
-        cloudHeight = cloudImage.getHeight();
+        int cloudHeight = cloudImage.getHeight();
         int[] sourcePixels = new int[cloudWidth * cloudHeight];
         cloudImage.getRGB(sourcePixels, 0, cloudWidth, 0, 0, cloudWidth, cloudHeight);
         cloudAlpha = new byte[sourcePixels.length];
         for (int i = 0; i < sourcePixels.length; i++)
             cloudAlpha[i] = (byte)(sourcePixels[i] >>> 24);
         sourcePixels = null;
+        cloudPixels = new byte[cloudWidth * CLOUD_BAND_HEIGHT * 3];
+        cloudBackground = new Image2D(Image2D.RGB, cloudWidth, CLOUD_BAND_HEIGHT);
         resize(width, height);
     }
 
     void resize(int width, int height) {
         if (width <= 0 || height <= 0 ||
                 (width == viewportWidth && height == viewportHeight)) return;
-        cloudFrameReady = false;
         viewportWidth = width;
         viewportHeight = height;
-        int sampleWidth = (width + 1) >> 1;
-        int sampleHeight = (height + 1) >> 1;
-        screenX = new float[sampleWidth];
-        screenY = new float[sampleHeight];
-        updateScreenRays();
-        backgroundPixels = new byte[width * height * 3];
-        cloudBackground = new Image2D(Image2D.RGB, width, height);
-        for (int at = 0; at < backgroundPixels.length; at += 3) {
-            backgroundPixels[at] = (byte)0x82;
-            backgroundPixels[at + 1] = (byte)0xB8;
-            backgroundPixels[at + 2] = (byte)0xE8;
-        }
-        cloudBackground.set(0, 0, width, height, backgroundPixels);
         skyBackground.setImage(cloudBackground);
-        skyBackground.setImageMode(Background.BORDER, Background.BORDER);
+        skyBackground.setImageMode(Background.REPEAT, Background.BORDER);
         skyBackground.setCrop(0, 0, width, height);
-    }
-
-    private void updateScreenRays() {
-        float focal = viewportHeight / (2.0f * tanHalfFov);
-        for (int x = 0; x < screenX.length; x++)
-            screenX[x] = (x * 2 + 1.0f - viewportWidth * 0.5f) / focal;
-        for (int y = 0; y < screenY.length; y++)
-            screenY[y] = (viewportHeight * 0.5f - (y * 2 + 1.0f)) / focal;
     }
 
     void setFieldOfView(float fieldOfView) {
         float next = (float)Math.tan(fieldOfView * Math.PI / 360.0);
         if (Math.abs(next - tanHalfFov) < 0.0001f) return;
         tanHalfFov = next;
-        updateScreenRays();
     }
 
     void update(VoxelWorld world, float yaw, float cloudYaw, float pitch,
@@ -151,107 +123,47 @@ final class SkySystem {
         }
     }
 
-    /** Rasterize Indev's cloud map into the sky background at 1 texel / 8 blocks. */
+    /** Composite a small 2D cloud strip; M3G scrolls it as a repeated background. */
     private void renderCloudBackground(int dayTime, float yawDegrees,
             float pitchDegrees, float daylight, int skyColor) {
-        int shift = (int)(dayTime * 0.00375f);
-        int cloudTint = (int)(190.0f + daylight * 65.0f);
-        long now = System.currentTimeMillis();
-        if (cloudFrameReady && yawDegrees == lastCloudYaw &&
-                pitchDegrees == lastCloudPitch && shift == lastCloudShift &&
-                cloudTint == lastCloudTint && skyColor == lastSkyColor &&
-                tanHalfFov == lastTanHalfFov) return;
-        if (cloudFrameReady && now - lastCloudRenderTime < CLOUD_REFRESH_MS) return;
-
-        // Keep the cloud panorama fixed at the world origin: translation and
-        // pitch never affect it. Horizontal camera yaw changes the sampled
-        // world direction, so the image scrolls oppositely to the player turn.
-        double yaw = yawDegrees * Math.PI / 180.0;
-        double pitch = pitchDegrees * Math.PI / 180.0;
-        float sinYaw = (float)Math.sin(yaw), cosYaw = (float)Math.cos(yaw);
-        float sinPitch = (float)Math.sin(pitch), cosPitch = (float)Math.cos(pitch);
-        float forwardX = sinYaw * cosPitch;
-        float forwardY = sinPitch;
-        float forwardZ = cosYaw * cosPitch;
-        // The camera pivot has a 180-degree base yaw, so its screen-right
-        // vector is the negative of the usual world-space right vector.
-        float rightX = -cosYaw, rightZ = sinYaw;
-        float upX = -sinYaw * sinPitch;
-        float upY = cosPitch;
-        float upZ = -cosYaw * sinPitch;
-        float virtualEyeY = VoxelWorld.HEIGHT * 0.5f;
-        float cloudLevel = VoxelWorld.HEIGHT + 10.0f - virtualEyeY;
-        float focal = viewportHeight / (2.0f * tanHalfFov);
-        int skyR = skyColor >> 16 & 255;
-        int skyG = skyColor >> 8 & 255;
-        int skyB = skyColor & 255;
-        int halfWidth = (viewportWidth + 1) >> 1;
-        int halfHeight = (viewportHeight + 1) >> 1;
-        for (int sy = 0; sy < halfHeight; sy++) {
-            float screenUp = screenY[sy];
-            float rayY = forwardY + screenUp * upY;
-            float baseRayX = forwardX + screenUp * upX;
-            float baseRayZ = forwardZ + screenUp * upZ;
-            boolean hitsCloudLayer = rayY > 0.0001f;
-            float distance = hitsCloudLayer ? cloudLevel / rayY : 0.0f;
-            float startX = hitsCloudLayer
-                    ? (baseRayX + screenX[0] * rightX) * distance : 0.0f;
-            float startZ = hitsCloudLayer
-                    ? (baseRayZ + screenX[0] * rightZ) * distance : 0.0f;
-            float stepX = hitsCloudLayer ? rightX * distance * 2.0f / focal : 0.0f;
-            float stepZ = hitsCloudLayer ? rightZ * distance * 2.0f / focal : 0.0f;
-            for (int sx = 0; sx < halfWidth; sx++) {
-                int red = skyR, green = skyG, blue = skyB;
-                if (hitsCloudLayer) {
-                    int tx = floor(startX * cloudWidth / 2048.0f) + shift;
-                    int tz = floor(startZ * cloudHeight / 2048.0f);
-                    tx = wrap(tx, cloudWidth);
-                    tz = wrap(tz, cloudHeight);
-                    int alpha = cloudAlpha[tz * cloudWidth + tx] & 255;
-                    if (alpha > 12) {
-                        red = (skyR * (255 - alpha) + cloudTint * alpha) / 255;
-                        green = (skyG * (255 - alpha) + cloudTint * alpha) / 255;
-                        blue = (skyB * (255 - alpha) + cloudTint * alpha) / 255;
-                    }
-                    startX += stepX;
-                    startZ += stepZ;
-                }
-                int x = sx << 1, y = sy << 1;
-                putBackgroundPixel(x, y, red, green, blue);
-                if (x + 1 < viewportWidth) putBackgroundPixel(x + 1, y, red, green, blue);
-                if (y + 1 < viewportHeight) {
-                    putBackgroundPixel(x, y + 1, red, green, blue);
-                    if (x + 1 < viewportWidth)
-                        putBackgroundPixel(x + 1, y + 1, red, green, blue);
+        int skyR = quantizeColor(skyColor >> 16 & 255);
+        int skyG = quantizeColor(skyColor >> 8 & 255);
+        int skyB = quantizeColor(skyColor & 255);
+        int quantizedSky = 0xFF000000 | (skyR << 16) | (skyG << 8) | skyB;
+        int cloudTint = quantizeColor((int)(190.0f + daylight * 65.0f));
+        if (cloudTint != lastCloudTint || quantizedSky != lastSkyColor) {
+            for (int y = 0; y < CLOUD_BAND_HEIGHT; y++) {
+                int source = y * cloudWidth;
+                int target = source * 3;
+                for (int x = 0; x < cloudWidth; x++) {
+                    int alpha = cloudAlpha[source + x] & 255;
+                    if (alpha <= 12) alpha = 0;
+                    int inverse = 255 - alpha;
+                    cloudPixels[target++] = (byte)((skyR * inverse + cloudTint * alpha) / 255);
+                    cloudPixels[target++] = (byte)((skyG * inverse + cloudTint * alpha) / 255);
+                    cloudPixels[target++] = (byte)((skyB * inverse + cloudTint * alpha) / 255);
                 }
             }
+            cloudBackground.set(0, 0, cloudWidth, CLOUD_BAND_HEIGHT, cloudPixels);
+            skyBackground.setColor(quantizedSky);
+            lastCloudTint = cloudTint;
+            lastSkyColor = quantizedSky;
         }
-        cloudBackground.set(0, 0, viewportWidth, viewportHeight, backgroundPixels);
-        lastCloudYaw = yawDegrees;
-        lastCloudPitch = pitchDegrees;
-        lastCloudShift = shift;
-        lastCloudTint = cloudTint;
-        lastSkyColor = skyColor;
-        lastTanHalfFov = tanHalfFov;
-        lastCloudRenderTime = now;
-        cloudFrameReady = true;
+
+        int dayShift = (int)(dayTime * 0.00375f);
+        int yawShift = (int)(yawDegrees * cloudWidth / 360.0f);
+        int cropX = -yawShift - dayShift;
+        int cropY = -(int)(pitchDegrees * 0.35f);
+        float fovScale = tanHalfFov / NORMAL_TAN_HALF_FOV;
+        int cropWidth = (int)(viewportWidth * fovScale);
+        int cropHeight = (int)(viewportHeight * fovScale);
+        if (cropWidth < 1) cropWidth = 1;
+        if (cropHeight < 1) cropHeight = 1;
+        skyBackground.setCrop(cropX, cropY, cropWidth, cropHeight);
     }
 
-    private void putBackgroundPixel(int x, int y, int red, int green, int blue) {
-        int at = (y * viewportWidth + x) * 3;
-        backgroundPixels[at] = (byte)red;
-        backgroundPixels[at + 1] = (byte)green;
-        backgroundPixels[at + 2] = (byte)blue;
-    }
-
-    private int floor(float value) {
-        int result = (int)value;
-        return value < result ? result - 1 : result;
-    }
-
-    private int wrap(int value, int length) {
-        value %= length;
-        return value < 0 ? value + length : value;
+    private int quantizeColor(int value) {
+        return value / CLOUD_COLOR_STEP * CLOUD_COLOR_STEP;
     }
 
     private Mesh skyQuad(float y, float halfSize, Appearance appearance) {
