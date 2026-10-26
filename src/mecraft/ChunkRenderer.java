@@ -22,17 +22,19 @@ import javax.microedition.m3g.World;
 
 /** Builds shared-texture chunk meshes on demand for the visible part of the world. */
 final class ChunkRenderer {
-    private static final int STREAM_RADIUS = 2;
+    private static final int MAX_STREAM_RADIUS = 4;
     private static final int CHUNKS_PER_FRAME = 1;
-    static final int CACHE_SIZE = (STREAM_RADIUS * 2 + 1) * (STREAM_RADIUS * 2 + 1) * VoxelWorld.CHUNKS_Y;
+    private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
+    static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
-    private static final float CAMERA_FAR = 88.0f;
     private static final float CHUNK_RADIUS = 12.0f;
     private static final float CHUNK_RETENTION_TAN_MARGIN = 0.12f;
     private static final float NORMAL_FOV = 68.0f;
     private static final float SPRINT_FOV = 76.0f;
     private float cameraFov = NORMAL_FOV;
+    private int streamRadius = 2;
+    private float cameraFar = 88.0f;
     private float tanVerticalFov = (float)Math.tan(Math.PI * 34.0 / 180.0);
 
     final World scene = new World();
@@ -191,7 +193,7 @@ final class ChunkRenderer {
         droppedItems = new DroppedItemSystem(atlas, itemAtlas);
         mobs = new MobSystem(scene, droppedItems, particles);
 
-        camera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, CAMERA_FAR);
+        camera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
         cameraPivot.addChild(cameraEffectPivot);
         cameraEffectPivot.addChild(camera);
         cameraEffectPivot.addChild(handPivot);
@@ -228,7 +230,7 @@ final class ChunkRenderer {
         builtHeight = height;
         tanHorizontalFov = tanVerticalFov * (float)width / (float)height;
         skyObjects.resize(width, height);
-        camera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, CAMERA_FAR);
+        camera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
         armBase.setTranslation(handBaseX(width, height), -0.60f, -0.72f);
         if (!handSwinging)
             armSwingOffset.setTranslation(-0.08f * handHorizontalScale, 0.15f, 0.0f);
@@ -251,7 +253,16 @@ final class ChunkRenderer {
         cameraFov = next;
         tanVerticalFov = (float)Math.tan(cameraFov * Math.PI / 360.0);
         tanHorizontalFov = tanVerticalFov * (float)builtWidth / (float)builtHeight;
-        camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight, 0.1f, CAMERA_FAR);
+        camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight, 0.1f, cameraFar);
+    }
+
+    void setRenderDistance(int setting) {
+        if (setting < 0) setting = 0;
+        if (setting > 3) setting = 3;
+        streamRadius = setting + 1;
+        cameraFar = ((streamRadius * 2 + 1) * (float)VoxelWorld.CHUNK_XZ) + 8.0f;
+        camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
+                0.1f, cameraFar);
     }
 
     float fieldOfView() { return cameraFov; }
@@ -956,13 +967,20 @@ final class ChunkRenderer {
 
         int centerX = floorDiv((int)eyeX, VoxelWorld.CHUNK_XZ);
         int centerZ = floorDiv((int)eyeZ, VoxelWorld.CHUNK_XZ);
-        int span = STREAM_RADIUS * 2 + 1;
+        int span = MAX_STREAM_SPAN;
         for (int i = 0; i < CACHE_SIZE; i++) desiredVisibleChunks[i] = false;
+        for (int i = 0; i < CACHE_SIZE; i++) {
+            if (residentChunks[i] &&
+                    (Math.abs(chunkWorldX[i] - centerX) > streamRadius ||
+                     Math.abs(chunkWorldZ[i] - centerZ) > streamRadius)) removeChunk(i);
+        }
         for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++) {
-            for (int rz = 0; rz < span; rz++) {
-                for (int rx = 0; rx < span; rx++) {
-                    int cx = centerX + rx - STREAM_RADIUS;
-                    int cz = centerZ + rz - STREAM_RADIUS;
+            for (int rz = MAX_STREAM_RADIUS - streamRadius;
+                    rz <= MAX_STREAM_RADIUS + streamRadius; rz++) {
+                for (int rx = MAX_STREAM_RADIUS - streamRadius;
+                        rx <= MAX_STREAM_RADIUS + streamRadius; rx++) {
+                    int cx = centerX + rx - MAX_STREAM_RADIUS;
+                    int cz = centerZ + rz - MAX_STREAM_RADIUS;
                     int i = (cy * span + rz) * span + rx;
                     float dx = cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeX;
                     float dy = cy * VoxelWorld.CHUNK_Y + VoxelWorld.CHUNK_Y * 0.5f - eyeY;
@@ -971,13 +989,13 @@ final class ChunkRenderer {
                     float horizontal = dx * rightX + dz * rightZ;
                     float vertical = dx * upX + dy * upY + dz * upZ;
                     boolean visible = depth + CHUNK_RADIUS >= 0.1f &&
-                        depth - CHUNK_RADIUS <= CAMERA_FAR &&
+                        depth - CHUNK_RADIUS <= cameraFar &&
                         Math.abs(horizontal) <= Math.max(0.0f, depth) * tanHorizontalFov + CHUNK_RADIUS &&
                         Math.abs(vertical) <= Math.max(0.0f, depth) * tanVertical + CHUNK_RADIUS;
                     // Keep a narrow off-screen buffer so small camera turns do
                     // not repeatedly destroy and rebuild the same M3G meshes.
                     boolean retained = depth + CHUNK_RADIUS >= 0.1f &&
-                        depth - CHUNK_RADIUS <= CAMERA_FAR &&
+                        depth - CHUNK_RADIUS <= cameraFar &&
                         Math.abs(horizontal) <= Math.max(0.0f, depth) *
                             (tanHorizontalFov + CHUNK_RETENTION_TAN_MARGIN) + CHUNK_RADIUS &&
                         Math.abs(vertical) <= Math.max(0.0f, depth) *

@@ -86,6 +86,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private int settingsSelection;
     private int language = Language.ENGLISH;
     private int cameraSensitivity = 2;
+    private int renderDistance = 1;
     private boolean controlsReturnSettings;
     private final int[] controlCodes = new int[CONTROL_COUNT];
     private final boolean[] customControls = new boolean[CONTROL_COUNT];
@@ -159,12 +160,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     GameCanvas(MeCraft app) {
         this.app = app;
         int[] settings = new int[] { GameSettings.loadFrameSkip(), cameraSensitivity,
-                                     selectedPlayerSkin, language };
+                                     selectedPlayerSkin, language, renderDistance };
         GameSettings.load(settings, controlCodes, customControls);
         frameSkip = clamp(settings[0], 0, 2);
         cameraSensitivity = clamp(settings[1], 0, 4);
         selectedPlayerSkin = clamp(settings[2], 0, 4);
         language = clamp(settings[3], Language.ENGLISH, Language.SPANISH);
+        renderDistance = clamp(settings[4], 0, 3);
         Language.set(language);
         try { music = new MusicController(); }
         catch (NoClassDefFoundError unsupported) { music = null; }
@@ -403,6 +405,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             stage = "cargando /mecraft/textures.png y creando escena M3G";
             renderer = new ChunkRenderer(getWidth(), getHeight());
             renderer.setPlayerSkinIndex(selectedPlayerSkin);
+            renderer.setRenderDistance(renderDistance);
             stage = "configurando cámara M3G";
             renderer.updateCamera(world, cameraPitch);
             stage = "construyendo sectores visibles M3G";
@@ -445,6 +448,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             stage = "cargando /mecraft/textures.png y creando escena M3G";
             renderer = new ChunkRenderer(getWidth(), getHeight());
             renderer.setPlayerSkinIndex(selectedPlayerSkin);
+            renderer.setRenderDistance(renderDistance);
             stage = "configurando cámara M3G";
             renderer.updateCamera(world, cameraPitch);
             stage = "construyendo sectores visibles M3G";
@@ -1012,19 +1016,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (state == SETTINGS) {
             int action = gameAction(keyCode);
             if (keyCode == KEY_NUM2 || action == UP) {
-                settingsSelection = (settingsSelection + 4) % 5;
+                settingsSelection = (settingsSelection + 5) % 6;
                 repaint();
             } else if (keyCode == KEY_NUM8 || action == DOWN) {
-                settingsSelection = (settingsSelection + 1) % 5;
+                settingsSelection = (settingsSelection + 1) % 6;
                 repaint();
             } else if (settingsSelection == 0 && (keyCode == KEY_NUM4 || action == LEFT)) changeFrameSkip(-1);
             else if (settingsSelection == 0 && (keyCode == KEY_NUM6 || action == RIGHT)) changeFrameSkip(1);
             else if (settingsSelection == 1 && (keyCode == KEY_NUM4 || action == LEFT)) changeSensitivity(-1);
             else if (settingsSelection == 1 && (keyCode == KEY_NUM6 || action == RIGHT)) changeSensitivity(1);
-            else if (settingsSelection == 2 && (keyCode == KEY_NUM5 || action == FIRE)) openSkinSelect();
-            else if (settingsSelection == 3 && (keyCode == KEY_NUM4 || action == LEFT ||
+            else if (settingsSelection == 2 && (keyCode == KEY_NUM4 || action == LEFT)) changeRenderDistance(-1);
+            else if (settingsSelection == 2 && (keyCode == KEY_NUM6 || action == RIGHT)) changeRenderDistance(1);
+            else if (settingsSelection == 3 && (keyCode == KEY_NUM5 || action == FIRE)) openSkinSelect();
+            else if (settingsSelection == 4 && (keyCode == KEY_NUM4 || action == LEFT ||
                     keyCode == KEY_NUM6 || action == RIGHT)) changeLanguage();
-            else if (settingsSelection == 4 && (keyCode == KEY_NUM5 || action == FIRE)) {
+            else if (settingsSelection == 5 && (keyCode == KEY_NUM5 || action == FIRE)) {
                 controlsReturnSettings = true;
                 state = CONTROLS;
                 repaint();
@@ -1237,8 +1243,17 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         repaint();
     }
 
+    private void changeRenderDistance(int delta) {
+        renderDistance += delta;
+        if (renderDistance < 0) renderDistance = 3;
+        if (renderDistance > 3) renderDistance = 0;
+        saveSettings();
+        repaint();
+    }
+
     private void saveSettings() {
-        GameSettings.save(new int[] { frameSkip, cameraSensitivity, selectedPlayerSkin, language },
+        GameSettings.save(new int[] { frameSkip, cameraSensitivity, selectedPlayerSkin,
+                                      language, renderDistance },
                 controlCodes, customControls);
     }
 
@@ -1791,22 +1806,27 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private void drawSettings(Graphics g) {
         int w = getWidth(), h = getHeight();
         drawDirtBackground(g);
-        int panelY = Math.max(16, (h - 190) / 2);
-        int panelHeight = Math.min(h - panelY - 8, 190);
-        int rowStep = Math.min(24, Math.max(15, (panelHeight - 54) / 5));
+        int panelY = Math.max(12, (h - 202) / 2);
+        int panelHeight = Math.min(h - panelY - 8, 202);
+        int rowStep = Math.min(23, Math.max(14, (panelHeight - 54) / 6));
         int firstRowY = panelY + 32;
         drawInsetPanel(g, 12, panelY, w - 24, panelHeight);
         g.setColor(255, 244, 200);
         g.drawString(Language.text("Ajustes"), w / 2, panelY + 10, Graphics.TOP | Graphics.HCENTER);
         String value = frameSkip == 0 ? "Desactivado" : (frameSkip == 1 ? "1 de cada 2" : "2 de cada 3");
         String[] sensitivityNames = new String[] { "Muy baja", "Baja", "Normal", "Alta", "Muy alta" };
+        String[] distanceNames = language == Language.ENGLISH ?
+                new String[] { "Short", "Normal", "Far", "Maximum" } :
+                new String[] { "Corta", "Normal", "Lejana", "Máxima" };
         drawMenuItem(g, "Frameskip: " + value, firstRowY, settingsSelection == 0);
         drawMenuItem(g, "Sensibilidad: " + sensitivityNames[cameraSensitivity], firstRowY + rowStep,
                 settingsSelection == 1);
-        drawMenuItem(g, "Skin del jugador", firstRowY + rowStep * 2, settingsSelection == 2);
+        drawMenuItem(g, "Render: " + distanceNames[renderDistance],
+                firstRowY + rowStep * 2, settingsSelection == 2);
+        drawMenuItem(g, "Skin del jugador", firstRowY + rowStep * 3, settingsSelection == 3);
         drawMenuItem(g, "Idioma: " + (language == Language.ENGLISH ? "English" : "Español"),
-                firstRowY + rowStep * 3, settingsSelection == 3);
-        drawMenuItem(g, "Controles", firstRowY + rowStep * 4, settingsSelection == 4);
+                firstRowY + rowStep * 4, settingsSelection == 4);
+        drawMenuItem(g, "Controles", firstRowY + rowStep * 5, settingsSelection == 5);
         g.setColor(240, 224, 190);
         g.drawString(Language.text("2/8 elegir   4/6 cambiar   5 abrir"), w / 2, panelY + panelHeight - 32,
                 Graphics.TOP | Graphics.HCENTER);
