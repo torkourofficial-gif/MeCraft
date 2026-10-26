@@ -2119,7 +2119,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         // Refresh the perspective cube view periodically instead of allocating
         // a new frame on every repaint.
         if (menuPanorama == null || panoramaWidth != w || panoramaHeight != h ||
-                panoramaTick % 5 == 0) {
+                panoramaTick % 2 == 0) {
             try {
                 menuPanorama = buildMenuPanorama(h);
                 panoramaWidth = w;
@@ -2170,12 +2170,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
         src = null;
 
-        // Render at half resolution, then enlarge with nearest-neighbour
-        // sampling to keep the software cube feasible on small Java ME devices.
-        int rw = (w + 1) / 2;
-        int rh = (h + 1) / 2;
+        // Render at quarter resolution: MIDP has no hardware cube mapping, so
+        // reducing ray samples is the main way to avoid stalling old devices.
+        int rw = (w + 3) / 4;
+        int rh = (h + 3) / 4;
         int[] low = new int[rw * rh];
-        double yaw = (panoramaTick / 5) * Math.PI / 180.0;
+        double yaw = panoramaTick * 0.04 * Math.PI / 180.0;
         double pitch = -0.035;
         double fovScale = Math.tan(Math.toRadians(32.0));
         double aspect = (double)rw / (double)rh;
@@ -2203,16 +2203,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                     if (vz >= 0) { face = 2; u = vx / major; v = -vy / major; }
                     else { face = 0; u = -vx / major; v = -vy / major; }
                 }
-                // Atlas order is left, forward, right, rear, sky, ground.
-                // Convert cube directions (+X, -X, +Y, -Y, +Z, -Z)
-                // to the actual cell layout rather than assuming row-major faces.
+                // Minecraft panorama order: 0 front, 1 right, 2 back,
+                // 3 left, 4 up, 5 down. Atlas cells are in row-major layout:
+                // 0,1,2 across the top; 3,4,5 across the bottom.
                 int atlasFace;
                 if (face == 4) atlasFace = 4;
                 else if (face == 5) atlasFace = 5;
-                else if (face == 1) atlasFace = 2; // +X: right
-                else if (face == 3) atlasFace = 0; // -X: left
-                else if (face == 2) atlasFace = 3; // +Z: rear
-                else atlasFace = 1;                // -Z: forward
+                else if (face == 1) atlasFace = 1; // +X: right
+                else if (face == 3) atlasFace = 3; // -X: left
+                else if (face == 2) atlasFace = 2; // +Z: back
+                else atlasFace = 0;                // -Z: front
                 int tx = (int)((u + 1.0) * 0.5 * (faceSize - 1));
                 int ty = (int)((v + 1.0) * 0.5 * (faceSize - 1));
                 if (tx < 0) tx = 0; else if (tx >= faceSize) tx = faceSize - 1;
@@ -2226,7 +2226,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         for (int y = 0; y < h; y++) {
             int ly = y / 2;
             for (int x = 0; x < w; x++) {
-                output[y * w + x] = low[ly * rw + x / 2];
+                output[y * w + x] = low[ly * rw + x / 4];
             }
         }
         low = null;
