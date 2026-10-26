@@ -38,17 +38,12 @@ final class VoxelWorld {
     private static final int FLUID_QUEUE_SIZE = 2048;
     private final short[] fluidQueue = new short[FLUID_QUEUE_SIZE];
     private final byte[] fluidQueued = new byte[(BLOCK_COUNT + 7) / 8];
-    private static final int PROCEDURAL_CACHE_SIZE = 4;
-    private final byte[][] proceduralChunks = new byte[][] {
-        new byte[InfdevTerrain.CHUNK_VOLUME], new byte[InfdevTerrain.CHUNK_VOLUME],
-        new byte[InfdevTerrain.CHUNK_VOLUME], new byte[InfdevTerrain.CHUNK_VOLUME]
-    };
-    private final int[] proceduralChunkX = new int[] {
-        Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE
-    };
-    private final int[] proceduralChunkZ = new int[] {
-        Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE
-    };
+    // Power-of-two ring cache; eight chunks reduce regeneration while meshing neighbors.
+    private static final int PROCEDURAL_CACHE_SIZE = 8;
+    private final byte[][] proceduralChunks =
+            new byte[PROCEDURAL_CACHE_SIZE][InfdevTerrain.CHUNK_VOLUME];
+    private final int[] proceduralChunkX = new int[PROCEDURAL_CACHE_SIZE];
+    private final int[] proceduralChunkZ = new int[PROCEDURAL_CACHE_SIZE];
     private final int[] proceduralHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     private final byte[] proceduralBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     private int proceduralCacheCursor;
@@ -101,6 +96,10 @@ final class VoxelWorld {
     VoxelWorld(int seed, int mode) {
         this.seed = seed;
         this.mode = mode;
+        for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
+            proceduralChunkX[i] = Integer.MIN_VALUE;
+            proceduralChunkZ[i] = Integer.MIN_VALUE;
+        }
         generate();
     }
 

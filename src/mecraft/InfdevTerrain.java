@@ -6,6 +6,13 @@ final class InfdevTerrain {
     static final int WORLD_HEIGHT = VoxelWorld.HEIGHT;
     static final int SEA_LEVEL = VoxelWorld.SEA_LEVEL;
     static final int CHUNK_VOLUME = CHUNK_SIZE * CHUNK_SIZE * WORLD_HEIGHT;
+    private static final int LATTICE_CACHE_SIZE = 512;
+    private static final int LATTICE_CACHE_MASK = LATTICE_CACHE_SIZE - 1;
+    private static final int[] latticeSeedCache = new int[LATTICE_CACHE_SIZE];
+    private static final int[] latticeXCache = new int[LATTICE_CACHE_SIZE];
+    private static final int[] latticeZCache = new int[LATTICE_CACHE_SIZE];
+    private static final byte[] latticeValueCache = new byte[LATTICE_CACHE_SIZE];
+    private static final boolean[] latticeCacheValid = new boolean[LATTICE_CACHE_SIZE];
 
     private static final int OCEAN = 0;
     private static final int PLAINS = 1;
@@ -109,7 +116,20 @@ final class InfdevTerrain {
     }
 
     private static int lattice(int seed, int x, int z) {
-        return hash(seed, x, 0, z) >>> 24;
+        int base = seed ^ x * 73428767 ^ z * 42317861;
+        int slot = base & LATTICE_CACHE_MASK;
+        if (latticeCacheValid[slot] && latticeSeedCache[slot] == seed &&
+            latticeXCache[slot] == x && latticeZCache[slot] == z)
+            return latticeValueCache[slot] & 255;
+        int mixed = (base ^ (base >>> 13)) * 1274126177;
+        mixed ^= mixed >>> 16;
+        int value = mixed >>> 24;
+        latticeSeedCache[slot] = seed;
+        latticeXCache[slot] = x;
+        latticeZCache[slot] = z;
+        latticeValueCache[slot] = (byte)value;
+        latticeCacheValid[slot] = true;
+        return value;
     }
 
     private static void carveCaves(int seed, int originX, int originZ, int[] heights, byte[] blocks) {

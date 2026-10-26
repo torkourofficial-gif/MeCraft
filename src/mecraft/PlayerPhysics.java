@@ -50,7 +50,7 @@ final class PlayerPhysics {
 
     /** Returns Indev fall damage, if a landing occurred this tick. */
     int update(VoxelWorld world, float forward, float strafe, boolean jumping,
-               boolean flying, boolean descending) {
+               boolean flying, boolean descending, boolean sprinting) {
         float inputLength = (float)Math.sqrt(forward * forward + strafe * strafe);
         if (inputLength > 1.0f) {
             forward /= inputLength;
@@ -88,6 +88,7 @@ final class PlayerPhysics {
         float sin = (float)Math.sin(radians);
         float cos = (float)Math.cos(radians);
         float acceleration = inWater ? 0.02f : (onGround ? 0.10f : 0.02f);
+        if (sprinting && !inWater) acceleration *= 1.6f;
         // The view uses yaw zero facing +Z, so its screen-right basis is -X.
         motionX += (forward * sin - strafe * cos) * acceleration;
         motionZ += (forward * cos + strafe * sin) * acceleration;

@@ -89,6 +89,9 @@ final class GameCanvas extends Canvas implements Runnable {
     private boolean flying;
     private boolean hasJumpTap;
     private long lastJumpTap;
+    private boolean hasForwardTap;
+    private long lastForwardTap;
+    private boolean sprinting;
     private float cameraPitch = -5.0f;
     private boolean lookUp, lookDown, lookLeft, lookRight;
     private VoxelWorld world;
@@ -206,8 +209,9 @@ final class GameCanvas extends Canvas implements Runnable {
         if (keys[8]) forward -= 1.0f;
         if (keys[6]) strafe += 1.0f;
         if (keys[4]) strafe -= 1.0f;
+        boolean sprint = sprinting && keys[2] && !keys[8];
         int fallDamage = playerPhysics.update(world, forward, strafe, jumpHeld,
-                world.mode == 1 && flying, descendHeld);
+                world.mode == 1 && flying, descendHeld, sprint);
         if (world.mode == 0 && fallDamage > 0) damagePlayer(fallDamage);
         int mobDamage = renderer.updateMobs(world);
         if (world.mode == 0 && mobDamage > 0) damagePlayer(mobDamage);
@@ -333,6 +337,8 @@ final class GameCanvas extends Canvas implements Runnable {
             playerPhysics.reset();
             flying = false;
             hasJumpTap = false;
+            hasForwardTap = false;
+            sprinting = false;
             airTicks = MAX_AIR;
             hurtTicks = 0;
             cactusDamageCooldown = 0;
@@ -371,6 +377,8 @@ final class GameCanvas extends Canvas implements Runnable {
             playerPhysics.reset();
             flying = false;
             hasJumpTap = false;
+            hasForwardTap = false;
+            sprinting = false;
             airTicks = MAX_AIR;
             hurtTicks = 0;
             cactusDamageCooldown = 0;
@@ -965,7 +973,20 @@ final class GameCanvas extends Canvas implements Runnable {
             else openCrafting(false);
             return;
         }
-        if (keyCode == KEY_NUM2) keys[2] = true;
+        if (keyCode == KEY_NUM2) {
+            if (!keys[2]) {
+                long now = System.currentTimeMillis();
+                if (hasForwardTap && now - lastForwardTap <= 350L) {
+                    sprinting = true;
+                    hasForwardTap = false;
+                } else {
+                    hasForwardTap = true;
+                    lastForwardTap = now;
+                    sprinting = false;
+                }
+            }
+            keys[2] = true;
+        }
         else if (keyCode == KEY_NUM8) keys[8] = true;
         else if (keyCode == KEY_NUM4) keys[4] = true;
         else if (keyCode == KEY_NUM6) keys[6] = true;
@@ -1015,7 +1036,10 @@ final class GameCanvas extends Canvas implements Runnable {
         if (keyCode == KEY_NUM5) jumpHeld = false;
         if (keyCode == KEY_NUM0) descendHeld = false;
         if (keyCode == KEY_NUM1) cancelMining();
-        else if (keyCode == KEY_NUM2) keys[2] = false;
+        else if (keyCode == KEY_NUM2) {
+            keys[2] = false;
+            sprinting = false;
+        }
         else if (keyCode == KEY_NUM8) keys[8] = false;
         else if (keyCode == KEY_NUM4) keys[4] = false;
         else if (keyCode == KEY_NUM6) keys[6] = false;
@@ -1210,7 +1234,7 @@ final class GameCanvas extends Canvas implements Runnable {
                 repaint();
             }
             else if (menuSelection == MENU_CONTROLS) {
-                errorMessage = "Controles: cruceta mira; 2/8 avanzar; 4/6 desplazarse; 5 saltar/crear; mantener 1 para romper; 3 colocar o usar mesa; # inventario 2x2; 7/9 bloque; * pausa.";
+                errorMessage = "Controles: cruceta mira; 2/8 avanzar (doble 2 para correr); 4/6 desplazarse; 5 saltar/crear; mantener 1 para romper; 3 colocar o usar mesa; # inventario 2x2; 7/9 bloque; * pausa.";
                 state = ERROR;
             }
             else if (menuSelection == MENU_SETTINGS) { state = SETTINGS; repaint(); }
@@ -1411,6 +1435,8 @@ final class GameCanvas extends Canvas implements Runnable {
 
     private void clearKeys() {
         for (int i = 0; i < keys.length; i++) keys[i] = false;
+        sprinting = false;
+        hasForwardTap = false;
         jumpHeld = false;
         descendHeld = false;
         lookUp = lookDown = lookLeft = lookRight = false;

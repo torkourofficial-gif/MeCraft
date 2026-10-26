@@ -15,13 +15,16 @@ each surface. Desert chunks can grow one or two block cactus plants. Regional el
 coordinate-anchored trees stay consistent across chunk borders. Each 16 x 16
 chunk can be generated in any order. Column heights and biomes are computed
 once, then terrain, caves, and decoration are written in separate passes into
-reused buffers. This adapts the biome, multiscale-noise, and regional-feature
-patterns in `minicraft_3d` without copying its implementation.
+reused buffers. A direct-mapped cache reuses deterministic lattice noise
+samples across nearby columns and chunks. This adapts the biome, multiscale-noise,
+and regional-feature patterns in `minicraft_3d` without copying its implementation.
 
 The renderer reuses a fixed slot grid and rebuilds a slot when its global chunk
 coordinate changes. It now builds only the closest missing visible chunk each
-frame; four generated-neighbor buffers avoid repeating terrain generation
-while greedy meshing reads across chunk edges. The fixed camera radius bounds
+frame; eight generated-neighbor buffers avoid repeating terrain generation
+while greedy meshing reads across chunk edges. Per-tile face builders and the
+crossed-plant builder are reused between chunk rebuilds to reduce garbage
+collection. The fixed camera radius bounds
 both mesh memory and work queued after crossing a chunk border.
 
 ## Integration still needed
