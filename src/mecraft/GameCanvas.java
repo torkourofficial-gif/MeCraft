@@ -237,6 +237,7 @@ final class GameCanvas extends Canvas implements Runnable {
         if (state != PLAYING) return;
         if (pickedItem > Block.AIR) ensureHotbarItem(pickedItem);
         if (keys[1]) updateMining();
+        renderer.updateFieldOfView(sprinting);
         renderer.updateCamera(world, cameraPitch);
         renderer.setHurtCameraRoll(hurtCameraRoll());
         renderer.updateParticles(world, world.yaw, cameraPitch);
@@ -2098,7 +2099,8 @@ final class GameCanvas extends Canvas implements Runnable {
         if (depth <= 0.05f) return false;
         float right = -dx * cosYaw + dz * sinYaw;
         float up = -dx * sinYaw * sinPitch + dy * cosPitch - dz * cosYaw * sinPitch;
-        float scale = getHeight() / (2.0f * (float)Math.tan(34.0 * Math.PI / 180.0) * depth);
+        float tanHalfFov = (float)Math.tan(renderer.fieldOfView() * Math.PI / 360.0);
+        float scale = getHeight() / (2.0f * tanHalfFov * depth);
         crackScreenX[corner] = getWidth() / 2 + (int)(right * scale);
         crackScreenY[corner] = getHeight() / 2 - (int)(up * scale);
         return true;

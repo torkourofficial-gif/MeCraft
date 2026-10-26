@@ -32,6 +32,7 @@ final class SkySystem {
     private byte[] backgroundPixels;
     private float[] screenX;
     private float[] screenY;
+    private float tanHalfFov = (float)Math.tan(34.0 * Math.PI / 180.0);
     private int viewportWidth;
     private int viewportHeight;
     private boolean cloudFrameReady;
@@ -89,11 +90,7 @@ final class SkySystem {
         int sampleHeight = (height + 1) >> 1;
         screenX = new float[sampleWidth];
         screenY = new float[sampleHeight];
-        float focal = height / (2.0f * TAN_HALF_FOV);
-        for (int x = 0; x < sampleWidth; x++)
-            screenX[x] = (x * 2 + 1.0f - width * 0.5f) / focal;
-        for (int y = 0; y < sampleHeight; y++)
-            screenY[y] = (height * 0.5f - (y * 2 + 1.0f)) / focal;
+        updateScreenRays();
         backgroundPixels = new byte[width * height * 3];
         cloudBackground = new Image2D(Image2D.RGB, width, height);
         for (int at = 0; at < backgroundPixels.length; at += 3) {
@@ -107,8 +104,21 @@ final class SkySystem {
         skyBackground.setCrop(0, 0, width, height);
     }
 
-    private static final float TAN_HALF_FOV =
-            (float)Math.tan(34.0 * Math.PI / 180.0);
+    private void updateScreenRays() {
+        float focal = viewportHeight / (2.0f * tanHalfFov);
+        for (int x = 0; x < screenX.length; x++)
+            screenX[x] = (x * 2 + 1.0f - viewportWidth * 0.5f) / focal;
+        for (int y = 0; y < screenY.length; y++)
+            screenY[y] = (viewportHeight * 0.5f - (y * 2 + 1.0f)) / focal;
+    }
+
+    void setFieldOfView(float fieldOfView) {
+        float next = (float)Math.tan(fieldOfView * Math.PI / 360.0);
+        if (Math.abs(next - tanHalfFov) < 0.0001f) return;
+        tanHalfFov = next;
+        updateScreenRays();
+        cloudFrameReady = false;
+    }
 
     void update(VoxelWorld world, float yaw, float cloudYaw, float pitch,
             float celestialAngle,
@@ -160,7 +170,7 @@ final class SkySystem {
         float upZ = -cosYaw * sinPitch;
         float virtualEyeY = VoxelWorld.HEIGHT * 0.5f;
         float cloudLevel = VoxelWorld.HEIGHT + 10.0f - virtualEyeY;
-        float focal = viewportHeight / (2.0f * TAN_HALF_FOV);
+        float focal = viewportHeight / (2.0f * tanHalfFov);
         int shift = (int)(dayTime * 0.00375f);
         int cloudTint = (int)(190.0f + daylight * 65.0f);
         if (cloudFrameReady && yawDegrees == lastCloudYaw &&

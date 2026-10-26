@@ -29,7 +29,10 @@ final class ChunkRenderer {
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
     private static final float CAMERA_FAR = 88.0f;
     private static final float CHUNK_RADIUS = 12.0f;
-    private static final float TAN_VERTICAL_FOV = (float)Math.tan(Math.PI * 34.0 / 180.0);
+    private static final float NORMAL_FOV = 68.0f;
+    private static final float SPRINT_FOV = 76.0f;
+    private float cameraFov = NORMAL_FOV;
+    private float tanVerticalFov = (float)Math.tan(Math.PI * 34.0 / 180.0);
 
     final World scene = new World();
     final Camera camera = new Camera();
@@ -187,7 +190,7 @@ final class ChunkRenderer {
         droppedItems = new DroppedItemSystem(atlas, itemAtlas);
         mobs = new MobSystem(scene, droppedItems, particles);
 
-        camera.setPerspective(68.0f, (float)width / (float)height, 0.1f, CAMERA_FAR);
+        camera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, CAMERA_FAR);
         cameraPivot.addChild(cameraEffectPivot);
         cameraEffectPivot.addChild(camera);
         cameraEffectPivot.addChild(handPivot);
@@ -216,16 +219,16 @@ final class ChunkRenderer {
         }
         builtWidth = width;
         builtHeight = height;
-        tanHorizontalFov = TAN_VERTICAL_FOV * (float)width / (float)height;
+        tanHorizontalFov = tanVerticalFov * (float)width / (float)height;
     }
 
     void resize(int width, int height) {
         if (width <= 0 || height <= 0 || (width == builtWidth && height == builtHeight)) return;
         builtWidth = width;
         builtHeight = height;
-        tanHorizontalFov = TAN_VERTICAL_FOV * (float)width / (float)height;
+        tanHorizontalFov = tanVerticalFov * (float)width / (float)height;
         skyObjects.resize(width, height);
-        camera.setPerspective(68.0f, (float)width / (float)height, 0.1f, CAMERA_FAR);
+        camera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, CAMERA_FAR);
         armBase.setTranslation(handBaseX(width, height), -0.60f, -0.72f);
         if (!handSwinging)
             armSwingOffset.setTranslation(-0.08f * handHorizontalScale, 0.15f, 0.0f);
@@ -239,6 +242,20 @@ final class ChunkRenderer {
         if (handHorizontalScale > 1.0f) handHorizontalScale = 1.0f;
         return 0.64f * handHorizontalScale;
     }
+
+    void updateFieldOfView(boolean sprinting) {
+        float target = sprinting ? SPRINT_FOV : NORMAL_FOV;
+        float next = cameraFov + (target - cameraFov) * 0.22f;
+        if (Math.abs(target - next) < 0.15f) next = target;
+        if (Math.abs(next - cameraFov) < 0.001f) return;
+        cameraFov = next;
+        tanVerticalFov = (float)Math.tan(cameraFov * Math.PI / 360.0);
+        tanHorizontalFov = tanVerticalFov * (float)builtWidth / (float)builtHeight;
+        camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight, 0.1f, CAMERA_FAR);
+        skyObjects.setFieldOfView(cameraFov);
+    }
+
+    float fieldOfView() { return cameraFov; }
 
     void updateCamera(VoxelWorld world, float pitch) {
         cameraPitch = pitch;
@@ -925,7 +942,7 @@ final class ChunkRenderer {
         float forwardX = sinYaw * cosPitch, forwardY = sinPitch, forwardZ = cosYaw * cosPitch;
         float rightX = cosYaw, rightZ = -sinYaw;
         float upX = -sinYaw * sinPitch, upY = cosPitch, upZ = -cosYaw * sinPitch;
-        float tanVertical = TAN_VERTICAL_FOV;
+        float tanVertical = tanVerticalFov;
         float eyeX = world.playerX, eyeY = world.playerY + 1.62f, eyeZ = world.playerZ;
 
         int centerX = floorDiv((int)eyeX, VoxelWorld.CHUNK_XZ);
