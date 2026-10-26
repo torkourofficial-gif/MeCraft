@@ -1404,6 +1404,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             return;
         }
         if (state == INVENTORY || state == WORKBENCH) {
+            int action = gameAction(keyCode);
             if (keyCode == KEY_POUND || keyCode == KEY_NUM0) closeCrafting();
             else if (keyCode == KEY_NUM2 || action == UP) moveRecipeSelection(-1);
             else if (keyCode == KEY_NUM8 || action == DOWN) moveRecipeSelection(1);
