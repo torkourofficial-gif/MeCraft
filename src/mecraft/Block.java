@@ -38,12 +38,12 @@ final class Block {
         0,2,1,18,20,52,17,34,33,4,59,16,12,13,64,21,43,60,80,87
     };
     private static final int[] EXTRA_TILES = makeExtraTiles();
-    static final byte CHEST = (byte)(DECORATIVE_START + EXTRA_TILES.length);
-    static final int COUNT = DECORATIVE_START + EXTRA_TILES.length + 1;
+    static final int COUNT = DECORATIVE_START + EXTRA_TILES.length;
     static final int[] TILE = makeTiles();
     static final String[] NAME = makeNames();
     static final int[] CREATIVE_PALETTE = makeCreativePalette();
     /** Uses the original wooden-door tile already present in the terrain atlas. */
+    static final byte CHEST = (byte)findTileBlock(128); // Reuse an otherwise decorative atlas slot to preserve saved item IDs.
     static final byte DOOR = (byte)findTileBlock(97);
     static final byte CACTUS = (byte)findTileBlock(70);
     static final int CACTUS_TOP_TILE = 71;
@@ -173,7 +173,6 @@ final class Block {
         int[] basic = new int[] { 0,0,2,1,18,205,20,52,17,34,33,4,59,16,2,12,13,80,64,8 };
         System.arraycopy(basic, 0, result, 0, basic.length);
         for (int i = 0; i < EXTRA_TILES.length; i++) result[DECORATIVE_START + i] = EXTRA_TILES[i];
-        result[CHEST] = 4; // Caja de madera: tablones como textura de bloque.
         return result;
     }
 
