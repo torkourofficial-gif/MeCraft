@@ -33,12 +33,15 @@ final class InfdevTerrain {
         if (blocks == null || blocks.length < CHUNK_VOLUME || heights == null ||
             heights.length < CHUNK_SIZE * CHUNK_SIZE || biomes == null ||
             biomes.length < CHUNK_SIZE * CHUNK_SIZE) return;
+        VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: calculando origen del chunk " + chunkX + "," + chunkZ);
         int originX = chunkX * CHUNK_SIZE;
         int originZ = chunkZ * CHUNK_SIZE;
 
         for (int z = 0; z < CHUNK_SIZE; z++) {
+            VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: procesando fila z=" + z + " del chunk " + chunkX + "," + chunkZ);
             int worldZ = originZ + z;
             for (int x = 0; x < CHUNK_SIZE; x++) {
+                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: calculando columna local x=" + x + ", z=" + z);
                 int worldX = originX + x;
                 int column = z * CHUNK_SIZE + x;
                 int biome = biomeAt(seed, worldX, worldZ);
@@ -50,6 +53,7 @@ final class InfdevTerrain {
                 int fill = biome == DESERT || biome == OCEAN ? Block.SAND : Block.DIRT;
                 int at = column * WORLD_HEIGHT;
                 for (int y = 0; y < WORLD_HEIGHT; y++) {
+                    VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: llenando bloques x=" + worldX + ", y=" + y + ", z=" + worldZ);
                     byte id;
                     if (y == 0) id = Block.BEDROCK;
                     else if (y > height) id = biome == OCEAN && y <= SEA_LEVEL ?
@@ -64,8 +68,11 @@ final class InfdevTerrain {
             }
         }
 
+        VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: tallando cuevas");
         carveCaves(seed, originX, originZ, heights, blocks);
+        VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: decorando terreno");
         decorate(seed, originX, originZ, heights, biomes, blocks);
+        VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: chunk completado " + chunkX + "," + chunkZ);
     }
 
     static int surfaceHeight(int seed, int x, int z) {
@@ -77,10 +84,13 @@ final class InfdevTerrain {
                                int[] floorHeights) {
         if (blocks == null || blocks.length < CHUNK_VOLUME || floorHeights == null ||
             floorHeights.length < CHUNK_SIZE * CHUNK_SIZE) return;
+        VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generateNether: calculando origen del chunk " + chunkX + "," + chunkZ);
         int originX = chunkX * CHUNK_SIZE;
         int originZ = chunkZ * CHUNK_SIZE;
         for (int z = 0; z < CHUNK_SIZE; z++) {
+            VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generateNether: fila z=" + z);
             for (int x = 0; x < CHUNK_SIZE; x++) {
+                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generateNether: columna x=" + x + ", z=" + z);
                 int wx = originX + x, wz = originZ + z;
                 int column = z * CHUNK_SIZE + x;
                 int floor = netherFloorHeight(seed, wx, wz);
@@ -89,6 +99,7 @@ final class InfdevTerrain {
                 floorHeights[column] = floor;
                 int base = column * WORLD_HEIGHT;
                 for (int y = 0; y < WORLD_HEIGHT; y++) {
+                    VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generateNether: bloque x=" + wx + ", y=" + y + ", z=" + wz);
                     byte block;
                     if (y == 0 || y == WORLD_HEIGHT - 1) block = Block.BEDROCK;
                     else if (y <= floor || y >= roof) block = Block.STONE;
@@ -184,12 +195,14 @@ final class InfdevTerrain {
     }
 
     private static void carveCaves(int seed, int originX, int originZ, int[] heights, byte[] blocks) {
+        VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.carveCaves: calculando regiones");
         int firstCellX = floorDiv(originX - 12, REGION_SIZE);
         int lastCellX = floorDiv(originX + CHUNK_SIZE + 12, REGION_SIZE);
         int firstCellZ = floorDiv(originZ - 12, REGION_SIZE);
         int lastCellZ = floorDiv(originZ + CHUNK_SIZE + 12, REGION_SIZE);
         for (int rz = firstCellZ; rz <= lastCellZ; rz++) {
             for (int rx = firstCellX; rx <= lastCellX; rx++) {
+                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.carveCaves: región rx=" + rx + ", rz=" + rz);
                 int regionHash = hash(seed ^ 0x35A76D21, rx, 0, rz);
                 if ((regionHash & 1) != 0) continue;
                 int centerX = rx * REGION_SIZE + 5 + ((regionHash >>> 4) & 15);
@@ -224,12 +237,14 @@ final class InfdevTerrain {
 
     private static void decorate(int seed, int originX, int originZ, int[] heights,
                                  byte[] biomes, byte[] blocks) {
+        VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.decorate: calculando regiones de decoración");
         int firstCellX = floorDiv(originX - 2 - 4, 9);
         int lastCellX = floorDiv(originX + CHUNK_SIZE + 1 - 4, 9);
         int firstCellZ = floorDiv(originZ - 2 - 4, 9);
         int lastCellZ = floorDiv(originZ + CHUNK_SIZE + 1 - 4, 9);
         for (int rz = firstCellZ; rz <= lastCellZ; rz++) {
             for (int rx = firstCellX; rx <= lastCellX; rx++) {
+                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.decorate: revisando árbol rx=" + rx + ", rz=" + rz);
                 int tx = rx * 9 + 4, tz = rz * 9 + 4;
                 int biome = biomeAt(seed, tx, tz);
                 if (biome == OCEAN) continue;
@@ -257,8 +272,10 @@ final class InfdevTerrain {
             }
         }
 
+        VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.decorate: colocando cactus y flores");
         for (int z = 0; z < CHUNK_SIZE; z++) {
             for (int x = 0; x < CHUNK_SIZE; x++) {
+                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.decorate: columna de flora x=" + x + ", z=" + z);
                 int column = z * CHUNK_SIZE + x;
                 int height = heights[column];
                 int biome = biomes[column] & 255;
