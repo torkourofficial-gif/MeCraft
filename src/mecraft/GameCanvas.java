@@ -160,6 +160,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private String chestStoreName;
     private int creativeSelection;
     private int miningX = -1, miningY = -1, miningZ = -1;
+    private int miningFaceX, miningFaceY, miningFaceZ;
     private float miningDamage;
     private int miningHitWait;
     private final int[] traceResult = new int[6];
@@ -722,6 +723,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
         if (x != miningX || y != miningY || z != miningZ) {
             miningX = x; miningY = y; miningZ = z; miningDamage = 0.0f;
+            miningFaceX = target[3]; miningFaceY = target[4]; miningFaceZ = target[5];
             return;
         }
         boolean grounded = playerPhysics.isOnGround();
@@ -756,6 +758,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void resetMining() {
         miningX = miningY = miningZ = -1;
+        miningFaceX = miningFaceY = miningFaceZ = 0;
         miningDamage = 0.0f;
         if (renderer != null) renderer.setHandLooping(false);
     }
@@ -2857,7 +2860,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         int stage = (int)(miningDamage * 10.0f);
         if (stage < 1) stage = 1;
         if (stage > 9) stage = 9;
-        int ax = target[3], ay = target[4], az = target[5];
+        int ax = miningFaceX, ay = miningFaceY, az = miningFaceZ;
         int direction = Math.abs(ay) > Math.abs(ax) && Math.abs(ay) >= Math.abs(az) ? 1 :
                         (Math.abs(az) > Math.abs(ax) ? 2 : 0);
         float x = miningX, y = miningY, z = miningZ;
