@@ -766,37 +766,39 @@ final class ChunkRenderer {
 
     /** Update the transparent crack quad on the selected block face; stage is 0..9. */
     void setMiningCracks(int x, int y, int z, int faceX, int faceY, int faceZ, int stage) {
-        if (x < 0 || stage < 0) { crackMesh.setRenderingEnable(false); return; }
+        if (x < 0 || stage < 0) {
+            crackMesh.setRenderingEnable(false);
+            return;
+        }
         if (stage > 9) stage = 9;
         crackAppearance.setTexture(0, crackFrames[stage]);
-        // Keep the decal a small, stable distance in front of the block face.\n        // This is world-space like Minecraft's crack overlay, so it remains attached\n        // to the face at every camera angle and does not depend on screen distance.\n        float offset = 0.01f;
+
+        // Keep integer vertex coordinates; the mesh translation offsets the decal
+        // slightly from the block face to reduce depth fighting.
+        float offset = 0.01f;
         if (Math.abs(faceY) >= Math.abs(faceX) && Math.abs(faceY) >= Math.abs(faceZ)) {
-            float fy = y + (faceY > 0 ? 1.0f + offset : -offset);
-            crackPositionData[0]=(short)x; crackPositionData[1]=(short)fy; crackPositionData[2]=(short)z;
-            crackPositionData[3]=(short)x; crackPositionData[4]=(short)fy; crackPositionData[5]=(short)(z+1);
-            crackPositionData[6]=(short)(x+1); crackPositionData[7]=(short)fy; crackPositionData[8]=(short)z;
-            crackPositionData[9]=(short)(x+1); crackPositionData[10]=(short)fy; crackPositionData[11]=(short)(z+1);
+            int fy = y + (faceY > 0 ? 1 : 0);
+            crackPositionData[0] = (short)x;     crackPositionData[1] = (short)fy; crackPositionData[2] = (short)z;
+            crackPositionData[3] = (short)x;     crackPositionData[4] = (short)fy; crackPositionData[5] = (short)(z + 1);
+            crackPositionData[6] = (short)(x + 1); crackPositionData[7] = (short)fy; crackPositionData[8] = (short)z;
+            crackPositionData[9] = (short)(x + 1); crackPositionData[10] = (short)fy; crackPositionData[11] = (short)(z + 1);
+            crackMesh.setTranslation(0.0f, faceY > 0 ? offset : -offset, 0.0f);
         } else if (Math.abs(faceX) >= Math.abs(faceZ)) {
-            float fx = x + (faceX > 0 ? 1.0f + offset : -offset);
-            crackPositionData[0]=(short)fx; crackPositionData[1]=(short)y; crackPositionData[2]=(short)z;
-            crackPositionData[3]=(short)fx; crackPositionData[4]=(short)y; crackPositionData[5]=(short)(z+1);
-            crackPositionData[6]=(short)fx; crackPositionData[7]=(short)(y+1); crackPositionData[8]=(short)z;
-            crackPositionData[9]=(short)fx; crackPositionData[10]=(short)(y+1); crackPositionData[11]=(short)(z+1);
+            int fx = x + (faceX > 0 ? 1 : 0);
+            crackPositionData[0] = (short)fx; crackPositionData[1] = (short)y;     crackPositionData[2] = (short)z;
+            crackPositionData[3] = (short)fx; crackPositionData[4] = (short)y;     crackPositionData[5] = (short)(z + 1);
+            crackPositionData[6] = (short)fx; crackPositionData[7] = (short)(y + 1); crackPositionData[8] = (short)z;
+            crackPositionData[9] = (short)fx; crackPositionData[10] = (short)(y + 1); crackPositionData[11] = (short)(z + 1);
+            crackMesh.setTranslation(faceX > 0 ? offset : -offset, 0.0f, 0.0f);
         } else {
-            float fz = z + (faceZ > 0 ? 1.0f + offset : -offset);
-            crackPositionData[0]=(short)x; crackPositionData[1]=(short)y; crackPositionData[2]=(short)fz;
-            crackPositionData[3]=(short)x; crackPositionData[4]=(short)(y+1); crackPositionData[5]=(short)fz;
-            crackPositionData[6]=(short)(x+1); crackPositionData[7]=(short)y; crackPositionData[8]=(short)fz;
-            crackPositionData[9]=(short)(x+1); crackPositionData[10]=(short)(y+1); crackPositionData[11]=(short)fz;
+            int fz = z + (faceZ > 0 ? 1 : 0);
+            crackPositionData[0] = (short)x;     crackPositionData[1] = (short)y;     crackPositionData[2] = (short)fz;
+            crackPositionData[3] = (short)x;     crackPositionData[4] = (short)(y + 1); crackPositionData[5] = (short)fz;
+            crackPositionData[6] = (short)(x + 1); crackPositionData[7] = (short)y;     crackPositionData[8] = (short)fz;
+            crackPositionData[9] = (short)(x + 1); crackPositionData[10] = (short)(y + 1); crackPositionData[11] = (short)fz;
+            crackMesh.setTranslation(0.0f, 0.0f, faceZ > 0 ? offset : -offset);
         }
         crackPositions.set(0, 4, crackPositionData);
-        // Vertex positions use integer block coordinates; apply the tiny face
-        // offset as a mesh translation so it is not rounded away by short vertices.
-        if (Math.abs(faceY) >= Math.abs(faceX) && Math.abs(faceY) >= Math.abs(faceZ))
-            crackMesh.setTranslation(0.0f, faceY > 0 ? offset : -offset, 0.0f);
-        else if (Math.abs(faceX) >= Math.abs(faceZ))
-            crackMesh.setTranslation(faceX > 0 ? offset : -offset, 0.0f, 0.0f);
-        else crackMesh.setTranslation(0.0f, 0.0f, faceZ > 0 ? offset : -offset);
         crackMesh.setRenderingEnable(true);
     }
 
