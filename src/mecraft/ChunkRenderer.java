@@ -95,6 +95,12 @@ final class ChunkRenderer {
     private final Texture2D atlas;
     private final Texture2D itemAtlas;
     private final Texture2D[] portalFrames = new Texture2D[8];
+    private final Texture2D[] crackFrames = new Texture2D[10];
+    private final Appearance crackAppearance;
+    private final Mesh crackMesh;
+    private final VertexArray crackPositions;
+    private final short[] crackPositionData = new short[] { 0,0,0, 0,1,0, 1,0,0, 1,1,0 };
+    private final short[] crackUVData = new short[] { 0,16, 0,0, 16,16, 16,0 };
     private final Appearance portalAppearance;
     private int portalFrameSize = 16;
     private int portalAnimationTick;
@@ -138,6 +144,18 @@ final class ChunkRenderer {
         atlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         atlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         makePortalFrames(GameAssets.image("portal.png"));
+        makeCrackFrames(terrainImage);
+        crackAppearance = createFirstPersonAppearance(crackFrames[0], true, false, false);
+        VertexArray crackUV = new VertexArray(4, 2, 2);
+        crackUV.set(0, 4, crackUVData);
+        crackPositions = new VertexArray(4, 3, 2);
+        crackPositions.set(0, 4, crackPositionData);
+        VertexBuffer crackBuffer = new VertexBuffer();
+        crackBuffer.setPositions(crackPositions, 1.0f, null);
+        crackBuffer.setTexCoords(0, crackUV, 1.0f / 16.0f, null);
+        crackMesh = new Mesh(crackBuffer, new TriangleStripArray(0, new int[] { 4 }), crackAppearance);
+        crackMesh.setRenderingEnable(false);
+        scene.addChild(crackMesh);
         portalAppearance = createPortalAppearance(portalFrames[0]);
         flowerAppearance = createFlowerAppearance();
         heldItemAppearance = createFirstPersonAppearance(atlas, true, true, true);
@@ -387,6 +405,7 @@ final class ChunkRenderer {
 
     void setHandLooping(boolean looping) {
         handLooping = looping;
+        if (looping && !handSwinging) { handSwingTicks = 0; handSwinging = true; }
     }
 
     /** Indev first-person swing curve, sampled once per 50 ms game tick. */
@@ -715,6 +734,55 @@ final class ChunkRenderer {
             if (vScale < 1) vScale = 1;
             handTexCoords.set(0, 24, makeHandUV(vScale));
         }
+    }
+
+
+    /** Extract the ten classic destroy-stage tiles from the bottom-left atlas strip. */
+    private void makeCrackFrames(Image source) {
+        int[] pixels = new int[256];
+        int[] sourcePixels = new int[256];
+        for (int frame = 0; frame < 10; frame++) {
+            source.getRGB(sourcePixels, 0, 16, frame * 16, 240, 16, 16);
+            for (int i = 0; i < 256; i++) {
+                int color = sourcePixels[i];
+                int red = (color >> 16) & 255, green = (color >> 8) & 255, blue = color & 255;
+                int distance = Math.abs(red - 127) + Math.abs(green - 127) + Math.abs(blue - 127);
+                pixels[i] = (color & 0x00FFFFFF) | ((distance <= 18 ? 0 : 255) << 24);
+            }
+            Image frameImage = Image.createRGBImage(pixels, 16, 16, true);
+            crackFrames[frame] = new Texture2D(new Image2D(Image2D.RGBA, frameImage));
+            crackFrames[frame].setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
+            crackFrames[frame].setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
+        }
+    }
+
+    /** Update the transparent crack quad on the selected block face; stage is 0..9. */
+    void setMiningCracks(int x, int y, int z, int faceX, int faceY, int faceZ, int stage) {
+        if (x < 0 || stage < 0) { crackMesh.setRenderingEnable(false); return; }
+        if (stage > 9) stage = 9;
+        crackAppearance.setTexture(0, crackFrames[stage]);
+        float offset = 0.003f;
+        if (Math.abs(faceY) >= Math.abs(faceX) && Math.abs(faceY) >= Math.abs(faceZ)) {
+            float fy = y + (faceY > 0 ? 1.0f + offset : -offset);
+            crackPositionData[0]=(short)x; crackPositionData[1]=(short)fy; crackPositionData[2]=(short)z;
+            crackPositionData[3]=(short)x; crackPositionData[4]=(short)fy; crackPositionData[5]=(short)(z+1);
+            crackPositionData[6]=(short)(x+1); crackPositionData[7]=(short)fy; crackPositionData[8]=(short)z;
+            crackPositionData[9]=(short)(x+1); crackPositionData[10]=(short)fy; crackPositionData[11]=(short)(z+1);
+        } else if (Math.abs(faceX) >= Math.abs(faceZ)) {
+            float fx = x + (faceX > 0 ? 1.0f + offset : -offset);
+            crackPositionData[0]=(short)fx; crackPositionData[1]=(short)y; crackPositionData[2]=(short)z;
+            crackPositionData[3]=(short)fx; crackPositionData[4]=(short)y; crackPositionData[5]=(short)(z+1);
+            crackPositionData[6]=(short)fx; crackPositionData[7]=(short)(y+1); crackPositionData[8]=(short)z;
+            crackPositionData[9]=(short)fx; crackPositionData[10]=(short)(y+1); crackPositionData[11]=(short)(z+1);
+        } else {
+            float fz = z + (faceZ > 0 ? 1.0f + offset : -offset);
+            crackPositionData[0]=(short)x; crackPositionData[1]=(short)y; crackPositionData[2]=(short)fz;
+            crackPositionData[3]=(short)x; crackPositionData[4]=(short)(y+1); crackPositionData[5]=(short)fz;
+            crackPositionData[6]=(short)(x+1); crackPositionData[7]=(short)y; crackPositionData[8]=(short)fz;
+            crackPositionData[9]=(short)(x+1); crackPositionData[10]=(short)(y+1); crackPositionData[11]=(short)fz;
+        }
+        crackPositions.set(0, 4, crackPositionData);
+        crackMesh.setRenderingEnable(true);
     }
 
     private Appearance createFirstPersonAppearance(Texture2D texture,
