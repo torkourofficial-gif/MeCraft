@@ -192,40 +192,111 @@ final class InfdevTerrain {
 
     private static void carveCaves(int seed, int originX, int originZ, int[] heights, byte[] blocks) {
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.carveCaves: calculando regiones");
-        int firstCellX = floorDiv(originX - 12, REGION_SIZE);
-        int lastCellX = floorDiv(originX + CHUNK_SIZE + 12, REGION_SIZE);
-        int firstCellZ = floorDiv(originZ - 12, REGION_SIZE);
-        int lastCellZ = floorDiv(originZ + CHUNK_SIZE + 12, REGION_SIZE);
+        // Each deterministic region contributes several small chambers and a
+        // less frequent medium chamber. Region-based placement keeps cave shapes
+        // continuous across chunk boundaries and independent of generation order.
+        final int caveRegion = 24;
+        int firstCellX = floorDiv(originX - 18, caveRegion);
+        int lastCellX = floorDiv(originX + CHUNK_SIZE + 18, caveRegion);
+        int firstCellZ = floorDiv(originZ - 18, caveRegion);
+        int lastCellZ = floorDiv(originZ + CHUNK_SIZE + 18, caveRegion);
         for (int rz = firstCellZ; rz <= lastCellZ; rz++) {
             for (int rx = firstCellX; rx <= lastCellX; rx++) {
-                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.carveCaves: región rx=" + rx + ", rz=" + rz);
                 int regionHash = hash(seed ^ 0x35A76D21, rx, 0, rz);
-                if ((regionHash & 1) != 0) continue;
-                int centerX = rx * REGION_SIZE + 5 + ((regionHash >>> 4) & 15);
-                int centerZ = rz * REGION_SIZE + 5 + ((regionHash >>> 9) & 15);
-                int centerY = 8 + ((regionHash >>> 14) & 15);
-                int radius = 4 + ((regionHash >>> 20) & 3);
-                int verticalRadius = 2 + ((regionHash >>> 24) & 2);
-                int minX = Math.max(originX, centerX - radius);
-                int maxX = Math.min(originX + CHUNK_SIZE - 1, centerX + radius);
-                int minZ = Math.max(originZ, centerZ - radius);
-                int maxZ = Math.min(originZ + CHUNK_SIZE - 1, centerZ + radius);
-                for (int z = minZ; z <= maxZ; z++) {
-                    for (int x = minX; x <= maxX; x++) {
-                        int dx = x - centerX, dz = z - centerZ;
-                        int horizontal = dx * dx + dz * dz;
-                        if (horizontal > radius * radius) continue;
-                        int column = (z - originZ) * CHUNK_SIZE + x - originX;
-                        int caveCeiling = Math.min(centerY + verticalRadius, heights[column] - 3);
-                        for (int y = Math.max(3, centerY - verticalRadius);
-                             y <= caveCeiling && y < WORLD_HEIGHT - 1; y++) {
-                            int dy = y - centerY;
-                            if (horizontal * verticalRadius * verticalRadius +
-                                dy * dy * radius * radius >
-                                radius * radius * verticalRadius * verticalRadius) continue;
-                            blocks[column * WORLD_HEIGHT + y] = Block.AIR;
+                int baseX = rx * caveRegion + 3 + ((regionHash >>> 4) & 15);
+                int baseZ = rz * caveRegion + 3 + ((regionHash >>> 9) & 15);
+
+                // Frequent tiny pockets: uneven, rounded, mostly underground.
+                int smallCount = 3 + ((regionHash >>> 18) & 3);
+                for (int c = 0; c < smallCount; c++) {
+                    int h = hash(seed ^ (0x51ED270B + c * 0x1F123BB5), rx, c + 1, rz);
+                    int cx = baseX + ((h >>> 3) & 15) - 7;
+                    int cz = baseZ + ((h >>> 11) & 15) - 7;
+                    int radius = 2 + ((h >>> 20) & 1);
+                    int surface = surfaceHeight(seed, cx, cz);
+                    int cy = 4 + ((h >>> 24) & 15);
+                    if (cy > surface - 3) cy = Math.max(3, surface - 3 - ((h >>> 7) & 3));
+                    carveCaveRoom(originX, originZ, heights, blocks, cx, cy, cz,
+                                  radius, 1 + ((h >>> 27) & 1), false);
+                }
+
+                // A medium cave in most regions, occasionally joined to another
+                // chamber to create a winding passage rather than isolated holes.
+                if ((regionHash & 3) != 0) {
+                    int h = hash(seed ^ 0x6C8E9CF5, rx, 7, rz);
+                    int cx = baseX + ((h >>> 5) & 15) - 7;
+                    int cz = baseZ + ((h >>> 13) & 15) - 7;
+                    int surface = surfaceHeight(seed, cx, cz);
+                    int cy = 5 + ((h >>> 21) & 9);
+                    if (cy > surface - 4) cy = Math.max(4, surface - 4);
+                    int radius = 4 + ((h >>> 25) & 2);
+                    int vertical = 2 + ((h >>> 28) & 1);
+                    carveCaveRoom(originX, originZ, heights, blocks, cx, cy, cz,
+                                  radius, vertical, false);
+                    if ((h & 7) < 5) {
+                        int direction = (h >>> 8) & 3;
+                        int length = 4 + ((h >>> 16) & 7);
+                        for (int step = 2; step <= length; step += 2) {
+                            int tx = cx + (direction == 0 ? step : direction == 1 ? -step : 0);
+                            int tz = cz + (direction == 2 ? step : direction == 3 ? -step : 0);
+                            int ty = cy + (((h >>> (step & 15)) & 1) == 0 ? 0 : 1);
+                            carveCaveRoom(originX, originZ, heights, blocks, tx, ty, tz,
+                                          2 + ((h >>> 22) & 1), 2, false);
                         }
                     }
+                }
+
+                // Rare surface entrances: a small opening and a short shaft
+                // connect the surface to a chamber, but most caves stay buried.
+                if ((regionHash & 7) == 2) {
+                    int h = hash(seed ^ 0x2C9277B5, rx, 11, rz);
+                    int cx = baseX + ((h >>> 6) & 15) - 7;
+                    int cz = baseZ + ((h >>> 14) & 15) - 7;
+                    int surface = surfaceHeight(seed, cx, cz);
+                    int cy = Math.max(4, surface - (5 + ((h >>> 22) & 3)));
+                    int radius = 3 + ((h >>> 27) & 1);
+                    carveCaveRoom(originX, originZ, heights, blocks, cx, cy, cz,
+                                  radius, 2, true);
+                    int shaftRadius = (h & 0x100) == 0 ? 0 : 1;
+                    for (int sy = cy + 1; sy < surface; sy++) {
+                        for (int dz = -shaftRadius; dz <= shaftRadius; dz++) {
+                            for (int dx = -shaftRadius; dx <= shaftRadius; dx++) {
+                                int wx = cx + dx, wz = cz + dz;
+                                if (wx < originX || wx >= originX + CHUNK_SIZE ||
+                                    wz < originZ || wz >= originZ + CHUNK_SIZE) continue;
+                                int col = (wz - originZ) * CHUNK_SIZE + wx - originX;
+                                if (sy < heights[col] && sy > 1)
+                                    blocks[col * WORLD_HEIGHT + sy] = Block.AIR;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static void carveCaveRoom(int originX, int originZ, int[] heights,
+                                      byte[] blocks, int centerX, int centerY, int centerZ,
+                                      int radius, int verticalRadius, boolean allowNearSurface) {
+        int minX = Math.max(originX, centerX - radius);
+        int maxX = Math.min(originX + CHUNK_SIZE - 1, centerX + radius);
+        int minZ = Math.max(originZ, centerZ - radius);
+        int maxZ = Math.min(originZ + CHUNK_SIZE - 1, centerZ + radius);
+        for (int z = minZ; z <= maxZ; z++) {
+            for (int x = minX; x <= maxX; x++) {
+                int dx = x - centerX, dz = z - centerZ;
+                int horizontal = dx * dx + dz * dz;
+                if (horizontal > radius * radius) continue;
+                int column = (z - originZ) * CHUNK_SIZE + x - originX;
+                int ceiling = allowNearSurface ? heights[column] - 1 : heights[column] - 3;
+                int low = Math.max(2, centerY - verticalRadius);
+                int high = Math.min(Math.min(centerY + verticalRadius, ceiling), WORLD_HEIGHT - 2);
+                for (int y = low; y <= high; y++) {
+                    int dy = y - centerY;
+                    if (horizontal * verticalRadius * verticalRadius +
+                        dy * dy * radius * radius >
+                        radius * radius * verticalRadius * verticalRadius) continue;
+                    blocks[column * WORLD_HEIGHT + y] = Block.AIR;
                 }
             }
         }
