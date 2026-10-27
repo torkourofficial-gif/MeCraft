@@ -75,7 +75,8 @@ final class PlayerPhysics {
             motionX *= 0.91f;
             motionZ *= 0.91f;
             if (world.playerY < 1.0f) world.playerY = 1.0f;
-            if (world.playerY > VoxelWorld.HEIGHT - HEIGHT) world.playerY = VoxelWorld.HEIGHT - HEIGHT;
+            // Creative flight is not capped by the finite terrain height.
+            // Above the world, get() returns air and the player can keep rising.
             return 0;
         }
 
