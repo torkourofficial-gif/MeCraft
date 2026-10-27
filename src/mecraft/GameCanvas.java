@@ -2853,35 +2853,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         g.fillRect(x, y, width, 1);
     }
 
-    private boolean projectPoint(float x, float y, float z, int corner) {
-        double yaw = world.yaw * Math.PI / 180.0;
-        double pitch = cameraPitch * Math.PI / 180.0;
-        float dx = x - world.playerX;
-        float dy = y - (world.playerY + PLAYER_EYE_HEIGHT);
-        float dz = z - world.playerZ;
-        float sinYaw = (float)Math.sin(yaw), cosYaw = (float)Math.cos(yaw);
-        float sinPitch = (float)Math.sin(pitch), cosPitch = (float)Math.cos(pitch);
-        float depth = dx * sinYaw * cosPitch + dy * sinPitch + dz * cosYaw * cosPitch;
-        if (depth <= 0.05f) return false;
-        float right = -dx * cosYaw + dz * sinYaw;
-        float up = -dx * sinYaw * sinPitch + dy * cosPitch - dz * cosYaw * sinPitch;
-        float tanHalfFov = (float)Math.tan(renderer.fieldOfView() * Math.PI / 360.0);
-        float scale = getHeight() / (2.0f * tanHalfFov * depth);
-        crackScreenX[corner] = getWidth() / 2 + (int)(right * scale);
-        crackScreenY[corner] = getHeight() / 2 - (int)(up * scale);
-        return true;
-    }
-
-    private int faceX(int u, int v) {
-        return ((100 - u) * (100 - v) * crackScreenX[0] + u * (100 - v) * crackScreenX[1] +
-                u * v * crackScreenX[2] + (100 - u) * v * crackScreenX[3]) / 10000;
-    }
-
-    private int faceY(int u, int v) {
-        return ((100 - u) * (100 - v) * crackScreenY[0] + u * (100 - v) * crackScreenY[1] +
-                u * v * crackScreenY[2] + (100 - u) * v * crackScreenY[3]) / 10000;
-    }
-
     private void drawPause(Graphics g) {
         int w = getWidth(), h = getHeight();
         drawTint(g, pauseTint);
