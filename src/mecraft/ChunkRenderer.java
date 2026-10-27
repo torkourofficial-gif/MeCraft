@@ -1446,7 +1446,7 @@ final class ChunkRenderer {
         for (int y = minY; y < maxY && chunkTorchCount < MAX_CHUNK_TORCHES; y++)
             for (int z = minZ; z < maxZ && chunkTorchCount < MAX_CHUNK_TORCHES; z++)
                 for (int x = minX; x < maxX && chunkTorchCount < MAX_CHUNK_TORCHES; x++) {
-                    if (world.get(x, y, z) != Block.TORCH) continue;
+                    if (world.getTorchCandidate(x, y, z) != Block.TORCH) continue;
                     chunkTorchX[chunkTorchCount] = x;
                     chunkTorchY[chunkTorchCount] = y;
                     chunkTorchZ[chunkTorchCount] = z;
