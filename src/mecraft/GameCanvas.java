@@ -1996,7 +1996,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             int[] iconPixels = new int[16 * 16];
             for (int block = 1; block < Block.COUNT; block++) {
                 if (Block.isDecorative((byte)block) || block == Block.TNT) continue;
-                int tile = Block.sideTile((byte)block);
+                int tile = block == Block.CHEST ? 27 : Block.sideTile((byte)block);
                 int cropX = (tile & 15) * 16 + 1;
                 int cropY = (tile >> 4) * 16 + 1;
                 source.getRGB(sourcePixels, 0, 14, cropX, cropY, 14, 14);
