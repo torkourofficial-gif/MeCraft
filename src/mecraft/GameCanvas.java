@@ -723,6 +723,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
         if (x != miningX || y != miningY || z != miningZ) {
             miningX = x; miningY = y; miningZ = z; miningDamage = 0.0f;
+            renderer.setHandLooping(true);
+            renderer.setHandLooping(true);
             miningFaceX = target[3]; miningFaceY = target[4]; miningFaceZ = target[5];
             return;
         }
