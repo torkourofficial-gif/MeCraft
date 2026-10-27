@@ -41,7 +41,6 @@ final class InfdevTerrain {
             VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: procesando fila z=" + z + " del chunk " + chunkX + "," + chunkZ);
             int worldZ = originZ + z;
             for (int x = 0; x < CHUNK_SIZE; x++) {
-                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: calculando columna local x=" + x + ", z=" + z);
                 int worldX = originX + x;
                 int column = z * CHUNK_SIZE + x;
                 int biome = biomeAt(seed, worldX, worldZ);
@@ -53,7 +52,6 @@ final class InfdevTerrain {
                 int fill = biome == DESERT || biome == OCEAN ? Block.SAND : Block.DIRT;
                 int at = column * WORLD_HEIGHT;
                 for (int y = 0; y < WORLD_HEIGHT; y++) {
-                    VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: llenando bloques x=" + worldX + ", y=" + y + ", z=" + worldZ);
                     byte id;
                     if (y == 0) id = Block.BEDROCK;
                     else if (y > height) id = biome == OCEAN && y <= SEA_LEVEL ?
@@ -90,7 +88,6 @@ final class InfdevTerrain {
         for (int z = 0; z < CHUNK_SIZE; z++) {
             VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generateNether: fila z=" + z);
             for (int x = 0; x < CHUNK_SIZE; x++) {
-                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generateNether: columna x=" + x + ", z=" + z);
                 int wx = originX + x, wz = originZ + z;
                 int column = z * CHUNK_SIZE + x;
                 int floor = netherFloorHeight(seed, wx, wz);
@@ -99,7 +96,6 @@ final class InfdevTerrain {
                 floorHeights[column] = floor;
                 int base = column * WORLD_HEIGHT;
                 for (int y = 0; y < WORLD_HEIGHT; y++) {
-                    VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generateNether: bloque x=" + wx + ", y=" + y + ", z=" + wz);
                     byte block;
                     if (y == 0 || y == WORLD_HEIGHT - 1) block = Block.BEDROCK;
                     else if (y <= floor || y >= roof) block = Block.STONE;
