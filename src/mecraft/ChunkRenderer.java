@@ -299,7 +299,10 @@ final class ChunkRenderer {
     void setRenderDistance(int setting) {
         if (setting < 0) setting = 0;
         if (setting > 3) setting = 3;
-        streamRadius = setting + 1;
+        // "Short" starts at a 2-chunk radius to reduce resident terrain meshes.
+        // Keep the value inside the fixed chunk-cache grid.
+        streamRadius = setting + 2;
+        if (streamRadius > MAX_STREAM_RADIUS) streamRadius = MAX_STREAM_RADIUS;
         cameraFar = ((streamRadius * 2 + 1) * (float)VoxelWorld.CHUNK_XZ) + 8.0f;
         camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
                 0.1f, cameraFar);
