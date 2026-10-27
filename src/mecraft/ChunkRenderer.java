@@ -1611,6 +1611,7 @@ final class ChunkRenderer {
         int vertexCount;
         int faceCount;
 
+        FaceBuilder(int tile) { this(tile, 0); }
         FaceBuilder(int tile, int lightLevel) { this.tile = tile; this.lightLevel = lightLevel; }
 
         /** Add one tiled rectangle produced by the chunk's greedy face scan. */
