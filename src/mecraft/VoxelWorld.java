@@ -606,7 +606,6 @@ final class VoxelWorld {
                     for (int x = 0; x < CHUNK_XZ; x++) {
                         int wx = cx * CHUNK_XZ + x, wz = cz * CHUNK_XZ + z;
                         for (int y = 0; y < HEIGHT; y++) {
-                            setGenerationDiagnosticStage("VoxelWorld.generate: copiando bloque x=" + wx + ", y=" + y + ", z=" + wz);
                             blocks[index(wx, y, wz)] = proceduralChunks[cache][(z * CHUNK_XZ + x) * HEIGHT + y];
                         }
                     }
