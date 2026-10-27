@@ -146,6 +146,14 @@ final class ChunkRenderer {
         makePortalFrames(GameAssets.image("portal.png"));
         makeCrackFrames(terrainImage);
         crackAppearance = createFirstPersonAppearance(crackFrames[0], true, false, false);
+        // Unlike the first-person hand, cracks must respect terrain depth so they
+        // cannot show through blocks; keep depth writes disabled for the thin overlay.
+        CompositingMode crackCompositing = new CompositingMode();
+        crackCompositing.setDepthTestEnable(true);
+        crackCompositing.setDepthWriteEnable(false);
+        crackCompositing.setAlphaThreshold(0.1f);
+        crackCompositing.setBlending(CompositingMode.ALPHA);
+        crackAppearance.setCompositingMode(crackCompositing);
         VertexArray crackUV = new VertexArray(4, 2, 2);
         crackUV.set(0, 4, crackUVData);
         crackPositions = new VertexArray(4, 3, 2);
