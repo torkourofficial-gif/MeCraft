@@ -769,7 +769,7 @@ final class ChunkRenderer {
         if (x < 0 || stage < 0) { crackMesh.setRenderingEnable(false); return; }
         if (stage > 9) stage = 9;
         crackAppearance.setTexture(0, crackFrames[stage]);
-        float offset = 0.003f;
+        // Keep the decal a small, stable distance in front of the block face.\n        // This is world-space like Minecraft's crack overlay, so it remains attached\n        // to the face at every camera angle and does not depend on screen distance.\n        float offset = 0.01f;
         if (Math.abs(faceY) >= Math.abs(faceX) && Math.abs(faceY) >= Math.abs(faceZ)) {
             float fy = y + (faceY > 0 ? 1.0f + offset : -offset);
             crackPositionData[0]=(short)x; crackPositionData[1]=(short)fy; crackPositionData[2]=(short)z;
