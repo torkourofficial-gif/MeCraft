@@ -133,14 +133,28 @@ final class Block {
     private static int[] makeCreativePalette() {
         int[] temporary = new int[COUNT];
         int count = 0;
-        // Keep the core Alpha blocks, including both liquids and bedrock.
+        // Normal placeable blocks first; omit farmland and internal variants.
         for (int id = 1; id < DECORATIVE_START; id++) {
+            if (id == FARMLAND) continue;
             temporary[count++] = id;
         }
         for (int id = DECORATIVE_START; id < COUNT; id++) {
             int tile = TILE[id];
-            if (alphaBlockName(tile) != null && hasAtlasTexture(tile))
-                temporary[count++] = id;
+            if (alphaBlockName(tile) == null || !hasAtlasTexture(tile)) continue;
+            // Fire and redstone torch states are internal/variant blocks.
+            if (tile == 31 || tile == 96 || tile == 99 || tile == 115) continue;
+            boolean duplicate = false;
+            for (int i = 0; i < count; i++) {
+                if (TILE[temporary[i]] == tile) { duplicate = true; break; }
+            }
+            if (!duplicate) temporary[count++] = id;
+        }
+        // The chest is a real placeable block even if its tile is unnamed.
+        int chest = findTileBlock(85);
+        if (chest > 0 && chest < COUNT) {
+            boolean found = false;
+            for (int i = 0; i < count; i++) if (temporary[i] == chest) found = true;
+            if (!found) temporary[count++] = chest;
         }
         int[] palette = new int[count];
         System.arraycopy(temporary, 0, palette, 0, count);
