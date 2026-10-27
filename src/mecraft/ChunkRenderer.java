@@ -27,6 +27,12 @@ final class ChunkRenderer {
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
+    private static final int TORCH_LIGHT_RADIUS = 7;
+    private static final int MAX_CHUNK_TORCHES = 128;
+    private final int[] chunkTorchX = new int[MAX_CHUNK_TORCHES];
+    private final int[] chunkTorchY = new int[MAX_CHUNK_TORCHES];
+    private final int[] chunkTorchZ = new int[MAX_CHUNK_TORCHES];
+    private int chunkTorchCount;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
     private static final float CHUNK_RADIUS = 12.0f;
     private static final float NORMAL_FOV = 68.0f;
@@ -944,47 +950,9 @@ final class ChunkRenderer {
     }
 
     private void updateTorchLights(VoxelWorld world) {
-        int px = (int)world.playerX, py = (int)world.playerY, pz = (int)world.playerZ;
-        if (px == torchScanX && py == torchScanY && pz == torchScanZ &&
-            world.revision == torchScanRevision) return;
-        torchScanX = px;
-        torchScanY = py;
-        torchScanZ = pz;
-        torchScanRevision = world.revision;
-        for (int i = 0; i < torchLights.length; i++) nearestTorchDistance[i] = 65.0f;
-        for (int y = py - 5; y <= py + 6; y++) {
-            for (int z = pz - 8; z <= pz + 8; z++) {
-                for (int x = px - 8; x <= px + 8; x++) {
-                    if (world.get(x, y, z) != Block.TORCH) continue;
-                    float dx = x + 0.5f - world.playerX;
-                    float dy = y + 0.8f - (world.playerY + 1.0f);
-                    float dz = z + 0.5f - world.playerZ;
-                    float distance = dx * dx + dy * dy + dz * dz;
-                    if (distance > 64.0f || distance >= nearestTorchDistance[2]) continue;
-                    int at = 2;
-                    while (at > 0 && distance < nearestTorchDistance[at - 1]) {
-                        nearestTorchDistance[at] = nearestTorchDistance[at - 1];
-                        nearestTorchX[at] = nearestTorchX[at - 1];
-                        nearestTorchY[at] = nearestTorchY[at - 1];
-                        nearestTorchZ[at] = nearestTorchZ[at - 1];
-                        at--;
-                    }
-                    nearestTorchDistance[at] = distance;
-                    nearestTorchX[at] = x;
-                    nearestTorchY[at] = y;
-                    nearestTorchZ[at] = z;
-                }
-            }
-        }
-        for (int i = 0; i < torchLights.length; i++) {
-            if (nearestTorchDistance[i] <= 64.0f) {
-                torchLights[i].setTranslation(nearestTorchX[i] + 0.5f,
-                    nearestTorchY[i] + 0.8f, nearestTorchZ[i] + 0.5f);
-                torchLights[i].setIntensity(0.85f);
-            } else {
-                torchLights[i].setIntensity(0.0f);
-            }
-        }
+        // Torch contribution is baked into block-face colors during chunk meshing.
+        // M3G omni lights would reintroduce triangle-interpolated lighting.
+        for (int i = 0; i < torchLights.length; i++) torchLights[i].setIntensity(0.0f);
     }
 
     int hitMob(VoxelWorld world, float pitch, int damage) {
@@ -1125,7 +1093,7 @@ final class ChunkRenderer {
     }
 
     private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {
-        FaceBuilder[] builders = new FaceBuilder[TILE_COUNT];
+        FaceBuilder[] builders = new FaceBuilder[TILE_COUNT * 15];
         FlowerBuilder flowers = null;
         PortalBuilder portals = null;
         int x0 = cx * VoxelWorld.CHUNK_XZ;
@@ -1134,6 +1102,8 @@ final class ChunkRenderer {
         int x1 = x0 + VoxelWorld.CHUNK_XZ;
         int y1 = y0 + VoxelWorld.CHUNK_Y;
         int z1 = z0 + VoxelWorld.CHUNK_XZ;
+
+        collectChunkTorches(world, x0, y0, z0, x1, y1, z1);
 
         // Crossed flowers do not form cube faces, so collect them separately.
         // Empty vertical sections are common above the terrain: detect them during
@@ -1215,8 +1185,9 @@ final class ChunkRenderer {
                                 neighbor = chunkVoxelScratch[voxelIndex - CHUNK_AREA];
                             else neighbor = world.get(nx, ny, nz);
                             if (Block.faceVisible(id, neighbor))
-                                key = renderWorldTile(world, id, face,
-                                        world.woolColor(x, y, z)) + 1;
+                                int tile = renderWorldTile(world, id, face, world.woolColor(x, y, z));
+                                int light = torchLightAt(x, y, z);
+                                key = light * TILE_COUNT + tile + 1;
                         }
                         mask[row + a] = key;
                     }
@@ -1252,9 +1223,12 @@ final class ChunkRenderer {
                             x = a; y = b; z = slice;
                             faceWidth = rectWidth; faceHeight = rectHeight;
                         }
-                        int tile = key - 1;
-                        if (builders[tile] == null) builders[tile] = new FaceBuilder(tile);
-                        builders[tile].addRect(x, y, z, faceWidth, faceHeight, face);
+                        int encoded = key - 1;
+                        int tile = encoded % TILE_COUNT;
+                        int light = encoded / TILE_COUNT;
+                        int builderIndex = light * TILE_COUNT + tile;
+                        if (builders[builderIndex] == null) builders[builderIndex] = new FaceBuilder(tile, light);
+                        builders[builderIndex].addRect(x, y, z, faceWidth, faceHeight, face);
                         a += rectWidth;
                     }
                 }
@@ -1270,8 +1244,9 @@ final class ChunkRenderer {
         int at = 0;
         for (int i = 0; i < builders.length; i++) {
             if (builders[i] == null) continue;
-            float textureScale = i == Block.sideTile(Block.GRASS) ? 0.999f / 16.0f : 1.0f / 16.0f;
-            meshes[at++] = makeMesh(builders[i], tileAppearance(i), textureScale);
+            int tile = i % TILE_COUNT;
+            float textureScale = tile == Block.sideTile(Block.GRASS) ? 0.999f / 16.0f : 1.0f / 16.0f;
+            meshes[at++] = makeMesh(builders[i], tileAppearance(tile), textureScale);
             builders[i] = null;
         }
         if (flowers != null) meshes[at++] = makeFlowerMesh(flowers, flowerAppearance);
@@ -1284,7 +1259,7 @@ final class ChunkRenderer {
     }
 
     private void add(FaceBuilder[] builders, int tile, int x, int y, int z, int face) {
-        if (builders[tile] == null) builders[tile] = new FaceBuilder(tile);
+        if (builders[tile] == null) builders[tile] = new FaceBuilder(tile, 0);
         builders[tile].add(x, y, z, face);
     }
 
@@ -1422,6 +1397,39 @@ final class ChunkRenderer {
         appearance = createBlockAppearance(texture);
         tileAppearances[tile] = appearance;
         return appearance;
+    }
+
+    /** Gather nearby torch blocks once per chunk build; lighting stays block-quantized. */
+    private void collectChunkTorches(VoxelWorld world, int x0, int y0, int z0,
+                                     int x1, int y1, int z1) {
+        chunkTorchCount = 0;
+        int minX = x0 - TORCH_LIGHT_RADIUS, maxX = x1 + TORCH_LIGHT_RADIUS;
+        int minY = y0 - TORCH_LIGHT_RADIUS, maxY = y1 + TORCH_LIGHT_RADIUS;
+        int minZ = z0 - TORCH_LIGHT_RADIUS, maxZ = z1 + TORCH_LIGHT_RADIUS;
+        if (minY < 0) minY = 0;
+        if (maxY > VoxelWorld.HEIGHT) maxY = VoxelWorld.HEIGHT;
+        for (int y = minY; y < maxY && chunkTorchCount < MAX_CHUNK_TORCHES; y++)
+            for (int z = minZ; z < maxZ && chunkTorchCount < MAX_CHUNK_TORCHES; z++)
+                for (int x = minX; x < maxX && chunkTorchCount < MAX_CHUNK_TORCHES; x++) {
+                    if (world.get(x, y, z) != Block.TORCH) continue;
+                    chunkTorchX[chunkTorchCount] = x;
+                    chunkTorchY[chunkTorchCount] = y;
+                    chunkTorchZ[chunkTorchCount] = z;
+                    chunkTorchCount++;
+                }
+    }
+
+    /** Manhattan falloff approximates classic voxel light levels, never triangle interpolation. */
+    private int torchLightAt(int x, int y, int z) {
+        int best = 0;
+        for (int i = 0; i < chunkTorchCount; i++) {
+            int distance = Math.abs(x - chunkTorchX[i]) +
+                    Math.abs(y - chunkTorchY[i]) + Math.abs(z - chunkTorchZ[i]);
+            int level = 14 - distance;
+            if (level > best) best = level;
+            if (best >= 14) return 14;
+        }
+        return best;
     }
 
     private int renderWorldTile(VoxelWorld world, byte id, int face, int woolColor) {
@@ -1596,13 +1604,14 @@ final class ChunkRenderer {
     /** Reuses one short position array per material; no per-block scene nodes. */
     private static final class FaceBuilder {
         final int tile;
+        final int lightLevel;
         short[] p = new short[192];
         short[] uv = new short[128];
         byte[] c = new byte[256];
         int vertexCount;
         int faceCount;
 
-        FaceBuilder(int tile) { this.tile = tile; }
+        FaceBuilder(int tile, int lightLevel) { this.tile = tile; this.lightLevel = lightLevel; }
 
         /** Add one tiled rectangle produced by the chunk's greedy face scan. */
         void addRect(int x, int y, int z, int width, int height, int face) {
@@ -1616,7 +1625,7 @@ final class ChunkRenderer {
                 u0 = 0; v0 = 0;
                 u1 = width * 16; v1 = height * 16;
             }
-            int shade = face == 0 ? 255 : (face == 5 ? 135 : (face <= 2 ? 205 : 180));
+            int shade = litShade(face);
             if (face == 0) {
                 vertex(x,y+1,z, u0,v1,shade); vertex(x,y+1,z+height, u0,v0,shade);
                 vertex(x+width,y+1,z, u1,v1,shade); vertex(x+width,y+1,z+height, u1,v0,shade);
@@ -1666,6 +1675,11 @@ final class ChunkRenderer {
                 vertex(x,y,z+1, u0,v1,shade); vertex(x+1,y,z+1, u1,v1,shade);
             }
             faceCount++;
+        }
+
+        private int litShade(int face) {
+            int shade = face == 0 ? 255 : (face == 5 ? 135 : (face <= 2 ? 205 : 180));
+            return shade + (255 - shade) * lightLevel / 14;
         }
 
         private void vertex(int x, int y, int z, int u, int v, int shade) {
