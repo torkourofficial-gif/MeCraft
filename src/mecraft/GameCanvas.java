@@ -38,6 +38,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private static final int SKIN_SELECT = 13;
     private static final int CONTROLS = 14;
     private static final int CHEST_INVENTORY = 15;
+    private static final int LOADING = 16;
     private static final int CONTROL_LOOK_UP = 0, CONTROL_LOOK_DOWN = 1;
     private static final int CONTROL_LOOK_LEFT = 2, CONTROL_LOOK_RIGHT = 3;
     private static final int CONTROL_FORWARD = 4, CONTROL_BACK = 5;
@@ -147,6 +148,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private final Image[] mutedItemIcons = new Image[ItemCatalog.COUNT];
     private int randomSeed = 0x4D454352;
     private String errorMessage;
+    private volatile String loadingMessage = "Preparando...";
     private boolean diagnosticError;
     private int diagnosticScroll;
     private int recipeSelection;
@@ -417,6 +419,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void startNewWorld(int mode, String name) {
+        if (state == LOADING) return;
+        state = LOADING;
+        loadingMessage = "Preparando mundo...";
+        clearKeys();
+        repaint();
+        serviceRepaints();
+        final int requestedMode = mode;
+        final String requestedName = name;
+        Thread loader = new Thread(new Runnable() {
+            public void run() { createNewWorldNow(requestedMode, requestedName); }
+        });
+        loader.start();
+    }
+
+    private void createNewWorldNow(int mode, String name) {
         String stage = "preparando mundo";
         try {
             title = null;
@@ -426,6 +443,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 System.gc();
             }
             stage = "generando el terreno";
+            loadingMessage = "Generando terreno...";
             world = new VoxelWorld((int)(System.currentTimeMillis() ^ System.currentTimeMillis() >>> 32), mode);
             stage = "inicializando inventario y posición";
             world.worldName = name == null || name.trim().length() == 0 ? "Mundo" : name.trim();
@@ -444,6 +462,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             resetInventory(mode);
             copyInventoryToWorld();
             stage = "guardando el mundo recién creado";
+            loadingMessage = "Guardando mundo...";
             world.save();
             stage = "cargando /mecraft/textures.png y creando escena M3G";
             renderer = new ChunkRenderer(getWidth(), getHeight());
@@ -452,6 +471,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             stage = "configurando cámara M3G";
             renderer.updateCamera(world, cameraPitch);
             stage = "construyendo sectores visibles M3G";
+            loadingMessage = "Construyendo chunks visibles...";
             renderer.sync(world);
             state = PLAYING;
             repaint();
@@ -465,7 +485,20 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
     }
 
-    private void openSavedWorld(VoxelWorld.SavedWorld savedWorld) {
+    private void openSavedWorld(final VoxelWorld.SavedWorld savedWorld) {
+        if (state == LOADING) return;
+        state = LOADING;
+        loadingMessage = "Cargando mundo guardado...";
+        clearKeys();
+        repaint();
+        serviceRepaints();
+        Thread loader = new Thread(new Runnable() {
+            public void run() { loadSavedWorldNow(savedWorld); }
+        });
+        loader.start();
+    }
+
+    private void loadSavedWorldNow(VoxelWorld.SavedWorld savedWorld) {
         title = null;
         System.gc();
         VoxelWorld saved = VoxelWorld.load(savedWorld.storeName);
@@ -2050,7 +2083,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 showDiagnostic(stage, problem);
                 drawError(g);
             }
-        } else if (state == ERROR) drawError(g);
+        } else if (state == LOADING) drawLoading(g);
+        else if (state == ERROR) drawError(g);
         else if (state == WORLD_SELECT) drawWorldSelect(g);
         else if (state == WORLD_DELETE) drawWorldDelete(g);
         else if (state == WORLD_CREATE) drawWorldCreate(g);
@@ -2058,6 +2092,34 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         else if (state == CONTROLS) drawControls(g);
         else if (state == SKIN_SELECT) drawSkinSelect(g);
         else drawMenu(g);
+    }
+
+    private void drawLoading(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        g.setColor(25, 25, 25);
+        g.fillRect(0, 0, w, h);
+        g.setColor(205, 205, 205);
+        g.fillRect(0, h / 2 - 16, w, 1);
+        g.fillRect(0, h / 2 + 16, w, 1);
+        g.setColor(255, 255, 255);
+        Font old = g.getFont();
+        g.setFont(Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_MEDIUM));
+        g.drawString("MeCraft", w / 2, h / 2 - 48, Graphics.HCENTER | Graphics.TOP);
+        g.setFont(Font.getDefaultFont());
+        String message = loadingMessage;
+        if (message == null) message = "Cargando...";
+        int maxChars = Math.max(8, (w - 16) / Math.max(1, g.getFont().charWidth('M')));
+        if (message.length() > maxChars) message = message.substring(0, maxChars);
+        g.drawString(message, w / 2, h / 2 - 8, Graphics.HCENTER | Graphics.TOP);
+        int barWidth = Math.min(w - 32, 150);
+        if (barWidth < 20) barWidth = Math.max(1, w - 8);
+        int bx = (w - barWidth) / 2, by = h / 2 + 25;
+        g.setColor(90, 90, 90);
+        g.drawRect(bx, by, barWidth, 5);
+        g.setColor(205, 175, 95);
+        int pulse = (int)(System.currentTimeMillis() / 80L % Math.max(1, barWidth - 8));
+        g.fillRect(bx + 2 + pulse, by + 2, Math.min(8, Math.max(1, barWidth - 4 - pulse)), 2);
+        g.setFont(old);
     }
 
     private void drawMenu(Graphics g) {
