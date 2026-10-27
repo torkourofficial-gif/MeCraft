@@ -96,6 +96,8 @@ final class ChunkRenderer {
     // Reused by the synchronous chunk mesher to avoid short-lived arrays.
     private final byte[] chunkVoxelScratch = new byte[VoxelWorld.CHUNK_XZ *
             VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
+    private final byte[] chunkLightScratch = new byte[VoxelWorld.CHUNK_XZ *
+            VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
     private final int[] greedyMaskScratch = new int[CHUNK_AREA];
     private final Image terrainImage;
     private final Texture2D atlas;
@@ -1130,6 +1132,7 @@ final class ChunkRenderer {
                     int localIndex = (((y - y0) * VoxelWorld.CHUNK_XZ) + (z - z0)) *
                             VoxelWorld.CHUNK_XZ + (x - x0);
                     chunkVoxelScratch[localIndex] = id;
+                    chunkLightScratch[localIndex] = (byte)torchLightAt(x, y, z);
                     if (id == Block.PORTAL) {
                         if (portals == null) portals = new PortalBuilder();
                         portals.add(x - x0, y - y0, z - z0,
@@ -1199,7 +1202,7 @@ final class ChunkRenderer {
                             else neighbor = world.get(nx, ny, nz);
                             if (Block.faceVisible(id, neighbor))
                                 int tile = renderWorldTile(world, id, face, world.woolColor(x, y, z));
-                                int light = torchLightAt(x, y, z);
+                                int light = chunkLightScratch[voxelIndex] & 255;
                                 key = light * TILE_COUNT + tile + 1;
                         }
                         mask[row + a] = key;
