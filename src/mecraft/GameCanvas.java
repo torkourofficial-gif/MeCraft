@@ -164,8 +164,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private float miningDamage;
     private int miningHitWait;
     private final int[] traceResult = new int[6];
-    private final int[] crackScreenX = new int[4];
-    private final int[] crackScreenY = new int[4];
     private static final int MAX_AIR = 300;
     private int airTicks = MAX_AIR;
     private int hurtTicks;
@@ -664,6 +662,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
         advanceMining(trace(5.0f));
         renderer.setHandLooping(miningX >= 0);
+        if (miningX >= 0) {
+            int stage = (int)(miningDamage * 10.0f);
+            if (stage > 9) stage = 9;
+            renderer.setMiningCracks(miningX, miningY, miningZ, miningFaceX, miningFaceY, miningFaceZ, stage);
+        } else renderer.setMiningCracks(-1, -1, -1, 0, 0, 0, -1);
     }
 
     private void advanceMining(int[] target) {
@@ -724,7 +727,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (x != miningX || y != miningY || z != miningZ) {
             miningX = x; miningY = y; miningZ = z; miningDamage = 0.0f;
             renderer.setHandLooping(true);
-            renderer.setHandLooping(true);
             miningFaceX = target[3]; miningFaceY = target[4]; miningFaceZ = target[5];
             return;
         }
@@ -762,7 +764,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         miningX = miningY = miningZ = -1;
         miningFaceX = miningFaceY = miningFaceZ = 0;
         miningDamage = 0.0f;
-        if (renderer != null) renderer.setHandLooping(false);
+        if (renderer != null) { renderer.setHandLooping(false); renderer.setMiningCracks(-1, -1, -1, 0, 0, 0, -1); }
     }
 
     private void cancelMining() {
@@ -2075,8 +2077,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                     if (cameraUnderwater()) drawTint(g, waterTint);
                     if (hurtTicks > 0) drawTint(g, hurtTint);
                     drawHud(g);
-                    if (state == PLAYING) drawMiningCracks(g);
-                }
+                            }
                 if (state == PAUSED) drawPause(g);
                 if (state == GAME_OVER) {
                     drawDeathGradient(g);
@@ -2850,59 +2851,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         g.setColor(0, 0, 0); g.fillRect(x, y, 14, 2);
         g.setColor(255 - width * 255 / 14, width * 255 / 14, 0);
         g.fillRect(x, y, width, 1);
-    }
-
-    /** Draw progressive PE-style cracks projected onto the face being mined. */
-    private void drawMiningCracks(Graphics g) {
-        if (miningDamage <= 0.0f || miningX < 0 || world == null) return;
-        byte id = world.get(miningX, miningY, miningZ);
-        if (id == Block.AIR) return;
-        // Keep drawing cracks on the block selected by the mining state. Re-tracing
-        // every paint can flicker on low-FPS devices as the camera moves by tiny amounts.
-        int stage = (int)(miningDamage * 10.0f);
-        if (stage < 1) stage = 1;
-        if (stage > 9) stage = 9;
-        int ax = miningFaceX, ay = miningFaceY, az = miningFaceZ;
-        int direction = Math.abs(ay) > Math.abs(ax) && Math.abs(ay) >= Math.abs(az) ? 1 :
-                        (Math.abs(az) > Math.abs(ax) ? 2 : 0);
-        float x = miningX, y = miningY, z = miningZ;
-        boolean projected;
-        if (direction == 0) {
-            float face = x + (ax > 0 ? 1.0f : 0.0f);
-            projected = projectPoint(face, y, z, 0) && projectPoint(face, y, z + 1, 1) &&
-                projectPoint(face, y + 1, z + 1, 2) && projectPoint(face, y + 1, z, 3);
-        } else if (direction == 1) {
-            float face = y + (ay > 0 ? 1.0f : 0.0f);
-            projected = projectPoint(x, face, z, 0) && projectPoint(x + 1, face, z, 1) &&
-                projectPoint(x + 1, face, z + 1, 2) && projectPoint(x, face, z + 1, 3);
-        } else {
-            float face = z + (az > 0 ? 1.0f : 0.0f);
-            projected = projectPoint(x, y, face, 0) && projectPoint(x + 1, y, face, 1) &&
-                projectPoint(x + 1, y + 1, face, 2) && projectPoint(x, y + 1, face, 3);
-        }
-        if (!projected) {
-            int cx = getWidth() / 2, cy = getHeight() / 2;
-            int half = Math.max(5, Math.min(getWidth(), getHeight()) / 48);
-            crackScreenX[0] = cx - half; crackScreenY[0] = cy - half;
-            crackScreenX[1] = cx + half; crackScreenY[1] = cy - half;
-            crackScreenX[2] = cx + half; crackScreenY[2] = cy + half;
-            crackScreenX[3] = cx - half; crackScreenY[3] = cy + half;
-        }
-
-        int lines = (CRACK_LINES.length / 4) * stage / 10;
-        if (lines < 1) lines = 1;
-        g.setColor(30, 30, 30);
-        for (int i = 0; i < lines; i++) {
-            int p = i * 4;
-            int x1 = faceX(CRACK_LINES[p], CRACK_LINES[p + 1]);
-            int y1 = faceY(CRACK_LINES[p], CRACK_LINES[p + 1]);
-            int x2 = faceX(CRACK_LINES[p + 2], CRACK_LINES[p + 3]);
-            int y2 = faceY(CRACK_LINES[p + 2], CRACK_LINES[p + 3]);
-            g.drawLine(x1, y1, x2, y2);
-            g.setColor(205, 205, 205);
-            g.drawLine(x1, y1 + 1, x2, y2 + 1);
-            g.setColor(30, 30, 30);
-        }
     }
 
     private boolean projectPoint(float x, float y, float z, int corner) {
