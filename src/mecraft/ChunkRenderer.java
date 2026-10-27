@@ -782,6 +782,13 @@ final class ChunkRenderer {
             crackPositionData[9]=(short)(x+1); crackPositionData[10]=(short)(y+1); crackPositionData[11]=(short)fz;
         }
         crackPositions.set(0, 4, crackPositionData);
+        // Vertex positions use integer block coordinates; apply the tiny face
+        // offset as a mesh translation so it is not rounded away by short vertices.
+        if (Math.abs(faceY) >= Math.abs(faceX) && Math.abs(faceY) >= Math.abs(faceZ))
+            crackMesh.setTranslation(0.0f, faceY > 0 ? offset : -offset, 0.0f);
+        else if (Math.abs(faceX) >= Math.abs(faceZ))
+            crackMesh.setTranslation(faceX > 0 ? offset : -offset, 0.0f, 0.0f);
+        else crackMesh.setTranslation(0.0f, 0.0f, faceZ > 0 ? offset : -offset);
         crackMesh.setRenderingEnable(true);
     }
 
