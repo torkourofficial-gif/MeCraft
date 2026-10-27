@@ -497,6 +497,9 @@ final class VoxelWorld {
         lavaTickCounter += 5;
         boolean lavaDue = lavaTickCounter >= 30;
         if (lavaDue) lavaTickCounter = 0;
+
+        // Process only the queue snapshot so newly scheduled neighbors are
+        // handled on a later tick, keeping the work bounded on small devices.
         int pending = fluidQueueCount;
         while (pending-- > 0 && fluidQueueCount > 0) {
             int i = fluidQueue[fluidQueueHead] & 0xFFFF;
@@ -504,12 +507,14 @@ final class VoxelWorld {
             if (fluidQueueHead == FLUID_QUEUE_SIZE) fluidQueueHead = 0;
             fluidQueueCount--;
             setFluidQueued(i, false);
+
             byte fluid = blocks[i];
             if (!Block.isFluid(fluid)) continue;
             if (fluid == Block.LAVA && !lavaDue) {
                 scheduleFluid(i);
                 continue;
             }
+
             int x = i % WIDTH;
             int z = (i / WIDTH) % DEPTH;
             int y = i / (WIDTH * DEPTH);
@@ -520,21 +525,37 @@ final class VoxelWorld {
                 continue;
             }
 
+            // Try to fall first. Crucially, only stop here if the lower block
+            // actually changed: if it already contains an equal-level fluid,
+            // this block must still be allowed to spread sideways.
             if (y > 1 && canFluidEnter(get(x, y - 1, z), fluid)) {
-                if (setFlowingFluid(x, y - 1, z, fluid, level)) scheduleFluid(i);
-                continue;
+                if (setFlowingFluid(x, y - 1, z, fluid, level)) {
+                    scheduleFluid(i);
+                    continue;
+                }
             }
+
             int maxSideLevel = fluid == Block.LAVA ? 4 : 7;
             if (level >= maxSideLevel) continue;
+
+            // Rotate the first direction between updates to avoid a fixed
+            // directional bias, while allowing liquid to flow over ledges.
             for (int direction = 0; direction < 4; direction++) {
                 int side = (fluidDirection + direction) & 3;
                 int nx = x + (side == 0 ? -1 : (side == 1 ? 1 : 0));
                 int nz = z + (side == 2 ? -1 : (side == 3 ? 1 : 0));
                 if (nx <= 0 || nx >= WIDTH - 1 || nz <= 0 || nz >= DEPTH - 1) continue;
-                if (!canFluidEnter(get(nx, y, nz), fluid) || get(nx, y - 1, nz) == Block.AIR) continue;
-                fluidDirection = (side + 1) & 3;
-                if (setFlowingFluid(nx, y, nz, fluid, level + 1)) scheduleFluid(i);
-                continue;
+                if (!canFluidEnter(get(nx, y, nz), fluid)) continue;
+
+                // Sideways flow is allowed when the destination is supported
+                // or can immediately fall. This produces proper edges and
+                // waterfalls rather than requiring a solid block below.
+                byte below = get(nx, y - 1, nz);
+                if (below == Block.AIR && y <= 1) continue;
+                if (setFlowingFluid(nx, y, nz, fluid, level + 1)) {
+                    scheduleFluid(i);
+                    fluidDirection = (side + 1) & 3;
+                }
             }
         }
     }
