@@ -1200,10 +1200,11 @@ final class ChunkRenderer {
                             else if (face == 5 && y > y0)
                                 neighbor = chunkVoxelScratch[voxelIndex - CHUNK_AREA];
                             else neighbor = world.get(nx, ny, nz);
-                            if (Block.faceVisible(id, neighbor))
+                            if (Block.faceVisible(id, neighbor)) {
                                 int tile = renderWorldTile(world, id, face, world.woolColor(x, y, z));
                                 int light = chunkLightScratch[voxelIndex] & 255;
                                 key = light * TILE_COUNT + tile + 1;
+                            }
                         }
                         mask[row + a] = key;
                     }
