@@ -170,6 +170,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private int cactusDamageCooldown;
     private int netherLavaDamageCooldown;
     private int portalChargeTicks;
+    private float overworldPortalReturnX, overworldPortalReturnY, overworldPortalReturnZ;
+    private float netherPortalReturnX, netherPortalReturnY, netherPortalReturnZ;
+    private boolean hasOverworldPortalReturn, hasNetherPortalReturn;
     private static final int PORTAL_CHARGE_TICKS = 100;
     private Image waterTint;
     private Image hurtTint;
@@ -1016,37 +1019,71 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void travelThroughPortal() {
-        int sx = (int)world.playerX, sy = (int)world.playerY, sz = (int)world.playerZ;
+        boolean leavingNether = world.nether;
+        float sourceX = world.playerX, sourceY = world.playerY, sourceZ = world.playerZ;
+        int sx = (int)sourceX, sy = (int)sourceY, sz = (int)sourceZ;
         int[] source = null;
         for (int y = sy - 1; y <= sy + 2 && source == null; y++)
             for (int z = sz - 1; z <= sz + 1 && source == null; z++)
                 for (int x = sx - 1; x <= sx + 1 && source == null; x++)
                     source = world.portalFrameAt(x, y, z);
         int axis = source == null ? 0 : source[3];
-        float tx = world.nether ? world.playerX * 8.0f : world.playerX / 8.0f;
-        float tz = world.nether ? world.playerZ * 8.0f : world.playerZ / 8.0f;
+
+        // Remember the exact position in the dimension being left, so the
+        // return trip goes back to the same portal instead of relying on 8:1 rounding.
+        if (leavingNether) {
+            netherPortalReturnX = sourceX;
+            netherPortalReturnY = sourceY;
+            netherPortalReturnZ = sourceZ;
+            hasNetherPortalReturn = true;
+        } else {
+            overworldPortalReturnX = sourceX;
+            overworldPortalReturnY = sourceY;
+            overworldPortalReturnZ = sourceZ;
+            hasOverworldPortalReturn = true;
+        }
+
+        float tx = leavingNether ? sourceX * 8.0f : sourceX / 8.0f;
+        float tz = leavingNether ? sourceZ * 8.0f : sourceZ / 8.0f;
         world.switchDimension();
-        int[] destination = world.findPortalNear((int)tx, (int)tz);
-        if (destination == null) {
-            int bx = (int)tx, bz = (int)tz;
-            if (bx < 2) bx = 2;
-            if (bz < 2) bz = 2;
-            if (bx > VoxelWorld.WIDTH - 6) bx = VoxelWorld.WIDTH - 6;
-            if (bz > VoxelWorld.DEPTH - 6) bz = VoxelWorld.DEPTH - 6;
-            int by = world.surfaceY(bx + 1, bz + 1) + 1;
-            if (by < 1) by = 1;
-            if (by > VoxelWorld.HEIGHT - 6) by = VoxelWorld.HEIGHT - 6;
-            destination = world.createPortalAt(bx, by, bz, axis);
+
+        // If this dimension has already been visited, restore its exact entry
+        // position. This also avoids landing at a nearby, unrelated portal.
+        boolean hasReturn = world.nether ? hasNetherPortalReturn : hasOverworldPortalReturn;
+        if (hasReturn) {
+            world.playerX = world.nether ? netherPortalReturnX : overworldPortalReturnX;
+            world.playerY = world.nether ? netherPortalReturnY : overworldPortalReturnY;
+            world.playerZ = world.nether ? netherPortalReturnZ : overworldPortalReturnZ;
+        } else {
+            int[] destination = world.findPortalNear((int)tx, (int)tz);
+            if (destination == null) {
+                int bx = (int)tx, bz = (int)tz;
+                if (bx < 2) bx = 2;
+                if (bz < 2) bz = 2;
+                if (bx > VoxelWorld.WIDTH - 6) bx = VoxelWorld.WIDTH - 6;
+                if (bz > VoxelWorld.DEPTH - 6) bz = VoxelWorld.DEPTH - 6;
+                int by = world.surfaceY(bx + 1, bz + 1) + 1;
+                if (by < 1) by = 1;
+                if (by > VoxelWorld.HEIGHT - 6) by = VoxelWorld.HEIGHT - 6;
+                destination = world.createPortalAt(bx, by, bz, axis);
+            }
+            if (destination == null) {
+                world.switchDimension();
+                portalChargeTicks = 0;
+                return;
+            }
+            int[] d = destination;
+            world.playerX = d[3] == 0 ? d[0] + 2.5f : d[0] + 0.5f;
+            world.playerZ = d[3] == 0 ? d[2] + 0.5f : d[2] + 2.5f;
+            world.playerY = d[1] + 1.05f;
         }
-        if (destination == null) {
-            world.switchDimension();
-            portalChargeTicks = 0;
-            return;
-        }
-        int[] d = destination;
-        world.playerX = d[3] == 0 ? d[0] + 2.5f : d[0] + 0.5f;
-        world.playerZ = d[3] == 0 ? d[2] + 0.5f : d[2] + 2.5f;
-        world.playerY = d[1] + 1.05f;
+
+        // Keep the player above the destination floor if the saved Y is no
+        // longer safe (for example, terrain changed around the portal).
+        int px = (int)world.playerX, pz = (int)world.playerZ;
+        int floor = world.surfaceY(px, pz);
+        if (world.playerY < floor + 1.0f || world.playerY > VoxelWorld.HEIGHT - 2)
+            world.playerY = floor + 1.05f;
         portalChargeTicks = 0;
         resetMining();
         renderer.sync(world);
@@ -1055,7 +1092,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         copyInventoryToWorld();
         world.save();
     }
-
 
     private void openChest(int x, int y, int z) {
         if (state != PLAYING || world == null) return;
