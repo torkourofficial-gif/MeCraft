@@ -41,12 +41,19 @@ final class ParticleSystem {
 
     ParticleSystem(Texture2D atlas) {
         positionArray = new VertexArray(VERTICES, 3, 2);
+        // M3G may retain a mesh's initial bounds for frustum culling even after
+        // the VertexArray is updated. Particles are player-relative, so their
+        // coordinates can be negative in every axis and move across chunk
+        // boundaries. Seed the mesh with a symmetric, generous bound instead
+        // of the old positive-only 0..48 quad, which culled particles in other
+        // chunks / behind the initial origin.
+        short bound = (short)(32 * SCALE);
         for (int i = 0; i < CAPACITY; i++) {
             int at = i * 12;
-            positions[at] = 0; positions[at + 1] = 0; positions[at + 2] = 0;
-            positions[at + 3] = (short)(48 * SCALE); positions[at + 4] = 0; positions[at + 5] = 0;
-            positions[at + 6] = 0; positions[at + 7] = (short)(24 * SCALE); positions[at + 8] = (short)(48 * SCALE);
-            positions[at + 9] = (short)(48 * SCALE); positions[at + 10] = (short)(24 * SCALE); positions[at + 11] = (short)(48 * SCALE);
+            positions[at] = (short)-bound; positions[at + 1] = (short)-bound; positions[at + 2] = (short)-bound;
+            positions[at + 3] = bound; positions[at + 4] = (short)-bound; positions[at + 5] = (short)-bound;
+            positions[at + 6] = (short)-bound; positions[at + 7] = bound; positions[at + 8] = bound;
+            positions[at + 9] = bound; positions[at + 10] = bound; positions[at + 11] = bound;
         }
         positionArray.set(0, VERTICES, positions);
         texCoordArray = new VertexArray(VERTICES, 2, 2);
