@@ -23,7 +23,12 @@ import javax.microedition.m3g.World;
 /** Builds shared-texture chunk meshes on demand for the visible part of the world. */
 final class ChunkRenderer {
     private static final int MAX_STREAM_RADIUS = 4;
+    // A full chunk build is still a costly operation on constrained MIDP/M3G
+    // devices. Keep streaming strictly single-chunk-per-sync; never catch up by
+    // building multiple chunks after a slow frame.
     private static final int CHUNKS_PER_FRAME = 1;
+    // Avoid rebuilding the same dirty chunk repeatedly while edits arrive.
+    private int lastBuildFrameChunk = -1;
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
@@ -1018,13 +1023,19 @@ final class ChunkRenderer {
     }
 
     private void replaceChunk(VoxelWorld world, int i, int cx, int cy, int cz) {
-        removeChunk(i);
-        chunks[i] = buildChunk(world, cx, cy, cz);
+        // Build the replacement before removing the old mesh. If meshing fails,
+        // the previous terrain remains visible instead of leaving a hole.
+        Chunk replacement = buildChunk(world, cx, cy, cz);
+        Chunk previous = chunks[i];
+        if (previous != null) {
+            for (int m = 0; m < previous.meshes.length; m++) terrain.removeChild(previous.meshes[m]);
+        }
+        chunks[i] = replacement;
         chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
         residentChunks[i] = true;
         dirtyChunks[i] = false;
-        if (chunks[i] != null) {
-            for (int m = 0; m < chunks[i].meshes.length; m++) terrain.addChild(chunks[i].meshes[m]);
+        if (replacement != null) {
+            for (int m = 0; m < replacement.meshes.length; m++) terrain.addChild(replacement.meshes[m]);
         }
     }
 
