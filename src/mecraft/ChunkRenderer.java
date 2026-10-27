@@ -99,6 +99,9 @@ final class ChunkRenderer {
     private final byte[] chunkLightScratch = new byte[VoxelWorld.CHUNK_XZ *
             VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
     private final int[] greedyMaskScratch = new int[CHUNK_AREA];
+    // One chunk is meshed at a time; reuse the large material lookup table to
+    // avoid allocating thousands of references every time the player moves.
+    private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[TILE_COUNT * 15];
     private final Image terrainImage;
     private final Texture2D atlas;
     private final Texture2D itemAtlas;
@@ -1112,7 +1115,7 @@ final class ChunkRenderer {
     }
 
     private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {
-        FaceBuilder[] builders = new FaceBuilder[TILE_COUNT * 15];
+        FaceBuilder[] builders = chunkFaceBuilders;
         FlowerBuilder flowers = null;
         PortalBuilder portals = null;
         int x0 = cx * VoxelWorld.CHUNK_XZ;
@@ -1442,6 +1445,9 @@ final class ChunkRenderer {
 
     /** Manhattan falloff approximates classic voxel light levels, never triangle interpolation. */
     private int torchLightAt(int x, int y, int z) {
+        // Most chunks have no torches nearby. Avoid entering the per-block
+        // torch loop entirely in that common case.
+        if (chunkTorchCount == 0) return 0;
         int best = 0;
         for (int i = 0; i < chunkTorchCount; i++) {
             int distance = Math.abs(x - chunkTorchX[i]) +
