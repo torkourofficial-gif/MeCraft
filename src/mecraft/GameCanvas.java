@@ -708,12 +708,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             }
             if (world.mode == 0)
                 renderer.spawnDroppedItem(Block.DOOR, x, lowerY, z);
-            renderer.spawnBlockDestroy(x, lowerY, z, 97);
             renderer.swingHand();
             if (world.mode == 0)
                 damageTool(hotbar[world.selectedSlot],
                         ItemCatalog.durabilityCost(hotbar[world.selectedSlot]));
+            // Rebuild the removed door first, then emit debris so the visual burst
+            // cannot be lost behind a terrain rebuild on slower M3G implementations.
             renderer.sync(world);
+            renderer.spawnBlockDestroy(x, lowerY, z, 97);
             resetMining();
             miningHitWait = 5;
             return;
@@ -736,7 +738,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             }
             if (world.mode == 0 && Block.dropsItem(id) && canHarvest)
                 renderer.spawnDroppedItem(dropId, x, y, z);
-            renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
             renderer.swingHand();
             if (y + 1 < VoxelWorld.HEIGHT &&
                 world.get(x, y + 1, z) == Block.DOOR && !Block.solid(world.get(x, y, z))) {
@@ -744,7 +745,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 world.removeDoor(x, y + 1, z);
             }
             if (world.mode == 0) damageTool(heldItem, ItemCatalog.durabilityCost(heldItem));
+            // Sync the changed terrain before creating the burst. This keeps
+            // particle creation separate from mesh replacement during block breaks.
             renderer.sync(world);
+            renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
             resetMining();
             miningHitWait = 5;
         }
@@ -2848,9 +2852,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (miningDamage <= 0.0f || miningX < 0 || world == null) return;
         byte id = world.get(miningX, miningY, miningZ);
         if (id == Block.AIR) return;
-        int[] target = trace(5.0f);
-        if (target == null || target[0] != miningX || target[1] != miningY || target[2] != miningZ) return;
-
+        // Keep drawing cracks on the block selected by the mining state. Re-tracing
+        // every paint can flicker on low-FPS devices as the camera moves by tiny amounts.
         int stage = (int)(miningDamage * 10.0f);
         if (stage < 1) stage = 1;
         if (stage > 9) stage = 9;
