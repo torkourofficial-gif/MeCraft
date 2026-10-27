@@ -981,8 +981,21 @@ final class ChunkRenderer {
         int lx = x - cx * VoxelWorld.CHUNK_XZ;
         int ly = y % VoxelWorld.CHUNK_Y;
         int lz = z - cz * VoxelWorld.CHUNK_XZ;
+        boolean torchChanged = world.changedOldId == Block.TORCH ||
+                world.get(x, y, z) == Block.TORCH;
         for (int i = 0; i < CACHE_SIZE; i++) {
             if (!residentChunks[i]) continue;
+            if (torchChanged) {
+                int bx0 = chunkWorldX[i] * VoxelWorld.CHUNK_XZ;
+                int by0 = chunkWorldY[i] * VoxelWorld.CHUNK_Y;
+                int bz0 = chunkWorldZ[i] * VoxelWorld.CHUNK_XZ;
+                if (x < bx0 - TORCH_LIGHT_RADIUS || x >= bx0 + VoxelWorld.CHUNK_XZ + TORCH_LIGHT_RADIUS ||
+                    y < by0 - TORCH_LIGHT_RADIUS || y >= by0 + VoxelWorld.CHUNK_Y + TORCH_LIGHT_RADIUS ||
+                    z < bz0 - TORCH_LIGHT_RADIUS || z >= bz0 + VoxelWorld.CHUNK_XZ + TORCH_LIGHT_RADIUS)
+                    continue;
+                dirtyChunks[i] = true;
+                continue;
+            }
             if (Math.abs(chunkWorldX[i] - cx) > (lx == 0 || lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0) ||
                 Math.abs(chunkWorldY[i] - cy) > (ly == 0 || ly == VoxelWorld.CHUNK_Y - 1 ? 1 : 0) ||
                 Math.abs(chunkWorldZ[i] - cz) > (lz == 0 || lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0)) continue;
