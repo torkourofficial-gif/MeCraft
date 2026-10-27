@@ -390,6 +390,11 @@ final class Block {
         if (id == DOOR) return face == 0 || face == 5 ? 81 : 97;
         if (id == FURNACE) return face == 0 || face == 5 ? 61 : 62;
         if (face == 0) return topTile(id);
+        // Alpha 1.2.6 BlockChest uses tile 27 for its default front
+        // (side 3 / -Z), tile 26 for the other vertical faces, and tile 25
+        // for both top and bottom. This project currently stores block IDs
+        // without chest-facing metadata, so use Alpha's default orientation.
+        if (id == CHEST && face == 3) return 27;
         if (id == TNT && face == 5) return 10;
         if (face == 5) {
             if (id == GRASS) return TILE[DIRT];
