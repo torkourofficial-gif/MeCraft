@@ -1134,8 +1134,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private void drawChest(Graphics g) {
         int w = getWidth(), h = getHeight(), pw = 176, ph = 166;
         int left = (w - pw) / 2, top = (h - ph) / 2;
-        // container.png's chest panel is 176x166; avoid drawing unrelated
-        // atlas content from below the panel.
+
+        // Alpha 1.2.6 container.png chest background is exactly 176x166.
+        // Never crop the extra atlas area below it: that area belongs to
+        // other GUI elements and is what made the chest look like the title UI.
         if (containerTexture != null && containerTexture.getWidth() >= pw &&
                 containerTexture.getHeight() >= ph) {
             g.drawRegion(containerTexture, 0, 0, pw, ph, Sprite.TRANS_NONE,
@@ -1144,36 +1146,56 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             g.setColor(198, 198, 198); g.fillRect(left, top, pw, ph);
             g.setColor(35, 35, 35); g.drawRect(left, top, pw - 1, ph - 1);
         }
+
         g.setColor(35, 35, 35);
-        g.drawString("Cofre", left + 8, top + 5, Graphics.TOP | Graphics.LEFT);
-        g.drawString("Inventario", left + 8, top + 72, Graphics.TOP | Graphics.LEFT);
-        int sx = left + 7, sy = top + 17;
+        g.drawString(Language.text("Cofre"), left + 8, top + 6, Graphics.TOP | Graphics.LEFT);
+        g.drawString(Language.text("Inventario"), left + 8, top + 73, Graphics.TOP | Graphics.LEFT);
+
+        // Chest inventory: 3 rows x 9 columns, matching vanilla slot anchors.
         for (int i = 0; i < 27; i++) {
-            int x = sx + (i % 9) * 18, y = sy + (i / 9) * 18;
-            g.setColor(i == chestSelection ? 0xFFFF80 : 0x555555);
-            g.fillRect(x, y, 17, 17);
-            g.setColor(0x222222); g.drawRect(x, y, 16, 16);
-            if (chestItems[i] > 0) {
-                drawIcon(g, chestItems[i], x + 1, y + 1, false);
+            int x = left + 8 + (i % 9) * 18;
+            int y = top + 18 + (i / 9) * 18;
+            if (i == chestSelection) {
+                g.setColor(255, 255, 160);
+                g.drawRect(x - 1, y - 1, 17, 17);
+            }
+            if (chestItems[i] > 0 && chestCounts[i] > 0) {
+                drawIcon(g, chestItems[i], x, y, false);
                 if (chestCounts[i] > 1)
                     drawOutlinedCount(g, Integer.toString(chestCounts[i]), x + 16, y + 16,
                             Graphics.RIGHT | Graphics.BOTTOM);
             }
         }
+
+        // Player inventory: 3 rows and a hotbar, all 36 slots. These rows
+        // were missing before, leaving the chest GUI visibly incomplete.
+        for (int i = 0; i < 27; i++) {
+            int x = left + 8 + (i % 9) * 18;
+            int y = top + 85 + (i / 9) * 18;
+            int id = inventoryCellItem(i);
+            if (id > 0 && id < ItemCatalog.COUNT) {
+                drawIcon(g, id, x, y, false);
+                if (!ItemCatalog.isTool(id) && inventory[id] > 1)
+                    drawOutlinedCount(g, Integer.toString(inventory[id]), x + 16, y + 16,
+                            Graphics.RIGHT | Graphics.BOTTOM);
+            }
+        }
         for (int i = 0; i < 9; i++) {
-            int id = hotbar[i], x = sx + i * 18, y = top + 125;
-            g.setColor(i == world.selectedSlot ? 0xFFFF80 : 0x555555);
-            g.fillRect(x, y, 17, 17);
-            g.setColor(0x222222); g.drawRect(x, y, 16, 16);
-            if (id > 0 && inventory[id] > 0) {
-                drawIcon(g, id, x + 1, y + 1, false);
-                if (inventory[id] > 1)
+            int x = left + 8 + i * 18, y = top + 143;
+            if (i == world.selectedSlot) {
+                g.setColor(255, 255, 160);
+                g.drawRect(x - 1, y - 1, 17, 17);
+            }
+            int id = hotbar[i];
+            if (id > 0 && id < ItemCatalog.COUNT && inventory[id] > 0) {
+                drawIcon(g, id, x, y, false);
+                if (!ItemCatalog.isTool(id) && inventory[id] > 1)
                     drawOutlinedCount(g, Integer.toString(inventory[id]), x + 16, y + 16,
                             Graphics.RIGHT | Graphics.BOTTOM);
             }
         }
         g.setColor(35, 35, 35);
-        g.drawString("5: transferir  #: cerrar", w / 2, top + ph + 2,
+        g.drawString(Language.text("5: transferir  #: cerrar"), w / 2, top + ph + 1,
                 Graphics.TOP | Graphics.HCENTER);
     }
 
