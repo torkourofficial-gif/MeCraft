@@ -1113,22 +1113,43 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void transferChestSlot() {
-        if(world==null)return;
-        int slot=chestSelection, held=hotbar[world.selectedSlot];
-        if(chestItems[slot]>0){
-            int id=chestItems[slot], amount=chestCounts[slot];
-            if(inventory[id]<=0 || inventory[id]+amount<=64){
-                inventory[id]+=amount;
-                if(hotbarIndex(id)<0)hotbar[world.selectedSlot]=id;
-                chestItems[slot]=0;chestCounts[slot]=0;
-            } else {
-                int room=64-inventory[id]; if(room>0){inventory[id]+=room;chestCounts[slot]-=room;}
+        if (world == null) return;
+        int row = chestSelection / 9, col = chestSelection % 9;
+        if (row < 3) {
+            int slot = row * 9 + col;
+            int id = chestItems[slot], amount = chestCounts[slot];
+            if (id > 0 && amount > 0) {
+                int moved = Math.min(Math.max(0, 64 - inventory[id]), amount);
+                if (moved > 0) {
+                    inventory[id] += moved;
+                    chestCounts[slot] -= moved;
+                    if (chestCounts[slot] <= 0) { chestItems[slot] = 0; chestCounts[slot] = 0; }
+                    if (hotbarIndex(id) < 0) hotbar[world.selectedSlot] = id;
+                }
             }
-        } else if(held>0 && held<ItemCatalog.COUNT && inventory[held]>0) {
-            chestItems[slot]=held;chestCounts[slot]=inventory[held];inventory[held]=0;
-            restoreHotbarItem(held);
+        } else {
+            int id = row < 6 ? inventoryCellItem((row - 3) * 9 + col) : hotbar[col];
+            if (id > 0 && id < ItemCatalog.COUNT && inventory[id] > 0) {
+                int destination = -1;
+                for (int i = 0; i < 27; i++) {
+                    if (chestItems[i] == id && chestCounts[i] < 64) { destination = i; break; }
+                    if (destination < 0 && chestItems[i] == 0) destination = i;
+                }
+                if (destination >= 0) {
+                    int room = chestItems[destination] == id ? 64 - chestCounts[destination] : 64;
+                    int moved = Math.min(room, inventory[id]);
+                    if (moved > 0) {
+                        if (chestItems[destination] == 0) chestItems[destination] = id;
+                        chestCounts[destination] += moved;
+                        inventory[id] -= moved;
+                        if (inventory[id] <= 0) { inventory[id] = 0; restoreHotbarItem(id); }
+                    }
+                }
+            }
         }
-        copyInventoryToWorld(); saveChestContents(); repaint();
+        copyInventoryToWorld();
+        saveChestContents();
+        repaint();
     }
 
     private void drawChest(Graphics g) {
@@ -1172,6 +1193,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         for (int i = 0; i < 27; i++) {
             int x = left + 8 + (i % 9) * 18;
             int y = top + 85 + (i / 9) * 18;
+            if (chestSelection >= 27 && chestSelection < 54 && i == chestSelection - 27) {
+                g.setColor(255, 255, 160); g.drawRect(x - 1, y - 1, 17, 17);
+            }
             int id = inventoryCellItem(i);
             if (id > 0 && id < ItemCatalog.COUNT) {
                 drawIcon(g, id, x, y, false);
@@ -1186,6 +1210,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 g.setColor(255, 255, 160);
                 g.drawRect(x - 1, y - 1, 17, 17);
             }
+            if (chestSelection >= 54 && chestSelection - 54 == i) {
+                g.setColor(255, 255, 160); g.drawRect(x - 1, y - 1, 17, 17);
+            }
             int id = hotbar[i];
             if (id > 0 && id < ItemCatalog.COUNT && inventory[id] > 0) {
                 drawIcon(g, id, x, y, false);
@@ -1195,7 +1222,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             }
         }
         g.setColor(35, 35, 35);
-        g.drawString(Language.text("5: transferir  #: cerrar"), w / 2, top + ph + 1,
+        g.drawString(Language.text("2/8 fila  4/6 mover  5 transferir  # cerrar"), w / 2, top + ph + 1,
                 Graphics.TOP | Graphics.HCENTER);
     }
 
@@ -1481,8 +1508,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (state == CHEST_INVENTORY) {
             int action = gameAction(keyCode);
             if (keyCode == KEY_POUND || keyCode == KEY_NUM0) closeCrafting();
-            else if (keyCode == KEY_NUM2 || action == UP) chestSelection = (chestSelection + 18) % 27;
-            else if (keyCode == KEY_NUM8 || action == DOWN) chestSelection = (chestSelection + 9) % 27;
+            else if (keyCode == KEY_NUM2 || action == UP) chestSelection = (chestSelection + 54) % 63;
+            else if (keyCode == KEY_NUM8 || action == DOWN) chestSelection = (chestSelection + 9) % 63;
             else if (keyCode == KEY_NUM4 || action == LEFT) chestSelection = chestSelection % 9 == 0 ? chestSelection + 8 : chestSelection - 1;
             else if (keyCode == KEY_NUM6 || action == RIGHT) chestSelection = chestSelection % 9 == 8 ? chestSelection - 8 : chestSelection + 1;
             else if (keyCode == KEY_NUM5 || action == FIRE) transferChestSlot();
