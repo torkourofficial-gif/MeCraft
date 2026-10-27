@@ -98,6 +98,7 @@ final class VoxelWorld {
     float playerZ;
     float yaw;
     int revision;
+    byte changedOldId;
     int changedX;
     int changedY;
     int changedZ;
@@ -456,7 +457,8 @@ final class VoxelWorld {
     private boolean setBlock(int x, int y, int z, byte id, int fluidLevel) {
         if (y <= 0 || y >= HEIGHT) return false;
         if (id < 0 || id >= Block.COUNT) return false;
-        if (get(x, y, z) == id && (!Block.isFluid(id) || metadataAt(x, y, z) == fluidLevel)) return false;
+        byte oldId = get(x, y, z);
+        if (oldId == id && (!Block.isFluid(id) || metadataAt(x, y, z) == fluidLevel)) return false;
         if (inside(x, z)) {
             int i = index(x, y, z);
             blocks[i] = id;
@@ -467,6 +469,7 @@ final class VoxelWorld {
             editId[edit] = id;
             editMeta[edit] = Block.isFluid(id) ? (byte)fluidLevel : 0;
         }
+        changedOldId = oldId;
         changedX = x;
         changedY = y;
         changedZ = z;
