@@ -359,8 +359,8 @@ final class Block {
     }
 
     static int topTile(byte id) {
-        // Alpha terrain atlas: chest lid is a distinct tile from planks.
-        if (id == CHEST) return 26;
+        // Alpha 1.2.6 BlockChest: blockIndexInTexture=26, top/bottom use 26-1.
+        if (id == CHEST) return 25;
         if (id == TNT) return 9;
         if (id == CACTUS) return CACTUS_TOP_TILE;
         if (isDecorative(id)) return TILE[id & 255];
@@ -372,8 +372,8 @@ final class Block {
     }
 
     static int sideTile(byte id) {
-        // Alpha terrain atlas chest side; tile 4 is ordinary wooden planks.
-        if (id == CHEST) return 25;
+        // Alpha 1.2.6 BlockChest: ordinary sides use tile 26; the front is 27.
+        if (id == CHEST) return 26;
         if (id == DOOR) return 97;
         if (id == TNT) return 8;
         if (isDecorative(id)) return TILE[id & 255];
