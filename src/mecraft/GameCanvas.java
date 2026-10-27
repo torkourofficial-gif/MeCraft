@@ -1132,29 +1132,49 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void drawChest(Graphics g) {
-        int w=getWidth(), h=getHeight(), pw=176, ph=222;
-        int left=(w-pw)/2, top=(h-ph)/2;
-        if(containerTexture!=null && containerTexture.getWidth()>=pw && containerTexture.getHeight()>=ph)
-            g.drawRegion(containerTexture,0,0,pw,ph,Sprite.TRANS_NONE,left,top,Graphics.TOP|Graphics.LEFT);
-        else {g.setColor(198,198,198);g.fillRect(left,top,pw,ph);g.setColor(35,35,35);g.drawRect(left,top,pw-1,ph-1);}
-        g.setColor(35,35,35);g.drawString("Cofre",left+8,top+5,Graphics.TOP|Graphics.LEFT);
-        g.drawString("5: mover  #: cerrar",left+pw/2,top+ph+2,Graphics.TOP|Graphics.HCENTER);
-        int sx=left+8, sy=top+25;
-        for(int i=0;i<27;i++){
-            int x=sx+(i%9)*18,y=sy+(i/9)*18;
-            g.setColor(i==chestSelection?0xFFFF80:0x555555);g.fillRect(x,y,17,17);
-            g.setColor(0x222222);g.drawRect(x,y,16,16);
-            if(chestItems[i]>0){drawIcon(g,chestItems[i],x+1,y+1,false);
-                if(chestCounts[i]>1)drawOutlinedCount(g,Integer.toString(chestCounts[i]),x+16,y+16,Graphics.RIGHT|Graphics.BOTTOM);}
+        int w = getWidth(), h = getHeight(), pw = 176, ph = 166;
+        int left = (w - pw) / 2, top = (h - ph) / 2;
+        // container.png's chest panel is 176x166; avoid drawing unrelated
+        // atlas content from below the panel.
+        if (containerTexture != null && containerTexture.getWidth() >= pw &&
+                containerTexture.getHeight() >= ph) {
+            g.drawRegion(containerTexture, 0, 0, pw, ph, Sprite.TRANS_NONE,
+                    left, top, Graphics.TOP | Graphics.LEFT);
+        } else {
+            g.setColor(198, 198, 198); g.fillRect(left, top, pw, ph);
+            g.setColor(35, 35, 35); g.drawRect(left, top, pw - 1, ph - 1);
         }
-        g.setColor(35,35,35);g.drawString("Inventario",left+8,top+87,Graphics.TOP|Graphics.LEFT);
-        for(int i=0;i<9;i++){
-            int id=hotbar[i], x=sx+i*18,y=top+105;
-            g.setColor(i==world.selectedSlot?0xFFFF80:0x555555);g.fillRect(x,y,17,17);
-            g.setColor(0x222222);g.drawRect(x,y,16,16);
-            if(id>0 && inventory[id]>0){drawIcon(g,id,x+1,y+1,false);
-                if(inventory[id]>1)drawOutlinedCount(g,Integer.toString(inventory[id]),x+16,y+16,Graphics.RIGHT|Graphics.BOTTOM);}
+        g.setColor(35, 35, 35);
+        g.drawString("Cofre", left + 8, top + 5, Graphics.TOP | Graphics.LEFT);
+        g.drawString("Inventario", left + 8, top + 72, Graphics.TOP | Graphics.LEFT);
+        int sx = left + 7, sy = top + 17;
+        for (int i = 0; i < 27; i++) {
+            int x = sx + (i % 9) * 18, y = sy + (i / 9) * 18;
+            g.setColor(i == chestSelection ? 0xFFFF80 : 0x555555);
+            g.fillRect(x, y, 17, 17);
+            g.setColor(0x222222); g.drawRect(x, y, 16, 16);
+            if (chestItems[i] > 0) {
+                drawIcon(g, chestItems[i], x + 1, y + 1, false);
+                if (chestCounts[i] > 1)
+                    drawOutlinedCount(g, Integer.toString(chestCounts[i]), x + 16, y + 16,
+                            Graphics.RIGHT | Graphics.BOTTOM);
+            }
         }
+        for (int i = 0; i < 9; i++) {
+            int id = hotbar[i], x = sx + i * 18, y = top + 125;
+            g.setColor(i == world.selectedSlot ? 0xFFFF80 : 0x555555);
+            g.fillRect(x, y, 17, 17);
+            g.setColor(0x222222); g.drawRect(x, y, 16, 16);
+            if (id > 0 && inventory[id] > 0) {
+                drawIcon(g, id, x + 1, y + 1, false);
+                if (inventory[id] > 1)
+                    drawOutlinedCount(g, Integer.toString(inventory[id]), x + 16, y + 16,
+                            Graphics.RIGHT | Graphics.BOTTOM);
+            }
+        }
+        g.setColor(35, 35, 35);
+        g.drawString("5: transferir  #: cerrar", w / 2, top + ph + 2,
+                Graphics.TOP | Graphics.HCENTER);
     }
 
     private void openCrafting(boolean workbench) {
@@ -2827,8 +2847,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private void drawIcon(Graphics g, int id, int x, int y, boolean muted) {
         if (id <= Block.AIR || id >= ItemCatalog.COUNT) return;
         if (id < Block.COUNT && terrainTexture != null &&
-            (Block.isDecorative((byte)id) || id == Block.TNT)) {
-            int tile = Block.atlasTile(id);
+            (Block.isDecorative((byte)id) || id == Block.TNT || id == (Block.CHEST & 255))) {
+            // A chest's internal block ID is not its terrain-atlas tile.
+            int tile = id == (Block.CHEST & 255) ? 25 : Block.atlasTile(id);
             g.drawRegion(terrainTexture, (tile & 15) * 16, (tile >> 4) * 16, 16, 16,
                     Sprite.TRANS_NONE, x, y, Graphics.TOP | Graphics.LEFT);
             return;
