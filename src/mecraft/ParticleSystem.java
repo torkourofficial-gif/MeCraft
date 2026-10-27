@@ -101,9 +101,10 @@ final class ParticleSystem {
                     vx[i] = mx / length * speed;
                     vy[i] = my / length * speed + 0.1f;
                     vz[i] = mz / length * speed;
-                    size[i] = (nextRandom() * 0.5f + 0.5f) * 0.1f;
+                    size[i] = 0.075f + nextRandom() * 0.055f;
                     age[i] = 0;
-                    lifetime[i] = (int)(4.0f / (nextRandom() * 0.9f + 0.1f));
+                    // Keep debris visible long enough to survive frame skipping on slow Java ME devices.
+                    lifetime[i] = 18 + (int)(nextRandom() * 15.0f);
                     tile[i] = blockTile;
                     tileOffsetX[i] = (int)(nextRandom() * 4.0f);
                     tileOffsetY[i] = (int)(nextRandom() * 4.0f);
