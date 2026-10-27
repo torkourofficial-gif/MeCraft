@@ -1053,10 +1053,14 @@ final class ChunkRenderer {
         int z1 = z0 + VoxelWorld.CHUNK_XZ;
 
         // Crossed flowers do not form cube faces, so collect them separately.
+        // Empty vertical sections are common above the terrain: detect them during
+        // the voxel copy and avoid allocating face builders/M3G meshes for them.
+        int nonAirBlocks = 0;
         for (int y = y0; y < y1; y++) {
             for (int z = z0; z < z1; z++) {
                 for (int x = x0; x < x1; x++) {
                     byte id = world.get(x, y, z);
+                    if (id != Block.AIR) nonAirBlocks++;
                     int localIndex = (((y - y0) * VoxelWorld.CHUNK_XZ) + (z - z0)) *
                             VoxelWorld.CHUNK_XZ + (x - x0);
                     chunkVoxelScratch[localIndex] = id;
@@ -1075,6 +1079,10 @@ final class ChunkRenderer {
                 }
             }
         }
+
+        // An all-air section has no geometry at all. Returning null still marks
+        // the slot resident in replaceChunk(), so it will not be retried every frame.
+        if (nonAirBlocks == 0) return null;
 
         // Mine64-style greedy meshing: combine adjacent visible faces on each
         // chunk plane when their atlas tile matches. Tile textures repeat, so
