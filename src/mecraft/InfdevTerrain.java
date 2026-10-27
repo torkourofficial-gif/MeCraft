@@ -246,9 +246,9 @@ final class InfdevTerrain {
                     }
                 }
 
-                // Rare surface entrances: a small opening and a short shaft
-                // connect the surface to a chamber, but most caves stay buried.
-                if ((regionHash & 7) == 2) {
+                // A medium chance per region makes surface entrances common
+                // enough to discover across every biome, without opening every cave.
+                if ((regionHash & 1) == 0) {
                     int h = hash(seed ^ 0x2C9277B5, rx, 11, rz);
                     int cx = baseX + ((h >>> 6) & 15) - 7;
                     int cz = baseZ + ((h >>> 14) & 15) - 7;
@@ -258,14 +258,16 @@ final class InfdevTerrain {
                     carveCaveRoom(originX, originZ, heights, blocks, cx, cy, cz,
                                   radius, 2, true);
                     int shaftRadius = (h & 0x100) == 0 ? 0 : 1;
-                    for (int sy = cy + 1; sy < surface; sy++) {
+                    for (int sy = cy + 1; sy <= surface; sy++) {
                         for (int dz = -shaftRadius; dz <= shaftRadius; dz++) {
                             for (int dx = -shaftRadius; dx <= shaftRadius; dx++) {
                                 int wx = cx + dx, wz = cz + dz;
                                 if (wx < originX || wx >= originX + CHUNK_SIZE ||
                                     wz < originZ || wz >= originZ + CHUNK_SIZE) continue;
                                 int col = (wz - originZ) * CHUNK_SIZE + wx - originX;
-                                if (sy < heights[col] && sy > 1)
+                                // Clear the top block too: otherwise this is a
+                                // sealed underground shaft, not a surface opening.
+                                if (sy <= heights[col] && sy > 1)
                                     blocks[col * WORLD_HEIGHT + sy] = Block.AIR;
                             }
                         }
