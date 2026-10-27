@@ -251,6 +251,19 @@ final class VoxelWorld {
         return edit >= 0 ? editId[edit] : proceduralBlock(x, y, z);
     }
 
+
+    /**
+     * Fast lookup for light-source discovery. Torches can only be placed as
+     * world edits; outside the saved terrain, avoid generating procedural
+     * chunks merely to prove that a coordinate contains no torch.
+     */
+    byte getTorchCandidate(int x, int y, int z) {
+        if (y < 0 || y >= HEIGHT) return Block.AIR;
+        if (inside(x, z)) return blocks[index(x, y, z)];
+        int edit = findEdit(x, y, z);
+        return edit >= 0 ? editId[edit] : Block.AIR;
+    }
+
     boolean set(int x, int y, int z, byte id) {
         return setBlock(x, y, z, id, 0);
     }
