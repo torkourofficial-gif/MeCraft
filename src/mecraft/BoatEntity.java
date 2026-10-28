@@ -80,7 +80,7 @@ final class BoatEntity {
             int v = cursor[0];
             for (int k = 0; k < 4; k++) {
                 p[(v+k)*3] = (short)(q[k*3] * 16);
-                p[(v+k)*3+1] = (short)(q[k*3+1] * 16);
+                p[(v+k)*3+1] = (short)(-q[k*3+1] * 16);
                 p[(v+k)*3+2] = (short)(q[k*3+2] * 16);
             }
             // ModelRenderer's unfolded box UV layout for the original 64x32 boat atlas.
@@ -127,8 +127,10 @@ final class BoatEntity {
         if (collides(world, x, ny, z)) motionY = 0.0f;
         else y = ny;
         motionX *= 0.99f; motionY *= 0.95f; motionZ *= 0.99f;
+        // While ridden, GameCanvas supplies the camera yaw each tick. Only
+        // let an unoccupied boat turn toward its drifting velocity.
         float speed2 = motionX * motionX + motionZ * motionZ;
-        if (speed2 > 0.001f) {
+        if (!ridden && speed2 > 0.001f) {
             float target = atan2Degrees(-motionX, motionZ);
             float delta = target - yaw;
             while (delta >= 180.0f) delta -= 360.0f;
