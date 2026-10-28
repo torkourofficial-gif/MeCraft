@@ -110,6 +110,8 @@ final class ChunkRenderer {
     private final Image terrainImage;
     private final Texture2D atlas;
     private final Texture2D itemAtlas;
+    private final Texture2D boatTexture;
+    private BoatEntity boat;
     private final Texture2D[] portalFrames = new Texture2D[8];
     private final Texture2D[] crackFrames = new Texture2D[10];
     private final Appearance crackAppearance;
@@ -159,6 +161,9 @@ final class ChunkRenderer {
         atlas = new Texture2D(image);
         atlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         atlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
+        boatTexture = new Texture2D(new Image2D(Image2D.RGBA, GameAssets.image("boat.png")));
+        boatTexture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
+        boatTexture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         makePortalFrames(GameAssets.image("portal.png"));
         makeCrackFrames(terrainImage);
         crackAppearance = createFirstPersonAppearance(crackFrames[0], true, false, false);
@@ -318,6 +323,22 @@ final class ChunkRenderer {
     }
 
     float fieldOfView() { return cameraFov; }
+
+    BoatEntity boat() { return boat; }
+
+    BoatEntity spawnBoat(float x, float y, float z) {
+        if (boat != null) scene.removeChild(boat.mesh);
+        boat = new BoatEntity(boatTexture, x, y, z);
+        scene.addChild(boat.mesh);
+        return boat;
+    }
+
+    void removeBoat() {
+        if (boat != null) {
+            scene.removeChild(boat.mesh);
+            boat = null;
+        }
+    }
 
     void updateCamera(VoxelWorld world, float pitch) {
         cameraPitch = pitch;
