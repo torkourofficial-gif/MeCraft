@@ -84,8 +84,8 @@ final class BoatEntity {
             }
             // Use the correct 64x32 texture coordinate scale; separate atlas areas
             // keep the hull from sampling beyond the source texture.
-            int u0 = textureU * 4, u1 = (textureU + 16) * 4;
-            int v0 = textureV * 2, v1 = (textureV + 8) * 2;
+            int u0 = textureU / 4, u1 = (textureU + 16) / 4;
+            int v0 = textureV / 2, v1 = (textureV + 8) / 2;
             int[] tex = new int[] {u0,v0, u0,v1, u1,v0, u1,v1};
             for (int k = 0; k < 8; k++) uv[v*2+k] = (short)tex[k];
             cursor[0] += 4;
