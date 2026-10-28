@@ -503,6 +503,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             loadingMessage = "Guardando mundo...";
             world.save();
             stage = "cargando /mecraft/textures.png y creando escena M3G";
+            ridingBoat = false;
             renderer = new ChunkRenderer(getWidth(), getHeight());
             renderer.setPlayerSkinIndex(selectedPlayerSkin);
             renderer.setRenderDistance(renderDistance);
@@ -1022,30 +1023,30 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (world == null || renderer == null) return;
         int selected = hotbar[world.selectedSlot];
         if (world.mode == 0 && inventory[selected] <= 0) return;
-        int[] target = trace(5.0f);
-        if (target == null) return;
-        int bx = target[0], by = target[1], bz = target[2];
-        if (world.get(bx, by, bz) != Block.WATER) {
-            bx += target[3]; by += target[4]; bz += target[5];
+        double yaw = world.yaw * Math.PI / 180.0;
+        double pitch = cameraPitch * Math.PI / 180.0;
+        double dirX = Math.sin(yaw) * Math.cos(pitch);
+        double dirY = Math.sin(pitch);
+        double dirZ = Math.cos(yaw) * Math.cos(pitch);
+        int bx = 0, by = 0, bz = 0;
+        boolean found = false;
+        // Block targeting intentionally skips fluids; boats therefore use a dedicated
+        // short ray that finds the first water voxel rather than the shoreline behind it.
+        for (float d = 0.35f; d <= 5.0f && !found; d += 0.12f) {
+            int tx = floorBlock(world.playerX + (float)(dirX * d));
+            int ty = floorBlock(world.playerY + PLAYER_EYE_HEIGHT + (float)(dirY * d));
+            int tz = floorBlock(world.playerZ + (float)(dirZ * d));
+            if (world.get(tx, ty, tz) == Block.WATER) {
+                bx = tx; by = ty; bz = tz; found = true;
+            }
         }
-        if (world.get(bx, by, bz) != Block.WATER) {
-            boolean found = false;
-            for (int dy = -1; dy <= 1 && !found; dy++)
-                for (int dz = -1; dz <= 1 && !found; dz++)
-                    for (int dx = -1; dx <= 1 && !found; dx++) {
-                        if (world.get(bx + dx, by + dy, bz + dz) == Block.WATER) {
-                            bx += dx; by += dy; bz += dz; found = true;
-                        }
-                    }
-            if (!found) return;
-        }
-        float sx = bx + 0.5f, sy = by + 0.72f, sz = bz + 0.5f;
+        if (!found) return;
         if (world.mode == 0) {
             inventory[selected]--;
             if (inventory[selected] <= 0) restoreHotbarItem(selected);
             copyInventoryToWorld();
         }
-        renderer.spawnBoat(sx, sy, sz);
+        renderer.spawnBoat(bx + 0.5f, by + 0.72f, bz + 0.5f);
         renderer.swingHand();
         world.save();
         repaint();
