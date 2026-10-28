@@ -6,7 +6,7 @@ import javax.microedition.m3g.Material;
 import javax.microedition.m3g.Mesh;
 import javax.microedition.m3g.PolygonMode;
 import javax.microedition.m3g.Texture2D;
-import javax.microedition.m3g.TriangleStripArray;
+import javax.microedition.m3g.TriangleArray;
 import javax.microedition.m3g.VertexArray;
 import javax.microedition.m3g.VertexBuffer;
 
@@ -28,11 +28,9 @@ final class MinecartEntity {
         // ModelMinecart from Alpha 1.2.6: shallow base, four raised sides,
         // and the inset floor. Dimensions are in the original 1/16 model units.
         final int boxes = 6;
-        final int vertices = boxes * 24;
+        final int vertices = boxes * 36;
         short[] p = new short[vertices * 3];
         short[] uv = new short[vertices * 2];
-        int[] strips = new int[vertices / 4];
-        for (int i = 0; i < strips.length; i++) strips[i] = 4;
         int[] cursor = new int[] { 0 };
         // Build the exact ModelMinecart local boxes, then apply each original pivot/rotation.
         addBox(p, uv, cursor, -10, -8, -1, 10, 8, 1, 0, 10, 20, 16, 2, 0, 4, 0, 90, 0);
@@ -64,7 +62,7 @@ final class MinecartEntity {
         cm.setAlphaThreshold(0.1f);
         cm.setBlending(CompositingMode.ALPHA);
         a.setCompositingMode(cm);
-        mesh = new Mesh(vb, new TriangleStripArray(0, strips), a);
+        mesh = new Mesh(vb, new TriangleArray(0, vertices), a);
         mesh.setTranslation(x, y, z);
     }
 
@@ -99,8 +97,12 @@ final class MinecartEntity {
             int[] q = faces[f];
             int[] r = rects[f];
             int v = cursor[0];
-            for (int k = 0; k < 4; k++) {
-                float px = q[k*3], py = q[k*3+1], pz = q[k*3+2];
+            // TriangleArray uses independent triangles, so explicitly split each
+            // quad along the same diagonal: 0-1-2 and 0-2-3.
+            int[] triangleCorners = new int[] { 0, 1, 2, 0, 2, 3 };
+            for (int k = 0; k < 6; k++) {
+                int corner = triangleCorners[k];
+                float px = q[corner*3], py = q[corner*3+1], pz = q[corner*3+2];
                 // ModelRenderer rotates around its pivot after defining UVs on the unrotated box.
                 px += pivotX; py += pivotY; pz += pivotZ;
                 double rx = rotateX * Math.PI / 180.0;
@@ -115,15 +117,12 @@ final class MinecartEntity {
                 p[(v+k)*3] = (short)-(rotatedX + pivotX);
                 p[(v+k)*3+1] = (short)-(rotatedY + pivotY);
                 p[(v+k)*3+2] = (short)(rotatedZ + pivotZ);
+                int u = (corner == 0 || corner == 3) ? r[2] : r[0];
+                int texVCoord = (corner < 2) ? r[1] : r[3];
+                uv[(v+k)*2] = (short)u;
+                uv[(v+k)*2+1] = (short)(texVCoord * 2);
             }
-            // Texture V is doubled to compensate for the 64x64 normalized UV space.
-            // TexturedQuad assigns corners as (u2,v1), (u1,v1), (u1,v2), (u2,v2).
-            // Match that order exactly; the previous strip used crossed UV corners.
-            uv[v*2] = (short)r[2]; uv[v*2+1] = (short)(r[1] * 2);
-            uv[(v+1)*2] = (short)r[0]; uv[(v+1)*2+1] = (short)(r[1] * 2);
-            uv[(v+2)*2] = (short)r[0]; uv[(v+2)*2+1] = (short)(r[3] * 2);
-            uv[(v+3)*2] = (short)r[2]; uv[(v+3)*2+1] = (short)(r[3] * 2);
-            cursor[0] += 4;
+            cursor[0] += 6;
         }
     }
 
@@ -233,8 +232,8 @@ final class MinecartEntity {
     }
 
 
-    // Alpha 1.2.6 derives rotationYaw from the reversed position delta, then
-    // flips it by 180 degrees when necessary to prevent sudden cart-model reversals.
+    // Alpha 1.2.6 derives rotationYaw from atan2(prevZ - posZ, prevX - posX)
+    // and flips it by 180 degrees when necessary to avoid abrupt model reversals.
     private void updateYawFromMotion() {
         float nextYaw = angleDegrees(-motionZ, -motionX);
         float delta = nextYaw - yaw;
@@ -246,24 +245,21 @@ final class MinecartEntity {
         yaw = nextYaw;
     }
 
-    // Approximate atan2 using arithmetic only for restricted Java ME runtimes.
-    private static float angleDegrees(float vx, float vz) {
-        float ax = vx < 0.0f ? -vx : vx;
-        float az = vz < 0.0f ? -vz : vz;
+    // Approximate atan2(y, x) without Math.atan/atan2 for restricted Java ME runtimes.
+    private static float angleDegrees(float y, float x) {
+        float ay = y < 0.0f ? -y : y;
+        float ax = x < 0.0f ? -x : x;
+        if (ax == 0.0f && ay == 0.0f) return 0.0f;
         float angle;
-        if (ax == 0.0f && az == 0.0f) return 0.0f;
-        if (az >= ax) {
-            float r = az == 0.0f ? 0.0f : ax / az;
+        if (ax >= ay) {
+            float r = ay / ax;
             angle = r * (45.0f + 15.642f * (1.0f - r));
         } else {
-            float r = ax == 0.0f ? 0.0f : az / ax;
+            float r = ax / ay;
             angle = 90.0f - r * (45.0f + 15.642f * (1.0f - r));
         }
-        if (vz < 0.0f) {
-            if (vx >= 0.0f) return 180.0f - angle;
-            return -180.0f + angle;
-        }
-        return vx < 0.0f ? -angle : angle;
+        if (x < 0.0f) return y >= 0.0f ? 180.0f - angle : -180.0f + angle;
+        return y < 0.0f ? -angle : angle;
     }
 
     private static int floor(float v) { int i = (int)v; return v < i ? i - 1 : i; }
