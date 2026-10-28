@@ -129,17 +129,7 @@ final class BoatEntity {
         motionX *= 0.99f; motionY *= 0.95f; motionZ *= 0.99f;
         float speed2 = motionX * motionX + motionZ * motionZ;
         if (speed2 > 0.001f) {
-            // Manual atan2 equivalent for Java ME profiles that omit Math.atan2().
-            double angle;
-            if (motionZ > 0.00001f) {
-                angle = Math.atan(-motionX / motionZ);
-            } else if (motionZ < -0.00001f) {
-                angle = Math.atan(-motionX / motionZ);
-                angle += (motionX <= 0.0f) ? Math.PI : -Math.PI;
-            } else {
-                angle = (motionX < 0.0f) ? Math.PI / 2.0 : -Math.PI / 2.0;
-            }
-            float target = (float)(angle * 180.0 / Math.PI);
+            float target = atan2Degrees(-motionX, motionZ);
             float delta = target - yaw;
             while (delta >= 180.0f) delta -= 360.0f;
             while (delta < -180.0f) delta += 360.0f;
@@ -149,6 +139,29 @@ final class BoatEntity {
         }
         mesh.setTranslation(x, y, z);
         mesh.setOrientation(yaw, 0.0f, 1.0f, 0.0f);
+    }
+
+
+    /**
+     * Approximate atan2 in degrees without Math.atan/atan2, which may be
+     * absent from older Java ME profiles. Maximum angular error is small
+     * enough for smoothing the boat's visual heading.
+     */
+    private static float atan2Degrees(float y, float x) {
+        if (x == 0.0f && y == 0.0f) return 0.0f;
+        float ax = x < 0.0f ? -x : x;
+        float ay = y < 0.0f ? -y : y;
+        float angle;
+        if (ax >= ay) {
+            float r = ay / ax;
+            angle = r * (45.0f + 15.642f * (1.0f - r));
+        } else {
+            float r = ax / ay;
+            angle = 90.0f - r * (45.0f + 15.642f * (1.0f - r));
+        }
+        if (x < 0.0f) angle = 180.0f - angle;
+        if (y < 0.0f) angle = -angle;
+        return angle;
     }
 
     private static boolean collides(VoxelWorld world, float px, float py, float pz) {
