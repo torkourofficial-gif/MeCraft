@@ -111,6 +111,7 @@ final class ChunkRenderer {
     private final Texture2D atlas;
     private final Texture2D itemAtlas;
     private final Texture2D boatTexture;
+    private final RailSystem railSystem;
     private BoatEntity boat;
     private final Texture2D[] portalFrames = new Texture2D[8];
     private final Texture2D[] crackFrames = new Texture2D[10];
@@ -164,6 +165,7 @@ final class ChunkRenderer {
         boatTexture = new Texture2D(new Image2D(Image2D.RGBA, GameAssets.image("boat.png")));
         boatTexture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         boatTexture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
+        railSystem = new RailSystem(atlas);
         makePortalFrames(GameAssets.image("portal.png"));
         makeCrackFrames(terrainImage);
         crackAppearance = createFirstPersonAppearance(crackFrames[0], true, false, false);
@@ -252,6 +254,7 @@ final class ChunkRenderer {
         cameraEffectPivot.addChild(handPivot);
         skyObjects = new SkySystem(cameraPivot, sky, width, height);
         scene.addChild(terrain);
+        scene.addChild(railSystem.group);
         scene.addChild(particles.mesh);
         scene.addChild(droppedItems.mesh);
         scene.addChild(droppedItems.spriteMesh);
@@ -1003,6 +1006,7 @@ final class ChunkRenderer {
             if (builtRevision < 0 || world.fullRebuild) rebuildWorld(world);
             else rebuildChanged(world);
             builtRevision = world.revision;
+            railSystem.update(world);
             world.fullRebuild = false;
         }
         updateVisibleChunks(world);
@@ -1216,7 +1220,7 @@ final class ChunkRenderer {
                                 VoxelWorld.CHUNK_XZ + (x - x0);
                         byte id = chunkVoxelScratch[voxelIndex];
                         int key = 0;
-                        if (id != Block.AIR && !Block.isFlower(id) && id != Block.DOOR &&
+                        if (id != Block.AIR && id != Block.RAIL && !Block.isFlower(id) && id != Block.DOOR &&
                             !(face == 5 && y == 0)) {
                             int nx = x, ny = y, nz = z;
                             if (face == 0) ny++;
