@@ -33,8 +33,8 @@ final class BoatEntity {
         int[] cursor = new int[] { 0 };
         // The original model has one rotated bottom box and four thin side panels.
         addBox(p, uv, cursor, -12, 3, -8, 12, 7, 8, 0, 8, 24, 16, 4);
-        addBox(p, uv, cursor, -12, -3, -8, -10, 3, 8, 0, 0, 20, 6, 2);
-        addBox(p, uv, cursor, 10, -3, -8, 12, 3, 8, 0, 0, 20, 6, 2);
+        addBox(p, uv, cursor, -12, -3, -10, -10, 3, 10, 0, 0, 20, 6, 2);
+        addBox(p, uv, cursor, 10, -3, -10, 12, 3, 10, 0, 0, 20, 6, 2);
         addBox(p, uv, cursor, -10, -3, -10, 10, 3, -8, 0, 0, 20, 6, 2);
         addBox(p, uv, cursor, -10, -3, 8, 10, 3, 10, 0, 0, 20, 6, 2);
         VertexArray pa = new VertexArray(vertices, 3, 2);
