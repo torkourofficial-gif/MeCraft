@@ -99,14 +99,23 @@ final class RailSystem {
                     int rail = cursors[index]++;
                     if (rail >= counts[index]) continue;
                     float left = x, right = x + 1.0f, front = z, back = z + 1.0f;
-                    float yy = y + 0.075f;
+                    int orientation = world.railMetadata(x, y, z);
+                    float lowY = y + 0.075f;
+                    float highY = y + 1.075f;
+                    float yLeftFront = lowY, yLeftBack = lowY;
+                    float yRightFront = lowY, yRightBack = lowY;
+                    // Alpha metadata 2-5 tilts the track up by one block toward
+                    // its elevated endpoint, rather than rendering a flat tile.
+                    if (orientation == 2) { yRightFront = highY; yRightBack = highY; }
+                    else if (orientation == 3) { yLeftFront = highY; yLeftBack = highY; }
+                    else if (orientation == 4) { yLeftFront = highY; yRightFront = highY; }
+                    else if (orientation == 5) { yLeftBack = highY; yRightBack = highY; }
                     int p = rail * 12;
                     short[] v = positions[index];
-                    v[p] = (short)(left * 256); v[p + 1] = (short)(yy * 256); v[p + 2] = (short)(front * 256);
-                    v[p + 3] = (short)(left * 256); v[p + 4] = (short)(yy * 256); v[p + 5] = (short)(back * 256);
-                    v[p + 6] = (short)(right * 256); v[p + 7] = (short)(yy * 256); v[p + 8] = (short)(front * 256);
-                    v[p + 9] = (short)(right * 256); v[p + 10] = (short)(yy * 256); v[p + 11] = (short)(back * 256);
-                    int orientation = world.railMetadata(x, y, z);
+                    v[p] = (short)(left * 256); v[p + 1] = (short)(yLeftFront * 256); v[p + 2] = (short)(front * 256);
+                    v[p + 3] = (short)(left * 256); v[p + 4] = (short)(yLeftBack * 256); v[p + 5] = (short)(back * 256);
+                    v[p + 6] = (short)(right * 256); v[p + 7] = (short)(yRightFront * 256); v[p + 8] = (short)(front * 256);
+                    v[p + 9] = (short)(right * 256); v[p + 10] = (short)(yRightBack * 256); v[p + 11] = (short)(back * 256);
                     // Alpha BlockMinecartTrack uses tile 128 for straight/slope
                     // rails and tile 112 for curves (metadata 6-9).
                     int tile = orientation >= 6 ? 112 : 128;
