@@ -296,13 +296,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             playerPhysics.reset();
         }
         if (activeMinecart != null && activeMinecart.alive && !ridingMinecart && !ridingBoat) {
-            // The cart's seat is only reachable at close physical range. The old
-            // three-block action-button radius mounted through walls and from afar.
-            float seatDx = world.playerX - activeMinecart.x;
-            float seatDz = world.playerZ - activeMinecart.z;
-            float seatDy = world.playerY - (activeMinecart.y + 0.25f);
-            if (seatDx * seatDx + seatDz * seatDz <= 0.42f * 0.42f &&
-                    seatDy >= -0.25f && seatDy <= 1.05f) {
+            // Mount when the player touches the cart's overall body, not a
+            // nonexistent floor/seat surface. Use a generous cart-sized radius.
+            float cartDx = world.playerX - activeMinecart.x;
+            float cartDz = world.playerZ - activeMinecart.z;
+            float cartDy = world.playerY - activeMinecart.y;
+            if (cartDx * cartDx + cartDz * cartDz <= 0.78f * 0.78f &&
+                    cartDy >= -0.55f && cartDy <= 1.15f) {
                 ridingMinecart = true;
                 playerPhysics.reset();
             }
