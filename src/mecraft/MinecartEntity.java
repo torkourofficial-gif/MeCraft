@@ -34,12 +34,13 @@ final class MinecartEntity {
         int[] strips = new int[vertices / 4];
         for (int i = 0; i < strips.length; i++) strips[i] = 4;
         int[] cursor = new int[] { 0 };
-        addBox(p, uv, cursor, -10, -2, -8, 10, 0, 8, 0, 10, 20, 16, 2);
-        addBox(p, uv, cursor, -10, 0, -8, -8, 7, 8, 0, 0, 16, 8, 2);
-        addBox(p, uv, cursor, 8, 0, -8, 10, 7, 8, 0, 0, 16, 8, 2);
-        addBox(p, uv, cursor, -8, 0, -8, 8, 7, -6, 0, 0, 16, 8, 2);
-        addBox(p, uv, cursor, -8, 0, 6, 8, 7, 8, 0, 0, 16, 8, 2);
-        addBox(p, uv, cursor, -8, -1, -6, 8, 0, 6, 44, 10, 18, 14, 1);
+        // Build the exact ModelMinecart local boxes, then apply each original pivot/rotation.
+        addBox(p, uv, cursor, -10, -8, -1, 10, 8, 1, 0, 10, 20, 16, 2, 0, 4, 0, 90, 0);
+        addBox(p, uv, cursor, -8, -9, -1, 8, -1, 1, 0, 0, 16, 8, 2, -9, 4, 0, 0, 270);
+        addBox(p, uv, cursor, -8, -9, -1, 8, -1, 1, 0, 0, 16, 8, 2, 9, 4, 0, 0, 90);
+        addBox(p, uv, cursor, -8, -9, -1, 8, -1, 1, 0, 0, 16, 8, 2, 0, 4, -7, 0, 180);
+        addBox(p, uv, cursor, -8, -9, -1, 8, -1, 1, 0, 0, 16, 8, 2, 0, 4, 7, 0, 0);
+        addBox(p, uv, cursor, -9, -7, -1, 9, 7, 0, 44, 10, 18, 14, 1, 0, 4, 0, -90, 0);
 
         VertexArray pa = new VertexArray(vertices, 3, 2);
         pa.set(0, vertices, p);
@@ -69,7 +70,8 @@ final class MinecartEntity {
 
     private static void addBox(short[] p, short[] uv, int[] cursor,
                                int x0, int y0, int z0, int x1, int y1, int z1,
-                               int texU, int texV, int uvW, int uvH, int uvD) {
+                               int texU, int texV, int uvW, int uvH, int uvD,
+                               int pivotX, int pivotY, int pivotZ, int rotateX, int rotateY) {
         int w = x1 - x0, h = y1 - y0, d = z1 - z0;
         // The original ModelMinecart rotates several boxes after UV assignment.
         // Preserve their pre-rotation dimensions for the texture atlas layout.
@@ -97,9 +99,20 @@ final class MinecartEntity {
             int[] r = rects[f];
             int v = cursor[0];
             for (int k = 0; k < 4; k++) {
-                p[(v+k)*3] = (short)q[k*3];
-                p[(v+k)*3+1] = (short)q[k*3+1];
-                p[(v+k)*3+2] = (short)q[k*3+2];
+                float px = q[k*3], py = q[k*3+1], pz = q[k*3+2];
+                // ModelRenderer rotates around its pivot after defining UVs on the unrotated box.
+                px += pivotX; py += pivotY; pz += pivotZ;
+                double rx = rotateX * Math.PI / 180.0;
+                double ry = rotateY * Math.PI / 180.0;
+                float localY = py - pivotY, localZ = pz - pivotZ;
+                float rotatedY = (float)(localY * Math.cos(rx) - localZ * Math.sin(rx));
+                float rotatedZ = (float)(localY * Math.sin(rx) + localZ * Math.cos(rx));
+                float localX = px - pivotX;
+                float rotatedX = (float)(localX * Math.cos(ry) + rotatedZ * Math.sin(ry));
+                rotatedZ = (float)(-localX * Math.sin(ry) + rotatedZ * Math.cos(ry));
+                p[(v+k)*3] = (short)(rotatedX + pivotX);
+                p[(v+k)*3+1] = (short)(rotatedY + pivotY);
+                p[(v+k)*3+2] = (short)(rotatedZ + pivotZ);
             }
             // Texture V is doubled to compensate for the 64x64 normalized UV space.
             uv[v*2] = (short)r[0]; uv[v*2+1] = (short)(r[3] * 2);
