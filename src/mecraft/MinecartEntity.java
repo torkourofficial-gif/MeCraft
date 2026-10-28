@@ -11,20 +11,20 @@ import javax.microedition.m3g.VertexArray;
 import javax.microedition.m3g.VertexBuffer;
 
 /**
- * Small single-player minecart using Alpha 1.2.6's rail-following behavior:
- * it snaps to the track center, accelerates gently from rider input, loses
- * speed when unpowered, and falls if it leaves the rails.
+ * Lightweight single-player cart. Rail motion follows Alpha 1.2.6 metadata:
+ * straight tracks, curves, and the four raised-track directions.
  */
 final class MinecartEntity {
-    private static final float MAX_SPEED = 0.38f;
+    private static final float MAX_SPEED = 0.32f;
+    private static final float ACCELERATION = 0.025f;
     final Mesh mesh;
     float x, y, z, yaw;
     float motionX, motionZ;
     boolean alive = true;
+    private float speed;
 
     MinecartEntity(Texture2D atlas, float x, float y, float z) {
         this.x = x; this.y = y; this.z = z;
-        // The cart is built from a shallow iron tub and four small wheels.
         final int boxes = 5;
         final int vertices = boxes * 24;
         short[] p = new short[vertices * 3];
@@ -80,7 +80,7 @@ final class MinecartEntity {
                 p[(v+k)*3+1] = (short)(-q[k*3+1] * 8);
                 p[(v+k)*3+2] = (short)(q[k*3+2] * 8);
             }
-            uv[(v)*2] = (short)u0; uv[(v)*2+1] = (short)(v0+16);
+            uv[v*2] = (short)u0; uv[v*2+1] = (short)(v0+16);
             uv[(v+1)*2] = (short)u0; uv[(v+1)*2+1] = (short)v0;
             uv[(v+2)*2] = (short)(u0+16); uv[(v+2)*2+1] = (short)(v0+16);
             uv[(v+3)*2] = (short)(u0+16); uv[(v+3)*2+1] = (short)v0;
@@ -91,36 +91,54 @@ final class MinecartEntity {
     void update(VoxelWorld world, float forward, boolean ridden) {
         if (!alive) return;
         int bx = floor(x), by = floor(y), bz = floor(z);
-        if (world.get(bx, by - 1, bz) == Block.RAIL) by--;
-        boolean onRail = world.get(bx, by, bz) == Block.RAIL;
-        if (onRail) {
+        if (world.get(bx, by, bz) != Block.RAIL && world.get(bx, by - 1, bz) == Block.RAIL) by--;
+        if (world.get(bx, by, bz) == Block.RAIL) {
+            int meta = world.railMetadata(bx, by, bz);
+            float ax, az, ex, ez;
+            // Endpoints match BlockMinecartTrack/MinecartTrackLogic metadata.
+            if (meta == 0) { ax = 0.0f; az = -0.5f; ex = 0.0f; ez = 0.5f; }
+            else if (meta == 1) { ax = -0.5f; az = 0.0f; ex = 0.5f; ez = 0.0f; }
+            else if (meta == 6) { ax = 0.0f; az = 0.5f; ex = 0.5f; ez = 0.0f; }
+            else if (meta == 7) { ax = 0.0f; az = 0.5f; ex = -0.5f; ez = 0.0f; }
+            else if (meta == 8) { ax = 0.0f; az = -0.5f; ex = -0.5f; ez = 0.0f; }
+            else if (meta == 9) { ax = 0.0f; az = -0.5f; ex = 0.5f; ez = 0.0f; }
+            else if (meta == 2) { ax = -0.5f; az = 0.0f; ex = 0.5f; ez = 0.0f; }
+            else if (meta == 3) { ax = -0.5f; az = 0.0f; ex = 0.5f; ez = 0.0f; }
+            else if (meta == 4) { ax = 0.0f; az = -0.5f; ex = 0.0f; ez = 0.5f; }
+            else { ax = 0.0f; az = -0.5f; ex = 0.0f; ez = 0.5f; }
+
+            float dx = ex - ax, dz = ez - az;
+            float len2 = dx * dx + dz * dz;
+            float t = ((x - (bx + 0.5f + ax)) * dx +
+                       (z - (bz + 0.5f + az)) * dz) / len2;
+            if (t < 0.0f) t = 0.0f;
+            if (t > 1.0f) t = 1.0f;
+            float tangentX = dx / (float)Math.sqrt(len2);
+            float tangentZ = dz / (float)Math.sqrt(len2);
+            float along = motionX * tangentX + motionZ * tangentZ;
+            if (along < 0.0f) { tangentX = -tangentX; tangentZ = -tangentZ; }
+            if (ridden) speed += forward * ACCELERATION;
+            else speed *= 0.96f;
+            if (speed > MAX_SPEED) speed = MAX_SPEED;
+            if (speed < -MAX_SPEED) speed = -MAX_SPEED;
+            float tx = bx + 0.5f + ax + dx * t;
+            float tz = bz + 0.5f + az + dz * t;
+            // Project onto the rail centerline, then move along its tangent.
+            x = tx + tangentX * speed;
+            z = tz + tangentZ * speed;
             y = by + 0.18f;
-            boolean northSouth = world.get(bx, by, bz - 1) == Block.RAIL ||
-                                 world.get(bx, by, bz + 1) == Block.RAIL;
-            boolean eastWest = world.get(bx - 1, by, bz) == Block.RAIL ||
-                               world.get(bx + 1, by, bz) == Block.RAIL;
-            if (northSouth && !eastWest) {
-                motionX *= 0.2f;
-                if (ridden) motionZ += forward * 0.035f;
-                x += (bx + 0.5f - x) * 0.35f;
-                yaw = motionZ < 0 ? 180.0f : 0.0f;
-            } else {
-                motionZ *= 0.2f;
-                if (ridden) motionX += forward * 0.035f;
-                z += (bz + 0.5f - z) * 0.35f;
-                yaw = motionX < 0 ? 270.0f : 90.0f;
-            }
-            motionX = clamp(motionX, -MAX_SPEED, MAX_SPEED);
-            motionZ = clamp(motionZ, -MAX_SPEED, MAX_SPEED);
+            motionX = tangentX * speed;
+            motionZ = tangentZ * speed;
+            yaw = (float)(Math.atan2(motionX, motionZ) * 180.0 / Math.PI);
+            if (Math.abs(speed) < 0.003f) yaw = meta == 1 || meta == 2 || meta == 3 ? 90.0f : 0.0f;
+        } else {
+            // Vanilla carts leave the track at its end and then obey gravity.
+            speed *= 0.95f;
+            motionX *= 0.95f;
+            motionZ *= 0.95f;
+            y -= 0.04f;
             x += motionX;
             z += motionZ;
-            if (!ridden) { motionX *= 0.96f; motionZ *= 0.96f; }
-            // Like Alpha, a cart that runs off the end of a track leaves the rail
-            // and begins falling on the next tick.
-        } else {
-            y -= 0.04f;
-            motionX *= 0.95f; motionZ *= 0.95f;
-            x += motionX; z += motionZ;
             if (y < 0.0f) alive = false;
         }
         mesh.setTranslation(x, y, z);
@@ -128,5 +146,4 @@ final class MinecartEntity {
     }
 
     private static int floor(float v) { int i = (int)v; return v < i ? i - 1 : i; }
-    private static float clamp(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 }
