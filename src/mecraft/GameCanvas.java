@@ -295,18 +295,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             ridingMinecart = false;
             playerPhysics.reset();
         }
-        if (activeMinecart != null && activeMinecart.alive && !ridingMinecart && !ridingBoat) {
-            // Mount when the player touches the cart's overall body, not a
-            // nonexistent floor/seat surface. Use a generous cart-sized radius.
-            float cartDx = world.playerX - activeMinecart.x;
-            float cartDz = world.playerZ - activeMinecart.z;
-            float cartDy = world.playerY - activeMinecart.y;
-            if (cartDx * cartDx + cartDz * cartDz <= 0.78f * 0.78f &&
-                    cartDy >= -0.55f && cartDy <= 1.15f) {
-                ridingMinecart = true;
-                playerPhysics.reset();
-            }
-        }
         if (activeMinecart != null) {
             activeMinecart.update(world, ridingMinecart ? forward : 0.0f, ridingMinecart);
             if (ridingMinecart) {
@@ -1092,8 +1080,20 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     /** Key 3 uses raw pork when selected; other items retain their place action. */
     private void useSelectedItem() {
         if (world == null) return;
-        // Minecart mounting is handled by physical contact with its seat in
-        // updateGame(), not by the generic action button.
+        // Use the action button to mount a nearby minecart; proximity alone
+        // must never mount the player automatically.
+        MinecartEntity nearbyMinecart = renderer == null ? null : renderer.minecart();
+        if (nearbyMinecart != null && nearbyMinecart.alive && !ridingMinecart && !ridingBoat) {
+            float cartDx = world.playerX - nearbyMinecart.x;
+            float cartDz = world.playerZ - nearbyMinecart.z;
+            float cartDy = world.playerY - nearbyMinecart.y;
+            if (cartDx * cartDx + cartDz * cartDz <= 1.6f * 1.6f &&
+                    cartDy >= -0.65f && cartDy <= 1.45f) {
+                ridingMinecart = true;
+                playerPhysics.reset();
+                return;
+            }
+        }
         BoatEntity nearbyBoat = renderer == null ? null : renderer.boat();
         if (nearbyBoat != null && nearbyBoat.alive &&
                 distanceSquared(world.playerX, world.playerZ, nearbyBoat.x, nearbyBoat.z) < 3.5f * 3.5f) {
