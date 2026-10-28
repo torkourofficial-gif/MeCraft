@@ -110,6 +110,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private boolean worldDeleteFailed;
     private int createSelection;
     private int newWorldMode;
+    private int newWorldSize;
+    private int newWorldType;
     private String newWorldName = "Mundo 1";
     private TextBox worldNameInput;
     private Command acceptWorldName;
@@ -420,7 +422,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         repaint();
     }
 
-    private void startNewWorld(int mode, String name) {
+    private void startNewWorld(int mode, int size, int type, String name) {
         if (state == LOADING) return;
         state = LOADING;
         loadingMessage = "Preparando mundo...";
@@ -428,14 +430,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         repaint();
         serviceRepaints();
         final int requestedMode = mode;
+        final int requestedSize = size;
+        final int requestedType = type;
         final String requestedName = name;
         Thread loader = new Thread(new Runnable() {
-            public void run() { createNewWorldNow(requestedMode, requestedName); }
+            public void run() { createNewWorldNow(requestedMode, requestedSize, requestedType, requestedName); }
         });
         loader.start();
     }
 
-    private void createNewWorldNow(int mode, String name) {
+    private void createNewWorldNow(int mode, int size, int type, String name) {
         String stage = "preparando mundo";
         try {
             title = null;
@@ -446,7 +450,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             }
             stage = "generando el terreno";
             loadingMessage = "Generando terreno...";
-            world = new VoxelWorld((int)(System.currentTimeMillis() ^ System.currentTimeMillis() >>> 32), mode);
+            world = new VoxelWorld((int)(System.currentTimeMillis() ^ System.currentTimeMillis() >>> 32), mode, size, type);
             stage = "inicializando inventario y posición";
             world.worldName = name == null || name.trim().length() == 0 ? "Mundo" : name.trim();
             // Nether access is reached through a wool portal in the normal world.
@@ -1431,9 +1435,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 if (createSelection > 0) createSelection--;
                 repaint();
             } else if (keyCode == KEY_NUM8 || action == DOWN) {
-                if (createSelection < 3) createSelection++;
+                if (createSelection < 5) createSelection++;
                 repaint();
-            } else if (keyCode == KEY_NUM5 || action == FIRE) activateCreateSelection();
+            } else if (keyCode == KEY_NUM4 || action == LEFT) changeCreateOption(-1);
+            else if (keyCode == KEY_NUM6 || action == RIGHT) changeCreateOption(1);
+            else if (keyCode == KEY_NUM5 || action == FIRE) activateCreateSelection();
             else if (keyCode == KEY_NUM0) { state = WORLD_SELECT; repaint(); }
             return;
         }
@@ -1851,6 +1857,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         } else if (worldSelection == savedWorlds.length) {
             newWorldName = defaultWorldName(savedWorlds.length + 1);
             newWorldMode = 0;
+            newWorldSize = VoxelWorld.SIZE_INFINITE;
+            newWorldType = VoxelWorld.TYPE_STANDARD;
             createSelection = 0;
             state = WORLD_CREATE;
             repaint();
@@ -1862,17 +1870,23 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private void activateCreateSelection() {
         if (createSelection == 0) {
             openNativeWorldNameInput();
-        } else if (createSelection == 1) {
-            newWorldMode = 1 - newWorldMode;
-            repaint();
-        } else if (createSelection == 2) {
+        } else if (createSelection >= 1 && createSelection <= 3) {
+            changeCreateOption(1);
+        } else if (createSelection == 4) {
             String name = newWorldName == null ? "" : newWorldName.trim();
             if (name.length() == 0) name = defaultWorldName(savedWorlds.length + 1);
-            startNewWorld(newWorldMode, name);
+            startNewWorld(newWorldMode, newWorldSize, newWorldType, name);
         } else {
             state = WORLD_SELECT;
             repaint();
         }
+    }
+
+    private void changeCreateOption(int delta) {
+        if (createSelection == 1) newWorldMode = 1 - newWorldMode;
+        else if (createSelection == 2) newWorldSize = 1 - newWorldSize;
+        else if (createSelection == 3) newWorldType = 1 - newWorldType;
+        repaint();
     }
 
     /** Opens MIDP's native text editor so hardware QWERTY keyboards work. */
@@ -2650,18 +2664,19 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void drawWorldCreate(Graphics g) {
-        int w = getWidth(), h = getHeight();
+        int w = getWidth();
         drawDirtBackground(g);
-        drawInsetPanel(g, 12, 50, w - 24, 210);
+        drawInsetPanel(g, 8, 34, w - 16, 258);
         g.setColor(255, 255, 255);
-        g.drawString(Language.text("Crear mundo"), w / 2, 61, Graphics.TOP | Graphics.HCENTER);
-        drawMenuItem(g, "Nombre: " + trimText(newWorldName, 17), 101, createSelection == 0);
-        drawMenuItem(g, "Modo: " + (newWorldMode == 0 ? "Supervivencia" : "Creativo"),
-                138, createSelection == 1);
-        drawMenuItem(g, "Crear mundo", 175, createSelection == 2);
-        drawMenuItem(g, "Volver", 212, createSelection == 3);
+        g.drawString(Language.text("Crear mundo"), w / 2, 40, Graphics.TOP | Graphics.HCENTER);
+        drawMenuItem(g, "Nombre: " + trimText(newWorldName, 17), 70, createSelection == 0);
+        drawMenuItem(g, "Modo: " + (newWorldMode == 0 ? "Supervivencia" : "Creativo"), 104, createSelection == 1);
+        drawMenuItem(g, "Tamaño: " + (newWorldSize == VoxelWorld.SIZE_OLD ? "Old 240x240" : "Infinite"), 138, createSelection == 2);
+        drawMenuItem(g, "Tipo: " + (newWorldType == VoxelWorld.TYPE_FLAT ? "Plano" : "Standard"), 172, createSelection == 3);
+        drawMenuItem(g, "Crear mundo", 206, createSelection == 4);
+        drawMenuItem(g, "Volver", 240, createSelection == 5);
         g.setColor(255, 240, 205);
-        g.drawString(Language.text("5 editar/cambiar/elegir"), w / 2, 277, Graphics.TOP | Graphics.HCENTER);
+        g.drawString(Language.text("2/8 mover  4/6 cambiar  5 elegir"), w / 2, 276, Graphics.TOP | Graphics.HCENTER);
     }
 
     private String trimText(String text, int maxChars) {
