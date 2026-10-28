@@ -1092,8 +1092,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     /** Key 3 uses raw pork when selected; other items retain their place action. */
     private void useSelectedItem() {
         if (world == null) return;
-        // Mounting is handled by physical contact with the seat in updateGame(),
-        // not by the generic action button (which is also used to place/use items).
+        // Minecart mounting is handled by physical contact with its seat in
+        // updateGame(), not by the generic action button.
+        BoatEntity nearbyBoat = renderer == null ? null : renderer.boat();
+        if (nearbyBoat != null && nearbyBoat.alive &&
+                distanceSquared(world.playerX, world.playerZ, nearbyBoat.x, nearbyBoat.z) < 3.5f * 3.5f) {
+            ridingBoat = true;
+            world.yaw = nearbyBoat.yaw;
+            return;
+        }
         int selected = hotbar[world.selectedSlot];
         if (selected == ItemCatalog.BOAT) {
             placeBoat();
