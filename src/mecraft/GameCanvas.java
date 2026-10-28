@@ -292,6 +292,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             activeBoat = null;
         }
         if (ridingBoat && (activeBoat == null || jumpHeld)) {
+            if (activeBoat != null && jumpHeld) {
+                // Step off the hull instead of leaving the player embedded in it.
+                world.playerX = activeBoat.x + 0.85f;
+                world.playerY = activeBoat.y + 0.45f;
+                world.playerZ = activeBoat.z;
+            }
             ridingBoat = false;
             playerPhysics.reset();
         }
