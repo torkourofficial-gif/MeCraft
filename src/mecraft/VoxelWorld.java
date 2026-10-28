@@ -266,7 +266,15 @@ final class VoxelWorld {
     }
 
     void setRailMetadata(int x, int y, int z, int metadata) {
-        if (get(x, y, z) == Block.RAIL) setMetadata(x, y, z, metadata & 15);
+        if (get(x, y, z) != Block.RAIL) return;
+        int next = metadata & 15;
+        if (metadataAt(x, y, z) == next) return;
+        setMetadata(x, y, z, next);
+        changedOldId = Block.RAIL;
+        changedX = x;
+        changedY = y;
+        changedZ = z;
+        revision++;
     }
 
     byte get(int x, int y, int z) {
