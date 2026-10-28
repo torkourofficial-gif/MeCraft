@@ -94,18 +94,18 @@ final class MinecartEntity {
         if (world.get(bx, by, bz) != Block.RAIL && world.get(bx, by - 1, bz) == Block.RAIL) by--;
         if (world.get(bx, by, bz) == Block.RAIL) {
             int meta = world.railMetadata(bx, by, bz);
-            float ax, az, ex, ez;
-            // Endpoints match BlockMinecartTrack/MinecartTrackLogic metadata.
-            if (meta == 0) { ax = 0.0f; az = -0.5f; ex = 0.0f; ez = 0.5f; }
-            else if (meta == 1) { ax = -0.5f; az = 0.0f; ex = 0.5f; ez = 0.0f; }
-            else if (meta == 6) { ax = 0.0f; az = 0.5f; ex = 0.5f; ez = 0.0f; }
-            else if (meta == 7) { ax = 0.0f; az = 0.5f; ex = -0.5f; ez = 0.0f; }
-            else if (meta == 8) { ax = 0.0f; az = -0.5f; ex = -0.5f; ez = 0.0f; }
-            else if (meta == 9) { ax = 0.0f; az = -0.5f; ex = 0.5f; ez = 0.0f; }
-            else if (meta == 2) { ax = -0.5f; az = 0.0f; ex = 0.5f; ez = 0.0f; }
-            else if (meta == 3) { ax = -0.5f; az = 0.0f; ex = 0.5f; ez = 0.0f; }
-            else if (meta == 4) { ax = 0.0f; az = -0.5f; ex = 0.0f; ez = 0.5f; }
-            else { ax = 0.0f; az = -0.5f; ex = 0.0f; ez = 0.5f; }
+            float ax, az, ex, ez, ay, ey;
+            // Endpoint table mirrors Alpha's metadata 0-9 rail path table.
+            if (meta == 0) { ax = 0.0f; az = -0.5f; ex = 0.0f; ez = 0.5f; ay = 0.0f; ey = 0.0f; }
+            else if (meta == 1) { ax = -0.5f; az = 0.0f; ex = 0.5f; ez = 0.0f; ay = 0.0f; ey = 0.0f; }
+            else if (meta == 2) { ax = -0.5f; az = 0.0f; ex = 0.5f; ez = 0.0f; ay = 0.0f; ey = 1.0f; }
+            else if (meta == 3) { ax = -0.5f; az = 0.0f; ex = 0.5f; ez = 0.0f; ay = 1.0f; ey = 0.0f; }
+            else if (meta == 4) { ax = 0.0f; az = -0.5f; ex = 0.0f; ez = 0.5f; ay = 1.0f; ey = 0.0f; }
+            else if (meta == 5) { ax = 0.0f; az = -0.5f; ex = 0.0f; ez = 0.5f; ay = 0.0f; ey = 1.0f; }
+            else if (meta == 6) { ax = 0.0f; az = 0.5f; ex = 0.5f; ez = 0.0f; ay = 0.0f; ey = 0.0f; }
+            else if (meta == 7) { ax = 0.0f; az = 0.5f; ex = -0.5f; ez = 0.0f; ay = 0.0f; ey = 0.0f; }
+            else if (meta == 8) { ax = 0.0f; az = -0.5f; ex = -0.5f; ez = 0.0f; ay = 0.0f; ey = 0.0f; }
+            else { ax = 0.0f; az = -0.5f; ex = 0.5f; ez = 0.0f; ay = 0.0f; ey = 0.0f; }
 
             float dx = ex - ax, dz = ez - az;
             float len2 = dx * dx + dz * dz;
@@ -126,7 +126,11 @@ final class MinecartEntity {
             // Project onto the rail centerline, then move along its tangent.
             x = tx + tangentX * speed;
             z = tz + tangentZ * speed;
-            y = by + 0.18f;
+            float nextT = ((x - (bx + 0.5f + ax)) * dx +
+                           (z - (bz + 0.5f + az)) * dz) / len2;
+            if (nextT < 0.0f) nextT = 0.0f;
+            if (nextT > 1.0f) nextT = 1.0f;
+            y = by + 0.18f + ay + (ey - ay) * nextT;
             motionX = tangentX * speed;
             motionZ = tangentZ * speed;
             yaw = (float)(Math.atan2(motionX, motionZ) * 180.0 / Math.PI);
