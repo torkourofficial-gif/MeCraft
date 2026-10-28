@@ -128,7 +128,7 @@ final class MinecartEntity {
         }
     }
 
-    void update(VoxelWorld world, float forward, boolean ridden) {
+    void update(VoxelWorld world, float forward, float playerYaw, boolean ridden) {
         if (!alive) return;
         int bx = floor(x), by = floor(y), bz = floor(z);
         if (world.get(bx, by, bz) != Block.RAIL &&
@@ -160,8 +160,16 @@ final class MinecartEntity {
             // twice, which makes carts drift sideways at curves and junctions.
             float along = motionX * tangentX + motionZ * tangentZ;
             if (Math.abs(along) > 0.003f) speed = along;
-            if (ridden) speed += forward * ACCELERATION;
-            else speed *= 0.96f;
+            if (ridden) {
+                // Project forward/back input onto the rail axis. This prevents
+                // camera-forward input from always choosing the rail's arbitrary
+                // endpoint order (which made some carts move sideways on screen).
+                float radians = playerYaw * (float)Math.PI / 180.0f;
+                float facingX = (float)Math.sin(radians);
+                float facingZ = (float)Math.cos(radians);
+                float inputAlongRail = facingX * tangentX + facingZ * tangentZ;
+                speed += forward * inputAlongRail * ACCELERATION;
+            } else speed *= 0.96f;
             // Gravity assists downhill motion and opposes uphill motion.
             speed += (ay - ey) * 0.008f;
             if (speed > MAX_SPEED) speed = MAX_SPEED;
