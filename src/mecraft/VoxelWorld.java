@@ -671,7 +671,7 @@ final class VoxelWorld {
         playerZ = spawnCenter + 0.5f;
         setGenerationDiagnosticStage("VoxelWorld.generate: calculando altura inicial del jugador");
         playerY = (nether ? InfdevTerrain.netherFloorHeight(seed, spawnCenter, spawnCenter) :
-                (worldType == TYPE_FLAT ? 5 : InfdevTerrain.surfaceHeight(seed, spawnCenter, spawnCenter))) + 1.0f;
+                (worldType == TYPE_FLAT ? 4 : InfdevTerrain.surfaceHeight(seed, spawnCenter, spawnCenter))) + 1.0f;
         setGenerationDiagnosticStage("VoxelWorld.generate: asignando yaw inicial");
         yaw = 0f;
     }
