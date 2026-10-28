@@ -59,7 +59,8 @@ final class BoatEntity {
         a.setCompositingMode(cm);
         mesh = new Mesh(vb, new TriangleStripArray(0, strips), a);
         mesh.setTranslation(x, y, z);
-        mesh.setOrientation(yaw, 0.0f, 1.0f, 0.0f);
+        // ModelBoat's long axis is local X; rotate it so its bow follows camera forward (+Z).
+        mesh.setOrientation(yaw + 90.0f, 0.0f, 1.0f, 0.0f);
     }
 
     private static void addBox(short[] p, short[] uv, int[] cursor,
@@ -140,7 +141,8 @@ final class BoatEntity {
             yaw += delta;
         }
         mesh.setTranslation(x, y, z);
-        mesh.setOrientation(yaw, 0.0f, 1.0f, 0.0f);
+        // ModelBoat's long axis is local X; rotate it so its bow follows camera forward (+Z).
+        mesh.setOrientation(yaw + 90.0f, 0.0f, 1.0f, 0.0f);
     }
 
 
