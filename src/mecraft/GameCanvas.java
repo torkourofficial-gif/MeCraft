@@ -301,9 +301,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 world.playerX = activeMinecart.x;
                 world.playerY = activeMinecart.y + 0.25f;
                 world.playerZ = activeMinecart.z;
-                // Entity yaw is the direction of travel in Alpha 1.2.6; the model renderer
-                // has its own 180-degree correction, so do not copy the mesh's visual yaw.
-                world.yaw = activeMinecart.yaw;
                 playerPhysics.reset();
             }
         }
@@ -1087,7 +1084,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (nearbyMinecart != null && nearbyMinecart.alive &&
                 distanceSquared(world.playerX, world.playerZ, nearbyMinecart.x, nearbyMinecart.z) < 3.0f * 3.0f) {
             ridingMinecart = true;
-            world.yaw = nearbyMinecart.yaw;
             return;
         }
         BoatEntity nearbyBoat = renderer == null ? null : renderer.boat();
