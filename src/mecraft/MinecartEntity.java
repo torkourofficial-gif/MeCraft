@@ -33,12 +33,12 @@ final class MinecartEntity {
         int[] strips = new int[vertices / 4];
         for (int i = 0; i < strips.length; i++) strips[i] = 4;
         int[] cursor = new int[] { 0 };
-        addBox(p, uv, cursor, -10, -2, -8, 10, 0, 8, 0, 10);
-        addBox(p, uv, cursor, -10, 0, -8, -8, 7, 8, 0, 0);
-        addBox(p, uv, cursor, 8, 0, -8, 10, 7, 8, 0, 0);
-        addBox(p, uv, cursor, -8, 0, -8, 8, 7, -6, 0, 0);
-        addBox(p, uv, cursor, -8, 0, 6, 8, 7, 8, 0, 0);
-        addBox(p, uv, cursor, -8, -1, -6, 8, 0, 6, 44, 10);
+        addBox(p, uv, cursor, -10, -2, -8, 10, 0, 8, 0, 10, 20, 16, 2);
+        addBox(p, uv, cursor, -10, 0, -8, -8, 7, 8, 0, 0, 16, 8, 2);
+        addBox(p, uv, cursor, 8, 0, -8, 10, 7, 8, 0, 0, 16, 8, 2);
+        addBox(p, uv, cursor, -8, 0, -8, 8, 7, -6, 0, 0, 16, 8, 2);
+        addBox(p, uv, cursor, -8, 0, 6, 8, 7, 8, 0, 0, 16, 8, 2);
+        addBox(p, uv, cursor, -8, -1, -6, 8, 0, 6, 44, 10, 18, 14, 1);
 
         VertexArray pa = new VertexArray(vertices, 3, 2);
         pa.set(0, vertices, p);
@@ -68,8 +68,11 @@ final class MinecartEntity {
 
     private static void addBox(short[] p, short[] uv, int[] cursor,
                                int x0, int y0, int z0, int x1, int y1, int z1,
-                               int texU, int texV) {
+                               int texU, int texV, int uvW, int uvH, int uvD) {
         int w = x1 - x0, h = y1 - y0, d = z1 - z0;
+        // The original ModelMinecart rotates several boxes after UV assignment.
+        // Preserve their pre-rotation dimensions for the texture atlas layout.
+        int tw = uvW, th = uvH, td = uvD;
         int[][] faces = new int[][] {
             {x0,y0,z0, x0,y1,z0, x1,y0,z0, x1,y1,z0},
             {x1,y0,z1, x1,y1,z1, x0,y0,z1, x0,y1,z1},
@@ -81,12 +84,12 @@ final class MinecartEntity {
         // Same unfolded box layout used by ModelBox: side strips around the
         // box, with top and bottom above them.
         int[][] rects = new int[][] {
-            {texU + d, texV + d, texU + d + w, texV + d + h},
-            {texU + d + w + d, texV + d, texU + d + w + d + w, texV + d + h},
-            {texU, texV + d, texU + d, texV + d + h},
-            {texU + d + w, texV + d, texU + d + w + d, texV + d + h},
-            {texU + d, texV, texU + d + w, texV + d},
-            {texU + d + w, texV, texU + d + w + w, texV + d}
+            {texU + td, texV + td, texU + td + tw, texV + td + th},
+            {texU + td + tw + td, texV + td, texU + td + tw + td + tw, texV + td + th},
+            {texU, texV + td, texU + td, texV + td + th},
+            {texU + td + tw, texV + td, texU + td + tw + td, texV + td + th},
+            {texU + td, texV, texU + td + tw, texV + td},
+            {texU + td + tw, texV, texU + td + tw + tw, texV + td}
         };
         for (int f = 0; f < faces.length; f++) {
             int[] q = faces[f];
