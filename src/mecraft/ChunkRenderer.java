@@ -111,6 +111,7 @@ final class ChunkRenderer {
     private final Texture2D atlas;
     private final Texture2D itemAtlas;
     private final Texture2D boatTexture;
+    private final Texture2D cartTexture;
     private final RailSystem railSystem;
     private BoatEntity boat;
     private MinecartEntity minecart;
@@ -166,6 +167,9 @@ final class ChunkRenderer {
         boatTexture = new Texture2D(new Image2D(Image2D.RGBA, GameAssets.image("boat.png")));
         boatTexture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         boatTexture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
+        cartTexture = new Texture2D(new Image2D(Image2D.RGBA, GameAssets.image("cart.png")));
+        cartTexture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
+        cartTexture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         railSystem = new RailSystem(atlas);
         makePortalFrames(GameAssets.image("portal.png"));
         makeCrackFrames(terrainImage);
@@ -348,7 +352,7 @@ final class ChunkRenderer {
 
     MinecartEntity spawnMinecart(float x, float y, float z) {
         if (minecart != null) scene.removeChild(minecart.mesh);
-        minecart = new MinecartEntity(atlas, x, y, z);
+        minecart = new MinecartEntity(cartTexture, x, y, z);
         scene.addChild(minecart.mesh);
         return minecart;
     }
