@@ -155,8 +155,11 @@ final class MinecartEntity {
             if (t > 1.0f) t = 1.0f;
             float tangentX = dx / (float)Math.sqrt(len2);
             float tangentZ = dz / (float)Math.sqrt(len2);
+            // Keep the rail's endpoint order stable. Flipping the tangent to match
+            // motion while also retaining a signed speed reverses the direction
+            // twice, which makes carts drift sideways at curves and junctions.
             float along = motionX * tangentX + motionZ * tangentZ;
-            if (along < 0.0f) { tangentX = -tangentX; tangentZ = -tangentZ; }
+            if (Math.abs(along) > 0.003f) speed = along;
             if (ridden) speed += forward * ACCELERATION;
             else speed *= 0.96f;
             // Gravity assists downhill motion and opposes uphill motion.
