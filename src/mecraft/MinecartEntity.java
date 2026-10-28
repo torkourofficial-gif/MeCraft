@@ -21,6 +21,7 @@ final class MinecartEntity {
     boolean alive = true;
     private float speed;
     private float motionY;
+    private boolean forcedOffRail;
 
     MinecartEntity(Texture2D cartTexture, float x, float y, float z) {
         this.x = x; this.y = y; this.z = z;
@@ -114,7 +115,7 @@ final class MinecartEntity {
         int bx = floor(x), by = floor(y), bz = floor(z);
         if (world.get(bx, by, bz) != Block.RAIL &&
                 world.get(bx, by - 1, bz) == Block.RAIL) by--;
-        if (world.get(bx, by, bz) == Block.RAIL) {
+        if (world.get(bx, by, bz) == Block.RAIL && !forcedOffRail) {
             int meta = world.railMetadata(bx, by, bz);
             float ax, az, ex, ez, ay, ey;
             if (meta == 0) { ax = 0.0f; az = -0.5f; ex = 0.0f; ez = 0.5f; ay = 0.0f; ey = 0.0f; }
@@ -146,16 +147,37 @@ final class MinecartEntity {
             if (speed < -MAX_SPEED) speed = -MAX_SPEED;
             float tx = bx + 0.5f + ax + dx * t;
             float tz = bz + 0.5f + az + dz * t;
-            x = tx + tangentX * speed;
-            z = tz + tangentZ * speed;
-            float nextT = ((x - (bx + 0.5f + ax)) * dx +
-                           (z - (bz + 0.5f + az)) * dz) / len2;
-            if (nextT < 0.0f) nextT = 0.0f;
-            if (nextT > 1.0f) nextT = 1.0f;
-            y = by + 0.18f + ay + (ey - ay) * nextT;
-            motionX = tangentX * speed;
-            motionZ = tangentZ * speed;
-            motionY = 0.0f;
+            float proposedX = tx + tangentX * speed;
+            float proposedZ = tz + tangentZ * speed;
+            float nextT = ((proposedX - (bx + 0.5f + ax)) * dx +
+                           (proposedZ - (bz + 0.5f + az)) * dz) / len2;
+            boolean atEnd = (nextT > 1.0f && speed > 0.0f) ||
+                            (nextT < 0.0f && speed < 0.0f);
+            int aheadX = floor(proposedX + tangentX * 0.30f);
+            int aheadZ = floor(proposedZ + tangentZ * 0.30f);
+            boolean railAhead = world.get(aheadX, by, aheadZ) == Block.RAIL ||
+                                world.get(aheadX, by + 1, aheadZ) == Block.RAIL ||
+                                world.get(aheadX, by - 1, aheadZ) == Block.RAIL;
+            if (atEnd && !railAhead) {
+                // Let the cart roll off the end instead of snapping it to the
+                // endpoint forever; the following ticks use normal fall physics.
+                x = proposedX;
+                z = proposedZ;
+                y = by + 0.18f + (nextT > 1.0f ? ey : ay);
+                motionX = tangentX * speed;
+                motionZ = tangentZ * speed;
+                motionY = 0.0f;
+                forcedOffRail = true;
+            } else {
+                if (nextT < 0.0f) nextT = 0.0f;
+                if (nextT > 1.0f) nextT = 1.0f;
+                x = proposedX;
+                z = proposedZ;
+                y = by + 0.18f + ay + (ey - ay) * nextT;
+                motionX = tangentX * speed;
+                motionZ = tangentZ * speed;
+                motionY = 0.0f;
+            }
             if (Math.abs(speed) > 0.003f) {
                 yaw = angleDegrees(motionX, motionZ);
             } else if (meta == 1 || meta == 2 || meta == 3) yaw = 90.0f;
