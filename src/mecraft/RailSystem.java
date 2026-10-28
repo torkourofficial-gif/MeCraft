@@ -46,6 +46,23 @@ final class RailSystem {
 
     void update(VoxelWorld world) {
         if (builtRevision == world.revision && !world.fullRebuild) return;
+        // Ordinary block edits should not trigger a full rail scan. Only rebuild
+        // when a rail or one of its six adjacent/support cells changed.
+        if (builtRevision != Integer.MIN_VALUE && !world.fullRebuild) {
+            int x = world.changedX, y = world.changedY, z = world.changedZ;
+            boolean railAffected = world.changedOldId == Block.RAIL ||
+                    world.get(x, y, z) == Block.RAIL ||
+                    world.get(x - 1, y, z) == Block.RAIL ||
+                    world.get(x + 1, y, z) == Block.RAIL ||
+                    world.get(x, y - 1, z) == Block.RAIL ||
+                    world.get(x, y + 1, z) == Block.RAIL ||
+                    world.get(x, y, z - 1) == Block.RAIL ||
+                    world.get(x, y, z + 1) == Block.RAIL;
+            if (!railAffected) {
+                builtRevision = world.revision;
+                return;
+            }
+        }
         for (int i = 0; i < meshes.length; i++) {
             if (meshes[i] != null) group.removeChild(meshes[i]);
             meshes[i] = null;
