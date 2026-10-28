@@ -133,6 +133,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private boolean lookUp, lookDown, lookLeft, lookRight;
     private VoxelWorld world;
     private ChunkRenderer renderer;
+    private boolean ridingBoat;
     private MusicController music;
     private SkinGallery skinGallery;
     private Image title;
@@ -278,8 +279,38 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 !(world.mode == 1 && flying) && !playerPhysics.isInWater(world);
         if (sprinting && !canKeepSprinting) sprinting = false;
         boolean sprint = sprinting;
-        int fallDamage = playerPhysics.update(world, forward, strafe, jumpHeld,
-                world.mode == 1 && flying, descendHeld, sprint);
+        BoatEntity activeBoat = renderer.boat();
+        if (ridingBoat && (activeBoat == null || !activeBoat.alive || jumpHeld)) {
+            ridingBoat = false;
+            playerPhysics.reset();
+            if (activeBoat != null && !activeBoat.alive) {
+                int bx = floorBlock(activeBoat.x), by = floorBlock(activeBoat.y), bz = floorBlock(activeBoat.z);
+                renderer.spawnDroppedItem(Block.PLANKS, bx, by, bz);
+                renderer.spawnDroppedItem(Block.PLANKS, bx, by, bz);
+                renderer.spawnDroppedItem(Block.PLANKS, bx, by, bz);
+                renderer.spawnDroppedItem(ItemCatalog.STICK, bx, by, bz);
+                renderer.spawnDroppedItem(ItemCatalog.STICK, bx, by, bz);
+                renderer.removeBoat();
+                activeBoat = null;
+            }
+        }
+        int fallDamage = 0;
+        if (activeBoat != null && activeBoat.alive) {
+            if (ridingBoat) {
+                activeBoat.yaw = world.yaw;
+                activeBoat.update(world, forward, strafe, true);
+                world.playerX = activeBoat.x;
+                world.playerY = activeBoat.y + 0.15f;
+                world.playerZ = activeBoat.z;
+                playerPhysics.reset();
+            } else {
+                activeBoat.update(world, 0.0f, 0.0f, false);
+            }
+        }
+        if (!ridingBoat) {
+            fallDamage = playerPhysics.update(world, forward, strafe, jumpHeld,
+                    world.mode == 1 && flying, descendHeld, sprint);
+        }
         if (sprinting && playerPhysics.hasHorizontalCollision()) sprinting = false;
         if (world.mode == 0 && fallDamage > 0) damagePlayer(fallDamage);
         if (world.touchesPortal(world.playerX, world.playerY, world.playerZ)) {
@@ -922,7 +953,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     /** Key 3 uses raw pork when selected; other items retain their place action. */
     private void useSelectedItem() {
         if (world == null) return;
+        BoatEntity nearbyBoat = renderer == null ? null : renderer.boat();
+        if (nearbyBoat != null && nearbyBoat.alive &&
+                distanceSquared(world.playerX, world.playerZ, nearbyBoat.x, nearbyBoat.z) < 2.25f) {
+            ridingBoat = true;
+            world.yaw = nearbyBoat.yaw;
+            return;
+        }
         int selected = hotbar[world.selectedSlot];
+        if (selected == ItemCatalog.BOAT) {
+            placeBoat();
+            return;
+        }
         if (ItemCatalog.isTool(selected) && ItemCatalog.kind(selected) == ItemCatalog.SWORD &&
                 ItemCatalog.tier(selected) == ItemCatalog.DIAMOND_TIER) {
             int[] target = trace(5.0f);
@@ -973,6 +1015,44 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             return;
         }
         placeBlock();
+    }
+
+    private void placeBoat() {
+        if (world == null || renderer == null) return;
+        int selected = hotbar[world.selectedSlot];
+        if (world.mode == 0 && inventory[selected] <= 0) return;
+        int[] target = trace(5.0f);
+        if (target == null) return;
+        int bx = target[0], by = target[1], bz = target[2];
+        if (world.get(bx, by, bz) != Block.WATER) {
+            bx += target[3]; by += target[4]; bz += target[5];
+        }
+        if (world.get(bx, by, bz) != Block.WATER) {
+            boolean found = false;
+            for (int dy = -1; dy <= 1 && !found; dy++)
+                for (int dz = -1; dz <= 1 && !found; dz++)
+                    for (int dx = -1; dx <= 1 && !found; dx++) {
+                        if (world.get(bx + dx, by + dy, bz + dz) == Block.WATER) {
+                            bx += dx; by += dy; bz += dz; found = true;
+                        }
+                    }
+            if (!found) return;
+        }
+        float sx = bx + 0.5f, sy = by + 0.72f, sz = bz + 0.5f;
+        if (world.mode == 0) {
+            inventory[selected]--;
+            if (inventory[selected] <= 0) restoreHotbarItem(selected);
+            copyInventoryToWorld();
+        }
+        renderer.spawnBoat(sx, sy, sz);
+        renderer.swingHand();
+        world.save();
+        repaint();
+    }
+
+    private static float distanceSquared(float x1, float z1, float x2, float z2) {
+        float dx = x1 - x2, dz = z1 - z2;
+        return dx * dx + dz * dz;
     }
 
     private void igniteBlock() {
