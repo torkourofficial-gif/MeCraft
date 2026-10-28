@@ -536,6 +536,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             world.save();
             stage = "cargando /mecraft/textures.png y creando escena M3G";
             ridingBoat = false;
+            ridingMinecart = false;
             renderer = new ChunkRenderer(getWidth(), getHeight());
             renderer.setPlayerSkinIndex(selectedPlayerSkin);
             renderer.setRenderDistance(renderDistance);
