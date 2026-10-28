@@ -315,6 +315,12 @@ final class VoxelWorld {
         changedX = x; changedY = y; changedZ = z;
         revision++;
         scheduleFluidNeighbors(x, y, z);
+        // Alpha rails are supported by the block below. Removing a support
+        // block also removes any rail directly above it; this can cascade.
+        if (y + 1 < HEIGHT && !Block.solid(get(x, y, z)) &&
+                get(x, y + 1, z) == Block.RAIL) {
+            setBlock(x, y + 1, z, Block.AIR, 0);
+        }
         return true;
     }
 
