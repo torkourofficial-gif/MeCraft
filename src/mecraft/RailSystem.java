@@ -107,19 +107,24 @@ final class RailSystem {
                     v[p + 6] = (short)(right * 256); v[p + 7] = (short)(yy * 256); v[p + 8] = (short)(front * 256);
                     v[p + 9] = (short)(right * 256); v[p + 10] = (short)(yy * 256); v[p + 11] = (short)(back * 256);
                     int orientation = world.railMetadata(x, y, z);
-                    // Alpha metadata: 0 north/south, 1 east/west, 6-9 curves.
-                    // The rail texture is rotated from the stored orientation,
-                    // not guessed from neighbors at render time.
+                    // Alpha BlockMinecartTrack uses tile 128 for straight/slope
+                    // rails and tile 112 for curves (metadata 6-9).
+                    int tile = orientation >= 6 ? 112 : 128;
+                    int tileU = (tile & 15) * 16;
+                    int tileV = (tile >> 4) * 16;
                     int u = rail * 8;
                     short[] t = uv[index];
-                    boolean rotate = orientation == 0 || orientation == 4 ||
-                            orientation == 5 || orientation == 8 || orientation == 9;
-                    if (rotate) {
-                        t[u] = 0; t[u + 1] = 144; t[u + 2] = 16; t[u + 3] = 144;
-                        t[u + 4] = 0; t[u + 5] = 128; t[u + 6] = 16; t[u + 7] = 128;
+                    if (orientation == 0 || orientation == 4 || orientation == 5 ||
+                            orientation == 8 || orientation == 9) {
+                        t[u] = (short)tileU; t[u + 1] = (short)(tileV + 16);
+                        t[u + 2] = (short)(tileU + 16); t[u + 3] = (short)(tileV + 16);
+                        t[u + 4] = (short)tileU; t[u + 5] = (short)tileV;
+                        t[u + 6] = (short)(tileU + 16); t[u + 7] = (short)tileV;
                     } else {
-                        t[u] = 16; t[u + 1] = 144; t[u + 2] = 16; t[u + 3] = 128;
-                        t[u + 4] = 0; t[u + 5] = 144; t[u + 6] = 0; t[u + 7] = 128;
+                        t[u] = (short)(tileU + 16); t[u + 1] = (short)(tileV + 16);
+                        t[u + 2] = (short)(tileU + 16); t[u + 3] = (short)tileV;
+                        t[u + 4] = (short)tileU; t[u + 5] = (short)(tileV + 16);
+                        t[u + 6] = (short)tileU; t[u + 7] = (short)tileV;
                     }
                 }
             }
