@@ -154,7 +154,7 @@ final class MinecartEntity {
             motionZ = tangentZ * speed;
             motionY = 0.0f;
             if (Math.abs(speed) > 0.003f) {
-                yaw = (float)(Math.atan2(motionX, motionZ) * 180.0 / Math.PI);
+                yaw = angleDegrees(motionX, motionZ);
             } else if (meta == 1 || meta == 2 || meta == 3) yaw = 90.0f;
             else yaw = 0.0f;
         } else {
@@ -183,11 +183,32 @@ final class MinecartEntity {
                 if (y < -1.0f) alive = false;
             }
             if (Math.abs(motionX) + Math.abs(motionZ) > 0.003f) {
-                yaw = (float)(Math.atan2(motionX, motionZ) * 180.0 / Math.PI);
+                yaw = angleDegrees(motionX, motionZ);
             }
         }
         mesh.setTranslation(x, y, z);
         mesh.setOrientation(yaw, 0.0f, 1.0f, 0.0f);
+    }
+
+
+    // Approximate atan2 using arithmetic only for restricted Java ME runtimes.
+    private static float angleDegrees(float vx, float vz) {
+        float ax = vx < 0.0f ? -vx : vx;
+        float az = vz < 0.0f ? -vz : vz;
+        float angle;
+        if (ax == 0.0f && az == 0.0f) return 0.0f;
+        if (az >= ax) {
+            float r = az == 0.0f ? 0.0f : ax / az;
+            angle = r * (45.0f + 15.642f * (1.0f - r));
+        } else {
+            float r = ax == 0.0f ? 0.0f : az / ax;
+            angle = 90.0f - r * (45.0f + 15.642f * (1.0f - r));
+        }
+        if (vz < 0.0f) {
+            if (vx >= 0.0f) return 180.0f - angle;
+            return -180.0f + angle;
+        }
+        return vx < 0.0f ? -angle : angle;
     }
 
     private static int floor(float v) { int i = (int)v; return v < i ? i - 1 : i; }
