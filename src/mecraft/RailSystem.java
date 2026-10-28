@@ -106,18 +106,15 @@ final class RailSystem {
                     v[p + 3] = (short)(left * 256); v[p + 4] = (short)(yy * 256); v[p + 5] = (short)(back * 256);
                     v[p + 6] = (short)(right * 256); v[p + 7] = (short)(yy * 256); v[p + 8] = (short)(front * 256);
                     v[p + 9] = (short)(right * 256); v[p + 10] = (short)(yy * 256); v[p + 11] = (short)(back * 256);
-                    boolean north = world.get(x, y, z - 1) == Block.RAIL;
-                    boolean south = world.get(x, y, z + 1) == Block.RAIL;
-                    boolean west = world.get(x - 1, y, z) == Block.RAIL;
-                    boolean east = world.get(x + 1, y, z) == Block.RAIL;
-                    boolean northSouth = (north || south) && !(east || west);
-                    if (north && south) northSouth = true;
-                    if (east && west) northSouth = false;
-                    // Tile 128 is authored along the east-west axis. Rotate its
-                    // UVs for north-south runs; isolated rails default east-west.
+                    int orientation = world.railMetadata(x, y, z);
+                    // Alpha metadata: 0 north/south, 1 east/west, 6-9 curves.
+                    // The rail texture is rotated from the stored orientation,
+                    // not guessed from neighbors at render time.
                     int u = rail * 8;
                     short[] t = uv[index];
-                    if (northSouth) {
+                    boolean rotate = orientation == 0 || orientation == 4 ||
+                            orientation == 5 || orientation == 8 || orientation == 9;
+                    if (rotate) {
                         t[u] = 0; t[u + 1] = 144; t[u + 2] = 16; t[u + 3] = 144;
                         t[u + 4] = 0; t[u + 5] = 128; t[u + 6] = 16; t[u + 7] = 128;
                     } else {
