@@ -199,7 +199,10 @@ final class MinecartEntity {
                 motionZ = tangentZ * speed;
                 motionY = 0.0f;
             }
-            if (Math.abs(motionX) + Math.abs(motionZ) > 0.003f) {
+            // On flat rails, preserve the cart's facing direction. The old
+            // per-tick motion-derived yaw could flip repeatedly at curves.
+            // Only a sloped rail is allowed to adjust the cart's orientation.
+            if (ay != ey && Math.abs(motionX) + Math.abs(motionZ) > 0.003f) {
                 updateYawFromMotion();
             }
         } else {
@@ -227,9 +230,7 @@ final class MinecartEntity {
                 motionZ *= 0.98f;
                 if (y < -1.0f) alive = false;
             }
-            if (Math.abs(motionX) + Math.abs(motionZ) > 0.003f) {
-                updateYawFromMotion();
-            }
+            // Falling or rolling off rails must not make the cart spin by itself.
         }
         mesh.setTranslation(x, y, z);
         // RenderMinecart rotates by 180 - entity yaw; keep travel yaw separate for the rider.
