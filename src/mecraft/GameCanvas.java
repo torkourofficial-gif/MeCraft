@@ -134,6 +134,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private VoxelWorld world;
     private ChunkRenderer renderer;
     private boolean ridingBoat;
+    private boolean ridingMinecart;
     private MusicController music;
     private SkinGallery skinGallery;
     private Image title;
@@ -279,6 +280,31 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 !(world.mode == 1 && flying) && !playerPhysics.isInWater(world);
         if (sprinting && !canKeepSprinting) sprinting = false;
         boolean sprint = sprinting;
+        MinecartEntity activeMinecart = renderer.minecart();
+        if (activeMinecart != null && !activeMinecart.alive) {
+            if (ridingMinecart) ridingMinecart = false;
+            renderer.removeMinecart();
+            activeMinecart = null;
+        }
+        if (ridingMinecart && (activeMinecart == null || jumpHeld)) {
+            if (activeMinecart != null && jumpHeld) {
+                world.playerX = activeMinecart.x + 0.8f;
+                world.playerY = activeMinecart.y + 0.35f;
+                world.playerZ = activeMinecart.z;
+            }
+            ridingMinecart = false;
+            playerPhysics.reset();
+        }
+        if (activeMinecart != null) {
+            activeMinecart.update(world, ridingMinecart ? forward : 0.0f, ridingMinecart);
+            if (ridingMinecart) {
+                world.playerX = activeMinecart.x;
+                world.playerY = activeMinecart.y + 0.25f;
+                world.playerZ = activeMinecart.z;
+                world.yaw = activeMinecart.yaw;
+                playerPhysics.reset();
+            }
+        }
         BoatEntity activeBoat = renderer.boat();
         if (activeBoat != null && !activeBoat.alive) {
             if (ridingBoat) ridingBoat = false;
@@ -314,7 +340,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 activeBoat.update(world, 0.0f, 0.0f, false);
             }
         }
-        if (!ridingBoat) {
+        if (!ridingBoat && !ridingMinecart) {
             fallDamage = playerPhysics.update(world, forward, strafe, jumpHeld,
                     world.mode == 1 && flying, descendHeld, sprint);
         }
@@ -986,6 +1012,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     /** Key 3 uses raw pork when selected; other items retain their place action. */
     private void useSelectedItem() {
         if (world == null) return;
+        MinecartEntity nearbyMinecart = renderer == null ? null : renderer.minecart();
+        if (nearbyMinecart != null && nearbyMinecart.alive &&
+                distanceSquared(world.playerX, world.playerZ, nearbyMinecart.x, nearbyMinecart.z) < 3.0f * 3.0f) {
+            ridingMinecart = true;
+            world.yaw = nearbyMinecart.yaw;
+            return;
+        }
         BoatEntity nearbyBoat = renderer == null ? null : renderer.boat();
         if (nearbyBoat != null && nearbyBoat.alive &&
                 distanceSquared(world.playerX, world.playerZ, nearbyBoat.x, nearbyBoat.z) < 3.5f * 3.5f) {
@@ -996,6 +1029,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         int selected = hotbar[world.selectedSlot];
         if (selected == ItemCatalog.BOAT) {
             placeBoat();
+            return;
+        }
+        if (selected == ItemCatalog.MINECART) {
+            placeMinecart();
             return;
         }
         if (ItemCatalog.isTool(selected) && ItemCatalog.kind(selected) == ItemCatalog.SWORD &&
@@ -1078,6 +1115,25 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             copyInventoryToWorld();
         }
         renderer.spawnBoat(bx + 0.5f, by + 0.72f, bz + 0.5f);
+        renderer.swingHand();
+        world.save();
+        repaint();
+    }
+
+    /** Alpha 1.2.6 ItemMinecart only places a cart on a rail block. */
+    private void placeMinecart() {
+        if (world == null || renderer == null) return;
+        int selected = hotbar[world.selectedSlot];
+        if (world.mode == 0 && inventory[selected] <= 0) return;
+        int[] target = trace(5.0f);
+        if (target == null || world.get(target[0], target[1], target[2]) != Block.RAIL) return;
+        int x = target[0], y = target[1], z = target[2];
+        if (world.mode == 0) {
+            inventory[selected]--;
+            if (inventory[selected] <= 0) restoreHotbarItem(selected);
+            copyInventoryToWorld();
+        }
+        renderer.spawnMinecart(x + 0.5f, y + 0.18f, z + 0.5f);
         renderer.swingHand();
         world.save();
         repaint();
