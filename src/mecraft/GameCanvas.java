@@ -295,6 +295,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             ridingMinecart = false;
             playerPhysics.reset();
         }
+        if (activeMinecart != null && activeMinecart.alive && !ridingMinecart && !ridingBoat) {
+            // The cart's seat is only reachable at close physical range. The old
+            // three-block action-button radius mounted through walls and from afar.
+            float seatDx = world.playerX - activeMinecart.x;
+            float seatDz = world.playerZ - activeMinecart.z;
+            float seatDy = world.playerY - (activeMinecart.y + 0.25f);
+            if (seatDx * seatDx + seatDz * seatDz <= 0.42f * 0.42f &&
+                    seatDy >= -0.25f && seatDy <= 1.05f) {
+                ridingMinecart = true;
+                playerPhysics.reset();
+            }
+        }
         if (activeMinecart != null) {
             activeMinecart.update(world, ridingMinecart ? forward : 0.0f, ridingMinecart);
             if (ridingMinecart) {
@@ -1080,19 +1092,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     /** Key 3 uses raw pork when selected; other items retain their place action. */
     private void useSelectedItem() {
         if (world == null) return;
-        MinecartEntity nearbyMinecart = renderer == null ? null : renderer.minecart();
-        if (nearbyMinecart != null && nearbyMinecart.alive &&
-                distanceSquared(world.playerX, world.playerZ, nearbyMinecart.x, nearbyMinecart.z) < 3.0f * 3.0f) {
-            ridingMinecart = true;
-            return;
-        }
-        BoatEntity nearbyBoat = renderer == null ? null : renderer.boat();
-        if (nearbyBoat != null && nearbyBoat.alive &&
-                distanceSquared(world.playerX, world.playerZ, nearbyBoat.x, nearbyBoat.z) < 3.5f * 3.5f) {
-            ridingBoat = true;
-            world.yaw = nearbyBoat.yaw;
-            return;
-        }
+        // Mounting is handled by physical contact with the seat in updateGame(),
+        // not by the generic action button (which is also used to place/use items).
         int selected = hotbar[world.selectedSlot];
         if (selected == ItemCatalog.BOAT) {
             placeBoat();
