@@ -195,10 +195,9 @@ final class MinecartEntity {
                 motionZ = tangentZ * speed;
                 motionY = 0.0f;
             }
-            if (Math.abs(speed) > 0.003f) {
-                yaw = angleDegrees(motionX, motionZ);
-            } else if (meta == 1 || meta == 2 || meta == 3) yaw = 90.0f;
-            else yaw = 0.0f;
+            if (Math.abs(motionX) + Math.abs(motionZ) > 0.003f) {
+                updateYawFromMotion();
+            }
         } else {
             // Off-rail carts fall, collide with the voxel floor, then lose speed
             // instead of tunnelling through terrain forever.
@@ -225,7 +224,7 @@ final class MinecartEntity {
                 if (y < -1.0f) alive = false;
             }
             if (Math.abs(motionX) + Math.abs(motionZ) > 0.003f) {
-                yaw = angleDegrees(motionX, motionZ);
+                updateYawFromMotion();
             }
         }
         mesh.setTranslation(x, y, z);
@@ -233,6 +232,19 @@ final class MinecartEntity {
         mesh.setOrientation(180.0f - yaw, 0.0f, 1.0f, 0.0f);
     }
 
+
+    // Alpha 1.2.6 derives rotationYaw from the reversed position delta, then
+    // flips it by 180 degrees when necessary to prevent sudden cart-model reversals.
+    private void updateYawFromMotion() {
+        float nextYaw = angleDegrees(-motionZ, -motionX);
+        float delta = nextYaw - yaw;
+        while (delta >= 180.0f) delta -= 360.0f;
+        while (delta < -180.0f) delta += 360.0f;
+        if (delta < -170.0f || delta >= 170.0f) nextYaw += 180.0f;
+        while (nextYaw < 0.0f) nextYaw += 360.0f;
+        while (nextYaw >= 360.0f) nextYaw -= 360.0f;
+        yaw = nextYaw;
+    }
 
     // Approximate atan2 using arithmetic only for restricted Java ME runtimes.
     private static float angleDegrees(float vx, float vz) {
