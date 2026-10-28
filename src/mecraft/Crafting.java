@@ -10,7 +10,7 @@ final class Crafting {
     static final int DOOR = BASIC_RECIPES;
     static final int TOOL_RECIPES = BASIC_RECIPES + 1;
     private static final int TOOL_RECIPE_COUNT = ItemCatalog.TOOL_KINDS * ItemCatalog.TOOL_TIERS;
-    private static final int FOOD_AND_ITEM_RECIPES = 9;
+    private static final int FOOD_AND_ITEM_RECIPES = 8;
     private static final int ARMOR_RECIPES = 4 * 4;
     static final int RECIPE_COUNT = TOOL_RECIPES + TOOL_RECIPE_COUNT +
                                     FOOD_AND_ITEM_RECIPES + ARMOR_RECIPES + 2;
