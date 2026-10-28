@@ -706,6 +706,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             miningHitWait--;
             return;
         }
+        BoatEntity boat = renderer.boat();
+        if (boat != null && boat.alive && boatInCrosshair(boat)) {
+            boat.damage(heldAttackDamage());
+            onMobHit();
+            miningHitWait = 6;
+            resetMining();
+            return;
+        }
         advanceMining(trace(5.0f));
         renderer.setHandLooping(miningX >= 0);
         if (miningX >= 0) {
@@ -713,6 +721,20 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             if (stage > 9) stage = 9;
             renderer.setMiningCracks(miningX, miningY, miningZ, miningFaceX, miningFaceY, miningFaceZ, stage);
         } else renderer.setMiningCracks(-1, -1, -1, 0, 0, 0, -1);
+    }
+
+    private boolean boatInCrosshair(BoatEntity boat) {
+        double yaw = world.yaw * Math.PI / 180.0;
+        double pitch = cameraPitch * Math.PI / 180.0;
+        float ox = world.playerX, oy = world.playerY + PLAYER_EYE_HEIGHT, oz = world.playerZ;
+        float dx = boat.x - ox, dy = boat.y - oy, dz = boat.z - oz;
+        double rx = Math.sin(yaw) * Math.cos(pitch);
+        double ry = Math.sin(pitch);
+        double rz = Math.cos(yaw) * Math.cos(pitch);
+        double along = dx * rx + dy * ry + dz * rz;
+        if (along < 0.0 || along > 5.0) return false;
+        double ex = dx - rx * along, ey = dy - ry * along, ez = dz - rz * along;
+        return ex * ex + ey * ey + ez * ez < 0.85 * 0.85;
     }
 
     private void advanceMining(int[] target) {
