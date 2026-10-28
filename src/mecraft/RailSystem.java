@@ -102,10 +102,10 @@ final class RailSystem {
                     float yy = y + 0.035f;
                     int p = rail * 12;
                     short[] v = positions[index];
-                    v[p] = (short)(left * 16); v[p + 1] = (short)(yy * 16); v[p + 2] = (short)(front * 16);
-                    v[p + 3] = (short)(left * 16); v[p + 4] = (short)(yy * 16); v[p + 5] = (short)(back * 16);
-                    v[p + 6] = (short)(right * 16); v[p + 7] = (short)(yy * 16); v[p + 8] = (short)(front * 16);
-                    v[p + 9] = (short)(right * 16); v[p + 10] = (short)(yy * 16); v[p + 11] = (short)(back * 16);
+                    v[p] = (short)(left * 256); v[p + 1] = (short)(yy * 256); v[p + 2] = (short)(front * 256);
+                    v[p + 3] = (short)(left * 256); v[p + 4] = (short)(yy * 256); v[p + 5] = (short)(back * 256);
+                    v[p + 6] = (short)(right * 256); v[p + 7] = (short)(yy * 256); v[p + 8] = (short)(front * 256);
+                    v[p + 9] = (short)(right * 256); v[p + 10] = (short)(yy * 256); v[p + 11] = (short)(back * 256);
                     boolean northSouth = world.get(x, y, z - 1) == Block.RAIL ||
                             world.get(x, y, z + 1) == Block.RAIL;
                     int u = rail * 8;
@@ -127,7 +127,7 @@ final class RailSystem {
             VertexArray ta = new VertexArray(counts[i] * 4, 2, 2);
             ta.set(0, counts[i] * 4, uv[i]);
             VertexBuffer vb = new VertexBuffer();
-            vb.setPositions(pa, 1.0f / 16.0f, null);
+            vb.setPositions(pa, 1.0f / 256.0f, null);
             vb.setTexCoords(0, ta, 1.0f / 256.0f, null);
             Mesh mesh = new Mesh(vb, new TriangleStripArray(0, stripCounts[i]), appearance);
             meshes[i] = mesh;
