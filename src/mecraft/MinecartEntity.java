@@ -117,10 +117,12 @@ final class MinecartEntity {
                 p[(v+k)*3+2] = (short)(rotatedZ + pivotZ);
             }
             // Texture V is doubled to compensate for the 64x64 normalized UV space.
-            uv[v*2] = (short)r[0]; uv[v*2+1] = (short)(r[3] * 2);
+            // TexturedQuad assigns corners as (u2,v1), (u1,v1), (u1,v2), (u2,v2).
+            // Match that order exactly; the previous strip used crossed UV corners.
+            uv[v*2] = (short)r[2]; uv[v*2+1] = (short)(r[1] * 2);
             uv[(v+1)*2] = (short)r[0]; uv[(v+1)*2+1] = (short)(r[1] * 2);
-            uv[(v+2)*2] = (short)r[2]; uv[(v+2)*2+1] = (short)(r[3] * 2);
-            uv[(v+3)*2] = (short)r[2]; uv[(v+3)*2+1] = (short)(r[1] * 2);
+            uv[(v+2)*2] = (short)r[0]; uv[(v+2)*2+1] = (short)(r[3] * 2);
+            uv[(v+3)*2] = (short)r[2]; uv[(v+3)*2+1] = (short)(r[3] * 2);
             cursor[0] += 4;
         }
     }
