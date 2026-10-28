@@ -280,19 +280,20 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (sprinting && !canKeepSprinting) sprinting = false;
         boolean sprint = sprinting;
         BoatEntity activeBoat = renderer.boat();
-        if (ridingBoat && (activeBoat == null || !activeBoat.alive || jumpHeld)) {
+        if (activeBoat != null && !activeBoat.alive) {
+            if (ridingBoat) ridingBoat = false;
+            int bx = floorBlock(activeBoat.x), by = floorBlock(activeBoat.y), bz = floorBlock(activeBoat.z);
+            renderer.spawnDroppedItem(Block.PLANKS, bx, by, bz);
+            renderer.spawnDroppedItem(Block.PLANKS, bx, by, bz);
+            renderer.spawnDroppedItem(Block.PLANKS, bx, by, bz);
+            renderer.spawnDroppedItem(ItemCatalog.STICK, bx, by, bz);
+            renderer.spawnDroppedItem(ItemCatalog.STICK, bx, by, bz);
+            renderer.removeBoat();
+            activeBoat = null;
+        }
+        if (ridingBoat && (activeBoat == null || jumpHeld)) {
             ridingBoat = false;
             playerPhysics.reset();
-            if (activeBoat != null && !activeBoat.alive) {
-                int bx = floorBlock(activeBoat.x), by = floorBlock(activeBoat.y), bz = floorBlock(activeBoat.z);
-                renderer.spawnDroppedItem(Block.PLANKS, bx, by, bz);
-                renderer.spawnDroppedItem(Block.PLANKS, bx, by, bz);
-                renderer.spawnDroppedItem(Block.PLANKS, bx, by, bz);
-                renderer.spawnDroppedItem(ItemCatalog.STICK, bx, by, bz);
-                renderer.spawnDroppedItem(ItemCatalog.STICK, bx, by, bz);
-                renderer.removeBoat();
-                activeBoat = null;
-            }
         }
         int fallDamage = 0;
         if (activeBoat != null && activeBoat.alive) {
