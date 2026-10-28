@@ -1189,6 +1189,27 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         repaint();
     }
 
+    /** Mining/attack input breaks a nearby cart and drops it in survival. */
+    private boolean breakNearbyMinecart() {
+        if (renderer == null || world == null) return false;
+        MinecartEntity cart = renderer.minecart();
+        if (cart == null || !cart.alive) return false;
+        float dx = world.playerX - cart.x;
+        float dz = world.playerZ - cart.z;
+        float dy = (world.playerY + PLAYER_EYE_HEIGHT) - cart.y;
+        if (dx * dx + dz * dz > 2.7f * 2.7f || dy < -1.2f || dy > 2.2f) return false;
+        int dropX = floorBlock(cart.x);
+        int dropY = floorBlock(cart.y);
+        int dropZ = floorBlock(cart.z);
+        cart.alive = false;
+        if (world.mode == 0) renderer.spawnDroppedItem(ItemCatalog.MINECART, dropX, dropY, dropZ);
+        if (ridingMinecart) ridingMinecart = false;
+        renderer.removeMinecart();
+        renderer.swingHand();
+        world.save();
+        return true;
+    }
+
     /** Alpha 1.2.6 ItemMinecart only places a cart on a rail block. */
     private void placeMinecart() {
         if (world == null || renderer == null) return;
@@ -1844,6 +1865,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         else if (isControlKey(CONTROL_STRAFE_RIGHT, keyCode, KEY_NUM6, 0)) keys[6] = true;
         else if (isControlKey(CONTROL_MINE, keyCode, KEY_NUM1, 0)) {
             if (!keys[1] && renderer != null) {
+                if (breakNearbyMinecart()) {
+                    keys[1] = true;
+                    return;
+                }
                 int mobHit = renderer.hitMob(world, cameraPitch, heldAttackDamage());
                 if (mobHit >= 0) {
                     if (mobHit > 0) onMobHit();
