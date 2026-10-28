@@ -10,10 +10,10 @@ final class Crafting {
     static final int DOOR = BASIC_RECIPES;
     static final int TOOL_RECIPES = BASIC_RECIPES + 1;
     private static final int TOOL_RECIPE_COUNT = ItemCatalog.TOOL_KINDS * ItemCatalog.TOOL_TIERS;
-    private static final int FOOD_AND_ITEM_RECIPES = 8;
+    private static final int FOOD_AND_ITEM_RECIPES = 9;
     private static final int ARMOR_RECIPES = 4 * 4;
     static final int RECIPE_COUNT = TOOL_RECIPES + TOOL_RECIPE_COUNT +
-                                    FOOD_AND_ITEM_RECIPES + ARMOR_RECIPES + 1;
+                                    FOOD_AND_ITEM_RECIPES + ARMOR_RECIPES + 2;
 
     static final int[] OUTPUT = new int[RECIPE_COUNT];
     static final int[] OUTPUT_COUNT = new int[RECIPE_COUNT];
@@ -55,6 +55,7 @@ final class Crafting {
         setRecipe(extra++, ItemCatalog.BOAT, 1, "Barca", Block.PLANKS, 5);
         setRecipe(extra++, Block.RAIL, 16, "16 Rieles", ItemCatalog.IRON_INGOT, 6,
                 ItemCatalog.STICK, 1);
+        setRecipe(extra++, ItemCatalog.MINECART, 1, "Vagoneta", ItemCatalog.IRON_INGOT, 5);
         int[] armorItems = new int[] {
             ItemCatalog.LEATHER_HELMET, ItemCatalog.LEATHER_CHESTPLATE,
             ItemCatalog.LEATHER_LEGGINGS, ItemCatalog.LEATHER_BOOTS,
