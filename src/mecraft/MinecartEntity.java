@@ -115,14 +115,8 @@ final class MinecartEntity {
             x += motionX;
             z += motionZ;
             if (!ridden) { motionX *= 0.96f; motionZ *= 0.96f; }
-            // Stop safely at track ends rather than allowing an unpowered cart
-            // to keep sliding indefinitely into empty space.
-            int nx = floor(x), nz = floor(z);
-            if (world.get(nx, by, nz) != Block.RAIL &&
-                world.get(nx, by - 1, nz) != Block.RAIL) {
-                motionX = 0.0f; motionZ = 0.0f;
-                x = bx + 0.5f; z = bz + 0.5f;
-            }
+            // Like Alpha, a cart that runs off the end of a track leaves the rail
+            // and begins falling on the next tick.
         } else {
             y -= 0.04f;
             motionX *= 0.95f; motionZ *= 0.95f;
