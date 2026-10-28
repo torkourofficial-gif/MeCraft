@@ -922,9 +922,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             return;
         }
         if (block == Block.TORCH && !Block.solid(world.get(x, y - 1, z))) return;
+        // Alpha rails are non-solid flat pieces and require a solid block beneath them.
+        if (block == Block.RAIL && !Block.solid(world.get(x, y - 1, z))) return;
         if (!canPlaceAlphaPlant((byte)block, x, y, z)) return;
         float px = world.playerX, py = world.playerY, pz = world.playerZ;
-        if (x + 1.0f > px - PLAYER_RADIUS && x < px + PLAYER_RADIUS &&
+        if (block != Block.RAIL &&
+            x + 1.0f > px - PLAYER_RADIUS && x < px + PLAYER_RADIUS &&
             z + 1.0f > pz - PLAYER_RADIUS && z < pz + PLAYER_RADIUS &&
             y + 1.0f > py && y < py + PLAYER_HEIGHT) return;
         if (world.mode == 0 && inventory[selectedItem] <= 0) return;
