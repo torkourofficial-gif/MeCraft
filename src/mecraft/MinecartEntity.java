@@ -110,8 +110,9 @@ final class MinecartEntity {
                 float localX = px - pivotX;
                 float rotatedX = (float)(localX * Math.cos(ry) + rotatedZ * Math.sin(ry));
                 rotatedZ = (float)(-localX * Math.sin(ry) + rotatedZ * Math.cos(ry));
-                p[(v+k)*3] = (short)(rotatedX + pivotX);
-                p[(v+k)*3+1] = (short)(rotatedY + pivotY);
+                // RenderMinecart applies glScalef(-1, -1, 1) before rendering ModelMinecart.
+                p[(v+k)*3] = (short)-(rotatedX + pivotX);
+                p[(v+k)*3+1] = (short)-(rotatedY + pivotY);
                 p[(v+k)*3+2] = (short)(rotatedZ + pivotZ);
             }
             // Texture V is doubled to compensate for the 64x64 normalized UV space.
@@ -225,7 +226,8 @@ final class MinecartEntity {
             }
         }
         mesh.setTranslation(x, y, z);
-        mesh.setOrientation(yaw, 0.0f, 1.0f, 0.0f);
+        // RenderMinecart rotates by 180 - entity yaw; keep travel yaw separate for the rider.
+        mesh.setOrientation(180.0f - yaw, 0.0f, 1.0f, 0.0f);
     }
 
 
