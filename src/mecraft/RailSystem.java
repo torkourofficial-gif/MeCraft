@@ -99,15 +99,22 @@ final class RailSystem {
                     int rail = cursors[index]++;
                     if (rail >= counts[index]) continue;
                     float left = x, right = x + 1.0f, front = z, back = z + 1.0f;
-                    float yy = y + 0.035f;
+                    float yy = y + 0.075f;
                     int p = rail * 12;
                     short[] v = positions[index];
                     v[p] = (short)(left * 256); v[p + 1] = (short)(yy * 256); v[p + 2] = (short)(front * 256);
                     v[p + 3] = (short)(left * 256); v[p + 4] = (short)(yy * 256); v[p + 5] = (short)(back * 256);
                     v[p + 6] = (short)(right * 256); v[p + 7] = (short)(yy * 256); v[p + 8] = (short)(front * 256);
                     v[p + 9] = (short)(right * 256); v[p + 10] = (short)(yy * 256); v[p + 11] = (short)(back * 256);
-                    boolean northSouth = world.get(x, y, z - 1) == Block.RAIL ||
-                            world.get(x, y, z + 1) == Block.RAIL;
+                    boolean north = world.get(x, y, z - 1) == Block.RAIL;
+                    boolean south = world.get(x, y, z + 1) == Block.RAIL;
+                    boolean west = world.get(x - 1, y, z) == Block.RAIL;
+                    boolean east = world.get(x + 1, y, z) == Block.RAIL;
+                    boolean northSouth = (north || south) && !(east || west);
+                    if (north && south) northSouth = true;
+                    if (east && west) northSouth = false;
+                    // Tile 128 is authored along the east-west axis. Rotate its
+                    // UVs for north-south runs; isolated rails default east-west.
                     int u = rail * 8;
                     short[] t = uv[index];
                     if (northSouth) {
