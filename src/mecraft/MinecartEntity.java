@@ -76,23 +76,24 @@ final class MinecartEntity {
         // The original ModelMinecart rotates several boxes after UV assignment.
         // Preserve their pre-rotation dimensions for the texture atlas layout.
         int tw = uvW, th = uvH, td = uvD;
+        // Exact ModelRenderer/ModelBox face order and UV rectangles from Alpha 1.2.6.
+        // Each face's four vertices match its original TexturedQuad order; keeping
+        // this order matters because the cart atlas is not a generic cuboid unwrap.
         int[][] faces = new int[][] {
-            {x0,y0,z0, x0,y1,z0, x1,y0,z0, x1,y1,z0},
-            {x1,y0,z1, x1,y1,z1, x0,y0,z1, x0,y1,z1},
-            {x0,y0,z1, x0,y1,z1, x0,y0,z0, x0,y1,z0},
-            {x1,y0,z0, x1,y1,z0, x1,y0,z1, x1,y1,z1},
-            {x0,y1,z0, x0,y1,z1, x1,y1,z0, x1,y1,z1},
-            {x0,y0,z1, x0,y0,z0, x1,y0,z1, x1,y0,z0}
+            {x1,y0,z1, x1,y0,z0, x1,y1,z0, x1,y1,z1},
+            {x0,y0,z0, x0,y0,z1, x0,y1,z1, x0,y1,z0},
+            {x1,y0,z1, x0,y0,z1, x0,y0,z0, x1,y0,z0},
+            {x1,y1,z0, x0,y1,z0, x0,y1,z1, x1,y1,z1},
+            {x1,y0,z0, x0,y0,z0, x0,y1,z0, x1,y1,z0},
+            {x0,y0,z1, x1,y0,z1, x1,y1,z1, x0,y1,z1}
         };
-        // Same unfolded box layout used by ModelBox: side strips around the
-        // box, with top and bottom above them.
         int[][] rects = new int[][] {
-            {texU + td, texV + td, texU + td + tw, texV + td + th},
-            {texU + td + tw + td, texV + td, texU + td + tw + td + tw, texV + td + th},
-            {texU, texV + td, texU + td, texV + td + th},
             {texU + td + tw, texV + td, texU + td + tw + td, texV + td + th},
+            {texU, texV + td, texU + td, texV + td + th},
             {texU + td, texV, texU + td + tw, texV + td},
-            {texU + td + tw, texV, texU + td + tw + tw, texV + td}
+            {texU + td + tw, texV, texU + td + tw + tw, texV + td},
+            {texU + td, texV + td, texU + td + tw, texV + td + th},
+            {texU + td + tw + td, texV + td, texU + td + tw + td + tw, texV + td + th}
         };
         for (int f = 0; f < faces.length; f++) {
             int[] q = faces[f];
