@@ -973,12 +973,52 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         boolean placed = coloredWool ? world.setWool(x, y, z,
                 ItemCatalog.woolColor(selectedItem)) : world.set(x, y, z, (byte)block);
         if (!placed) return;
+        if (block == Block.RAIL) {
+            // Alpha rails store orientation in block metadata. A newly placed
+            // rail follows the player's horizontal facing, then adopts a curve
+            // when exactly one perpendicular neighbor makes that connection.
+            int orientation = Math.abs((int)Math.floor((world.yaw + 45.0f) / 90.0f) & 1) == 0 ? 0 : 1;
+            boolean north = world.get(x, y, z - 1) == Block.RAIL;
+            boolean south = world.get(x, y, z + 1) == Block.RAIL;
+            boolean west = world.get(x - 1, y, z) == Block.RAIL;
+            boolean east = world.get(x + 1, y, z) == Block.RAIL;
+            if (north && east && !south && !west) orientation = 9;
+            else if (north && west && !south && !east) orientation = 8;
+            else if (south && east && !north && !west) orientation = 6;
+            else if (south && west && !north && !east) orientation = 7;
+            else if (north || south) orientation = 0;
+            else if (east || west) orientation = 1;
+            world.setRailMetadata(x, y, z, orientation);
+            // Re-evaluate adjacent rails so their rendered orientation connects
+            // to the newly placed piece instead of keeping stale straight UVs.
+            orientRailNeighbor(x - 1, y, z);
+            orientRailNeighbor(x + 1, y, z);
+            orientRailNeighbor(x, y, z - 1);
+            orientRailNeighbor(x, y, z + 1);
+        }
         renderer.swingHand();
         if (world.mode == 0) {
             inventory[selectedItem]--;
             if (inventory[selectedItem] == 0) restoreHotbarItem(selectedItem);
         }
         renderer.sync(world);
+    }
+
+
+    private void orientRailNeighbor(int x, int y, int z) {
+        if (world.get(x, y, z) != Block.RAIL) return;
+        boolean north = world.get(x, y, z - 1) == Block.RAIL;
+        boolean south = world.get(x, y, z + 1) == Block.RAIL;
+        boolean west = world.get(x - 1, y, z) == Block.RAIL;
+        boolean east = world.get(x + 1, y, z) == Block.RAIL;
+        int orientation = world.railMetadata(x, y, z);
+        if (north && east && !south && !west) orientation = 9;
+        else if (north && west && !south && !east) orientation = 8;
+        else if (south && east && !north && !west) orientation = 6;
+        else if (south && west && !north && !east) orientation = 7;
+        else if (north || south) orientation = 0;
+        else if (east || west) orientation = 1;
+        world.setRailMetadata(x, y, z, orientation);
     }
 
     private boolean canPlaceAlphaPlant(byte block, int x, int y, int z) {
