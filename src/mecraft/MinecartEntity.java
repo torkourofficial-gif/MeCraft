@@ -6,7 +6,7 @@ import javax.microedition.m3g.Material;
 import javax.microedition.m3g.Mesh;
 import javax.microedition.m3g.PolygonMode;
 import javax.microedition.m3g.Texture2D;
-import javax.microedition.m3g.TriangleArray;
+import javax.microedition.m3g.TriangleStripArray;
 import javax.microedition.m3g.VertexArray;
 import javax.microedition.m3g.VertexBuffer;
 
@@ -31,6 +31,8 @@ final class MinecartEntity {
         final int vertices = boxes * 36;
         short[] p = new short[vertices * 3];
         short[] uv = new short[vertices * 2];
+        int[] strips = new int[vertices / 3];
+        for (int i = 0; i < strips.length; i++) strips[i] = 3;
         int[] cursor = new int[] { 0 };
         // Build the exact ModelMinecart local boxes, then apply each original pivot/rotation.
         addBox(p, uv, cursor, -10, -8, -1, 10, 8, 1, 0, 10, 20, 16, 2, 0, 4, 0, 90, 0);
@@ -62,7 +64,7 @@ final class MinecartEntity {
         cm.setAlphaThreshold(0.1f);
         cm.setBlending(CompositingMode.ALPHA);
         a.setCompositingMode(cm);
-        mesh = new Mesh(vb, new TriangleArray(0, vertices), a);
+        mesh = new Mesh(vb, new TriangleStripArray(0, strips), a);
         mesh.setTranslation(x, y, z);
     }
 
