@@ -916,9 +916,20 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             }
             return;
         }
-        if (target == null || target[3] == Integer.MIN_VALUE) return;
         int selectedItem = hotbar[world.selectedSlot];
         boolean coloredWool = ItemCatalog.isColoredWool(selectedItem);
+        if (target == null || target[3] == Integer.MIN_VALUE) {
+            // Rails can be laid directly beneath the player, as in Alpha:
+            // use the block underfoot as the support when the ray misses.
+            if (selectedItem != Block.RAIL) return;
+            int railX = (int)Math.floor(world.playerX);
+            int railY = (int)Math.floor(world.playerY);
+            int railZ = (int)Math.floor(world.playerZ);
+            if (railY <= 0 || railY >= VoxelWorld.HEIGHT ||
+                    !Block.solid(world.get(railX, railY - 1, railZ)) ||
+                    !Block.replaceable(world.get(railX, railY, railZ))) return;
+            target = new int[] { railX, railY - 1, railZ, 0, 1, 0 };
+        }
         if (ItemCatalog.isTool(selectedItem) && ItemCatalog.kind(selectedItem) == ItemCatalog.HOE) {
             tillSoil(target[0], target[1], target[2], selectedItem);
             return;
