@@ -31,6 +31,8 @@ final class VoxelWorld {
     static final int CHUNKS_Y = HEIGHT / CHUNK_Y;
     static final int CHUNKS_Z = DEPTH / CHUNK_XZ;
     private static final int BLOCK_COUNT = WIDTH * HEIGHT * DEPTH;
+    int worldSize = SIZE_INFINITE;
+    int worldType = TYPE_STANDARD;
     // Minecraft advances one world-time tick per game tick: 24,000 ticks at
     // 20 ticks/second gives the original 20-minute day/night cycle.
     private static final int DAY_TICKS_PER_UPDATE = 1;
@@ -42,6 +44,11 @@ final class VoxelWorld {
     private static final int PRE_ALPHA_BLOCK_COUNT = 81;
     private static final int ALPHA_ITEM_SAVE_MAGIC = 0x4D434645; // MCFE
     private static final int DEEP_WORLD_SAVE_MAGIC = 0x4D434646; // MCFF
+    private static final int CONFIG_WORLD_SAVE_MAGIC = 0x4D434647; // MCFG
+    static final int SIZE_INFINITE = 0;
+    static final int SIZE_OLD = 1;
+    static final int TYPE_STANDARD = 0;
+    static final int TYPE_FLAT = 1;
     private static final int INFDEV_EDIT_MAGIC = 0x49464431;
     private static final int INFDEV_EDIT_POINTER_MAGIC = 0x49465031;
     private static final int INFDEV_EDIT_PAGE_MAGIC = 0x49465047;
@@ -121,11 +128,15 @@ final class VoxelWorld {
         return dayTime >= 13000 && dayTime < 23000;
     }
 
-    VoxelWorld(int seed, int mode) {
+    VoxelWorld(int seed, int mode) { this(seed, mode, SIZE_INFINITE, TYPE_STANDARD); }
+
+    VoxelWorld(int seed, int mode, int worldSize, int worldType) {
         setGenerationDiagnosticStage("VoxelWorld: asignando semilla");
         this.seed = seed;
         setGenerationDiagnosticStage("VoxelWorld: asignando modo");
         this.mode = mode;
+        this.worldSize = worldSize == SIZE_OLD ? SIZE_OLD : SIZE_INFINITE;
+        this.worldType = worldType == TYPE_FLAT ? TYPE_FLAT : TYPE_STANDARD;
         setGenerationDiagnosticStage("VoxelWorld: inicializando caché procedural");
         for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
             setGenerationDiagnosticStage("VoxelWorld: inicializando caché [" + i + "]");
@@ -143,6 +154,10 @@ final class VoxelWorld {
 
     private boolean inside(int x, int z) {
         return x >= 0 && x < WIDTH && z >= 0 && z < DEPTH;
+    }
+
+    private boolean outsideWorld(int x, int z) {
+        return worldSize == SIZE_OLD && (x < 0 || x >= 240 || z < 0 || z >= 240);
     }
 
     private int floorChunk(int value) {
@@ -245,7 +260,7 @@ final class VoxelWorld {
     }
 
     byte get(int x, int y, int z) {
-        if (y < 0 || y >= HEIGHT) return Block.AIR;
+        if (y < 0 || y >= HEIGHT || outsideWorld(x, z)) return Block.AIR;
         if (inside(x, z)) return blocks[index(x, y, z)];
         int edit = findEdit(x, y, z);
         return edit >= 0 ? editId[edit] : proceduralBlock(x, y, z);
@@ -258,7 +273,7 @@ final class VoxelWorld {
      * chunks merely to prove that a coordinate contains no torch.
      */
     byte getTorchCandidate(int x, int y, int z) {
-        if (y < 0 || y >= HEIGHT) return Block.AIR;
+        if (y < 0 || y >= HEIGHT || outsideWorld(x, z)) return Block.AIR;
         if (inside(x, z)) return blocks[index(x, y, z)];
         int edit = findEdit(x, y, z);
         return edit >= 0 ? editId[edit] : Block.AIR;
@@ -468,7 +483,7 @@ final class VoxelWorld {
     }
 
     private boolean setBlock(int x, int y, int z, byte id, int fluidLevel) {
-        if (y <= 0 || y >= HEIGHT) return false;
+        if (y <= 0 || y >= HEIGHT || outsideWorld(x, z)) return false;
         if (id < 0 || id >= Block.COUNT) return false;
         byte oldId = get(x, y, z);
         if (oldId == id && (!Block.isFluid(id) || metadataAt(x, y, z) == fluidLevel)) return false;
@@ -650,19 +665,28 @@ final class VoxelWorld {
             }
         }
         setGenerationDiagnosticStage("VoxelWorld.generate: asignando posición X del jugador");
-        playerX = WIDTH / 2 + 0.5f;
+        int spawnCenter = worldSize == SIZE_OLD ? 120 : WIDTH / 2;
+        playerX = spawnCenter + 0.5f;
         setGenerationDiagnosticStage("VoxelWorld.generate: asignando posición Z del jugador");
-        playerZ = DEPTH / 2 + 0.5f;
+        playerZ = spawnCenter + 0.5f;
         setGenerationDiagnosticStage("VoxelWorld.generate: calculando altura inicial del jugador");
-        playerY = (nether ? InfdevTerrain.netherFloorHeight(seed, WIDTH / 2, DEPTH / 2) :
-                InfdevTerrain.surfaceHeight(seed, WIDTH / 2, DEPTH / 2)) + 1.0f;
+        playerY = (nether ? InfdevTerrain.netherFloorHeight(seed, spawnCenter, spawnCenter) :
+                (worldType == TYPE_FLAT ? 5 : InfdevTerrain.surfaceHeight(seed, spawnCenter, spawnCenter))) + 1.0f;
         setGenerationDiagnosticStage("VoxelWorld.generate: asignando yaw inicial");
         yaw = 0f;
     }
 
     private void generateChunk(int cx, int cz, byte[] target) {
         setGenerationDiagnosticStage("VoxelWorld.generateChunk: validando dimensión; chunk cx=" + cx + ", cz=" + cz);
-        if (nether) {
+        if (!nether && worldType == TYPE_FLAT) {
+            for (int z = 0; z < CHUNK_XZ; z++) for (int x = 0; x < CHUNK_XZ; x++) {
+                int base = (z * CHUNK_XZ + x) * HEIGHT;
+                for (int y = 0; y < HEIGHT; y++)
+                    target[base + y] = y == 0 ? Block.BEDROCK : (y <= 3 ? Block.DIRT : (y == 4 ? Block.GRASS : Block.AIR));
+                proceduralHeights[z * CHUNK_XZ + x] = 4;
+                proceduralBiomes[z * CHUNK_XZ + x] = 0;
+            }
+        } else if (nether) {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generateNether; cx=" + cx + ", cz=" + cz);
             InfdevTerrain.generateNether(seed, cx, cz, target, proceduralHeights);
         } else {
@@ -883,8 +907,10 @@ final class VoxelWorld {
 
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(blocks.length * 2 + 64);
             DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(DEEP_WORLD_SAVE_MAGIC); // MCFF: MCFE data with expanded world height
+            out.writeInt(CONFIG_WORLD_SAVE_MAGIC);
             out.writeByte(HEIGHT);
+            out.writeByte(worldSize);
+            out.writeByte(worldType);
             out.writeInt(seed);
             out.writeByte(mode);
             out.writeUTF(worldName == null ? "Mundo" : worldName);
@@ -1088,7 +1114,8 @@ final class VoxelWorld {
             byte[] data = store.getRecord(1);
             DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
             int format = in.readInt();
-            boolean deepWorldFormat = format == DEEP_WORLD_SAVE_MAGIC;
+            boolean configWorldFormat = format == CONFIG_WORLD_SAVE_MAGIC;
+            boolean deepWorldFormat = format == DEEP_WORLD_SAVE_MAGIC || configWorldFormat;
             if (format != 0x4D434631 && format != 0x4D434632 && format != 0x4D434633 &&
                 format != 0x4D434634 && format != 0x4D434635 && format != 0x4D434636 &&
                 format != 0x4D434637 && format != 0x4D434638 && format != 0x4D434639 &&
@@ -1096,11 +1123,13 @@ final class VoxelWorld {
                 format != 0x4D434644 && format != ALPHA_ITEM_SAVE_MAGIC && !deepWorldFormat) return null;
             int savedHeight = deepWorldFormat ? in.readUnsignedByte() : 24;
             if (savedHeight < 8 || savedHeight > HEIGHT) return null;
+            int savedWorldSize = configWorldFormat ? in.readUnsignedByte() : SIZE_INFINITE;
+            int savedWorldType = configWorldFormat ? in.readUnsignedByte() : TYPE_STANDARD;
             int seed = in.readInt();
             int mode = in.readByte();
             boolean namedFormat = format == 0x4D434642 || format == 0x4D434643 ||
                                   format == 0x4D434644 || format == ALPHA_ITEM_SAVE_MAGIC || deepWorldFormat;
-            VoxelWorld world = new VoxelWorld(seed, mode);
+            VoxelWorld world = new VoxelWorld(seed, mode, savedWorldSize, savedWorldType);
             world.worldName = namedFormat ? in.readUTF() : "Mundo guardado";
             boolean alphaItemFormat = format == ALPHA_ITEM_SAVE_MAGIC || deepWorldFormat;
             boolean explicitDimensionFormat = format == 0x4D434644 || alphaItemFormat;
