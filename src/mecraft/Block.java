@@ -74,6 +74,8 @@ final class Block {
     static final byte CROPS = (byte)findTileBlock(88);
     static final byte REED = (byte)findTileBlock(73);
     static final byte LAVA = (byte)findTileBlock(237);
+    /** Alpha 1.2.6 rail block uses terrain atlas tile 128 and is rendered as a thin plane. */
+    static final byte RAIL = (byte)findTileBlock(128);
 
     private static int findTileBlock(int tile) {
         for (int i = DECORATIVE_START; i < TILE.length; i++)
@@ -258,7 +260,7 @@ final class Block {
     private Block() { }
 
     static boolean solid(byte id) {
-        return id != AIR && !isFluid(id) && id != DOOR && !isFlower(id) && id != TORCH;
+        return id != AIR && !isFluid(id) && id != DOOR && id != RAIL && !isFlower(id) && id != TORCH;
     }
 
     static boolean isFluid(byte id) {
@@ -272,7 +274,7 @@ final class Block {
     }
 
     static boolean replaceable(byte id) {
-        return id == AIR || isFluid(id) || isFlower(id);
+        return id == AIR || isFluid(id) || isFlower(id) || id == RAIL;
     }
 
     /** Mining time in 50 ms game-loop steps when standing on dry ground. */
@@ -330,7 +332,7 @@ final class Block {
 
     private static int hardnessTenths(byte id) {
         if (id == BEDROCK || id == PORTAL) return -1;
-        if (isFlower(id) || id == TNT) return 0;
+        if (isFlower(id) || id == TNT || id == RAIL) return 0;
         if (isFluid(id)) return 1000;
         if (id == LEAVES) return 2;
         if (id == SNOW || id == CACTUS) return 5;
@@ -352,7 +354,7 @@ final class Block {
     }
 
     static boolean faceVisible(byte current, byte neighbor) {
-        if (neighbor == AIR || isFlower(neighbor) || neighbor == DOOR) return true;
+        if (neighbor == AIR || isFlower(neighbor) || neighbor == DOOR || neighbor == RAIL) return true;
         if (isFluid(neighbor)) return current != neighbor;
         if (neighbor == LEAVES) return current != LEAVES;
         return false;
