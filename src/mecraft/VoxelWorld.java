@@ -371,6 +371,10 @@ final class VoxelWorld {
     }
 
     boolean isSolidAt(int x, int y, int z) {
+        // Old worlds have an invisible, non-editable collision wall at all four edges.
+        // Keep get() returning AIR beyond the map so the barrier is never rendered.
+        if (worldSize == SIZE_OLD && y >= 0 && y < HEIGHT && outsideWorld(x, z))
+            return true;
         byte id = get(x, y, z);
         return id == Block.DOOR ? (doorMetadata(x, y, z) & 4) == 0 : Block.solid(id);
     }
