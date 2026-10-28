@@ -974,27 +974,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 ItemCatalog.woolColor(selectedItem)) : world.set(x, y, z, (byte)block);
         if (!placed) return;
         if (block == Block.RAIL) {
-            // Alpha rails store orientation in block metadata. A newly placed
-            // rail follows the player's horizontal facing, then adopts a curve
-            // when exactly one perpendicular neighbor makes that connection.
-            int orientation = Math.abs((int)Math.floor((world.yaw + 45.0f) / 90.0f) & 1) == 0 ? 0 : 1;
-            boolean north = world.get(x, y, z - 1) == Block.RAIL;
-            boolean south = world.get(x, y, z + 1) == Block.RAIL;
-            boolean west = world.get(x - 1, y, z) == Block.RAIL;
-            boolean east = world.get(x + 1, y, z) == Block.RAIL;
-            if (north && east && !south && !west) orientation = 9;
-            else if (north && west && !south && !east) orientation = 8;
-            else if (south && east && !north && !west) orientation = 6;
-            else if (south && west && !north && !east) orientation = 7;
-            else if (north || south) orientation = 0;
-            else if (east || west) orientation = 1;
-            world.setRailMetadata(x, y, z, orientation);
-            // Re-evaluate adjacent rails so their rendered orientation connects
-            // to the newly placed piece instead of keeping stale straight UVs.
-            orientRailNeighbor(x - 1, y, z);
-            orientRailNeighbor(x + 1, y, z);
-            orientRailNeighbor(x, y, z - 1);
-            orientRailNeighbor(x, y, z + 1);
+            // Alpha 1.2.6 derives rail metadata from connected rails, including
+            // corners and uphill/downhill links, then refreshes nearby pieces.
+            orientRailNetwork(x, y, z);
         }
         renderer.swingHand();
         if (world.mode == 0) {
@@ -1005,19 +987,54 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
 
-    private void orientRailNeighbor(int x, int y, int z) {
+    private boolean railExistsNear(int x, int y, int z) {
+        return world.get(x, y, z) == Block.RAIL ||
+               world.get(x, y + 1, z) == Block.RAIL ||
+               world.get(x, y - 1, z) == Block.RAIL;
+    }
+
+    private void orientRailNetwork(int x, int y, int z) {
+        orientRailAt(x, y, z);
+        orientRailAt(x - 1, y, z);
+        orientRailAt(x + 1, y, z);
+        orientRailAt(x, y, z - 1);
+        orientRailAt(x, y, z + 1);
+        orientRailAt(x - 1, y + 1, z);
+        orientRailAt(x + 1, y + 1, z);
+        orientRailAt(x, y + 1, z - 1);
+        orientRailAt(x, y + 1, z + 1);
+        orientRailAt(x - 1, y - 1, z);
+        orientRailAt(x + 1, y - 1, z);
+        orientRailAt(x, y - 1, z - 1);
+        orientRailAt(x, y - 1, z + 1);
+    }
+
+    /** Compact port of Alpha's MinecartTrackLogic connection/metadata rules. */
+    private void orientRailAt(int x, int y, int z) {
         if (world.get(x, y, z) != Block.RAIL) return;
-        boolean north = world.get(x, y, z - 1) == Block.RAIL;
-        boolean south = world.get(x, y, z + 1) == Block.RAIL;
-        boolean west = world.get(x - 1, y, z) == Block.RAIL;
-        boolean east = world.get(x + 1, y, z) == Block.RAIL;
-        int orientation = world.railMetadata(x, y, z);
+        boolean north = railExistsNear(x, y, z - 1);
+        boolean south = railExistsNear(x, y, z + 1);
+        boolean west = railExistsNear(x - 1, y, z);
+        boolean east = railExistsNear(x + 1, y, z);
+        int orientation = -1;
+        if ((north || south) && !west && !east) orientation = 0;
+        if ((west || east) && !north && !south) orientation = 1;
+        if (south && east && !north && !west) orientation = 6;
+        if (south && west && !north && !east) orientation = 7;
+        if (north && west && !south && !east) orientation = 8;
         if (north && east && !south && !west) orientation = 9;
-        else if (north && west && !south && !east) orientation = 8;
-        else if (south && east && !north && !west) orientation = 6;
-        else if (south && west && !north && !east) orientation = 7;
-        else if (north || south) orientation = 0;
-        else if (east || west) orientation = 1;
+        if (orientation < 0) {
+            if (north || south) orientation = 0;
+            if (west || east) orientation = 1;
+        }
+        if (orientation == 0) {
+            if (world.get(x, y + 1, z - 1) == Block.RAIL) orientation = 4;
+            if (world.get(x, y + 1, z + 1) == Block.RAIL) orientation = 5;
+        } else if (orientation == 1) {
+            if (world.get(x + 1, y + 1, z) == Block.RAIL) orientation = 2;
+            if (world.get(x - 1, y + 1, z) == Block.RAIL) orientation = 3;
+        }
+        if (orientation < 0) orientation = 0;
         world.setRailMetadata(x, y, z, orientation);
     }
 
