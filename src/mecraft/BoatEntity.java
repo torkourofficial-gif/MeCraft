@@ -32,11 +32,11 @@ final class BoatEntity {
         for (int i = 0; i < strips.length; i++) strips[i] = 4;
         int[] cursor = new int[] { 0 };
         // The original model has one rotated bottom box and four thin side panels.
-        addBox(p, uv, cursor, -12, 3, -8, 12, 7, 8, 0, 8);
-        addBox(p, uv, cursor, -12, -3, -8, -10, 3, 8, 0, 0);
-        addBox(p, uv, cursor, 10, -3, -8, 12, 3, 8, 0, 0);
-        addBox(p, uv, cursor, -10, -3, -10, 10, 3, -8, 0, 0);
-        addBox(p, uv, cursor, -10, -3, 8, 10, 3, 10, 0, 0);
+        addBox(p, uv, cursor, -12, 3, -8, 12, 7, 8, 0, 8, 24, 16, 4);
+        addBox(p, uv, cursor, -12, -3, -8, -10, 3, 8, 0, 0, 20, 6, 2);
+        addBox(p, uv, cursor, 10, -3, -8, 12, 3, 8, 0, 0, 20, 6, 2);
+        addBox(p, uv, cursor, -10, -3, -10, 10, 3, -8, 0, 0, 20, 6, 2);
+        addBox(p, uv, cursor, -10, -3, 8, 10, 3, 10, 0, 0, 20, 6, 2);
         VertexArray pa = new VertexArray(vertices, 3, 2);
         pa.set(0, vertices, p);
         VertexArray ta = new VertexArray(vertices, 2, 2);
@@ -64,7 +64,8 @@ final class BoatEntity {
 
     private static void addBox(short[] p, short[] uv, int[] cursor,
                                int x0, int y0, int z0, int x1, int y1, int z1,
-                               int textureU, int textureV) {
+                               int textureU, int textureV, int textureWidth,
+                               int textureHeight, int textureDepth) {
         // Each face gets a stable atlas rectangle; coordinates are scaled for a 64x32 boat texture.
         int[][] faces = new int[][] {
             {x0,y0,z0, x0,y1,z0, x1,y0,z0, x1,y1,z0},
@@ -82,11 +83,15 @@ final class BoatEntity {
                 p[(v+k)*3+1] = (short)(q[k*3+1] * 16);
                 p[(v+k)*3+2] = (short)(q[k*3+2] * 16);
             }
-            // Use the correct 64x32 texture coordinate scale; separate atlas areas
-            // keep the hull from sampling beyond the source texture.
-            int u0 = textureU / 4, u1 = (textureU + 16) / 4;
-            int v0 = textureV / 2, v1 = (textureV + 8) / 2;
-            int[] tex = new int[] {u0,v0, u0,v1, u1,v0, u1,v1};
+            // ModelRenderer's unfolded box UV layout for the original 64x32 boat atlas.
+            int u0, u1, v0, v1;
+            if (f == 0) { u0 = textureU + textureDepth; u1 = u0 + textureWidth; v0 = textureV + textureDepth; v1 = v0 + textureHeight; }
+            else if (f == 1) { u0 = textureU + textureDepth + textureWidth + textureDepth; u1 = u0 + textureWidth; v0 = textureV + textureDepth; v1 = v0 + textureHeight; }
+            else if (f == 2) { u0 = textureU; u1 = textureU + textureDepth; v0 = textureV + textureDepth; v1 = v0 + textureHeight; }
+            else if (f == 3) { u0 = textureU + textureDepth + textureWidth; u1 = u0 + textureDepth; v0 = textureV + textureDepth; v1 = v0 + textureHeight; }
+            else if (f == 4) { u0 = textureU + textureDepth; u1 = u0 + textureWidth; v0 = textureV; v1 = textureV + textureDepth; }
+            else { u0 = textureU + textureDepth + textureWidth; u1 = u0 + textureWidth; v0 = textureV; v1 = textureV + textureDepth; }
+            int[] tex = new int[] {u0/4,v0/2, u0/4,v1/2, u1/4,v0/2, u1/4,v1/2};
             for (int k = 0; k < 8; k++) uv[v*2+k] = (short)tex[k];
             cursor[0] += 4;
         }
