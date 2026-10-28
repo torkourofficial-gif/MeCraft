@@ -94,11 +94,11 @@ final class RailSystem {
                     int u = rail * 8;
                     short[] t = uv[index];
                     if (northSouth) {
-                        t[u] = 0; t[u + 1] = 16; t[u + 2] = 16; t[u + 3] = 16;
-                        t[u + 4] = 0; t[u + 5] = 0; t[u + 6] = 16; t[u + 7] = 0;
+                        t[u] = 0; t[u + 1] = 144; t[u + 2] = 16; t[u + 3] = 144;
+                        t[u + 4] = 0; t[u + 5] = 128; t[u + 6] = 16; t[u + 7] = 128;
                     } else {
-                        t[u] = 16; t[u + 1] = 16; t[u + 2] = 16; t[u + 3] = 0;
-                        t[u + 4] = 0; t[u + 5] = 16; t[u + 6] = 0; t[u + 7] = 0;
+                        t[u] = 16; t[u + 1] = 144; t[u + 2] = 16; t[u + 3] = 128;
+                        t[u + 4] = 0; t[u + 5] = 144; t[u + 6] = 0; t[u + 7] = 128;
                     }
                 }
             }
@@ -111,7 +111,7 @@ final class RailSystem {
             ta.set(0, counts[i] * 4, uv[i]);
             VertexBuffer vb = new VertexBuffer();
             vb.setPositions(pa, 1.0f / 16.0f, null);
-            vb.setTexCoords(0, ta, 1.0f / 16.0f, null);
+            vb.setTexCoords(0, ta, 1.0f / 256.0f, null);
             Mesh mesh = new Mesh(vb, new TriangleStripArray(0, stripCounts[i]), appearance);
             meshes[i] = mesh;
             group.addChild(mesh);
