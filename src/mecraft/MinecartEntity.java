@@ -14,7 +14,7 @@ import javax.microedition.m3g.VertexBuffer;
 final class MinecartEntity {
     private static final float MAX_SPEED = 0.32f;
     private static final float ACCELERATION = 0.025f;
-    private static final float HALF_HEIGHT = 0.10f;
+    private static final float HALF_HEIGHT = 0.125f;
     final Mesh mesh;
     float x, y, z, yaw;
     float motionX, motionZ;
@@ -33,12 +33,12 @@ final class MinecartEntity {
         int[] strips = new int[vertices / 4];
         for (int i = 0; i < strips.length; i++) strips[i] = 4;
         int[] cursor = new int[] { 0 };
-        addBox(p, uv, cursor, -10, -1, -8, 10, 1, 8, 0, 10);
-        addBox(p, uv, cursor, -10, 1, -8, -8, 8, 8, 0, 0);
-        addBox(p, uv, cursor, 8, 1, -8, 10, 8, 8, 0, 0);
-        addBox(p, uv, cursor, -8, 1, -8, 8, 8, -6, 0, 0);
-        addBox(p, uv, cursor, -8, 1, 6, 8, 8, 8, 0, 0);
-        addBox(p, uv, cursor, -8, 0, -6, 8, 1, 6, 44, 10);
+        addBox(p, uv, cursor, -10, -2, -8, 10, 0, 8, 0, 10);
+        addBox(p, uv, cursor, -10, 0, -8, -8, 7, 8, 0, 0);
+        addBox(p, uv, cursor, 8, 0, -8, 10, 7, 8, 0, 0);
+        addBox(p, uv, cursor, -8, 0, -8, 8, 7, -6, 0, 0);
+        addBox(p, uv, cursor, -8, 0, 6, 8, 7, 8, 0, 0);
+        addBox(p, uv, cursor, -8, -1, -6, 8, 0, 6, 44, 10);
 
         VertexArray pa = new VertexArray(vertices, 3, 2);
         pa.set(0, vertices, p);
