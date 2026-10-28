@@ -156,7 +156,8 @@ final class BoatEntity {
     }
 
     void damage(int amount) {
-        damage += amount;
+        // EntityBoat scales each successful hit by ten and breaks above forty.
+        damage += (amount > 0 ? amount : 1) * 10;
         if (damage > 40) alive = false;
     }
 }
