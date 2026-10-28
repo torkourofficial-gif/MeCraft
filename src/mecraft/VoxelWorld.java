@@ -259,6 +259,16 @@ final class VoxelWorld {
         }
     }
 
+    /** Alpha 1.2.6 rail orientation metadata (0-9); shares the saved metadata byte. */
+    int railMetadata(int x, int y, int z) {
+        if (get(x, y, z) != Block.RAIL) return 0;
+        return metadataAt(x, y, z) & 15;
+    }
+
+    void setRailMetadata(int x, int y, int z, int metadata) {
+        if (get(x, y, z) == Block.RAIL) setMetadata(x, y, z, metadata & 15);
+    }
+
     byte get(int x, int y, int z) {
         if (y < 0 || y >= HEIGHT || outsideWorld(x, z)) return Block.AIR;
         if (inside(x, z)) return blocks[index(x, y, z)];
