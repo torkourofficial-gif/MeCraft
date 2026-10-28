@@ -113,6 +113,7 @@ final class ChunkRenderer {
     private final Texture2D boatTexture;
     private final RailSystem railSystem;
     private BoatEntity boat;
+    private MinecartEntity minecart;
     private final Texture2D[] portalFrames = new Texture2D[8];
     private final Texture2D[] crackFrames = new Texture2D[10];
     private final Appearance crackAppearance;
@@ -340,6 +341,22 @@ final class ChunkRenderer {
         if (boat != null) {
             scene.removeChild(boat.mesh);
             boat = null;
+        }
+    }
+
+    MinecartEntity minecart() { return minecart; }
+
+    MinecartEntity spawnMinecart(float x, float y, float z) {
+        if (minecart != null) scene.removeChild(minecart.mesh);
+        minecart = new MinecartEntity(atlas, x, y, z);
+        scene.addChild(minecart.mesh);
+        return minecart;
+    }
+
+    void removeMinecart() {
+        if (minecart != null) {
+            scene.removeChild(minecart.mesh);
+            minecart = null;
         }
     }
 
