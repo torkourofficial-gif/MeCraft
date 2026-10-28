@@ -129,7 +129,17 @@ final class BoatEntity {
         motionX *= 0.99f; motionY *= 0.95f; motionZ *= 0.99f;
         float speed2 = motionX * motionX + motionZ * motionZ;
         if (speed2 > 0.001f) {
-            float target = (float)(Math.atan2(-motionX, motionZ) * 180.0 / Math.PI);
+            // Manual atan2 equivalent for Java ME profiles that omit Math.atan2().
+            double angle;
+            if (motionZ > 0.00001f) {
+                angle = Math.atan(-motionX / motionZ);
+            } else if (motionZ < -0.00001f) {
+                angle = Math.atan(-motionX / motionZ);
+                angle += (motionX <= 0.0f) ? Math.PI : -Math.PI;
+            } else {
+                angle = (motionX < 0.0f) ? Math.PI / 2.0 : -Math.PI / 2.0;
+            }
+            float target = (float)(angle * 180.0 / Math.PI);
             float delta = target - yaw;
             while (delta >= 180.0f) delta -= 360.0f;
             while (delta < -180.0f) delta += 360.0f;
