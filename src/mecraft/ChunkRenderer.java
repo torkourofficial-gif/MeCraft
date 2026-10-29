@@ -770,7 +770,7 @@ final class ChunkRenderer {
         Appearance appearance = new Appearance();
         Material material = new Material();
         material.setColor(Material.AMBIENT, 0xFFFFFFFF);
-        material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
+        material.setColor(Material.DIFFUSE, translucent ? 0xA0FFFFFF : 0xFFFFFFFF);
         appearance.setMaterial(material);
         PolygonMode polygon = new PolygonMode();
         polygon.setCulling(PolygonMode.CULL_BACK);
@@ -1475,7 +1475,7 @@ final class ChunkRenderer {
         Texture2D texture = new Texture2D(new Image2D(Image2D.RGBA, tileImage));
         texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         texture.setWrapping(Texture2D.WRAP_REPEAT, Texture2D.WRAP_REPEAT);
-        appearance = createBlockAppearance(texture);
+        appearance = createBlockAppearance(texture, tile == Block.atlasTile(Block.WATER));
         tileAppearances[tile] = appearance;
         return appearance;
     }
@@ -1540,7 +1540,7 @@ final class ChunkRenderer {
         }
     }
 
-    private Appearance createBlockAppearance(Texture2D texture) {
+    private Appearance createBlockAppearance(Texture2D texture, boolean translucent) {
         Appearance appearance = new Appearance();
         appearance.setTexture(0, texture);
         Material material = new Material();
