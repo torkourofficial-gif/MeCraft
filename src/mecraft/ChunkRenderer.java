@@ -1773,7 +1773,7 @@ final class ChunkRenderer {
             int ti = vertexCount * 2;
             uv[ti] = (short)u; uv[ti + 1] = (short)v;
             int ci = vertexCount * 4;
-            c[ci] = (byte)shade; c[ci + 1] = (byte)shade; c[ci + 2] = (byte)shade; c[ci + 3] = (byte)255;
+            c[ci] = (byte)shade; c[ci + 1] = (byte)shade; c[ci + 2] = (byte)shade; c[ci + 3] = (byte)(tile == Block.atlasTile(Block.WATER) ? 160 : 255);
             vertexCount++;
         }
 
