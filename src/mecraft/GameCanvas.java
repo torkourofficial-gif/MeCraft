@@ -2728,12 +2728,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 if (col < 0) col = 0;
                 if (col > 8) col = 8;
                 if (y < top + 73) chestSelection = ((y - (top + 18)) / 18) * 9 + col;
-                else if (y < top + 141) chestSelection = 27 + ((y - (top + 85)) / 18) * 9 + col;
-                else chestSelection = 54 + col;
+                else if (y < top + 141) {
+                    int row = (y - (top + 85)) / 18;
+                    if (row < 0) row = 0;
+                    if (row > 2) row = 2;
+                    chestSelection = 27 + row * 9 + col;
+                } else chestSelection = 54 + col;
                 if (chestSelection < 0) chestSelection = 0;
                 if (chestSelection > 62) chestSelection = 62;
                 transferChestSlot();
-            } else if (y > top + 166 || x < left || x > left + 176) closeChest();
+            } else if (y > top + 166 || x < left || x > left + 176) closeCrafting();
             repaint();
         } else if (state == SKIN_SELECT) {
             if (y > h - 45) keyPressed(KEY_NUM5);
