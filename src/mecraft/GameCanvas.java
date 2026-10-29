@@ -299,7 +299,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             activeMinecart.update(world, ridingMinecart ? forward : 0.0f, ridingMinecart);
             if (ridingMinecart) {
                 world.playerX = activeMinecart.x;
-                world.playerY = activeMinecart.y + 0.25f;
+                world.playerY = activeMinecart.y + 0.55f;
                 world.playerZ = activeMinecart.z;
                 playerPhysics.reset();
             }
@@ -1087,8 +1087,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             float cartDx = world.playerX - nearbyMinecart.x;
             float cartDz = world.playerZ - nearbyMinecart.z;
             float cartDy = world.playerY - nearbyMinecart.y;
-            if (cartDx * cartDx + cartDz * cartDz <= 1.6f * 1.6f &&
-                    cartDy >= -0.65f && cartDy <= 1.45f) {
+            if (cartDx * cartDx + cartDz * cartDz <= 0.85f * 0.85f &&
+                    cartDy >= -0.25f && cartDy <= 0.85f) {
                 ridingMinecart = true;
                 playerPhysics.reset();
                 return;
