@@ -98,10 +98,18 @@ final class RailSystem {
                             z / VoxelWorld.CHUNK_XZ);
                     int rail = cursors[index]++;
                     if (rail >= counts[index]) continue;
-                    float left = x, right = x + 1.0f, front = z, back = z + 1.0f;
+                    // M3G short vertex positions are signed 16-bit values. Store
+                    // coordinates relative to this chunk before scaling by 256;
+                    // absolute world X/Z exceed the short range in 240x240 worlds.
+                    int chunkX = (x / VoxelWorld.CHUNK_XZ) * VoxelWorld.CHUNK_XZ;
+                    int chunkY = (y / VoxelWorld.CHUNK_Y) * VoxelWorld.CHUNK_Y;
+                    int chunkZ = (z / VoxelWorld.CHUNK_XZ) * VoxelWorld.CHUNK_XZ;
+                    float left = x - chunkX, right = x - chunkX + 1.0f;
+                    float front = z - chunkZ, back = z - chunkZ + 1.0f;
+                    int localY = y - chunkY;
                     int orientation = world.railMetadata(x, y, z);
-                    float lowY = y + 0.075f;
-                    float highY = y + 1.075f;
+                    float lowY = localY + 0.075f;
+                    float highY = localY + 1.075f;
                     float yLeftFront = lowY, yLeftBack = lowY;
                     float yRightFront = lowY, yRightBack = lowY;
                     // Alpha metadata 2-5 tilts the track up by one block toward
@@ -148,6 +156,11 @@ final class RailSystem {
             vb.setPositions(pa, 1.0f / 256.0f, null);
             vb.setTexCoords(0, ta, 1.0f / 256.0f, null);
             Mesh mesh = new Mesh(vb, new TriangleStripArray(0, stripCounts[i]), appearance);
+            int cx = i % VoxelWorld.CHUNKS_X;
+            int cz = (i / VoxelWorld.CHUNKS_X) % VoxelWorld.CHUNKS_Z;
+            int cy = i / (VoxelWorld.CHUNKS_X * VoxelWorld.CHUNKS_Z);
+            mesh.setTranslation(cx * VoxelWorld.CHUNK_XZ,
+                    cy * VoxelWorld.CHUNK_Y, cz * VoxelWorld.CHUNK_XZ);
             meshes[i] = mesh;
             group.addChild(mesh);
         }
