@@ -26,6 +26,10 @@ Es un demake inicial, no una reproducción completa de Indev: todavía no incluy
 
 La generación actual calcula primero una altura por columna y después rellena directamente el arreglo de bloques; mantiene esa altura temporal solo mientras coloca cuevas y vegetación. Como referencia de generación clásica, ClassiCube documenta las etapas de altura, capas, cuevas, agua y plantas. Su versión Dreamcast ejecuta el mismo cliente portable con KallistiOS y GLdc, no un generador exclusivo de Dreamcast ([algoritmo](https://github.com/ClassiCube/ClassiCube/wiki/Minecraft-Classic-map-generation-algorithm), [port Dreamcast](https://www.classicube.net/download/dreamcast)).
 
+## Controles táctiles
+
+Al iniciar, el juego pregunta si el dispositivo tiene pantalla táctil. Si eliges **Sí**, aparecen controles en pantalla: cruceta para moverse, arrastrar sobre el mundo para mirar, botones para saltar, romper/atacar, usar objetos, abrir el inventario y pausar. También puedes tocar una casilla de la barra rápida. Los menús y las pantallas de inventario admiten toques básicos. Si eliges **No**, se mantienen los controles físicos originales. La pregunta vuelve a aparecer al iniciar la aplicación para permitir cambiar de dispositivo o de modo.
+
 ## Controles
 
 | Tecla | Acción |
