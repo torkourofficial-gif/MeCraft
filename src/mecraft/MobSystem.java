@@ -38,7 +38,7 @@ final class MobSystem {
     private static final float JOINT_OVERLAP = 0.5f;
 
     private final Mob[] mobs = new Mob[MOB_COUNT];
-    private final Arrow[] arrows = new Arrow[3];
+    private final Arrow[] arrows = new Arrow[6];
     private final Group scene;
     private final DroppedItemSystem drops;
     private final ParticleSystem particles;
