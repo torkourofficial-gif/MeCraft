@@ -795,7 +795,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         double along = dx * rx + dy * ry + dz * rz;
         if (along < 0.0 || along > 5.0) return false;
         double ex = dx - rx * along, ey = dy - ry * along, ez = dz - rz * along;
-        return ex * ex + ey * ey + ez * ez < 1.35 * 1.35;
+        return ex * ex + ey * ey + ez * ez < 1.8 * 1.8;
     }
 
     private void advanceMining(int[] target) {
