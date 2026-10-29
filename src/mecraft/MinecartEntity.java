@@ -151,58 +151,51 @@ final class MinecartEntity {
             float len2 = dx * dx + dz * dz;
             float t = ((x - (bx + 0.5f + ax)) * dx +
                        (z - (bz + 0.5f + az)) * dz) / len2;
-            if (t < 0.0f) t = 0.0f;
-            if (t > 1.0f) t = 1.0f;
+
+            // Alpha 1.2.6 projects the cart onto the rail segment without
+            // clamping the projection to [0, 1]. That is important: once the
+            // cart crosses a block boundary, the next tick must be able to
+            // read the connected rail's metadata instead of being pinned to
+            // the old segment's endpoint.
             float tangentX = dx / (float)Math.sqrt(len2);
             float tangentZ = dz / (float)Math.sqrt(len2);
-            // Keep the rail's endpoint order stable. Flipping the tangent to match
-            // motion while also retaining a signed speed reverses the direction
-            // twice, which makes carts drift sideways at curves and junctions.
             float along = motionX * tangentX + motionZ * tangentZ;
+
+            // Endpoint order is not guaranteed to match the direction of a
+            // connected rail. Keep the signed speed consistent with the
+            // existing world-space motion when entering a new segment. This
+            // is the key part of Alpha's dot-product direction correction.
+            if (Math.abs(along) > 0.001f &&
+                    ((along < 0.0f && speed > 0.0f) ||
+                     (along > 0.0f && speed < 0.0f))) {
+                tangentX = -tangentX;
+                tangentZ = -tangentZ;
+                dx = -dx;
+                dz = -dz;
+                t = 1.0f - t;
+            }
+
             if (ridden) {
-                // Minecart steering in Alpha is rail-constrained: input changes
-                // signed speed along the track, never the cart's world-space X/Z
-                // direction. Do not project camera yaw onto the rail; looking
-                // across the track would make that projection zero and stall it.
+                // Input changes signed speed along the rail, never the
+                // camera's world-space X/Z direction.
                 speed += forward * ACCELERATION;
             } else speed *= 0.96f;
             // Gravity assists downhill motion and opposes uphill motion.
             speed += (ay - ey) * 0.008f;
             if (speed > MAX_SPEED) speed = MAX_SPEED;
             if (speed < -MAX_SPEED) speed = -MAX_SPEED;
-            float tx = bx + 0.5f + ax + dx * t;
-            float tz = bz + 0.5f + az + dz * t;
-            float proposedX = tx + tangentX * speed;
-            float proposedZ = tz + tangentZ * speed;
-            float nextT = ((proposedX - (bx + 0.5f + ax)) * dx +
-                           (proposedZ - (bz + 0.5f + az)) * dz) / len2;
-            boolean atEnd = (nextT > 1.0f && speed > 0.0f) ||
-                            (nextT < 0.0f && speed < 0.0f);
-            int aheadX = floor(proposedX + tangentX * 0.30f);
-            int aheadZ = floor(proposedZ + tangentZ * 0.30f);
-            boolean railAhead = world.get(aheadX, by, aheadZ) == Block.RAIL ||
-                                world.get(aheadX, by + 1, aheadZ) == Block.RAIL ||
-                                world.get(aheadX, by - 1, aheadZ) == Block.RAIL;
-            if (atEnd && !railAhead) {
-                // Let the cart roll off the end instead of snapping it to the
-                // endpoint forever; the following ticks use normal fall physics.
-                x = proposedX;
-                z = proposedZ;
-                y = by + 0.18f + (nextT > 1.0f ? ey : ay);
-                motionX = tangentX * speed;
-                motionZ = tangentZ * speed;
-                motionY = 0.0f;
-                forcedOffRail = true;
-            } else {
-                if (nextT < 0.0f) nextT = 0.0f;
-                if (nextT > 1.0f) nextT = 1.0f;
-                x = proposedX;
-                z = proposedZ;
-                y = by + 0.18f + ay + (ey - ay) * nextT;
-                motionX = tangentX * speed;
-                motionZ = tangentZ * speed;
-                motionY = 0.0f;
-            }
+
+            // Reproject from the actual position using the unbounded segment
+            // parameter, as EntityMinecart.func_514_g does in Alpha 1.2.6.
+            float tx = bx + 0.5f + ax + (ex - ax) * t;
+            float tz = bz + 0.5f + az + (ez - az) * t;
+            x = tx + tangentX * speed;
+            z = tz + tangentZ * speed;
+            y = by + 0.18f + ay + (ey - ay) * t;
+            motionX = tangentX * speed;
+            motionZ = tangentZ * speed;
+            motionY = 0.0f;
+            forcedOffRail = false;
             // On flat rails, preserve the cart's facing direction. The old
             // per-tick motion-derived yaw could flip repeatedly at curves.
             // Only a sloped rail is allowed to adjust the cart's orientation.
