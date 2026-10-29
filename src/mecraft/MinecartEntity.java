@@ -192,7 +192,7 @@ final class MinecartEntity {
             float tz = bz + 0.5f + az + (ez - az) * t;
             x = tx + tangentX * speed;
             z = tz + tangentZ * speed;
-            y = by + 0.18f + ay + (ey - ay) * t;
+            y = by + 0.48f + ay + (ey - ay) * t;
             motionX = tangentX * speed;
             motionZ = tangentZ * speed;
             motionY = 0.0f;
