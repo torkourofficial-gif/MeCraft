@@ -296,7 +296,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             playerPhysics.reset();
         }
         if (activeMinecart != null) {
-            activeMinecart.update(world, ridingMinecart ? forward : 0.0f, world.yaw, ridingMinecart);
+            activeMinecart.update(world, ridingMinecart ? forward : 0.0f, ridingMinecart);
             if (ridingMinecart) {
                 world.playerX = activeMinecart.x;
                 world.playerY = activeMinecart.y + 0.25f;
