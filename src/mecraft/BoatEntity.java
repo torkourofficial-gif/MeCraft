@@ -89,7 +89,37 @@ final class BoatEntity {
             // This mesh stores them as: -Z, +Z, -X, +X, +Y, -Y.
             int u0, u1, v0, v1;
             int[] tex;
-            if (f == 0) {
+            if (textureV == 8) {
+                // The hull floor is the original 24x16x4 box rotated 90 degrees
+                // around X in ModelBoat. Use its original face rectangles after rotation.
+                if (f == 0) {
+                    u0 = textureU + textureDepth; u1 = u0 + textureWidth;
+                    v0 = textureV; v1 = v0 + textureDepth;
+                    tex = new int[] {u0/4,v1/2, u0/4,v0/2, u1/4,v1/2, u1/4,v0/2};
+                } else if (f == 1) {
+                    u0 = textureU + textureDepth + textureWidth;
+                    u1 = u0 + textureWidth; v0 = textureV; v1 = v0 + textureDepth;
+                    tex = new int[] {u1/4,v1/2, u1/4,v0/2, u0/4,v1/2, u0/4,v0/2};
+                } else if (f == 2) {
+                    u0 = textureU; u1 = u0 + textureDepth;
+                    v0 = textureV + textureDepth; v1 = v0 + textureHeight;
+                    tex = new int[] {u1/4,v0/2, u0/4,v0/2, u1/4,v1/2, u0/4,v1/2};
+                } else if (f == 3) {
+                    u0 = textureU + textureDepth + textureWidth;
+                    u1 = u0 + textureDepth;
+                    v0 = textureV + textureDepth; v1 = v0 + textureHeight;
+                    tex = new int[] {u0/4,v1/2, u1/4,v1/2, u0/4,v0/2, u1/4,v0/2};
+                } else if (f == 4) {
+                    u0 = textureU + textureDepth; u1 = u0 + textureWidth;
+                    v0 = textureV + textureDepth; v1 = v0 + textureHeight;
+                    tex = new int[] {u0/4,v1/2, u0/4,v0/2, u1/4,v1/2, u1/4,v0/2};
+                } else {
+                    u0 = textureU + textureDepth + textureWidth + textureDepth;
+                    u1 = u0 + textureWidth;
+                    v0 = textureV + textureDepth; v1 = v0 + textureHeight;
+                    tex = new int[] {u0/4,v1/2, u0/4,v0/2, u1/4,v1/2, u1/4,v0/2};
+                }
+            } else if (f == 0) {
                 // -Z: ModelRenderer face 4
                 u0 = textureU + textureDepth; u1 = u0 + textureWidth;
                 v0 = textureV + textureDepth; v1 = v0 + textureHeight;
