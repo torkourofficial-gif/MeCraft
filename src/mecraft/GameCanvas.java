@@ -2492,7 +2492,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (state == TOUCH_SETUP) {
             drawTouchSetup(g);
         } else if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH ||
-            state == CREATIVE_INVENTORY || state == GAME_OVER) {
+            state == CREATIVE_INVENTORY || state == CHEST_INVENTORY || state == GAME_OVER) {
             String stage = "actualizando mallas M3G";
             try {
                 renderer.sync(world);
@@ -2591,8 +2591,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         drawTouchButtonAt(g, "ROMPER", bx, 82, 54);
         drawTouchButtonAt(g, "USAR", bx, 119, 54);
         drawTouchButtonAt(g, "INV", bx, 156, 54);
-        drawTouchButtonAt(g, "< SLOT", 12, h - 28, 44);
-        drawTouchButtonAt(g, "SLOT >", w - 56, h - 28, 44);
     }
 
     private void drawTouchButtonAt(Graphics g, String label, int x, int y, int width) {
@@ -2629,11 +2627,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             if (x >= w - 66 && y >= 79 && y < 115) { touchKey = KEY_NUM1; keyPressed(touchKey); return; }
             if (x >= w - 66 && y >= 116 && y < 152) { touchKey = KEY_NUM3; keyPressed(touchKey); return; }
             if (x >= w - 66 && y >= 153 && y < 190) { touchKey = KEY_POUND; keyPressed(touchKey); return; }
-            int left = 8, base = h - 120, size = 34;
-            if (x >= left && x < left + size * 3 + 8 && y >= base && y < base + size * 2 + 8) {
+            int left = 12, base = h - 116, size = 29, gap = 3;
+            if (x >= left && x < left + (size + gap) * 3 - gap &&
+                    y >= base && y < base + (size + gap) * 2 - gap) {
                 if (y < base + size) touchKey = KEY_NUM2;
                 else if (x < left + size) touchKey = KEY_NUM4;
-                else if (x >= left + size * 2 + 8) touchKey = KEY_NUM6;
+                else if (x >= left + (size + gap) * 2) touchKey = KEY_NUM6;
                 else touchKey = KEY_NUM8;
                 keyPressed(touchKey);
                 return;
@@ -2722,8 +2721,20 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 }
             }
         } else if (state == CHEST_INVENTORY) {
-            if (y > h - 35) closeChest();
-            else transferChestSlot();
+            int left = (w - 176) / 2, top = (h - 166) / 2;
+            if (x >= left + 7 && x < left + 8 + 9 * 18 &&
+                    y >= top + 17 && y < top + 162) {
+                int col = (x - (left + 8)) / 18;
+                if (col < 0) col = 0;
+                if (col > 8) col = 8;
+                if (y < top + 73) chestSelection = ((y - (top + 18)) / 18) * 9 + col;
+                else if (y < top + 141) chestSelection = 27 + ((y - (top + 85)) / 18) * 9 + col;
+                else chestSelection = 54 + col;
+                if (chestSelection < 0) chestSelection = 0;
+                if (chestSelection > 62) chestSelection = 62;
+                transferChestSlot();
+            } else if (y > top + 166 || x < left || x > left + 176) closeChest();
+            repaint();
         } else if (state == SKIN_SELECT) {
             if (y > h - 45) keyPressed(KEY_NUM5);
             else { skinSelection = x < w / 2 ? Math.max(0, skinSelection - 1) : Math.min(4, skinSelection + 1); repaint(); }
