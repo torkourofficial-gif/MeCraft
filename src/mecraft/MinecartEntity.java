@@ -165,14 +165,15 @@ final class MinecartEntity {
             // connected rail. Keep the signed speed consistent with the
             // existing world-space motion when entering a new segment. This
             // is the key part of Alpha's dot-product direction correction.
-            if (Math.abs(along) > 0.001f &&
+            boolean reverseTangent = Math.abs(along) > 0.001f &&
                     ((along < 0.0f && speed > 0.0f) ||
-                     (along > 0.0f && speed < 0.0f))) {
+                     (along > 0.0f && speed < 0.0f));
+            if (reverseTangent) {
+                // Reverse only the travel direction. Keep the segment endpoints
+                // and projection parameter unchanged so the cart stays on the
+                // same geometric rail line.
                 tangentX = -tangentX;
                 tangentZ = -tangentZ;
-                dx = -dx;
-                dz = -dz;
-                t = 1.0f - t;
             }
 
             if (ridden) {
@@ -181,7 +182,7 @@ final class MinecartEntity {
                 speed += forward * ACCELERATION;
             } else speed *= 0.96f;
             // Gravity assists downhill motion and opposes uphill motion.
-            speed += (ay - ey) * 0.008f;
+            speed += (reverseTangent ? (ey - ay) : (ay - ey)) * 0.008f;
             if (speed > MAX_SPEED) speed = MAX_SPEED;
             if (speed < -MAX_SPEED) speed = -MAX_SPEED;
 
