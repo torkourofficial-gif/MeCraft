@@ -39,6 +39,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private static final int CONTROLS = 14;
     private static final int CHEST_INVENTORY = 15;
     private static final int LOADING = 16;
+    private static final int TOUCH_SETUP = 17;
     private static final int CONTROL_LOOK_UP = 0, CONTROL_LOOK_DOWN = 1;
     private static final int CONTROL_LOOK_LEFT = 2, CONTROL_LOOK_RIGHT = 3;
     private static final int CONTROL_FORWARD = 4, CONTROL_BACK = 5;
@@ -155,6 +156,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private volatile String loadingMessage = "Preparando...";
     private boolean diagnosticError;
     private int diagnosticScroll;
+    private boolean touchEnabled;
+    private int touchKey;
+    private boolean touchLooking;
+    private int touchLastX, touchLastY;
     private int recipeSelection;
     private int recipeScroll;
     private int inventoryPage;
@@ -201,6 +206,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         loadHudTextures();
         refreshWorldList();
         menuSelection = MENU_SINGLEPLAYER;
+        state = TOUCH_SETUP;
     }
 
     void start() {
@@ -1681,6 +1687,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     public synchronized void keyPressed(int keyCode) {
+        if (state == TOUCH_SETUP) {
+            if (keyCode == KEY_NUM5 || keyCode == KEY_NUM1 || gameAction(keyCode) == FIRE) {
+                chooseTouchMode(true);
+            } else if (keyCode == KEY_NUM0 || keyCode == KEY_NUM3 || keyCode == KEY_NUM2 ||
+                    keyCode == KEY_NUM8) {
+                chooseTouchMode(false);
+            }
+            return;
+        }
         if (state == ERROR && diagnosticError) {
             int action = gameAction(keyCode);
             if (action == UP || keyCode == KEY_NUM2) {
@@ -2474,7 +2489,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     protected synchronized void paint(Graphics g) {
-        if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH ||
+        if (state == TOUCH_SETUP) {
+            drawTouchSetup(g);
+        } else if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH ||
             state == CREATIVE_INVENTORY || state == GAME_OVER) {
             String stage = "actualizando mallas M3G";
             try {
@@ -2498,7 +2515,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                     if (cameraUnderwater()) drawTint(g, waterTint);
                     if (hurtTicks > 0) drawTint(g, hurtTint);
                     drawHud(g);
-                            }
+                    if (touchEnabled && state == PLAYING) drawTouchControls(g);
+                }
                 if (state == PAUSED) drawPause(g);
                 if (state == GAME_OVER) {
                     drawDeathGradient(g);
@@ -2523,6 +2541,199 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         else if (state == CONTROLS) drawControls(g);
         else if (state == SKIN_SELECT) drawSkinSelect(g);
         else drawMenu(g);
+    }
+
+    private void chooseTouchMode(boolean enabled) {
+        touchEnabled = enabled;
+        state = MENU;
+        menuSelection = MENU_SINGLEPLAYER;
+        clearKeys();
+        repaint();
+    }
+
+    private void drawTouchSetup(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        drawPanoramaBackground(g);
+        drawInsetPanel(g, 12, h / 2 - 76, w - 24, 152);
+        g.setColor(255, 244, 210);
+        g.drawString("MeCraft", w / 2, h / 2 - 61, Graphics.TOP | Graphics.HCENTER);
+        g.setColor(255, 255, 255);
+        g.drawString("¿Dispositivo con pantalla tactil?", w / 2, h / 2 - 30,
+                Graphics.TOP | Graphics.HCENTER);
+        drawTouchButton(g, "SI - controles tactiles",  h / 2 - 4, true);
+        drawTouchButton(g, "NO - teclado/botones", h / 2 + 34, false);
+        g.setColor(230, 220, 200);
+        g.drawString("Toca una opcion para continuar", w / 2, h / 2 + 65,
+                Graphics.TOP | Graphics.HCENTER);
+    }
+
+    private void drawTouchButton(Graphics g, String label, int y, boolean selected) {
+        int w = getWidth();
+        int x = 22, width = w - 44, height = 30;
+        g.setColor(selected ? 100 : 65, selected ? 105 : 55, selected ? 70 : 40);
+        g.fillRect(x, y, width, height);
+        g.setColor(selected ? 255 : 170, selected ? 220 : 145, selected ? 125 : 100);
+        g.drawRect(x, y, width - 1, height - 1);
+        g.setColor(255, 255, 255);
+        g.drawString(label, w / 2, y + 8, Graphics.TOP | Graphics.HCENTER);
+    }
+
+    private void drawTouchControls(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        int left = 12, base = h - 116, size = 29, gap = 3;
+        drawTouchButtonAt(g, "^", left + size + gap, base, size);
+        drawTouchButtonAt(g, "<", left, base + size + gap, size);
+        drawTouchButtonAt(g, "v", left + size + gap, base + size + gap, size);
+        drawTouchButtonAt(g, ">", left + (size + gap) * 2, base + size + gap, size);
+        int bx = w - 62;
+        drawTouchButtonAt(g, "PAUSA", bx, 8, 54);
+        drawTouchButtonAt(g, "SALTO", bx, 45, 54);
+        drawTouchButtonAt(g, "ROMPER", bx, 82, 54);
+        drawTouchButtonAt(g, "USAR", bx, 119, 54);
+        drawTouchButtonAt(g, "INV", bx, 156, 54);
+        drawTouchButtonAt(g, "< SLOT", 12, h - 28, 44);
+        drawTouchButtonAt(g, "SLOT >", w - 56, h - 28, 44);
+    }
+
+    private void drawTouchButtonAt(Graphics g, String label, int x, int y, int width) {
+        int height = label.length() > 4 ? 29 : 27;
+        g.setColor(28, 28, 28);
+        g.fillRect(x + 1, y + 1, width, height);
+        g.setColor(75, 75, 75);
+        g.fillRect(x, y, width, height);
+        g.setColor(205, 190, 160);
+        g.drawRect(x, y, width - 1, height - 1);
+        g.setColor(255, 255, 255);
+        g.drawString(label, x + width / 2, y + (height - Font.getDefaultFont().getHeight()) / 2,
+                Graphics.TOP | Graphics.HCENTER);
+    }
+
+    protected synchronized void pointerPressed(int x, int y) {
+        if (state == TOUCH_SETUP) {
+            int mid = getHeight() / 2;
+            if (y >= mid - 8 && y < mid + 29) chooseTouchMode(true);
+            else if (y >= mid + 30 && y < mid + 65) chooseTouchMode(false);
+            return;
+        }
+        if (!touchEnabled) return;
+        if (state == PLAYING && world != null) {
+            int w = getWidth(), h = getHeight();
+            if (y >= h - 27 && x >= w / 2 - 91 && x < w / 2 + 91) {
+                int slot = (x - (w / 2 - 91)) / 20;
+                if (slot >= 0 && slot < 9) world.selectedSlot = slot;
+                repaint();
+                return;
+            }
+            if (x >= w - 66 && y < 38) { touchKey = KEY_STAR; keyPressed(touchKey); return; }
+            if (x >= w - 66 && y >= 42 && y < 78) { touchKey = KEY_NUM5; keyPressed(touchKey); return; }
+            if (x >= w - 66 && y >= 79 && y < 115) { touchKey = KEY_NUM1; keyPressed(touchKey); return; }
+            if (x >= w - 66 && y >= 116 && y < 152) { touchKey = KEY_NUM3; keyPressed(touchKey); return; }
+            if (x >= w - 66 && y >= 153 && y < 190) { touchKey = KEY_POUND; keyPressed(touchKey); return; }
+            int left = 8, base = h - 120, size = 34;
+            if (x >= left && x < left + size * 3 + 8 && y >= base && y < base + size * 2 + 8) {
+                if (y < base + size) touchKey = KEY_NUM2;
+                else if (x < left + size) touchKey = KEY_NUM4;
+                else if (x >= left + size * 2 + 8) touchKey = KEY_NUM6;
+                else touchKey = KEY_NUM8;
+                keyPressed(touchKey);
+                return;
+            }
+            touchLooking = true;
+            touchLastX = x; touchLastY = y;
+            return;
+        }
+        handleTouchMenu(x, y);
+    }
+
+    protected synchronized void pointerDragged(int x, int y) {
+        if (!touchEnabled || !touchLooking || state != PLAYING || world == null) return;
+        int dx = x - touchLastX, dy = y - touchLastY;
+        float sensitivity = cameraSensitivityScale();
+        world.yaw -= dx * 0.55f * sensitivity;
+        while (world.yaw < 0.0f) world.yaw += 360.0f;
+        while (world.yaw >= 360.0f) world.yaw -= 360.0f;
+        cameraPitch -= dy * 0.45f * sensitivity;
+        if (cameraPitch > 80.0f) cameraPitch = 80.0f;
+        if (cameraPitch < -80.0f) cameraPitch = -80.0f;
+        touchLastX = x; touchLastY = y;
+        repaint();
+    }
+
+    protected synchronized void pointerReleased(int x, int y) {
+        if (touchKey != 0) {
+            keyReleased(touchKey);
+            touchKey = 0;
+        }
+        touchLooking = false;
+    }
+
+    private void handleTouchMenu(int x, int y) {
+        int w = getWidth(), h = getHeight();
+        if (state == MENU) {
+            int bh = Font.getDefaultFont().getHeight() + 8;
+            int step = bh + 5;
+            int first = h / 2 - (bh * 4 + 15) / 2 + 15;
+            if (y >= first - 3 && y < first + step * 4) {
+                int row = (y - first) / step;
+                if (row >= 0 && row < 4) { menuSelection = row; activateSelection(); }
+            }
+        } else if (state == WORLD_SELECT) {
+            int row = (y - 38) / 30;
+            int first = Math.max(0, Math.min(worldSelection - 6, savedWorlds.length));
+            if (y >= 38 && y < 248 && row >= 0 && row < 7) {
+                worldSelection = first + row;
+                if (worldSelection >= savedWorlds.length + 2) worldSelection = savedWorlds.length + 1;
+                activateWorldSelection();
+            } else if (y >= h - 36) backToMainMenu();
+        } else if (state == WORLD_CREATE) {
+            int row = (y - 70 + 17) / 34;
+            if (row >= 0 && row <= 5) { createSelection = row; activateCreateSelection(); }
+        } else if (state == PAUSED) {
+            int row = (y - (h / 2 - 75 + 40) + 13) / 27;
+            if (row >= 0 && row < 3) { pauseSelection = row; activateSelection(); }
+        } else if (state == SETTINGS) {
+            int panelY = Math.max(12, (h - 202) / 2);
+            int rowStep = Math.min(23, Math.max(14, (Math.min(h - panelY - 8, 202) - 54) / 6));
+            int row = (y - (panelY + 32) + rowStep / 2) / rowStep;
+            if (row >= 0 && row < 6) {
+                settingsSelection = row;
+                if (row == 3 || row == 5) keyPressed(KEY_NUM5);
+                else if (row == 4) changeLanguage();
+                else if (row == 0) changeFrameSkip(1);
+                else if (row == 1) changeSensitivity(1);
+                else if (row == 2) changeRenderDistance(1);
+            } else if (y > h - 28) state = MENU;
+        } else if (state == WORLD_DELETE) {
+            if (y > h / 2) keyPressed(KEY_NUM0); else keyPressed(KEY_NUM5);
+        } else if (state == ERROR) keyPressed(KEY_NUM5);
+        else if (state == GAME_OVER) keyPressed(KEY_NUM5);
+        else if (state == INVENTORY || state == WORKBENCH) {
+            if (y > h - 45) craftSelected();
+            else if (x < w / 2) moveRecipeSelection(y < h / 2 ? -1 : 1);
+            else moveInventoryPage(y < h / 2 ? -1 : 1);
+        } else if (state == CREATIVE_INVENTORY) {
+            if (y > h - 45) closeCreativeInventory();
+            else {
+                int col = (x - (w / 2 - 4 * 22)) / 22;
+                int row = (y - 54) / 22;
+                if (col >= 0 && col < 9 && row >= 0 && row < 5) {
+                    creativeSelection = (creativeSelection / 45) * 45 + row * 9 + col;
+                    selectCreativeBlock();
+                }
+            }
+        } else if (state == CHEST_INVENTORY) {
+            if (y > h - 35) closeChest();
+            else transferChestSlot();
+        } else if (state == SKIN_SELECT) {
+            if (y > h - 45) keyPressed(KEY_NUM5);
+            else { skinSelection = x < w / 2 ? Math.max(0, skinSelection - 1) : Math.min(4, skinSelection + 1); repaint(); }
+        } else if (state == CONTROLS) {
+            int rowHeight = Font.getDefaultFont().getHeight() + 3;
+            int row = (y - (Math.max(12, (h - 238) / 2) + 40)) / rowHeight + controlsScroll;
+            if (row >= 0 && row < CONTROL_COUNT) { controlsSelection = row; controlsListening = false; }
+            else if (y > h - 35) keyPressed(KEY_NUM0);
+            repaint();
+        }
     }
 
     private void drawLoading(Graphics g) {
