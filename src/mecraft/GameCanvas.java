@@ -732,6 +732,19 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             miningHitWait--;
             return;
         }
+        MinecartEntity cart = renderer.minecart();
+        if (cart != null && cart.alive && minecartInCrosshair(cart)) {
+            // The minecart is a complete target: attack breaks the entity, not
+            // the rail or block behind it, and drops one minecart item.
+            cart.alive = false;
+            renderer.spawnDroppedItem(ItemCatalog.MINECART,
+                    floorBlock(cart.x), floorBlock(cart.y), floorBlock(cart.z));
+            renderer.swingHand();
+            miningHitWait = 6;
+            resetMining();
+            world.save();
+            return;
+        }
         BoatEntity boat = renderer.boat();
         if (boat != null && boat.alive && boatInCrosshair(boat)) {
             boat.damage(heldAttackDamage());
@@ -747,6 +760,28 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             if (stage > 9) stage = 9;
             renderer.setMiningCracks(miningX, miningY, miningZ, miningFaceX, miningFaceY, miningFaceZ, stage);
         } else renderer.setMiningCracks(-1, -1, -1, 0, 0, 0, -1);
+    }
+
+    /** Ray-pick the full minecart bounds, stopping when a solid block occludes it. */
+    private boolean minecartInCrosshair(MinecartEntity cart) {
+        if (world == null || cart == null || !cart.alive) return false;
+        double yaw = world.yaw * Math.PI / 180.0;
+        double pitch = cameraPitch * Math.PI / 180.0;
+        float ox = world.playerX, oy = world.playerY + PLAYER_EYE_HEIGHT, oz = world.playerZ;
+        double rx = Math.sin(yaw) * Math.cos(pitch);
+        double ry = Math.sin(pitch);
+        double rz = Math.cos(yaw) * Math.cos(pitch);
+        for (float d = 0.20f; d <= 5.0f; d += 0.05f) {
+            float px = ox + (float)(rx * d);
+            float py = oy + (float)(ry * d);
+            float pz = oz + (float)(rz * d);
+            if (px >= cart.x - 0.68f && px <= cart.x + 0.68f &&
+                    py >= cart.y - 0.32f && py <= cart.y + 0.42f &&
+                    pz >= cart.z - 0.68f && pz <= cart.z + 0.68f) return true;
+            byte block = world.get(floorBlock(px), floorBlock(py), floorBlock(pz));
+            if (block != Block.AIR && !Block.isFluid(block)) return false;
+        }
+        return false;
     }
 
     private boolean boatInCrosshair(BoatEntity boat) {
@@ -1080,19 +1115,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     /** Key 3 uses raw pork when selected; other items retain their place action. */
     private void useSelectedItem() {
         if (world == null) return;
-        // Use the action button to mount a nearby minecart; proximity alone
-        // must never mount the player automatically.
-        MinecartEntity nearbyMinecart = renderer == null ? null : renderer.minecart();
-        if (nearbyMinecart != null && nearbyMinecart.alive && !ridingMinecart && !ridingBoat) {
-            float cartDx = world.playerX - nearbyMinecart.x;
-            float cartDz = world.playerZ - nearbyMinecart.z;
-            float cartDy = world.playerY - nearbyMinecart.y;
-            if (cartDx * cartDx + cartDz * cartDz <= 0.85f * 0.85f &&
-                    cartDy >= -0.25f && cartDy <= 0.85f) {
-                ridingMinecart = true;
-                playerPhysics.reset();
-                return;
-            }
+        // Mount only when the minecart itself is the object under the crosshair.
+        // A nearby cart must not steal clicks intended for blocks or other objects.
+        MinecartEntity targetedMinecart = renderer == null ? null : renderer.minecart();
+        if (targetedMinecart != null && targetedMinecart.alive &&
+                !ridingMinecart && !ridingBoat && minecartInCrosshair(targetedMinecart)) {
+            ridingMinecart = true;
+            playerPhysics.reset();
+            return;
         }
         BoatEntity nearbyBoat = renderer == null ? null : renderer.boat();
         if (nearbyBoat != null && nearbyBoat.alive &&
