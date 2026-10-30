@@ -79,7 +79,8 @@ final class PlayerModel {
     }
 
     void update(float x, float y, float z, float yaw, float moveX, float moveZ,
-            float pitch, float turnSpeed, boolean moving, boolean airborne) {
+            float pitch, float turnSpeed, boolean moving, boolean airborne,
+            boolean independentHead) {
         root.setTranslation(x, y, z);
         if (!bodyYawInitialized) {
             bodyYaw = yaw;
@@ -92,28 +93,34 @@ final class PlayerModel {
             bodyYaw = directionYaw(moveX, moveZ);
         }
         float headYaw = wrapAngle(yaw - bodyYaw);
-        // Let the head look freely through a 180-degree arc. Once it reaches
-        // either 90-degree limit, turn the body just enough to keep the head natural.
-        if (headYaw > 90.0f) {
-            bodyYaw = yaw - 90.0f;
-            headYaw = 90.0f;
-        } else if (headYaw < -90.0f) {
-            bodyYaw = yaw + 90.0f;
-            headYaw = -90.0f;
+        // External views keep the head facing the camera's world direction.
+        // First person retains the original local head-follow behavior.
+        if (independentHead) {
+            if (headYaw > 90.0f) {
+                bodyYaw = yaw - 90.0f;
+                headYaw = 90.0f;
+            } else if (headYaw < -90.0f) {
+                bodyYaw = yaw + 90.0f;
+                headYaw = -90.0f;
+            }
         }
         if (!headRotationInitialized) {
-            headYawCurrent = yaw;
+            headYawCurrent = independentHead ? yaw : headYaw;
             headPitchCurrent = pitch;
             headRotationInitialized = true;
         }
-        // Camera sensitivity also controls how quickly the avatar's head catches
-        // up with the requested look direction. Higher sensitivity turns faster.
         float follow = 0.16f * turnSpeed;
         if (follow > 0.45f) follow = 0.45f;
-        headYawCurrent += wrapAngle(yaw - headYawCurrent) * follow;
+        if (independentHead) {
+            headYawCurrent += wrapAngle(yaw - headYawCurrent) * follow;
+        } else {
+            headYawCurrent += wrapAngle(headYaw - headYawCurrent) * follow;
+        }
         headPitchCurrent += (pitch - headPitchCurrent) * follow;
         root.setOrientation(bodyYaw, 0.0f, 1.0f, 0.0f);
-        headYawPivot.setOrientation(wrapAngle(headYawCurrent - bodyYaw), 0.0f, 1.0f, 0.0f);
+        float appliedHeadYaw = independentHead
+                ? wrapAngle(headYawCurrent - bodyYaw) : headYawCurrent;
+        headYawPivot.setOrientation(appliedHeadYaw, 0.0f, 1.0f, 0.0f);
         headPitchPivot.setOrientation(headPitchCurrent, 1.0f, 0.0f, 0.0f);
         if (moving) walkPhase += 0.42f;
         float swing = moving ? (float)Math.sin(walkPhase) * 38.0f : 0.0f;
