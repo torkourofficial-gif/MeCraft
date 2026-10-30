@@ -23,6 +23,10 @@ final class PlayerModel {
     private final Group rightArm = new Group();
     private final Group leftLeg = new Group();
     private final Group rightLeg = new Group();
+    private final Group headYawPivot = new Group();
+    private final Group headPitchPivot = new Group();
+    private float bodyYaw;
+    private boolean bodyYawInitialized;
     private float walkPhase;
     private int actionSwingTicks = 8;
     private boolean actionLooping;
@@ -35,9 +39,15 @@ final class PlayerModel {
         texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         Appearance appearance = makeAppearance(texture);
 
-        // Head and torso use the same coordinates and UV rectangles as SkinGallery.
-        addBox(root, appearance, -4, 24, -4, 8, 8, 8, 0, 0, false,
+        // Head is mounted on its own yaw/pitch pivots, like a normal biped rig.
+        headYawPivot.setTranslation(0.0f, 28.0f / 16.0f, 0.0f);
+        headPitchPivot.setTranslation(0.0f, 0.0f, 0.0f);
+        addBox(headPitchPivot, appearance, -4, -4, -4, 8, 8, 8, 0, 0, false,
                 textureWidth, textureHeight);
+        headYawPivot.addChild(headPitchPivot);
+        root.addChild(headYawPivot);
+
+        // Torso and limbs retain the shared SkinGallery dimensions and UVs.
         addBox(root, appearance, -4, 12, -2, 8, 12, 4, 16, 16, false,
                 textureWidth, textureHeight);
 
@@ -57,10 +67,26 @@ final class PlayerModel {
         root.addChild(rightLeg);
     }
 
-    void update(float x, float y, float z, float yaw, boolean moving, boolean airborne) {
+    void update(float x, float y, float z, float yaw, float pitch,
+            boolean moving, boolean airborne) {
         root.setTranslation(x, y, z);
-        // The skin mesh's front is already aligned with the camera yaw.
-        root.setOrientation(yaw, 0.0f, 1.0f, 0.0f);
+        if (!bodyYawInitialized) {
+            bodyYaw = yaw;
+            bodyYawInitialized = true;
+        }
+        float headYaw = wrapAngle(yaw - bodyYaw);
+        // Let the head look freely through a 180-degree arc. Once it reaches
+        // either 90-degree limit, turn the body just enough to keep the head natural.
+        if (headYaw > 90.0f) {
+            bodyYaw = yaw - 90.0f;
+            headYaw = 90.0f;
+        } else if (headYaw < -90.0f) {
+            bodyYaw = yaw + 90.0f;
+            headYaw = -90.0f;
+        }
+        root.setOrientation(bodyYaw, 0.0f, 1.0f, 0.0f);
+        headYawPivot.setOrientation(headYaw, 0.0f, 1.0f, 0.0f);
+        headPitchPivot.setOrientation(-pitch, 1.0f, 0.0f, 0.0f);
         if (moving) walkPhase += 0.42f;
         float swing = moving ? (float)Math.sin(walkPhase) * 38.0f : 0.0f;
         if (airborne) swing = -28.0f;
@@ -75,6 +101,12 @@ final class PlayerModel {
                 1.0f, 0.0f, 0.0f);
         rightArm.setOrientation(swing * 0.72f - actionSwing,
                 1.0f, 0.0f, 0.0f);
+    }
+
+    private float wrapAngle(float angle) {
+        while (angle > 180.0f) angle -= 360.0f;
+        while (angle < -180.0f) angle += 360.0f;
+        return angle;
     }
 
     void swingAction() {
