@@ -342,11 +342,11 @@ final class Language {
                 if (SPANISH_TEXT[i].equals(value)) return ENGLISH_TEXT[i];
             for (int i = 0; i < EXTRA_SPANISH_TEXT.length; i++)
                 if (EXTRA_SPANISH_TEXT[i].equals(value)) return EXTRA_ENGLISH_TEXT[i];
-            if (value.startsWith("Preparando ")) return "Preparing " + value.substring(11);
-            if (value.startsWith("Generando ")) return "Generating " + value.substring(10);
-            if (value.startsWith("Guardando ")) return "Saving " + value.substring(10);
-            if (value.startsWith("Cargando ")) return "Loading " + value.substring(9);
-            if (value.startsWith("Construyendo ")) return "Building " + value.substring(13);
+            if (value.startsWith("Preparando ")) return "Preparing " + text(value.substring(11));
+            if (value.startsWith("Generando ")) return "Generating " + text(value.substring(10));
+            if (value.startsWith("Guardando ")) return "Saving " + text(value.substring(10));
+            if (value.startsWith("Cargando ")) return "Loading " + text(value.substring(9));
+            if (value.startsWith("Construyendo ")) return "Building " + text(value.substring(13));
             if (value.startsWith("VoxelWorld: asignando semilla")) return "VoxelWorld: setting seed";
             if (value.startsWith("VoxelWorld: asignando modo")) return "VoxelWorld: setting mode";
             if (value.startsWith("VoxelWorld: inicializando caché procedural")) return "VoxelWorld: initializing procedural cache";
@@ -369,6 +369,10 @@ final class Language {
             if (value.equals("construyendo sectores visibles M3G")) return "building visible M3G sectors";
             if (value.startsWith("cargando /mecraft/")) return "loading /mecraft/" + value.substring(17);
             if (value.equals("(sin mensaje)")) return "(no message)";
+            if (value.startsWith("mundo guardado")) return "saved world" + value.substring(14);
+            if (value.startsWith("mundo")) return "world" + value.substring(5);
+            if (value.startsWith("terreno")) return "terrain" + value.substring(7);
+            if (value.startsWith("chunks visibles")) return "visible chunks" + value.substring(15);
             if (value.equals("generación sin iniciar")) return "generation not started";
             if (value.equals("no informado")) return "not reported";
             if (value.equals("no disponible")) return "unavailable";
