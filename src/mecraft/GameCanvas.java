@@ -1952,6 +1952,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             return;
         }
         if (state != PLAYING) return;
+        // Handle the S730's left softkey as a normal Canvas key when the MIDP
+        // implementation exposes a recognizable softkey name. Do not add a
+        // Command: that would hand the key to the native MIDP command bar.
+        if (isLeftSoftkey(keyCode)) {
+            togglePerspective();
+            return;
+        }
         if (isControlKey(CONTROL_INVENTORY, keyCode, KEY_POUND, 0)) {
             if (world.mode == 1) openCreativeInventory();
             else openCrafting(false);
@@ -2591,6 +2598,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             renderer.updateCamera(world, cameraPitch);
             repaint();
         }
+    }
+
+    /** Identify the left softkey without guessing OEM-specific numeric key codes. */
+    private boolean isLeftSoftkey(int keyCode) {
+        String name;
+        try {
+            name = getKeyName(keyCode);
+        } catch (IllegalArgumentException ignored) {
+            return false;
+        }
+        if (name == null) return false;
+        name = name.toLowerCase();
+        if (name.indexOf("soft") < 0) return "lsk".equals(name);
+        return name.indexOf("left") >= 0 || name.indexOf("soft1") >= 0 ||
+               name.indexOf("softkey1") >= 0 || name.indexOf("soft-1") >= 0;
     }
 
     private void cycleSlot(int delta) {
