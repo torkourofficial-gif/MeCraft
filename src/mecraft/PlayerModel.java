@@ -102,7 +102,7 @@ final class PlayerModel {
             headYaw = -90.0f;
         }
         if (!headRotationInitialized) {
-            headYawCurrent = headYaw;
+            headYawCurrent = yaw;
             headPitchCurrent = pitch;
             headRotationInitialized = true;
         }
@@ -110,10 +110,10 @@ final class PlayerModel {
         // up with the requested look direction. Higher sensitivity turns faster.
         float follow = 0.16f * turnSpeed;
         if (follow > 0.45f) follow = 0.45f;
-        headYawCurrent += wrapAngle(headYaw - headYawCurrent) * follow;
+        headYawCurrent += wrapAngle(yaw - headYawCurrent) * follow;
         headPitchCurrent += (pitch - headPitchCurrent) * follow;
         root.setOrientation(bodyYaw, 0.0f, 1.0f, 0.0f);
-        headYawPivot.setOrientation(headYawCurrent, 0.0f, 1.0f, 0.0f);
+        headYawPivot.setOrientation(wrapAngle(headYawCurrent - bodyYaw), 0.0f, 1.0f, 0.0f);
         headPitchPivot.setOrientation(headPitchCurrent, 1.0f, 0.0f, 0.0f);
         if (moving) walkPhase += 0.42f;
         float swing = moving ? (float)Math.sin(walkPhase) * 38.0f : 0.0f;
