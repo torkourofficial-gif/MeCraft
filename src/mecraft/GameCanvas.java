@@ -162,6 +162,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private int touchLastX, touchLastY;
     private Image dpadTexture;
     private boolean touchMoveUp, touchMoveDown, touchMoveLeft, touchMoveRight;
+    private boolean touchJumpActive;
     private boolean touchActionPending, touchMiningStarted;
     private long touchActionStart;
     private static final long TOUCH_MINE_DELAY = 260L;
@@ -2734,6 +2735,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             }
         }
         jumpHeld = true;
+        touchJumpActive = true;
     }
 
     protected synchronized void pointerDragged(int x, int y) {
@@ -2758,7 +2760,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             touchMoveUp = touchMoveDown = touchMoveLeft = touchMoveRight = false;
             applyTouchMovement();
         }
-        if (jumpHeld && touchEnabled) jumpHeld = false;
+        if (touchJumpActive) {
+            jumpHeld = false;
+            touchJumpActive = false;
+        }
         if (touchActionPending && !touchMiningStarted && state == PLAYING && world != null) {
             useSelectedItem();
             repaint();
