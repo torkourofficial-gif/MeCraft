@@ -93,6 +93,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private volatile int state = MENU;
     private int menuSelection = MENU_SINGLEPLAYER;
     private int settingsSelection;
+    private int touchSetupSelection;
     private int language = Language.ENGLISH;
     private int cameraSensitivity = 2;
     private int renderDistance = 1;
@@ -198,13 +199,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     GameCanvas(MeCraft app) {
         this.app = app;
         int[] settings = new int[] { GameSettings.loadFrameSkip(), cameraSensitivity,
-                                     selectedPlayerSkin, language, renderDistance };
+                                     selectedPlayerSkin, language, renderDistance, -1 };
         GameSettings.load(settings, controlCodes, customControls);
         frameSkip = clamp(settings[0], 0, 2);
         cameraSensitivity = clamp(settings[1], 0, 4);
         selectedPlayerSkin = clamp(settings[2], 0, 4);
         language = clamp(settings[3], Language.ENGLISH, Language.SPANISH);
         renderDistance = clamp(settings[4], 0, 3);
+        touchEnabled = settings[5] == 1;
         Language.set(language);
         try { music = new MusicController(); }
         catch (NoClassDefFoundError unsupported) { music = null; }
@@ -213,7 +215,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         loadHudTextures();
         refreshWorldList();
         menuSelection = MENU_SINGLEPLAYER;
-        state = TOUCH_SETUP;
+        state = settings[5] < 0 ? TOUCH_SETUP : MENU;
     }
 
     void start() {
@@ -1702,12 +1704,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     public synchronized void keyPressed(int keyCode) {
         if (state == TOUCH_SETUP) {
-            if (keyCode == KEY_NUM5 || keyCode == KEY_NUM1 || gameAction(keyCode) == FIRE) {
-                chooseTouchMode(true);
-            } else if (keyCode == KEY_NUM0 || keyCode == KEY_NUM3 || keyCode == KEY_NUM2 ||
-                    keyCode == KEY_NUM8) {
-                chooseTouchMode(false);
-            }
+            int action = gameAction(keyCode);
+            if (keyCode == KEY_NUM2 || keyCode == KEY_NUM4 || action == UP || action == LEFT) {
+                touchSetupSelection = 0;
+                repaint();
+            } else if (keyCode == KEY_NUM8 || keyCode == KEY_NUM6 || action == DOWN || action == RIGHT) {
+                touchSetupSelection = 1;
+                repaint();
+            } else if (keyCode == KEY_NUM1) chooseTouchMode(true);
+            else if (keyCode == KEY_NUM0 || keyCode == KEY_NUM3) chooseTouchMode(false);
+            else if (keyCode == KEY_NUM5 || action == FIRE) chooseTouchMode(touchSetupSelection == 0);
             return;
         }
         if (state == ERROR && diagnosticError) {
@@ -1776,10 +1782,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (state == SETTINGS) {
             int action = gameAction(keyCode);
             if (keyCode == KEY_NUM2 || action == UP) {
-                settingsSelection = (settingsSelection + 5) % 6;
+                settingsSelection = (settingsSelection + 6) % 7;
                 repaint();
             } else if (keyCode == KEY_NUM8 || action == DOWN) {
-                settingsSelection = (settingsSelection + 1) % 6;
+                settingsSelection = (settingsSelection + 1) % 7;
                 repaint();
             } else if (settingsSelection == 0 && (keyCode == KEY_NUM4 || action == LEFT)) changeFrameSkip(-1);
             else if (settingsSelection == 0 && (keyCode == KEY_NUM6 || action == RIGHT)) changeFrameSkip(1);
@@ -1793,6 +1799,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             else if (settingsSelection == 5 && (keyCode == KEY_NUM5 || action == FIRE)) {
                 controlsReturnSettings = true;
                 state = CONTROLS;
+                repaint();
+            } else if (settingsSelection == 6 && (keyCode == KEY_NUM4 || action == LEFT ||
+                    keyCode == KEY_NUM6 || action == RIGHT || keyCode == KEY_NUM5 || action == FIRE)) {
+                touchEnabled = !touchEnabled;
+                saveSettings();
                 repaint();
             }
             else if (keyCode == KEY_NUM0 || keyCode == KEY_POUND) {
@@ -2030,7 +2041,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void saveSettings() {
         GameSettings.save(new int[] { frameSkip, cameraSensitivity, selectedPlayerSkin,
-                                      language, renderDistance },
+                                      language, renderDistance, touchEnabled ? 1 : 0 },
                 controlCodes, customControls);
     }
 
@@ -2584,6 +2595,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void chooseTouchMode(boolean enabled) {
         touchEnabled = enabled;
+        saveSettings();
         state = MENU;
         menuSelection = MENU_SINGLEPLAYER;
         clearKeys();
@@ -2599,10 +2611,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         g.setColor(255, 255, 255);
         g.drawString("¿Dispositivo con pantalla tactil?", w / 2, h / 2 - 30,
                 Graphics.TOP | Graphics.HCENTER);
-        drawTouchButton(g, "SI - controles tactiles",  h / 2 - 4, true);
-        drawTouchButton(g, "NO - teclado/botones", h / 2 + 34, false);
+        drawTouchButton(g, "SI - controles tactiles",  h / 2 - 4, touchSetupSelection == 0);
+        drawTouchButton(g, "NO - teclado/botones", h / 2 + 34, touchSetupSelection == 1);
         g.setColor(230, 220, 200);
-        g.drawString("Toca una opcion para continuar", w / 2, h / 2 + 65,
+        g.drawString("2/8 elegir  5 aceptar  0 = no", w / 2, h / 2 + 65,
                 Graphics.TOP | Graphics.HCENTER);
     }
 
@@ -2944,9 +2956,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private void drawSettings(Graphics g) {
         int w = getWidth(), h = getHeight();
         drawDirtBackground(g);
-        int panelY = Math.max(12, (h - 202) / 2);
-        int panelHeight = Math.min(h - panelY - 8, 202);
-        int rowStep = Math.min(23, Math.max(14, (panelHeight - 54) / 6));
+        int panelY = Math.max(8, (h - 222) / 2);
+        int panelHeight = Math.min(h - panelY - 6, 222);
+        int rowStep = Math.min(22, Math.max(13, (panelHeight - 54) / 7));
         int firstRowY = panelY + 32;
         drawInsetPanel(g, 12, panelY, w - 24, panelHeight);
         g.setColor(255, 244, 200);
@@ -2965,6 +2977,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         drawMenuItem(g, "Idioma: " + (language == Language.ENGLISH ? "English" : "Español"),
                 firstRowY + rowStep * 4, settingsSelection == 4);
         drawMenuItem(g, "Controles", firstRowY + rowStep * 5, settingsSelection == 5);
+        drawMenuItem(g, "Controles tactiles: " + (touchEnabled ? "Si" : "No"),
+                firstRowY + rowStep * 6, settingsSelection == 6);
         g.setColor(240, 224, 190);
         g.drawString(Language.text("2/8 elegir   4/6 cambiar   5 abrir"), w / 2, panelY + panelHeight - 32,
                 Graphics.TOP | Graphics.HCENTER);
