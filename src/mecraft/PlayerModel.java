@@ -24,6 +24,7 @@ final class PlayerModel {
     private final Group leftLeg = new Group();
     private final Group rightLeg = new Group();
     private float walkPhase;
+    private int actionSwingTicks = 8;
 
     PlayerModel(Image skin) {
         int textureWidth = skin.getWidth();
@@ -57,14 +58,30 @@ final class PlayerModel {
 
     void update(float x, float y, float z, float yaw, boolean moving, boolean airborne) {
         root.setTranslation(x, y, z);
-        root.setOrientation(yaw + 180.0f, 0.0f, 1.0f, 0.0f);
+        // The skin mesh's front is already aligned with the camera yaw.
+        root.setOrientation(yaw, 0.0f, 1.0f, 0.0f);
         if (moving) walkPhase += 0.42f;
         float swing = moving ? (float)Math.sin(walkPhase) * 38.0f : 0.0f;
         if (airborne) swing = -28.0f;
         leftLeg.setOrientation(swing, 1.0f, 0.0f, 0.0f);
         rightLeg.setOrientation(-swing, 1.0f, 0.0f, 0.0f);
-        leftArm.setOrientation(-swing * 0.72f, 1.0f, 0.0f, 0.0f);
-        rightArm.setOrientation(swing * 0.72f, 1.0f, 0.0f, 0.0f);
+        float actionSwing = 0.0f;
+        if (actionSwingTicks < 8) {
+            float progress = actionSwingTicks / 8.0f;
+            actionSwing = (float)Math.sin(progress * Math.PI) * 82.0f;
+        }
+        leftArm.setOrientation(-swing * 0.72f + actionSwing * 0.18f,
+                1.0f, 0.0f, 0.0f);
+        rightArm.setOrientation(swing * 0.72f - actionSwing,
+                1.0f, 0.0f, 0.0f);
+    }
+
+    void swingAction() {
+        actionSwingTicks = 0;
+    }
+
+    void tickActionAnimation() {
+        if (actionSwingTicks < 8) actionSwingTicks++;
     }
 
     private void addLimb(Group limb, int pivotX, int pivotY, int pivotZ,
