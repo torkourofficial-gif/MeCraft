@@ -438,7 +438,8 @@ final class ChunkRenderer {
             externalCamera.setTranslation(0.0f, 0.0f, cameraOffset);
             externalCameraYawPivot.setOrientation(cameraMode == 2 ? 180.0f : 0.0f,
                     0.0f, 1.0f, 0.0f);
-            externalCamera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
+            // Head pitch is inherited from PlayerModel; do not apply it twice.
+            externalCamera.setOrientation(0.0f, 1.0f, 0.0f, 0.0f);
             scene.setActiveCamera(externalCamera);
         }
         handPivot.setRenderingEnable(cameraMode == 0);
