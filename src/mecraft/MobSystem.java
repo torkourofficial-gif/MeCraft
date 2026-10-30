@@ -472,6 +472,12 @@ final class MobSystem {
 
     /** Zombies/skeletons burn under open daylight; creepers remain night-only. */
     private void updateHostileCycle(VoxelWorld world) {
+        if (world.difficulty == VoxelWorld.DIFFICULTY_PEACEFUL) {
+            for (int i = 0; i < mobs.length; i++)
+                if (isHostile(mobTypeForSlot(i)) && mobs[i] != null) releaseMob(i);
+            zombiesNightActive = false;
+            return;
+        }
         boolean night = world.nether || world.isNight();
         for (int i = 0; i < mobs.length; i++) {
             if (isHostile(mobTypeForSlot(i)) && !hostileAllowed(mobTypeForSlot(i), world) &&
@@ -797,6 +803,7 @@ final class MobSystem {
     }
 
     private boolean hostileAllowed(int type, VoxelWorld world) {
+        if (world.difficulty == VoxelWorld.DIFFICULTY_PEACEFUL) return false;
         if (type == GHAST || type == PIG_ZOMBIE) return world.nether;
         return !world.nether;
     }
