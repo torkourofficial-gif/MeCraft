@@ -2678,10 +2678,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         g.setColor(255, 244, 210);
         g.drawString("MeCraft", w / 2, h / 2 - 61, Graphics.TOP | Graphics.HCENTER);
         g.setColor(255, 255, 255);
-        g.drawString("¿Dispositivo con pantalla tactil?", w / 2, h / 2 - 30,
+        g.drawString(Language.text("¿Dispositivo con pantalla tactil?"), w / 2, h / 2 - 30,
                 Graphics.TOP | Graphics.HCENTER);
-        drawTouchButton(g, "SI - controles tactiles",  h / 2 - 4, touchSetupSelection == 0);
-        drawTouchButton(g, "NO - teclado/botones", h / 2 + 34, touchSetupSelection == 1);
+        drawTouchButton(g, Language.text("SI - controles tactiles"),  h / 2 - 4, touchSetupSelection == 0);
+        drawTouchButton(g, Language.text("NO - teclado/botones"), h / 2 + 34, touchSetupSelection == 1);
         g.setColor(230, 220, 200);
     }
 
@@ -2722,6 +2722,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void drawTouchButtonAt(Graphics g, String label, int x, int y, int width) {
+        label = Language.text(label);
         int height = label.length() > 4 ? 29 : 27;
         g.setColor(28, 28, 28);
         g.fillRect(x + 1, y + 1, width, height);
@@ -3043,7 +3044,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         drawInsetPanel(g, 12, panelY, w - 24, panelHeight);
         g.setColor(255, 244, 200);
         g.drawString(Language.text("Ajustes"), w / 2, panelY + 10, Graphics.TOP | Graphics.HCENTER);
-        String value = frameSkip == 0 ? "Desactivado" : (frameSkip == 1 ? "1 de cada 2" : "2 de cada 3");
+        String value = Language.text(frameSkip == 0 ? "Desactivado" : (frameSkip == 1 ? "1 de cada 2" : "2 de cada 3"));
         String[] sensitivityNames = new String[] { "Muy baja", "Baja", "Normal", "Alta", "Muy alta" };
         String[] distanceNames = language == Language.ENGLISH ?
                 new String[] { "Short", "Normal", "Far", "Maximum" } :
@@ -3634,7 +3635,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
         int selectedBlock = creativeItemAt(creativeSelection);
         g.setColor(35, 35, 35);
-        String name = ItemCatalog.name(selectedBlock);
+        String name = Language.text(ItemCatalog.name(selectedBlock));
         if (name.length() > 16) name = name.substring(0, 16);
         g.drawString(name + "  " + (creativeSelection / pageSize + 1) + "/" + pageCount,
                 w / 2, top + 137, Graphics.TOP | Graphics.HCENTER);
