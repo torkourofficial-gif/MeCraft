@@ -543,7 +543,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private void startNewWorld(int mode, int size, int type, String name) {
         if (state == LOADING) return;
         state = LOADING;
-        loadingMessage = "Preparando mundo...";
+        loadingMessage = Language.text("Preparando mundo...");
         clearKeys();
         repaint();
         serviceRepaints();
@@ -567,7 +567,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 System.gc();
             }
             stage = "generando el terreno";
-            loadingMessage = "Generando terreno...";
+            loadingMessage = Language.text("Generando terreno...");
             world = new VoxelWorld((int)(System.currentTimeMillis() ^ System.currentTimeMillis() >>> 32), mode, size, type);
             stage = "inicializando inventario y posición";
             world.worldName = name == null || name.trim().length() == 0 ? "Mundo" : name.trim();
@@ -586,7 +586,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             resetInventory(mode);
             copyInventoryToWorld();
             stage = "guardando el mundo recién creado";
-            loadingMessage = "Guardando mundo...";
+            loadingMessage = Language.text("Guardando mundo...");
             world.save();
             stage = "cargando /mecraft/textures.png y creando escena M3G";
             ridingBoat = false;
@@ -597,7 +597,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             stage = "configurando cámara M3G";
             renderer.updateCamera(world, cameraPitch);
             stage = "construyendo sectores visibles M3G";
-            loadingMessage = "Construyendo chunks visibles...";
+            loadingMessage = Language.text("Construyendo chunks visibles...");
             renderer.sync(world);
             state = PLAYING;
             repaint();
@@ -614,7 +614,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private void openSavedWorld(final VoxelWorld.SavedWorld savedWorld) {
         if (state == LOADING) return;
         state = LOADING;
-        loadingMessage = "Cargando mundo guardado...";
+        loadingMessage = Language.text("Cargando mundo guardado...");
         clearKeys();
         repaint();
         serviceRepaints();
@@ -691,12 +691,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         String runtimeProfiles = readProperty("microedition.profiles");
         String requiredConfig = readAppProperty("MicroEdition-Configuration");
         String runtimeConfig = readProperty("microedition.configuration");
-        errorMessage = "Etapa: " + stage + " | Tipo: " + problem.getClass().getName() +
-                       " | Mensaje: " + message + " | M3G runtime: " + m3gVersion +
-                       " | Perfil solicitado por la app (JAD): " + requiredProfile +
-                       " | Perfiles que soporta el emulador: " + runtimeProfiles +
-                       " | Config solicitada (JAD): " + requiredConfig +
-                       " | Config que soporta el emulador: " + runtimeConfig;
+        errorMessage = Language.text("Etapa") + ": " + Language.text(stage) + " | " +
+                       Language.text("Tipo") + ": " + problem.getClass().getName() +
+                       " | " + Language.text("Mensaje") + ": " + Language.text(message) +
+                       " | M3G runtime: " + m3gVersion +
+                       " | " + Language.text("Perfil solicitado por la app (JAD): ") + requiredProfile +
+                       " | " + Language.text("Perfiles que soporta el emulador: ") + runtimeProfiles +
+                       " | " + Language.text("Config solicitada (JAD): ") + requiredConfig +
+                       " | " + Language.text("Config que soporta el emulador: ") + runtimeConfig;
         diagnosticError = true;
         diagnosticScroll = 0;
         state = ERROR;
