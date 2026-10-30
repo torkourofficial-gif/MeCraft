@@ -25,6 +25,7 @@ final class PlayerModel {
     private final Group rightLeg = new Group();
     private float walkPhase;
     private int actionSwingTicks = 8;
+    private boolean actionLooping;
 
     PlayerModel(Image skin) {
         int textureWidth = skin.getWidth();
@@ -80,8 +81,16 @@ final class PlayerModel {
         actionSwingTicks = 0;
     }
 
+    void setActionLooping(boolean looping) {
+        actionLooping = looping;
+        if (looping && actionSwingTicks >= 8) actionSwingTicks = 0;
+    }
+
     void tickActionAnimation() {
-        if (actionSwingTicks < 8) actionSwingTicks++;
+        if (actionSwingTicks < 8) {
+            actionSwingTicks++;
+            if (actionSwingTicks >= 8 && actionLooping) actionSwingTicks = 0;
+        }
     }
 
     private void addLimb(Group limb, int pivotX, int pivotY, int pivotZ,
