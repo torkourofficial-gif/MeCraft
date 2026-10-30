@@ -365,7 +365,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                     world.mode == 1 && flying, descendHeld, sprint);
         }
         if (sprinting && playerPhysics.hasHorizontalCollision()) sprinting = false;
-        if (world.mode == 0 && fallDamage > 0) damagePlayer(fallDamage);
+        if (world.mode == 0 && fallDamage > 0) {
+            if (world.difficulty == VoxelWorld.DIFFICULTY_EASY) fallDamage++;
+            damagePlayer(fallDamage);
+        }
         if (world.touchesPortal(world.playerX, world.playerY, world.playerZ)) {
             if (++portalChargeTicks >= PORTAL_CHARGE_TICKS) {
                 portalChargeTicks = 0;
@@ -485,6 +488,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void damagePlayer(int amount) {
         if (world == null || world.mode != 0 || world.health <= 0) return;
+        if (world.difficulty == VoxelWorld.DIFFICULTY_PEACEFUL)
+            amount = (amount + 1) / 2;
         world.health -= amount;
         if (world.health < 0) world.health = 0;
         hurtTicks = 10;
