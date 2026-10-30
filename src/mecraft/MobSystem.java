@@ -1086,6 +1086,8 @@ final class MobSystem {
         int attackDelay;
         int fuseTicks;
         int fleeTicks;
+        int doorBreakTicks;
+        int doorBreakX, doorBreakY, doorBreakZ;
         int nextWander;
         boolean alive;
         boolean dying;
