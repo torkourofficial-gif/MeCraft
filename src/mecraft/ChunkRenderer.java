@@ -392,7 +392,7 @@ final class ChunkRenderer {
         if (playerModel != null) {
             playerModel.root.setRenderingEnable(cameraMode != 0);
             playerModel.update(world.playerX, world.playerY, world.playerZ,
-                    world.yaw, moveX, moveZ, cameraPitch, 0.5f + 0.5f * cameraSensitivityScale(), moving, false, cameraMode != 0);
+                    world.yaw, moveX, moveZ, cameraPitch, 1.0f, moving, false, cameraMode != 0);
         }
 
         float cameraOffset = 0.0f;
