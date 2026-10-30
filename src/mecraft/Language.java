@@ -130,6 +130,68 @@ final class Language {
         "Verde", "Roja", "Negra", "Espada", "Pala", "Pico", "Hacha", "Azada",
         "madera", "piedra", "hierro", "diamante", "oro", "Lingote de hierro",
         "Lingote de oro", "Semillas", "Cerdo crudo", "Pluma", "Palo"
+        "Aire",
+        "Césped",
+        "Roca madre",
+        "Mesa de crafteo",
+        "TNT",
+        "Portal del Nether",
+        "Losa de piedra",
+        "Ladrillos",
+        "Brote",
+        "Grava",
+        "Lava",
+        "Seta roja",
+        "Seta marrón",
+        "Fuego",
+        "Mena de oro",
+        "Estantería",
+        "Piedra musgosa",
+        "Obsidiana",
+        "Bloque de hierro",
+        "Bloque de oro",
+        "Bloque de diamante",
+        "Esponja",
+        "Cristal",
+        "Mena de diamante",
+        "Mena de redstone",
+        "Horno apagado",
+        "Horno encendido",
+        "Generador de mobs",
+        "Nieve",
+        "Hielo",
+        "Cactus",
+        "Tocadiscos",
+        "Cartel",
+        "Escalera",
+        "Cable de redstone",
+        "Cultivo",
+        "Palanca",
+        "Calabaza",
+        "Roca abisal",
+        "Arena de almas",
+        "Piedra luminosa",
+        "Riel",
+        "Bloque sin nombre",
+        "Frameskip: ",
+        "Sensibilidad: ",
+        "Render: ",
+        "Controles tactiles: ",
+        "Idioma: ",
+        "Nombre: ",
+        "Modo: ",
+        "Tamaño: ",
+        "Tipo: ",
+        "Etapa: ",
+        "Tipo: ",
+        "Mensaje: ",
+        "Perfil solicitado por la app (JAD): ",
+        "Perfiles que soporta el emulador: ",
+        "Config solicitada (JAD): ",
+        "Config que soporta el emulador: ",
+        "Controles tactiles",
+        "Si",
+        "No",
     };
     private static final String[] EXTRA_ENGLISH_TEXT = new String[] {
         "Chest", "BACK", "CLOSE", "USE", "JUMP", "INV",
@@ -155,6 +217,68 @@ final class Language {
         "Brown", "Green", "Red", "Black", "Sword", "Shovel", "Pickaxe", "Axe", "Hoe",
         "wood", "stone", "iron", "diamond", "gold", "Iron ingot", "Gold ingot",
         "Seeds", "Raw porkchop", "Feather", "Stick"
+        "Air",
+        "Grass",
+        "Bedrock",
+        "Crafting table",
+        "TNT",
+        "Nether portal",
+        "Stone slab",
+        "Bricks",
+        "Sapling",
+        "Gravel",
+        "Lava",
+        "Red mushroom",
+        "Brown mushroom",
+        "Fire",
+        "Gold ore",
+        "Bookshelf",
+        "Mossy cobblestone",
+        "Obsidian",
+        "Iron block",
+        "Gold block",
+        "Diamond block",
+        "Sponge",
+        "Glass",
+        "Diamond ore",
+        "Redstone ore",
+        "Furnace",
+        "Lit furnace",
+        "Mob spawner",
+        "Snow",
+        "Ice",
+        "Cactus",
+        "Jukebox",
+        "Sign",
+        "Ladder",
+        "Redstone wire",
+        "Crops",
+        "Lever",
+        "Pumpkin",
+        "Netherrack",
+        "Soul sand",
+        "Glowstone",
+        "Rail",
+        "Unnamed block",
+        "Frameskip: ",
+        "Sensitivity: ",
+        "Render: ",
+        "Touch controls: ",
+        "Language: ",
+        "Name: ",
+        "Mode: ",
+        "Size: ",
+        "Type: ",
+        "Stage: ",
+        "Type: ",
+        "Message: ",
+        "App requested profile (JAD): ",
+        "Profiles supported by emulator: ",
+        "Requested config (JAD): ",
+        "Config supported by emulator: ",
+        "Touch controls",
+        "Yes",
+        "No",
     };
 
     private Language() { }
@@ -209,16 +333,26 @@ final class Language {
             if (value.startsWith("Guardando ")) return "Saving " + value.substring(10);
             if (value.startsWith("Cargando ")) return "Loading " + value.substring(9);
             if (value.startsWith("Construyendo ")) return "Building " + value.substring(13);
-            if (value.startsWith("Etapa: ")) return "Stage: " + value.substring(7);
-            if (value.startsWith(" | Tipo: ")) return " | Type: " + value.substring(9);
-            if (value.startsWith(" | Mensaje: ")) return " | Message: " + value.substring(12);
-            if (value.startsWith("generando el terreno")) return "generating terrain" + value.substring(20);
-            if (value.startsWith("preparando mundo")) return "preparing world" + value.substring(16);
-            if (value.startsWith("restaurando partida guardada")) return "restoring saved game" + value.substring(28);
-            if (value.startsWith("inicializando inventario y posición")) return "initializing inventory and position" + value.substring(34);
-            if (value.startsWith("guardando el mundo recién creado")) return "saving newly created world" + value.substring(32);
-            if (value.startsWith("configurando cámara")) return "configuring camera" + value.substring(20);
-            if (value.startsWith("construyendo sectores visibles")) return "building visible sectors" + value.substring(30);
+            if (value.startsWith("VoxelWorld: asignando semilla")) return "VoxelWorld: setting seed";
+            if (value.startsWith("VoxelWorld: asignando modo")) return "VoxelWorld: setting mode";
+            if (value.startsWith("VoxelWorld: inicializando caché procedural")) return "VoxelWorld: initializing procedural cache";
+            if (value.startsWith("VoxelWorld: inicializando caché")) return "VoxelWorld: initializing cache" + value.substring(31);
+            if (value.startsWith("VoxelWorld: entrando en generate()")) return "VoxelWorld: entering generate()";
+            if (value.startsWith("VoxelWorld: generate() terminó; posicionando jugador")) return "VoxelWorld: generate() finished; positioning player";
+            if (value.startsWith("VoxelWorld.generate: preparando bucle de chunks")) return "VoxelWorld.generate: preparing chunk loop";
+            if (value.startsWith("VoxelWorld.generate: reservando caché para chunk")) return "VoxelWorld.generate: reserving cache for chunk" + value.substring(48);
+            if (value.startsWith("VoxelWorld.generate: generando chunk")) return "VoxelWorld.generate: generating chunk" + value.substring(36);
+            if (value.startsWith("VoxelWorld.generate: asignando posición X del jugador")) return "VoxelWorld.generate: setting player X position";
+            if (value.startsWith("VoxelWorld.generate: asignando posición Z del jugador")) return "VoxelWorld.generate: setting player Z position";
+            if (value.startsWith("VoxelWorld.generate: calculando altura inicial del jugador")) return "VoxelWorld.generate: calculating initial player height";
+            if (value.startsWith("VoxelWorld.generateChunk: validando dimensión; chunk")) return "VoxelWorld.generateChunk: validating dimension; chunk" + value.substring(52);
+            if (value.equals("generando el terreno")) return "generating terrain";
+            if (value.equals("preparando mundo")) return "preparing world";
+            if (value.equals("restaurando partida guardada")) return "restoring saved game";
+            if (value.equals("inicializando inventario y posición")) return "initializing inventory and position";
+            if (value.equals("guardando el mundo recién creado")) return "saving newly created world";
+            if (value.equals("configurando cámara M3G")) return "configuring M3G camera";
+            if (value.equals("construyendo sectores visibles M3G")) return "building visible M3G sectors";
             if (value.startsWith("cargando /mecraft/")) return "loading /mecraft/" + value.substring(17);
             if (value.equals("(sin mensaje)")) return "(no message)";
             if (value.equals("generación sin iniciar")) return "generation not started";
