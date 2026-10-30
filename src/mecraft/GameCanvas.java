@@ -114,6 +114,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private int newWorldMode;
     private int newWorldSize;
     private int newWorldType;
+    private int newWorldDifficulty = VoxelWorld.DIFFICULTY_NORMAL;
     private String newWorldName = "Mundo 1";
     private TextBox worldNameInput;
     private Command acceptWorldName;
@@ -543,7 +544,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         repaint();
     }
 
-    private void startNewWorld(int mode, int size, int type, String name) {
+    private void startNewWorld(int mode, int size, int type, int difficulty, String name) {
         if (state == LOADING) return;
         state = LOADING;
         loadingMessage = Language.text("Preparando mundo...");
@@ -553,14 +554,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         final int requestedMode = mode;
         final int requestedSize = size;
         final int requestedType = type;
+        final int requestedDifficulty = difficulty;
         final String requestedName = name;
         Thread loader = new Thread(new Runnable() {
-            public void run() { createNewWorldNow(requestedMode, requestedSize, requestedType, requestedName); }
+            public void run() { createNewWorldNow(requestedMode, requestedSize, requestedType, requestedDifficulty, requestedName); }
         });
         loader.start();
     }
 
-    private void createNewWorldNow(int mode, int size, int type, String name) {
+    private void createNewWorldNow(int mode, int size, int type, int difficulty, String name) {
         String stage = "preparando mundo";
         try {
             title = null;
@@ -572,6 +574,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             stage = "generando el terreno";
             loadingMessage = Language.text("Generando terreno...");
             world = new VoxelWorld((int)(System.currentTimeMillis() ^ System.currentTimeMillis() >>> 32), mode, size, type);
+            world.difficulty = difficulty < VoxelWorld.DIFFICULTY_PEACEFUL || difficulty > VoxelWorld.DIFFICULTY_HARD ? VoxelWorld.DIFFICULTY_NORMAL : difficulty;
             stage = "inicializando inventario y posición";
             world.worldName = name == null || name.trim().length() == 0 ? "Mundo" : name.trim();
             // Nether access is reached through a wool portal in the normal world.
@@ -1803,7 +1806,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 if (createSelection > 0) createSelection--;
                 repaint();
             } else if (keyCode == KEY_NUM8 || action == DOWN) {
-                if (createSelection < 5) createSelection++;
+                if (createSelection < 6) createSelection++;
                 repaint();
             } else if (keyCode == KEY_NUM4 || action == LEFT) changeCreateOption(-1);
             else if (keyCode == KEY_NUM6 || action == RIGHT) changeCreateOption(1);
@@ -2271,6 +2274,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             newWorldMode = 0;
             newWorldSize = VoxelWorld.SIZE_INFINITE;
             newWorldType = VoxelWorld.TYPE_STANDARD;
+            newWorldDifficulty = VoxelWorld.DIFFICULTY_NORMAL;
             createSelection = 0;
             state = WORLD_CREATE;
             repaint();
@@ -2282,12 +2286,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private void activateCreateSelection() {
         if (createSelection == 0) {
             openNativeWorldNameInput();
-        } else if (createSelection >= 1 && createSelection <= 3) {
+        } else if (createSelection >= 1 && createSelection <= 4) {
             changeCreateOption(1);
-        } else if (createSelection == 4) {
+        } else if (createSelection == 5) {
             String name = newWorldName == null ? "" : newWorldName.trim();
             if (name.length() == 0) name = defaultWorldName(savedWorlds.length + 1);
-            startNewWorld(newWorldMode, newWorldSize, newWorldType, name);
+            startNewWorld(newWorldMode, newWorldSize, newWorldType, newWorldDifficulty, name);
         } else {
             state = WORLD_SELECT;
             repaint();
@@ -2298,6 +2302,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (createSelection == 1) newWorldMode = 1 - newWorldMode;
         else if (createSelection == 2) newWorldSize = 1 - newWorldSize;
         else if (createSelection == 3) newWorldType = 1 - newWorldType;
+        else if (createSelection == 4) newWorldDifficulty = (newWorldDifficulty + (delta > 0 ? 1 : 3)) % 4;
         repaint();
     }
 
@@ -2945,7 +2950,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             } else if (y >= h - 36) backToMainMenu();
         } else if (state == WORLD_CREATE) {
             int row = (y - 70 + 17) / 34;
-            if (row >= 0 && row <= 5) { createSelection = row; activateCreateSelection(); }
+            if (row >= 0 && row <= 6) { createSelection = row; activateCreateSelection(); }
         } else if (state == PAUSED) {
             int row = (y - (h / 2 - 75 + 40) + 13) / 27;
             if (row >= 0 && row < 3) { pauseSelection = row; activateSelection(); }
@@ -3454,8 +3459,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         drawMenuItem(g, "Modo: " + (newWorldMode == 0 ? "Supervivencia" : "Creativo"), 104, createSelection == 1);
         drawMenuItem(g, "Tamaño: " + (newWorldSize == VoxelWorld.SIZE_OLD ? "Old 240x240" : "Infinite"), 138, createSelection == 2);
         drawMenuItem(g, "Tipo: " + (newWorldType == VoxelWorld.TYPE_FLAT ? "Plano" : "Standard"), 172, createSelection == 3);
-        drawMenuItem(g, "Crear mundo", 206, createSelection == 4);
-        drawMenuItem(g, "Volver", 240, createSelection == 5);
+        String[] difficultyNames = new String[] { "Pacifico", "Facil", "Normal", "Dificil" };
+        drawMenuItem(g, "Dificultad: " + difficultyNames[clamp(newWorldDifficulty, 0, 3)], 206, createSelection == 4);
+        drawMenuItem(g, "Crear mundo", 240, createSelection == 5);
+        drawMenuItem(g, "Volver", 274, createSelection == 6);
     }
 
     private String trimText(String text, int maxChars) {
