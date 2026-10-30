@@ -184,6 +184,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private boolean hasOverworldPortalReturn, hasNetherPortalReturn;
     private static final int PORTAL_CHARGE_TICKS = 100;
     private Image waterTint;
+    private Image chestOverlayImage;
     private Image hurtTint;
     private Image pauseTint;
     private Image deathTint;
@@ -2491,16 +2492,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     protected synchronized void paint(Graphics g) {
         if (state == TOUCH_SETUP) {
             drawTouchSetup(g);
-        } else if (state == CHEST_INVENTORY) {
-            // A chest is a 2D menu, not a 3D world overlay. Avoid binding
-            // Graphics3D here: some M3G implementations leave the previous
-            // Canvas frame (often the title screen) visible after releaseTarget.
-            // Paint an opaque frame first so no stale pixels can leak through.
-            g.setColor(0, 0, 0);
-            g.fillRect(0, 0, getWidth(), getHeight());
-            drawChest(g);
         } else if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH ||
-            state == CREATIVE_INVENTORY || state == GAME_OVER) {
+            state == CREATIVE_INVENTORY || state == GAME_OVER || state == CHEST_INVENTORY) {
             String stage = "actualizando mallas M3G";
             try {
                 renderer.sync(world);
@@ -2519,6 +2512,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 }
                 finally { graphics3D.releaseTarget(); }
                 stage = "dibujando HUD 2D";
+                if (state == CHEST_INVENTORY) {
+                    drawTint(g, chestOverlay());
+                    drawChest(g);
+                }
                 if (state == PLAYING || state == PAUSED) {
                     if (cameraUnderwater()) drawTint(g, waterTint);
                     if (hurtTicks > 0) drawTint(g, hurtTint);
@@ -3289,6 +3286,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                         x, y, Graphics.TOP | Graphics.LEFT);
             }
         }
+    }
+
+    private Image chestOverlay() {
+        if (chestOverlayImage == null) {
+            int[] pixels = new int[16 * 16];
+            for (int i = 0; i < pixels.length; i++) pixels[i] = 0x80000000;
+            chestOverlayImage = Image.createRGBImage(pixels, 16, 16, true);
+        }
+        return chestOverlayImage;
     }
 
     /** Tile a tiny alpha image to tint the rendered world without a screen-sized heap buffer. */
