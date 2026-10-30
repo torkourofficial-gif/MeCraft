@@ -642,13 +642,13 @@ final class MobSystem {
         if (!canMove(world, mob, nx, mob.z)) breakDoorAhead(mob, world, nx, mob.z);
         if (canMove(world, mob, nx, mob.z)) mob.x = nx;
         else {
-            if (!airborne) mob.targetYaw += 75.0f;
+            if (!airborne && mob.doorBreakTicks == 0) mob.targetYaw += 75.0f;
             mob.motionX = 0.0f;
         }
         if (!canMove(world, mob, mob.x, nz)) breakDoorAhead(mob, world, mob.x, nz);
         if (canMove(world, mob, mob.x, nz)) mob.z = nz;
         else {
-            if (!airborne) mob.targetYaw -= 140.0f;
+            if (!airborne && mob.doorBreakTicks == 0) mob.targetYaw -= 140.0f;
             mob.motionZ = 0.0f;
         }
         mob.motionX *= 0.91f;
@@ -697,6 +697,7 @@ final class MobSystem {
             mob.doorBreakX = bx; mob.doorBreakY = doorY; mob.doorBreakZ = bz;
             mob.doorBreakTicks = 0;
         }
+        mob.targetYaw = yawTo(bx + 0.5f - mob.x, bz + 0.5f - mob.z);
         mob.doorBreakTicks++;
         if (mob.doorBreakTicks >= 60) {
             world.removeDoor(bx, doorY, bz);
