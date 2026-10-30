@@ -106,6 +106,57 @@ final class Language {
         "Portal: step out to cancel"
     };
 
+    private static final String[] EXTRA_SPANISH_TEXT = new String[] {
+        "Cofre", "VOLVER", "CERRAR", "USAR", "SALTO", "INV",
+        "¿Dispositivo con pantalla tactil?", "SI - controles tactiles", "NO - teclado/botones",
+        "Desactivado", "Muy baja", "Baja", "Alta", "Muy alta", "Corta", "Lejana", "Máxima",
+        "Render: ", "Controles tactiles: ", "Si", "No", "Nombre: ", "Modo: ", "Tamaño: ",
+        "Tipo: ", "Plano", "Mundo", "Mundo guardado", "Objeto", "Mesa", "Rieles",
+        "16 Rieles", "Vagoneta", "Barca", "Mesa de trabajo", "4 Tablones", "4 Palos",
+        "4 Antorchas", "3 Puertas", "Pan", "Estofado de setas", "Arco", "4 Flechas",
+        "Pedernal y acero", "Manzana dorada", "Carbón", "Manzana", "Flecha", "Cuenco",
+        "Hilo", "Pólvora", "Trigo", "Casco de cuero", "Peto de cuero", "Grebas de cuero",
+        "Botas de cuero", "Casco de cota", "Peto de cota", "Grebas de cota", "Botas de cota",
+        "Casco de hierro", "Peto de hierro", "Grebas de hierro", "Botas de hierro",
+        "Casco de diamante", "Peto de diamante", "Grebas de diamante", "Botas de diamante",
+        "Casco de oro", "Peto de oro", "Grebas de oro", "Botas de oro", "Pedernal",
+        "Cerdo cocinado", "Cuadro", "Cartel", "Cubo vacío", "Cubo de agua", "Cubo de lava",
+        "Silla de montar", "Puerta de hierro", "Bola de nieve", "Cuero", "Cubo de leche",
+        "Ladrillo", "Arcilla", "Caña de azúcar", "Papel", "Libro", "Bola de slime",
+        "Vagoneta con cofre", "Vagoneta con horno", "Huevo", "Brújula", "Caña de pescar",
+        "Reloj", "Polvo de piedra luminosa", "Pescado crudo", "Pescado cocinado",
+        "Disco 13", "Disco Cat", "Blanca", "Naranja", "Magenta", "Azul claro", "Amarilla",
+        "Lima", "Rosa", "Gris", "Gris claro", "Cian", "Morada", "Azul", "Marrón",
+        "Verde", "Roja", "Negra", "Espada", "Pala", "Pico", "Hacha", "Azada",
+        "madera", "piedra", "hierro", "diamante", "oro", "Lingote de hierro",
+        "Lingote de oro", "Semillas", "Cerdo crudo", "Pluma", "Palo"
+    };
+    private static final String[] EXTRA_ENGLISH_TEXT = new String[] {
+        "Chest", "BACK", "CLOSE", "USE", "JUMP", "INV",
+        "Touchscreen device?", "YES - touch controls", "NO - keyboard/buttons",
+        "Off", "Very low", "Low", "High", "Very high", "Short", "Far", "Maximum",
+        "Render: ", "Touch controls: ", "Yes", "No", "Name: ", "Mode: ", "Size: ",
+        "Type: ", "Flat", "World", "Saved world", "Item", "Table", "Rails",
+        "16 Rails", "Minecart", "Boat", "Crafting table", "4 Planks", "4 Sticks",
+        "4 Torches", "3 Doors", "Bread", "Mushroom stew", "Bow", "4 Arrows",
+        "Flint and steel", "Golden apple", "Coal", "Apple", "Arrow", "Bowl",
+        "String", "Gunpowder", "Wheat", "Leather helmet", "Leather chestplate",
+        "Leather leggings", "Leather boots", "Chainmail helmet", "Chainmail chestplate",
+        "Chainmail leggings", "Chainmail boots", "Iron helmet", "Iron chestplate",
+        "Iron leggings", "Iron boots", "Diamond helmet", "Diamond chestplate",
+        "Diamond leggings", "Diamond boots", "Golden helmet", "Golden chestplate",
+        "Golden leggings", "Golden boots", "Flint", "Cooked porkchop", "Painting",
+        "Sign", "Empty bucket", "Water bucket", "Lava bucket", "Saddle", "Iron door",
+        "Snowball", "Leather", "Milk bucket", "Brick", "Clay", "Sugar cane", "Paper",
+        "Book", "Slimeball", "Minecart with chest", "Minecart with furnace", "Egg",
+        "Compass", "Fishing rod", "Clock", "Glowstone dust", "Raw fish", "Cooked fish",
+        "Music disc 13", "Music disc Cat", "White", "Orange", "Magenta", "Light blue",
+        "Yellow", "Lime", "Pink", "Gray", "Light gray", "Cyan", "Purple", "Blue",
+        "Brown", "Green", "Red", "Black", "Sword", "Shovel", "Pickaxe", "Axe", "Hoe",
+        "wood", "stone", "iron", "diamond", "gold", "Iron ingot", "Gold ingot",
+        "Seeds", "Raw porkchop", "Feather", "Stick"
+    };
+
     private Language() { }
 
     static void set(int language) {
@@ -151,9 +202,33 @@ final class Language {
         if (english) {
             for (int i = 0; i < SPANISH_TEXT.length; i++)
                 if (SPANISH_TEXT[i].equals(value)) return ENGLISH_TEXT[i];
+            for (int i = 0; i < EXTRA_SPANISH_TEXT.length; i++)
+                if (EXTRA_SPANISH_TEXT[i].equals(value)) return EXTRA_ENGLISH_TEXT[i];
+            if (value.startsWith("Preparando ")) return "Preparing " + value.substring(11);
+            if (value.startsWith("Generando ")) return "Generating " + value.substring(10);
+            if (value.startsWith("Guardando ")) return "Saving " + value.substring(10);
+            if (value.startsWith("Cargando ")) return "Loading " + value.substring(9);
+            if (value.startsWith("Construyendo ")) return "Building " + value.substring(13);
+            if (value.startsWith("Etapa: ")) return "Stage: " + value.substring(7);
+            if (value.startsWith(" | Tipo: ")) return " | Type: " + value.substring(9);
+            if (value.startsWith(" | Mensaje: ")) return " | Message: " + value.substring(12);
+            if (value.startsWith("generando el terreno")) return "generating terrain" + value.substring(20);
+            if (value.startsWith("preparando mundo")) return "preparing world" + value.substring(16);
+            if (value.startsWith("restaurando partida guardada")) return "restoring saved game" + value.substring(28);
+            if (value.startsWith("inicializando inventario y posición")) return "initializing inventory and position" + value.substring(34);
+            if (value.startsWith("guardando el mundo recién creado")) return "saving newly created world" + value.substring(32);
+            if (value.startsWith("configurando cámara")) return "configuring camera" + value.substring(20);
+            if (value.startsWith("construyendo sectores visibles")) return "building visible sectors" + value.substring(30);
+            if (value.startsWith("cargando /mecraft/")) return "loading /mecraft/" + value.substring(17);
+            if (value.equals("(sin mensaje)")) return "(no message)";
+            if (value.equals("generación sin iniciar")) return "generation not started";
+            if (value.equals("no informado")) return "not reported";
+            if (value.equals("no disponible")) return "unavailable";
         } else {
             for (int i = 0; i < ENGLISH_TEXT.length; i++)
                 if (ENGLISH_TEXT[i].equals(value)) return SPANISH_TEXT[i];
+            for (int i = 0; i < EXTRA_ENGLISH_TEXT.length; i++)
+                if (EXTRA_ENGLISH_TEXT[i].equals(value)) return EXTRA_SPANISH_TEXT[i];
         }
         return value;
     }
