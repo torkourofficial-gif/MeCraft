@@ -3431,8 +3431,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 } else drawDurability(g, id, x + 2, y + 19);
             }
         }
-        g.drawString(Language.text(world.mode == 0 ? "Supervivencia" : "Creativo"), 3, 2, Graphics.TOP | Graphics.LEFT);
-        g.drawString(Language.text(world.isNight() ? "Noche" : "Día"), w - 3, 2, Graphics.TOP | Graphics.RIGHT);
         if (portalChargeTicks > 0) {
             int seconds = (PORTAL_CHARGE_TICKS - portalChargeTicks + 19) / 20;
             g.drawString(Language.text("Portal: sal para cancelar") + " " + seconds + "s",
