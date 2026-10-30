@@ -539,6 +539,7 @@ final class ChunkRenderer {
 
     void setHandLooping(boolean looping) {
         handLooping = looping;
+        if (playerModel != null) playerModel.setActionLooping(looping);
         if (looping && !handSwinging) { handSwingTicks = 0; handSwinging = true; }
     }
 
