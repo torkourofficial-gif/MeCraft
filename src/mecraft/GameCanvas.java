@@ -2618,10 +2618,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         g.fillRect(jumpX, jumpY, jumpSize, jumpSize);
         g.setColor(205, 190, 160);
         g.drawRect(jumpX, jumpY, jumpSize - 1, jumpSize - 1);
-        g.setColor(255, 255, 255);
-        g.drawString("^", jumpX + jumpSize / 2, jumpY + jumpSize / 2 -
-                Font.getDefaultFont().getHeight() / 2, Graphics.TOP | Graphics.HCENTER);
-
         int pauseW = 54, pauseH = 25;
         drawTouchButtonAt(g, "II", (w - pauseW) / 2, 7, pauseW);
         drawTouchButtonAt(g, "INV", w - 62, h - 43, 52);
