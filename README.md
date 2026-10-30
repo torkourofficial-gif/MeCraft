@@ -12,7 +12,8 @@ Referencia consultada: [EaglerPorts/in-20100223](https://github.com/EaglerPorts/
 - Modo supervivencia empieza con el inventario vacío; los bloques rotos se recogen, y modo creativo tiene bloques ilimitados.
 - En creativo, `#` abre una paleta paginada con los bloques texturados del atlas `textures.png`; se elige uno con `5` para ponerlo en la casilla rápida seleccionada. Las celdas vacías del atlas no aparecen. La TNT se activa al golpearla con `1`, sin soltar un bloque normal; cae, rebota y explota tras 80 ticks. La explosión puede encadenar otras TNT y dañar criaturas y al jugador.
 - En creativo, pulsa `5` dos veces dentro de 350 ms para activar o desactivar el vuelo; mantén `5` para subir lentamente y `0` para bajar.
-- Cámara en primera persona, movimiento, colisión, gravedad y salto.
+- Cámara en primera persona, tercera persona trasera y segunda persona frontal; el jugador usa su skin 64 × 32 con animación básica de brazos y piernas. Las cámaras externas se acercan automáticamente al jugador al encontrar paredes. `0` + cruceta arriba cambia entre las tres perspectivas.
+- Movimiento, colisión, gravedad y salto.
 - Ciclo de día y noche basado en la curva de Indev de 24 000 ticks, acelerado 10× para que cada ciclo se vea en unos dos minutos; la hora se conserva al guardar y el HUD indica si es de día o de noche.
 - Antorchas colocables y rompibles, fabricadas en grupos de cuatro con carbón y un palo. Iluminan el entorno con un conjunto M3G fijo de tres luces cercanas para limitar el costo de memoria.
 - Romper/colocar bloques, partículas de rotura, daño progresivo con grietas sobre la cara apuntada, seleccionar la barra rápida y guardar la partida en RMS.
@@ -35,6 +36,7 @@ Al iniciar, el juego pregunta si el dispositivo tiene pantalla táctil. Si elige
 | Tecla | Acción |
 | --- | --- |
 | Cruceta | Mirar arriba, abajo, izquierda y derecha |
+| 0 + cruceta arriba | Cambiar primera / tercera / segunda persona |
 | 2 / 8 | Avanzar / retroceder |
 | 4 / 6 | Desplazarse a la izquierda / derecha |
 | 5 | Saltar / crear la receta elegida |

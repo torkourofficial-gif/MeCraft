@@ -49,10 +49,14 @@ final class ChunkRenderer {
 
     final World scene = new World();
     final Camera camera = new Camera();
+    private final Camera externalCamera = new Camera();
+    private final Group externalCameraPivot = new Group();
+    private final Group externalCameraYawPivot = new Group();
     private final Transform cameraTransform = new Transform();
     private final Transform handTransform = new Transform();
     final Group cameraPivot = new Group();
     private final Group cameraEffectPivot = new Group();
+    private final Group cameraYawPivot = new Group();
     private final Group handPivot = new Group();
     private final Group heldItemOffset = new Group();
     private final Group heldItemYaw = new Group();
@@ -153,6 +157,10 @@ final class ChunkRenderer {
     private int builtHeight;
     private float tanHorizontalFov;
     private float cameraPitch;
+    private int cameraMode; // 0 first-person, 1 rear third-person, 2 front-facing second-person
+    private PlayerModel playerModel;
+    private float previousPlayerX, previousPlayerZ;
+    private boolean hasPreviousPlayerPosition;
     private float currentDaylight = 1.0f;
     private int currentSkyColor = 0xFF82B8E8;
 
@@ -254,17 +262,23 @@ final class ChunkRenderer {
         mobs = new MobSystem(scene, droppedItems, particles);
 
         camera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
+        externalCamera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
+        externalCameraPivot.addChild(externalCameraYawPivot);
+        externalCameraYawPivot.addChild(externalCamera);
+        scene.addChild(externalCameraPivot);
+        cameraPivot.setTranslation(0.0f, -0.13f, 0.0f);
         cameraPivot.addChild(cameraEffectPivot);
-        cameraEffectPivot.addChild(camera);
+        cameraEffectPivot.addChild(cameraYawPivot);
+        cameraYawPivot.addChild(camera);
         cameraEffectPivot.addChild(handPivot);
         skyObjects = new SkySystem(cameraPivot, sky, width, height);
+        scene.addChild(cameraPivot);
         scene.addChild(terrain);
         scene.addChild(railSystem.group);
         scene.addChild(particles.mesh);
         scene.addChild(droppedItems.mesh);
         scene.addChild(droppedItems.spriteMesh);
         scene.addChild(droppedItems.tntFlashMesh);
-        scene.addChild(cameraPivot);
         scene.setActiveCamera(camera);
         sky.setDepthClearEnable(true);
         scene.setBackground(sky);
@@ -292,6 +306,7 @@ final class ChunkRenderer {
         tanHorizontalFov = tanVerticalFov * (float)width / (float)height;
         skyObjects.resize(width, height);
         camera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
+        externalCamera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
         armBase.setTranslation(handBaseX(width, height), -0.60f, -0.72f);
         if (!handSwinging)
             armSwingOffset.setTranslation(-0.08f * handHorizontalScale, 0.15f, 0.0f);
@@ -315,6 +330,7 @@ final class ChunkRenderer {
         tanVerticalFov = (float)Math.tan(cameraFov * Math.PI / 360.0);
         tanHorizontalFov = tanVerticalFov * (float)builtWidth / (float)builtHeight;
         camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight, 0.1f, cameraFar);
+        externalCamera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight, 0.1f, cameraFar);
     }
 
     void setRenderDistance(int setting) {
@@ -327,6 +343,8 @@ final class ChunkRenderer {
         if (streamRadius > MAX_STREAM_RADIUS) streamRadius = MAX_STREAM_RADIUS;
         cameraFar = ((streamRadius * 2 + 1) * (float)VoxelWorld.CHUNK_XZ) + 8.0f;
         camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
+                0.1f, cameraFar);
+        externalCamera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
                 0.1f, cameraFar);
     }
 
@@ -366,15 +384,77 @@ final class ChunkRenderer {
 
     void updateCamera(VoxelWorld world, float pitch) {
         cameraPitch = pitch;
+
+        // Keep the original first-person camera rig permanently independent.
+        // External views use a second camera, like Minecraft's third-person
+        // camera, so perspective switching never reparents the first-person rig.
         cameraPivot.setTranslation(world.playerX, world.playerY + 1.62f, world.playerZ);
-        // M3G cameras look down local -Z; 180 degrees makes yaw zero face +Z.
         cameraPivot.setOrientation(world.yaw + 180.0f, 0.0f, 1.0f, 0.0f);
         skyObjects.update(world, world.yaw + 180.0f,
                 ((float)world.dayTime / (float)VoxelWorld.DAY_LENGTH - 0.15f) * 6.2831855f,
                 currentDaylight, currentSkyColor);
-        camera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
+
+        float moveX = 0.0f;
+        float moveZ = 0.0f;
+        boolean moving = false;
+        if (hasPreviousPlayerPosition) {
+            moveX = world.playerX - previousPlayerX;
+            moveZ = world.playerZ - previousPlayerZ;
+            moving = moveX * moveX + moveZ * moveZ > 0.0004f;
+        }
+        previousPlayerX = world.playerX;
+        previousPlayerZ = world.playerZ;
+        hasPreviousPlayerPosition = true;
+        if (playerModel != null) {
+            playerModel.root.setRenderingEnable(cameraMode != 0);
+            playerModel.update(world.playerX, world.playerY, world.playerZ,
+                    world.yaw, moveX, moveZ, cameraPitch, 1.0f, moving, false, cameraMode != 0);
+        }
+
+        if (cameraMode == 0) {
+            // Original touch-branch first-person camera: no avatar parenting.
+            camera.setTranslation(0.0f, 0.0f, 0.0f);
+            camera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
+            scene.setActiveCamera(camera);
+        } else {
+            float wanted = 3.8f;
+            float yawRadians = world.yaw * 0.0174532925f;
+            float side = cameraMode == 1 ? -1.0f : 1.0f;
+            float dx = (float)Math.sin(yawRadians) * side;
+            float dz = (float)Math.cos(yawRadians) * side;
+            float cameraOffset = wanted;
+            for (float distance = 0.20f; distance <= wanted; distance += 0.20f) {
+                if (world.isSolidAt(floorCamera(world.playerX + dx * distance),
+                        floorCamera(world.playerY + 1.55f),
+                        floorCamera(world.playerZ + dz * distance))) {
+                    cameraOffset = distance - 0.28f;
+                    if (cameraOffset < 0.0f) cameraOffset = 0.0f;
+                    break;
+                }
+            }
+            externalCameraPivot.setTranslation(world.playerX, world.playerY + 1.62f, world.playerZ);
+            externalCameraPivot.setOrientation(world.yaw + 180.0f, 0.0f, 1.0f, 0.0f);
+            externalCamera.setTranslation(0.0f, 0.0f, cameraOffset);
+            externalCameraYawPivot.setOrientation(cameraMode == 2 ? 180.0f : 0.0f,
+                    0.0f, 1.0f, 0.0f);
+            externalCamera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
+            scene.setActiveCamera(externalCamera);
+        }
+        handPivot.setRenderingEnable(cameraMode == 0);
         handPivot.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
     }
+
+    private int floorCamera(float value) {
+        int result = (int)value;
+        return value < result ? result - 1 : result;
+    }
+
+    void cycleCameraMode() {
+        cameraMode = (cameraMode + 1) % 3;
+        hasPreviousPlayerPosition = false;
+    }
+
+    int getCameraMode() { return cameraMode; }
 
     /** Rotate the full first-person view during the Indev hurt-camera pulse. */
     void setHurtCameraRoll(float degrees) {
@@ -383,16 +463,19 @@ final class ChunkRenderer {
 
     /** Render the first-person hand and held block in a final overlay pass. */
     void render(Graphics3D graphics) {
-        handPivot.setRenderingEnable(false);
+        boolean showHand = cameraMode == 0;
+        if (showHand) handPivot.setRenderingEnable(false);
         try {
             graphics.render(scene);
         } finally {
-            handPivot.setRenderingEnable(true);
+            handPivot.setRenderingEnable(showHand);
         }
-        camera.getTransformTo(scene, cameraTransform);
-        handPivot.getTransformTo(scene, handTransform);
-        graphics.setCamera(camera, cameraTransform);
-        graphics.render(handPivot, handTransform);
+        if (showHand) {
+            camera.getTransformTo(scene, cameraTransform);
+            handPivot.getTransformTo(scene, handTransform);
+            graphics.setCamera(camera, cameraTransform);
+            graphics.render(handPivot, handTransform);
+        }
     }
 
     void updateHeldItem(int itemId, boolean visible) {
@@ -474,15 +557,18 @@ final class ChunkRenderer {
     void swingHand() {
         handSwingTicks = 0;
         handSwinging = true;
+        if (playerModel != null) playerModel.swingAction();
     }
 
     void setHandLooping(boolean looping) {
         handLooping = looping;
+        if (playerModel != null) playerModel.setActionLooping(looping);
         if (looping && !handSwinging) { handSwingTicks = 0; handSwinging = true; }
     }
 
     /** Indev first-person swing curve, sampled once per 50 ms game tick. */
     void updateHandAnimation() {
+        if (playerModel != null) playerModel.tickActionAnimation();
         if (++portalAnimationTick >= 2) {
             portalAnimationTick = 0;
             portalAnimationFrame = (portalAnimationFrame + 1) & 7;
@@ -802,6 +888,11 @@ final class ChunkRenderer {
         texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         handAppearance.setTexture(0, texture);
+        if (playerModel != null) scene.removeChild(playerModel.root);
+        playerModel = new PlayerModel(image);
+        scene.addChild(playerModel.root);
+        playerModel.root.setRenderingEnable(cameraMode != 0);
+        hasPreviousPlayerPosition = false;
         if (handTexCoords != null) {
             int vScale = image.getWidth() / image.getHeight();
             if (vScale < 1) vScale = 1;
