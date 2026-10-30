@@ -497,7 +497,9 @@ final class MobSystem {
             return;
         }
         if (zombiesNightActive) {
-            if (tick % HOSTILE_RESPAWN_INTERVAL == 0) {
+            int respawnInterval = world.difficulty == VoxelWorld.DIFFICULTY_HARD ? 60 :
+                    (world.difficulty == VoxelWorld.DIFFICULTY_EASY ? 160 : HOSTILE_RESPAWN_INTERVAL);
+            if (tick % respawnInterval == 0) {
                 for (int i = 0; i < mobs.length; i++) {
                     Mob mob = mobs[i];
                     if (isHostile(mobTypeForSlot(i)) && hostileAllowed(mobTypeForSlot(i), world) && hostileSlotAllowed(i, world) &&
