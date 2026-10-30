@@ -488,8 +488,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void damagePlayer(int amount) {
         if (world == null || world.mode != 0 || world.health <= 0) return;
-        if (world.difficulty == VoxelWorld.DIFFICULTY_PEACEFUL)
-            amount = (amount + 1) / 2;
+        if (world.difficulty == VoxelWorld.DIFFICULTY_PEACEFUL) amount /= 2;
+        if (amount <= 0) return;
         world.health -= amount;
         if (world.health < 0) world.health = 0;
         hurtTicks = 10;
