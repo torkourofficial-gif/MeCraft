@@ -14,12 +14,11 @@ import javax.microedition.m3g.VertexArray;
 import javax.microedition.m3g.VertexBuffer;
 
 /**
- * Small Alpha-style player model. Geometry is built once and reused; only the
- * root transform and four limb pivots change while the player moves.
+ * Animated in-game player using the exact ModelBiped box dimensions and UV
+ * mapping from SkinGallery, so gameplay and the skin preview share one layout.
  */
 final class PlayerModel {
     final Group root = new Group();
-    private final Group head = new Group();
     private final Group leftArm = new Group();
     private final Group rightArm = new Group();
     private final Group leftLeg = new Group();
@@ -27,29 +26,31 @@ final class PlayerModel {
     private float walkPhase;
 
     PlayerModel(Image skin) {
+        int textureWidth = skin.getWidth();
+        int textureHeight = skin.getHeight();
         Texture2D texture = new Texture2D(new Image2D(Image2D.RGBA, skin));
         texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         Appearance appearance = makeAppearance(texture);
 
-        // Model coordinates are in blocks. The UV layout is the classic 64x32
-        // Alpha/Steve layout used by the project's player skins.
-        addBox(root, 0, 0, 8, 8, 8, 8, 8, 8, 0.0f, 1.5f, 0.0f, appearance);
-        addBox(root, 16, 16, 8, 12, 4, 8, 12, 4, 0.0f, 0.75f, 0.0f, appearance);
+        // Head and torso use the same coordinates and UV rectangles as SkinGallery.
+        addBox(root, appearance, -4, 24, -4, 8, 8, 8, 0, 0, false,
+                textureWidth, textureHeight);
 
-        leftArm.setTranslation(-0.375f, 1.35f, 0.0f);
-        rightArm.setTranslation(0.375f, 1.35f, 0.0f);
-        leftLeg.setTranslation(-0.125f, 0.75f, 0.0f);
-        rightLeg.setTranslation(0.125f, 0.75f, 0.0f);
+        // Pivot the limbs at their shoulders/hips; box geometry is local to each pivot.
+        addLimb(leftArm, -6, 24, -2, -2, -12, -2, 4, 12, 4,
+                40, 16, false, appearance, textureWidth, textureHeight);
+        addLimb(rightArm, 6, 24, -2, -2, -12, -2, 4, 12, 4,
+                40, 16, true, appearance, textureWidth, textureHeight);
+        addLimb(leftLeg, -2, 12, -2, -2, -12, -2, 4, 12, 4,
+                0, 16, false, appearance, textureWidth, textureHeight);
+        addLimb(rightLeg, 2, 12, -2, -2, -12, -2, 4, 12, 4,
+                0, 16, true, appearance, textureWidth, textureHeight);
+
         root.addChild(leftArm);
         root.addChild(rightArm);
         root.addChild(leftLeg);
         root.addChild(rightLeg);
-
-        addBox(leftArm, 40, 16, 4, 12, 4, 4, 12, 4, 0.0f, -0.375f, 0.0f, appearance);
-        addBox(rightArm, 40, 16, 4, 12, 4, 4, 12, 4, 0.0f, -0.375f, 0.0f, appearance);
-        addBox(leftLeg, 0, 16, 4, 12, 4, 4, 12, 4, 0.0f, -0.375f, 0.0f, appearance);
-        addBox(rightLeg, 0, 16, 4, 12, 4, 4, 12, 4, 0.0f, -0.375f, 0.0f, appearance);
     }
 
     void update(float x, float y, float z, float yaw, boolean moving, boolean airborne) {
@@ -64,6 +65,15 @@ final class PlayerModel {
         rightArm.setOrientation(swing * 0.72f, 1.0f, 0.0f, 0.0f);
     }
 
+    private void addLimb(Group limb, int pivotX, int pivotY, int pivotZ,
+            int x, int y, int z, int width, int height, int depth,
+            int texU, int texV, boolean mirror, Appearance appearance,
+            int textureWidth, int textureHeight) {
+        limb.setTranslation(pivotX / 16.0f, pivotY / 16.0f, pivotZ / 16.0f);
+        addBox(limb, appearance, x, y, z, width, height, depth,
+                texU, texV, mirror, textureWidth, textureHeight);
+    }
+
     private Appearance makeAppearance(Texture2D texture) {
         Appearance appearance = new Appearance();
         appearance.setTexture(0, texture);
@@ -72,7 +82,7 @@ final class PlayerModel {
         material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
         appearance.setMaterial(material);
         PolygonMode polygon = new PolygonMode();
-        polygon.setCulling(PolygonMode.CULL_BACK);
+        polygon.setCulling(PolygonMode.CULL_NONE);
         polygon.setShading(PolygonMode.SHADE_FLAT);
         appearance.setPolygonMode(polygon);
         CompositingMode compositing = new CompositingMode();
@@ -84,62 +94,53 @@ final class PlayerModel {
         return appearance;
     }
 
-    private void addBox(Group parent, int u, int v, float width, float height, float depth,
-            int layoutWidth, int layoutHeight, int layoutDepth,
-            float x, float y, float z, Appearance appearance) {
-        Group part = new Group();
-        part.setTranslation(x, y, z);
-        float x0 = -width / 32.0f, x1 = width / 32.0f;
-        float y0 = -height / 32.0f, y1 = height / 32.0f;
-        float z0 = -depth / 32.0f, z1 = depth / 32.0f;
-        float[][][] faces = new float[][][] {
-            {{x1,y0,z1},{x1,y0,z0},{x1,y1,z0},{x1,y1,z1}},
-            {{x0,y0,z0},{x0,y0,z1},{x0,y1,z1},{x0,y1,z0}},
-            {{x1,y0,z1},{x0,y0,z1},{x0,y0,z0},{x1,y0,z0}},
-            {{x1,y1,z0},{x0,y1,z0},{x0,y1,z1},{x1,y1,z1}},
-            {{x1,y0,z0},{x0,y0,z0},{x0,y1,z0},{x1,y1,z0}},
-            {{x0,y0,z1},{x1,y0,z1},{x1,y1,z1},{x0,y1,z1}}
+    /** Same six-face ModelBox mesh and mirrored UV handling as SkinGallery. */
+    private void addBox(Group parent, Appearance appearance,
+            int x, int y, int z, int width, int height, int depth,
+            int texU, int texV, boolean mirror, int textureWidth, int textureHeight) {
+        short[] positions = new short[72];
+        short[] uv = new short[48];
+        int[][] vertices = new int[][] {
+            {x,y,z+depth, x,y+height,z+depth, x+width,y,z+depth, x+width,y+height,z+depth},
+            {x+width,y,z, x+width,y+height,z, x,y,z, x,y+height,z},
+            {x,y,z, x,y+height,z, x,y,z+depth, x,y+height,z+depth},
+            {x+width,y,z+depth, x+width,y+height,z+depth, x+width,y,z, x+width,y+height,z},
+            {x,y+height,z+depth, x,y+height,z, x+width,y+height,z+depth, x+width,y+height,z},
+            {x,y,z, x,y,z+depth, x+width,y,z, x+width,y,z+depth}
         };
         int[][] rects = new int[][] {
-            {u + layoutDepth + layoutWidth, v + layoutDepth,
-             u + layoutDepth + layoutWidth + layoutDepth, v + layoutDepth + layoutHeight},
-            {u, v + layoutDepth, u + layoutDepth, v + layoutDepth + layoutHeight},
-            {u + layoutDepth + layoutWidth, v,
-             u + layoutDepth + layoutWidth + layoutWidth, v + layoutDepth},
-            {u + layoutDepth, v, u + layoutDepth + layoutWidth, v + layoutDepth},
-            {u + layoutDepth, v + layoutDepth,
-             u + layoutDepth + layoutWidth, v + layoutDepth + layoutHeight},
-            {u + layoutDepth + layoutWidth + layoutDepth, v + layoutDepth,
-             u + layoutDepth + layoutWidth + layoutDepth + layoutWidth, v + layoutDepth + layoutHeight}
+            {texU + depth, texV + depth, width, height},
+            {texU + depth + width + depth, texV + depth, width, height},
+            {texU, texV + depth, depth, height},
+            {texU + depth + width, texV + depth, depth, height},
+            {texU + depth, texV, width, depth},
+            {texU + depth + width, texV, width, depth}
         };
-        int[] order = {0,1,2,0,2,3};
-        short[] positions = new short[36 * 3];
-        short[] uv = new short[36 * 2];
-        int at = 0;
         for (int face = 0; face < 6; face++) {
             int[] rect = rects[face];
-            for (int q = 0; q < 6; q++) {
-                int corner = order[q];
-                float[] p = faces[face][corner];
-                positions[at * 3] = (short)(p[0] * 1024.0f);
-                positions[at * 3 + 1] = (short)(p[1] * 1024.0f);
-                positions[at * 3 + 2] = (short)(p[2] * 1024.0f);
-                uv[at * 2] = (short)((corner == 0 || corner == 3) ?
-                        rect[2] * 16 - 2 : rect[0] * 16 + 2);
-                uv[at * 2 + 1] = (short)(corner < 2 ?
-                        rect[3] * 32 - 3 : rect[1] * 32 + 3);
-                at++;
+            int u0 = rect[0], v0 = rect[1], u1 = u0 + rect[2], v1 = v0 + rect[3];
+            if (mirror) { int swap = u0; u0 = u1; u1 = swap; }
+            int base = face * 4;
+            int[] faceUV = new int[] { u0,v1, u0,v0, u1,v1, u1,v0 };
+            int vScale = textureWidth / textureHeight;
+            for (int vertex = 0; vertex < 4; vertex++) {
+                int pi = (base + vertex) * 3;
+                positions[pi] = (short)vertices[face][vertex * 3];
+                positions[pi + 1] = (short)vertices[face][vertex * 3 + 1];
+                positions[pi + 2] = (short)vertices[face][vertex * 3 + 2];
+                int ti = (base + vertex) * 2;
+                uv[ti] = (short)faceUV[vertex * 2];
+                uv[ti + 1] = (short)(faceUV[vertex * 2 + 1] * vScale);
             }
         }
-        VertexArray pa = new VertexArray(36, 3, 2);
-        pa.set(0, 36, positions);
-        VertexArray ta = new VertexArray(36, 2, 2);
-        ta.set(0, 36, uv);
-        VertexBuffer vb = new VertexBuffer();
-        vb.setPositions(pa, 1.0f / 1024.0f, null);
-        vb.setTexCoords(0, ta, 1.0f / 1024.0f, null);
-        int[] strips = {3,3,3,3,3,3,3,3,3,3,3,3};
-        part.addChild(new Mesh(vb, new TriangleStripArray(0, strips), appearance));
-        parent.addChild(part);
+        VertexArray positionArray = new VertexArray(24, 3, 2);
+        positionArray.set(0, 24, positions);
+        VertexArray uvArray = new VertexArray(24, 2, 2);
+        uvArray.set(0, 24, uv);
+        VertexBuffer buffer = new VertexBuffer();
+        buffer.setPositions(positionArray, 1.0f / 16.0f, null);
+        buffer.setTexCoords(0, uvArray, 1.0f / textureWidth, null);
+        int[] strips = new int[] { 4,4,4,4,4,4 };
+        parent.addChild(new Mesh(buffer, new TriangleStripArray(0, strips), appearance));
     }
 }
