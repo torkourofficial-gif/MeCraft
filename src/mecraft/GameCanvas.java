@@ -2972,8 +2972,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         g.setFont(Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_MEDIUM));
         g.drawString("MeCraft", w / 2, h / 2 - 48, Graphics.HCENTER | Graphics.TOP);
         g.setFont(Font.getDefaultFont());
-        String message = loadingMessage;
-        if (message == null) message = "Cargando...";
+        String message = Language.text(loadingMessage);
+        if (message == null) message = Language.text("Cargando...");
         int maxChars = Math.max(8, (w - 16) / Math.max(1, g.getFont().charWidth('M')));
         if (message.length() > maxChars) message = message.substring(0, maxChars);
         g.drawString(message, w / 2, h / 2 - 8, Graphics.HCENTER | Graphics.TOP);
