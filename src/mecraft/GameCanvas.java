@@ -2362,11 +2362,32 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         return (int)(upper + (lower - upper) * fy + 0.5f);
     }
 
+    /** Downscale the 227px touch pad using one source row at a time to limit peak heap use. */
+    private Image scaleDpadTexture(Image source, int size) {
+        if (source == null || size < 1) return source;
+        int sourceWidth = source.getWidth(), sourceHeight = source.getHeight();
+        if (sourceWidth == size && sourceHeight == size) return source;
+        int[] pixels = new int[size * size];
+        int[] row = new int[sourceWidth];
+        for (int y = 0; y < size; y++) {
+            int sourceY = y * sourceHeight / size;
+            source.getRGB(row, 0, sourceWidth, 0, sourceY, sourceWidth, 1);
+            for (int x = 0; x < size; x++) {
+                pixels[y * size + x] = row[x * sourceWidth / size];
+            }
+        }
+        return Image.createRGBImage(pixels, size, size, true);
+    }
+
     private void loadHudTextures() {
         try { guiTexture = GameAssets.image("gui.png"); } catch (IOException ignored) { guiTexture = null; }
         try { iconsTexture = GameAssets.image("icons.png"); } catch (IOException ignored) { iconsTexture = null; }
         try { containerTexture = GameAssets.image("container.png"); } catch (IOException ignored) { containerTexture = null; }
-        try { dpadTexture = GameAssets.image("dpad.png"); } catch (IOException ignored) { dpadTexture = null; }
+        try {
+            Image sourceDpad = GameAssets.image("dpad.png");
+            int targetSize = Math.min(100, Math.max(72, getWidth() / 2 - 28));
+            dpadTexture = scaleDpadTexture(sourceDpad, targetSize);
+        } catch (Throwable ignored) { dpadTexture = null; }
         int[] blueTintPixels = new int[16 * 16];
         int[] hurtTintPixels = new int[16 * 16];
         int[] pauseTintPixels = new int[16 * 16];
