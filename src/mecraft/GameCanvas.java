@@ -2636,16 +2636,27 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private boolean isTouchBackButtonHit(int currentState, int x, int y, int w, int h) {
         if (!touchEnabled || !isTouchBackState(currentState)) return false;
         int buttonWidth = Math.min(104, w - 24);
-        int buttonX = (w - buttonWidth) / 2;
         int buttonY = h - 31;
+        if (currentState == SKIN_SELECT) {
+            int buttonX = (w - buttonWidth * 2 - 8) / 2;
+            return x >= buttonX && x < buttonX + buttonWidth && y >= buttonY && y < buttonY + 25;
+        }
+        int buttonX = (w - buttonWidth) / 2;
         return x >= buttonX && x < buttonX + buttonWidth && y >= buttonY && y < buttonY + 25;
     }
 
     private void drawTouchBackButton(Graphics g) {
         int w = getWidth(), h = getHeight();
-        int buttonWidth = Math.min(104, w - 24);
-        int buttonX = (w - buttonWidth) / 2;
+        int buttonWidth = Math.min(104, (w - 32) / 2);
         int buttonY = h - 31;
+        if (state == SKIN_SELECT) {
+            int leftX = (w - buttonWidth * 2 - 8) / 2;
+            drawTouchButtonAt(g, "VOLVER", leftX, buttonY, buttonWidth);
+            drawTouchButtonAt(g, "USAR", leftX + buttonWidth + 8, buttonY, buttonWidth);
+            return;
+        }
+        buttonWidth = Math.min(104, w - 24);
+        int buttonX = (w - buttonWidth) / 2;
         boolean inventoryState = state == INVENTORY || state == WORKBENCH ||
                 state == CREATIVE_INVENTORY || state == CHEST_INVENTORY;
         drawTouchButtonAt(g, inventoryState ? "CERRAR" : "VOLVER", buttonX, buttonY, buttonWidth);
@@ -2925,8 +2936,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             } else if (y > top + 166 || x < left || x > left + 176) closeCrafting();
             repaint();
         } else if (state == SKIN_SELECT) {
-            if (y > h - 45) keyPressed(KEY_NUM5);
-            else { skinSelection = x < w / 2 ? Math.max(0, skinSelection - 1) : Math.min(4, skinSelection + 1); repaint(); }
+            int slotY = h - 72;
+            int slotWidth = Math.max(30, (w - 28) / 5);
+            if (y >= slotY && y < slotY + 22) {
+                int slot = (x - 9) / slotWidth;
+                if (slot >= 0 && slot < 5 && x < 9 + slot * slotWidth + slotWidth - 3) {
+                    skinSelection = slot;
+                    if (skinGallery != null) skinGallery.selectSkin(skinSelection);
+                }
+            } else if (y >= h - 31 && x >= w / 2) {
+                keyPressed(KEY_NUM5);
+            }
+            repaint();
         } else if (state == CONTROLS) {
             int rowHeight = Font.getDefaultFont().getHeight() + 3;
             int row = (y - (Math.max(12, (h - 238) / 2) + 40)) / rowHeight + controlsScroll;
