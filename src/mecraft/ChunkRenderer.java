@@ -49,6 +49,9 @@ final class ChunkRenderer {
 
     final World scene = new World();
     final Camera camera = new Camera();
+    private final Camera externalCamera = new Camera();
+    private final Group externalCameraPivot = new Group();
+    private final Group externalCameraYawPivot = new Group();
     private final Transform cameraTransform = new Transform();
     private final Transform handTransform = new Transform();
     final Group cameraPivot = new Group();
@@ -156,7 +159,6 @@ final class ChunkRenderer {
     private float cameraPitch;
     private int cameraMode; // 0 first-person, 1 rear third-person, 2 front-facing second-person
     private PlayerModel playerModel;
-    private boolean cameraAttachedToHead;
     private float previousPlayerX, previousPlayerZ;
     private boolean hasPreviousPlayerPosition;
     private float currentDaylight = 1.0f;
@@ -260,6 +262,10 @@ final class ChunkRenderer {
         mobs = new MobSystem(scene, droppedItems, particles);
 
         camera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
+        externalCamera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
+        externalCameraPivot.addChild(externalCameraYawPivot);
+        externalCameraYawPivot.addChild(externalCamera);
+        scene.addChild(externalCameraPivot);
         cameraPivot.setTranslation(0.0f, -0.13f, 0.0f);
         cameraPivot.addChild(cameraEffectPivot);
         cameraEffectPivot.addChild(cameraYawPivot);
@@ -299,6 +305,7 @@ final class ChunkRenderer {
         tanHorizontalFov = tanVerticalFov * (float)width / (float)height;
         skyObjects.resize(width, height);
         camera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
+        externalCamera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
         armBase.setTranslation(handBaseX(width, height), -0.60f, -0.72f);
         if (!handSwinging)
             armSwingOffset.setTranslation(-0.08f * handHorizontalScale, 0.15f, 0.0f);
@@ -322,6 +329,7 @@ final class ChunkRenderer {
         tanVerticalFov = (float)Math.tan(cameraFov * Math.PI / 360.0);
         tanHorizontalFov = tanVerticalFov * (float)builtWidth / (float)builtHeight;
         camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight, 0.1f, cameraFar);
+        externalCamera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight, 0.1f, cameraFar);
     }
 
     void setRenderDistance(int setting) {
@@ -334,6 +342,8 @@ final class ChunkRenderer {
         if (streamRadius > MAX_STREAM_RADIUS) streamRadius = MAX_STREAM_RADIUS;
         cameraFar = ((streamRadius * 2 + 1) * (float)VoxelWorld.CHUNK_XZ) + 8.0f;
         camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
+                0.1f, cameraFar);
+        externalCamera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
                 0.1f, cameraFar);
     }
 
@@ -374,19 +384,11 @@ final class ChunkRenderer {
     void updateCamera(VoxelWorld world, float pitch) {
         cameraPitch = pitch;
 
-        // First person deliberately restores the original Indev camera rig:
-        // the world yaw/position drive the camera, and pitch is applied to the
-        // camera itself. External views instead parent the rig to the head.
-        if (cameraMode == 0 && cameraAttachedToHead) {
-            playerModel.detachCamera(cameraPivot);
-            scene.addChild(cameraPivot);
-            cameraAttachedToHead = false;
-        } else if (cameraMode != 0 && !cameraAttachedToHead && playerModel != null) {
-            scene.removeChild(cameraPivot);
-            playerModel.attachCamera(cameraPivot);
-            cameraAttachedToHead = true;
-        }
-
+        // Keep the original first-person camera rig permanently independent.
+        // External views use a second camera, like Minecraft's third-person
+        // camera, so perspective switching never reparents the first-person rig.
+        cameraPivot.setTranslation(world.playerX, world.playerY + 1.62f, world.playerZ);
+        cameraPivot.setOrientation(world.yaw + 180.0f, 0.0f, 1.0f, 0.0f);
         skyObjects.update(world, world.yaw + 180.0f,
                 ((float)world.dayTime / (float)VoxelWorld.DAY_LENGTH - 0.15f) * 6.2831855f,
                 currentDaylight, currentSkyColor);
@@ -408,15 +410,18 @@ final class ChunkRenderer {
                     world.yaw, moveX, moveZ, cameraPitch, 1.0f, moving, false, cameraMode != 0);
         }
 
-        float cameraOffset = 0.0f;
-        if (cameraMode != 0) {
+        if (cameraMode == 0) {
+            // Original touch-branch first-person camera: no avatar parenting.
+            camera.setTranslation(0.0f, 0.0f, 0.0f);
+            camera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
+            scene.setActiveCamera(camera);
+        } else {
             float wanted = 3.8f;
             float yawRadians = world.yaw * 0.0174532925f;
             float side = cameraMode == 1 ? -1.0f : 1.0f;
             float dx = (float)Math.sin(yawRadians) * side;
             float dz = (float)Math.cos(yawRadians) * side;
-            cameraOffset = wanted;
-            // Pull the camera toward the player before it can enter a solid block.
+            float cameraOffset = wanted;
             for (float distance = 0.20f; distance <= wanted; distance += 0.20f) {
                 if (world.isSolidAt(floorCamera(world.playerX + dx * distance),
                         floorCamera(world.playerY + 1.55f),
@@ -426,20 +431,13 @@ final class ChunkRenderer {
                     break;
                 }
             }
-        }
-        if (cameraMode == 0) {
-            // Exact first-person transform used by the touch branch before
-            // the player-head camera rig was introduced.
-            cameraPivot.setTranslation(world.playerX, world.playerY + 1.62f, world.playerZ);
-            cameraPivot.setOrientation(world.yaw + 180.0f, 0.0f, 1.0f, 0.0f);
-            camera.setTranslation(0.0f, 0.0f, 0.0f);
-            cameraYawPivot.setOrientation(0.0f, 0.0f, 1.0f, 0.0f);
-            camera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
-        } else {
-            camera.setTranslation(0.0f, 0.0f, cameraOffset);
-            // In front-facing mode the camera is in front of the avatar and looks back.
-            cameraYawPivot.setOrientation(cameraMode == 2 ? 180.0f : 0.0f, 0.0f, 1.0f, 0.0f);
-            camera.setOrientation(0.0f, 1.0f, 0.0f, 0.0f);
+            externalCameraPivot.setTranslation(world.playerX, world.playerY + 1.62f, world.playerZ);
+            externalCameraPivot.setOrientation(world.yaw + 180.0f, 0.0f, 1.0f, 0.0f);
+            externalCamera.setTranslation(0.0f, 0.0f, cameraOffset);
+            externalCameraYawPivot.setOrientation(cameraMode == 2 ? 180.0f : 0.0f,
+                    0.0f, 1.0f, 0.0f);
+            externalCamera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
+            scene.setActiveCamera(externalCamera);
         }
         handPivot.setRenderingEnable(cameraMode == 0);
         handPivot.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
@@ -889,23 +887,9 @@ final class ChunkRenderer {
         texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         handAppearance.setTexture(0, texture);
-        if (playerModel != null) {
-            if (cameraAttachedToHead) {
-                playerModel.detachCamera(cameraPivot);
-                cameraAttachedToHead = false;
-            } else {
-                scene.removeChild(cameraPivot);
-            }
-            scene.removeChild(playerModel.root);
-        }
+        if (playerModel != null) scene.removeChild(playerModel.root);
         playerModel = new PlayerModel(image);
         scene.addChild(playerModel.root);
-        if (cameraMode == 0) {
-            scene.addChild(cameraPivot);
-        } else {
-            playerModel.attachCamera(cameraPivot);
-            cameraAttachedToHead = true;
-        }
         playerModel.root.setRenderingEnable(cameraMode != 0);
         hasPreviousPlayerPosition = false;
         if (handTexCoords != null) {
