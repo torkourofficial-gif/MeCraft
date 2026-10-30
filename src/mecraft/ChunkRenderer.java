@@ -265,7 +265,6 @@ final class ChunkRenderer {
         externalCamera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
         externalCameraPivot.addChild(externalCameraYawPivot);
         externalCameraYawPivot.addChild(externalCamera);
-        scene.addChild(externalCameraPivot);
         cameraPivot.setTranslation(0.0f, -0.13f, 0.0f);
         cameraPivot.addChild(cameraEffectPivot);
         cameraEffectPivot.addChild(cameraYawPivot);
@@ -432,8 +431,10 @@ final class ChunkRenderer {
                     break;
                 }
             }
-            externalCameraPivot.setTranslation(world.playerX, world.playerY + 1.62f, world.playerZ);
-            externalCameraPivot.setOrientation(world.yaw + 180.0f, 0.0f, 1.0f, 0.0f);
+            // The external camera is parented to the avatar's head pivot.
+            // Its local Z offset therefore follows both head yaw and pitch.
+            externalCameraPivot.setTranslation(0.0f, 0.0f, 0.0f);
+            externalCameraPivot.setOrientation(0.0f, 0.0f, 1.0f, 0.0f);
             externalCamera.setTranslation(0.0f, 0.0f, cameraOffset);
             externalCameraYawPivot.setOrientation(cameraMode == 2 ? 180.0f : 0.0f,
                     0.0f, 1.0f, 0.0f);
@@ -888,8 +889,12 @@ final class ChunkRenderer {
         texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         handAppearance.setTexture(0, texture);
-        if (playerModel != null) scene.removeChild(playerModel.root);
+        if (playerModel != null) {
+            playerModel.detachCamera(externalCameraPivot);
+            scene.removeChild(playerModel.root);
+        }
         playerModel = new PlayerModel(image);
+        playerModel.attachCamera(externalCameraPivot);
         scene.addChild(playerModel.root);
         playerModel.root.setRenderingEnable(cameraMode != 0);
         hasPreviousPlayerPosition = false;
