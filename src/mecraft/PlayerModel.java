@@ -49,7 +49,7 @@ final class PlayerModel {
         addBox(leftArm, 40, 16, 4, 12, 4, 4, 12, 4, 0.0f, -0.375f, 0.0f, appearance);
         addBox(rightArm, 40, 16, 4, 12, 4, 4, 12, 4, 0.0f, -0.375f, 0.0f, appearance);
         addBox(leftLeg, 0, 16, 4, 12, 4, 4, 12, 4, 0.0f, -0.375f, 0.0f, appearance);
-        addBox(rightLeg, 0, 16, 4, 12, 4, 4, 4, 12, 4, 0.0f, -0.375f, 0.0f, appearance);
+        addBox(rightLeg, 0, 16, 4, 12, 4, 4, 12, 4, 0.0f, -0.375f, 0.0f, appearance);
     }
 
     void update(float x, float y, float z, float yaw, boolean moving, boolean airborne) {
