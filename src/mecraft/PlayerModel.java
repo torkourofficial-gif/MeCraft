@@ -116,10 +116,10 @@ final class PlayerModel {
         float angle;
         if (az >= ax) {
             float r = ax / (az + 0.000001f);
-            angle = r * (45.0f - 15.0f * r);
+            angle = r * (60.0f - 15.0f * r);
         } else {
             float r = az / (ax + 0.000001f);
-            angle = 90.0f - r * (45.0f - 15.0f * r);
+            angle = 90.0f - r * (60.0f - 15.0f * r);
         }
         if (dz < 0.0f) angle = 180.0f - angle;
         if (dx < 0.0f) angle = -angle;
