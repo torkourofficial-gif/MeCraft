@@ -48,6 +48,7 @@ final class MobSystem {
     private final Texture2D[] fleeceTextures = new Texture2D[WoolColors.COUNT];
     private final Random random = new Random(1L);
     private int worldSeed = Integer.MIN_VALUE;
+    private int difficulty = VoxelWorld.DIFFICULTY_NORMAL;
     private int tick;
     private int attackCooldown;
     private boolean zombiesNightActive;
@@ -345,6 +346,7 @@ final class MobSystem {
 
     private void reset(VoxelWorld world) {
         worldSeed = world.seed;
+        difficulty = world.difficulty;
         tick = 0;
         attackCooldown = 0;
         zombiesNightActive = false;
@@ -358,6 +360,13 @@ final class MobSystem {
     }
 
     private int mobTypeForSlot(int slot) {
+        // Hard mode reuses three passive slots for extra hostile entities,
+        // increasing the active hostile cap without allocating a larger mob pool.
+        if (difficulty == VoxelWorld.DIFFICULTY_HARD) {
+            if (slot == 4) return ZOMBIE;
+            if (slot == 5) return SKELETON;
+            if (slot == 6) return CREEPER;
+        }
         if (slot == 0 || slot == 4) return PIG;
         if (slot == 1 || slot == 5) return SHEEP;
         if (slot == 2 || slot == 6) return COW;
