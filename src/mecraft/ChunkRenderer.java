@@ -379,11 +379,13 @@ final class ChunkRenderer {
                 ((float)world.dayTime / (float)VoxelWorld.DAY_LENGTH - 0.15f) * 6.2831855f,
                 currentDaylight, currentSkyColor);
 
+        float moveX = 0.0f;
+        float moveZ = 0.0f;
         boolean moving = false;
         if (hasPreviousPlayerPosition) {
-            float dx = world.playerX - previousPlayerX;
-            float dz = world.playerZ - previousPlayerZ;
-            moving = dx * dx + dz * dz > 0.0004f;
+            moveX = world.playerX - previousPlayerX;
+            moveZ = world.playerZ - previousPlayerZ;
+            moving = moveX * moveX + moveZ * moveZ > 0.0004f;
         }
         previousPlayerX = world.playerX;
         previousPlayerZ = world.playerZ;
@@ -391,7 +393,7 @@ final class ChunkRenderer {
         if (playerModel != null) {
             playerModel.root.setRenderingEnable(cameraMode != 0);
             playerModel.update(world.playerX, world.playerY, world.playerZ,
-                    world.yaw, cameraPitch, moving, false);
+                    world.yaw, moveX, moveZ, cameraPitch, moving, false);
         }
 
         float cameraOffset = 0.0f;
