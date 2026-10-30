@@ -129,7 +129,7 @@ final class Language {
         "Lima", "Rosa", "Gris", "Gris claro", "Cian", "Morada", "Azul", "Marrón",
         "Verde", "Roja", "Negra", "Espada", "Pala", "Pico", "Hacha", "Azada",
         "madera", "piedra", "hierro", "diamante", "oro", "Lingote de hierro",
-        "Lingote de oro", "Semillas", "Cerdo crudo", "Pluma", "Palo"
+        "Lingote de oro", "Semillas", "Cerdo crudo", "Pluma", "Palo",
         "Aire",
         "Césped",
         "Roca madre",
@@ -216,7 +216,7 @@ final class Language {
         "Yellow", "Lime", "Pink", "Gray", "Light gray", "Cyan", "Purple", "Blue",
         "Brown", "Green", "Red", "Black", "Sword", "Shovel", "Pickaxe", "Axe", "Hoe",
         "wood", "stone", "iron", "diamond", "gold", "Iron ingot", "Gold ingot",
-        "Seeds", "Raw porkchop", "Feather", "Stick"
+        "Seeds", "Raw porkchop", "Feather", "Stick",
         "Air",
         "Grass",
         "Bedrock",
@@ -312,6 +312,18 @@ final class Language {
         if (value.startsWith("Idioma: ")) return (english ? "Language: " : "Idioma: ") + text(value.substring(8));
         if (value.startsWith("Language: ")) return (english ? "Language: " : "Idioma: ") + text(value.substring(10));
         if (value.startsWith("Dpad ")) return (english ? "D-pad " : "Dpad ") + text(value.substring(5));
+        if (english && value.startsWith("Render: ")) return "Render: " + text(value.substring(8));
+        if (english && value.startsWith("Controles tactiles: ")) return "Touch controls: " + text(value.substring(20));
+        if (english && value.startsWith("Tamaño: ")) return "Size: " + text(value.substring(8));
+        if (english && value.startsWith("Tipo: ")) return "Type: " + text(value.substring(6));
+        if (english && value.startsWith("Perfil solicitado por la app (JAD): ")) return "App requested profile (JAD): " + value.substring(36);
+        if (english && value.startsWith("Perfiles que soporta el emulador: ")) return "Profiles supported by emulator: " + value.substring(34);
+        if (english && value.startsWith("Config solicitada (JAD): ")) return "Requested config (JAD): " + value.substring(25);
+        if (english && value.startsWith("Config que soporta el emulador: ")) return "Config supported by emulator: " + value.substring(33);
+        if (!english && value.startsWith("Touch controls: ")) return "Controles tactiles: " + text(value.substring(16));
+        if (!english && value.startsWith("Render: ")) return "Render: " + text(value.substring(8));
+        if (!english && value.startsWith("Size: ")) return "Tamaño: " + text(value.substring(6));
+        if (!english && value.startsWith("Type: ")) return "Tipo: " + text(value.substring(6));
         if (value.startsWith("D-pad ")) return (english ? "D-pad " : "Dpad ") + text(value.substring(6));
         if (value.startsWith("Espada de ")) return english ? text(value.substring(10)) + " sword" : value;
         if (value.startsWith("Pala de ")) return english ? text(value.substring(8)) + " shovel" : value;
