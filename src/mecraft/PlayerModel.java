@@ -27,6 +27,9 @@ final class PlayerModel {
     private final Group headPitchPivot = new Group();
     private float bodyYaw;
     private boolean bodyYawInitialized;
+    private float headYawCurrent;
+    private float headPitchCurrent;
+    private boolean headRotationInitialized;
     private float walkPhase;
     private int actionSwingTicks = 8;
     private boolean actionLooping;
@@ -67,8 +70,16 @@ final class PlayerModel {
         root.addChild(rightLeg);
     }
 
+    void attachCamera(Group camera) {
+        headPitchPivot.addChild(camera);
+    }
+
+    void detachCamera(Group camera) {
+        headPitchPivot.removeChild(camera);
+    }
+
     void update(float x, float y, float z, float yaw, float moveX, float moveZ,
-            float pitch, boolean moving, boolean airborne) {
+            float pitch, float turnSpeed, boolean moving, boolean airborne) {
         root.setTranslation(x, y, z);
         if (!bodyYawInitialized) {
             bodyYaw = yaw;
@@ -90,9 +101,20 @@ final class PlayerModel {
             bodyYaw = yaw + 90.0f;
             headYaw = -90.0f;
         }
+        if (!headRotationInitialized) {
+            headYawCurrent = headYaw;
+            headPitchCurrent = pitch;
+            headRotationInitialized = true;
+        }
+        // Camera sensitivity also controls how quickly the avatar's head catches
+        // up with the requested look direction. Higher sensitivity turns faster.
+        float follow = 0.16f * turnSpeed;
+        if (follow > 0.45f) follow = 0.45f;
+        headYawCurrent += wrapAngle(headYaw - headYawCurrent) * follow;
+        headPitchCurrent += (pitch - headPitchCurrent) * follow;
         root.setOrientation(bodyYaw, 0.0f, 1.0f, 0.0f);
-        headYawPivot.setOrientation(headYaw, 0.0f, 1.0f, 0.0f);
-        headPitchPivot.setOrientation(-pitch, 1.0f, 0.0f, 0.0f);
+        headYawPivot.setOrientation(headYawCurrent, 0.0f, 1.0f, 0.0f);
+        headPitchPivot.setOrientation(headPitchCurrent, 1.0f, 0.0f, 0.0f);
         if (moving) walkPhase += 0.42f;
         float swing = moving ? (float)Math.sin(walkPhase) * 38.0f : 0.0f;
         if (airborne) swing = -28.0f;
