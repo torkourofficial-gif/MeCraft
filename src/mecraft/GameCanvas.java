@@ -2491,8 +2491,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     protected synchronized void paint(Graphics g) {
         if (state == TOUCH_SETUP) {
             drawTouchSetup(g);
+        } else if (state == CHEST_INVENTORY) {
+            // A chest is a 2D menu, not a 3D world overlay. Avoid binding
+            // Graphics3D here: some M3G implementations leave the previous
+            // Canvas frame (often the title screen) visible after releaseTarget.
+            // Paint an opaque frame first so no stale pixels can leak through.
+            g.setColor(0, 0, 0);
+            g.fillRect(0, 0, getWidth(), getHeight());
+            drawChest(g);
         } else if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH ||
-            state == CREATIVE_INVENTORY || state == CHEST_INVENTORY || state == GAME_OVER) {
+            state == CREATIVE_INVENTORY || state == GAME_OVER) {
             String stage = "actualizando mallas M3G";
             try {
                 renderer.sync(world);
@@ -2523,7 +2531,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                     drawGameOver(g);
                 }
                 if (state == INVENTORY || state == WORKBENCH) drawCrafting(g, state == WORKBENCH);
-                if (state == CHEST_INVENTORY) drawChest(g);
                 if (state == CREATIVE_INVENTORY) drawCreativeInventory(g);
             } catch (OutOfMemoryError exhausted) {
                 showError("M3G agotó el heap. El diseño apunta a móviles con heap total de 4 MiB o más.");
