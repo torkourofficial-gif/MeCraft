@@ -33,6 +33,7 @@ final class VoxelWorld {
     private static final int BLOCK_COUNT = WIDTH * HEIGHT * DEPTH;
     int worldSize = SIZE_INFINITE;
     int worldType = TYPE_STANDARD;
+    int difficulty = DIFFICULTY_NORMAL;
     // Minecraft advances one world-time tick per game tick: 24,000 ticks at
     // 20 ticks/second gives the original 20-minute day/night cycle.
     private static final int DAY_TICKS_PER_UPDATE = 1;
@@ -45,10 +46,15 @@ final class VoxelWorld {
     private static final int ALPHA_ITEM_SAVE_MAGIC = 0x4D434645; // MCFE
     private static final int DEEP_WORLD_SAVE_MAGIC = 0x4D434646; // MCFF
     private static final int CONFIG_WORLD_SAVE_MAGIC = 0x4D434647; // MCFG
+    private static final int DIFFICULTY_WORLD_SAVE_MAGIC = 0x4D434648; // MCFH
     static final int SIZE_INFINITE = 0;
     static final int SIZE_OLD = 1;
     static final int TYPE_STANDARD = 0;
     static final int TYPE_FLAT = 1;
+    static final int DIFFICULTY_PEACEFUL = 0;
+    static final int DIFFICULTY_EASY = 1;
+    static final int DIFFICULTY_NORMAL = 2;
+    static final int DIFFICULTY_HARD = 3;
     private static final int INFDEV_EDIT_MAGIC = 0x49464431;
     private static final int INFDEV_EDIT_POINTER_MAGIC = 0x49465031;
     private static final int INFDEV_EDIT_PAGE_MAGIC = 0x49465047;
@@ -935,10 +941,11 @@ final class VoxelWorld {
 
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(blocks.length * 2 + 64);
             DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(CONFIG_WORLD_SAVE_MAGIC);
+            out.writeInt(DIFFICULTY_WORLD_SAVE_MAGIC);
             out.writeByte(HEIGHT);
             out.writeByte(worldSize);
             out.writeByte(worldType);
+            out.writeByte(difficulty);
             out.writeInt(seed);
             out.writeByte(mode);
             out.writeUTF(worldName == null ? "Mundo" : worldName);
@@ -1142,23 +1149,27 @@ final class VoxelWorld {
             byte[] data = store.getRecord(1);
             DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
             int format = in.readInt();
-            boolean configWorldFormat = format == CONFIG_WORLD_SAVE_MAGIC;
+            boolean difficultyWorldFormat = format == DIFFICULTY_WORLD_SAVE_MAGIC;
+            boolean configWorldFormat = format == CONFIG_WORLD_SAVE_MAGIC || difficultyWorldFormat;
             boolean deepWorldFormat = format == DEEP_WORLD_SAVE_MAGIC || configWorldFormat;
             if (format != 0x4D434631 && format != 0x4D434632 && format != 0x4D434633 &&
                 format != 0x4D434634 && format != 0x4D434635 && format != 0x4D434636 &&
                 format != 0x4D434637 && format != 0x4D434638 && format != 0x4D434639 &&
                 format != 0x4D434641 && format != 0x4D434642 && format != 0x4D434643 &&
-                format != 0x4D434644 && format != ALPHA_ITEM_SAVE_MAGIC && !deepWorldFormat) return null;
+                format != 0x4D434644 && format != ALPHA_ITEM_SAVE_MAGIC &&
+                format != DIFFICULTY_WORLD_SAVE_MAGIC && !deepWorldFormat) return null;
             int savedHeight = deepWorldFormat ? in.readUnsignedByte() : 24;
             if (savedHeight < 8 || savedHeight > HEIGHT) return null;
             int savedWorldSize = configWorldFormat ? in.readUnsignedByte() : SIZE_INFINITE;
             int savedWorldType = configWorldFormat ? in.readUnsignedByte() : TYPE_STANDARD;
+            int savedDifficulty = difficultyWorldFormat ? in.readUnsignedByte() : DIFFICULTY_NORMAL;
             int seed = in.readInt();
             int mode = in.readByte();
             boolean namedFormat = format == 0x4D434642 || format == 0x4D434643 ||
                                   format == 0x4D434644 || format == ALPHA_ITEM_SAVE_MAGIC || deepWorldFormat;
             VoxelWorld world = new VoxelWorld(seed, mode, savedWorldSize, savedWorldType);
             world.worldName = namedFormat ? in.readUTF() : "Mundo guardado";
+            world.difficulty = savedDifficulty < DIFFICULTY_PEACEFUL || savedDifficulty > DIFFICULTY_HARD ? DIFFICULTY_NORMAL : savedDifficulty;
             boolean alphaItemFormat = format == ALPHA_ITEM_SAVE_MAGIC || deepWorldFormat;
             boolean explicitDimensionFormat = format == 0x4D434644 || alphaItemFormat;
             boolean savedNether = explicitDimensionFormat ? in.readBoolean() :
