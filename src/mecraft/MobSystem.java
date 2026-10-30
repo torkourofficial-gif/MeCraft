@@ -451,6 +451,7 @@ final class MobSystem {
         mob.health = 10;
         mob.deathTicks = mob.fireTicks = mob.burnDamageTicks = 0;
         mob.attackDelay = mob.fuseTicks = mob.fleeTicks = mob.hurtTicks = 0;
+        mob.doorBreakTicks = 0; mob.doorBreakY = -1;
         mob.verticalVelocity = mob.motionX = mob.motionZ = 0.0f;
         mob.walkPhase = mob.walkAmount = 0.0f;
         mob.walkTicks = 0;
@@ -480,7 +481,7 @@ final class MobSystem {
             for (int i = 0; i < mobs.length; i++) {
                 Mob mob = mobs[i];
                 if (!isHostile(mobTypeForSlot(i))) continue;
-                if (!hostileAllowed(mobTypeForSlot(i), world)) {
+                if (!hostileAllowed(mobTypeForSlot(i), world) || !hostileSlotAllowed(i, world)) {
                     if (mob != null) releaseMob(i);
                     continue;
                 }
@@ -499,7 +500,7 @@ final class MobSystem {
             if (tick % HOSTILE_RESPAWN_INTERVAL == 0) {
                 for (int i = 0; i < mobs.length; i++) {
                     Mob mob = mobs[i];
-                    if (isHostile(mobTypeForSlot(i)) && hostileAllowed(mobTypeForSlot(i), world) &&
+                    if (isHostile(mobTypeForSlot(i)) && hostileAllowed(mobTypeForSlot(i), world) && hostileSlotAllowed(i, world) &&
                         (mob == null || (!mob.alive && !mob.dying))) {
                         spawnZombie(world, createMob(i));
                         break;
@@ -511,7 +512,7 @@ final class MobSystem {
         zombiesNightActive = true;
         for (int i = 0; i < mobs.length; i++) {
             Mob mob = mobs[i];
-            if (!isHostile(mobTypeForSlot(i)) || !hostileAllowed(mobTypeForSlot(i), world)) continue;
+            if (!isHostile(mobTypeForSlot(i)) || !hostileAllowed(mobTypeForSlot(i), world) || !hostileSlotAllowed(i, world)) continue;
             if (mob == null) mob = createMob(i);
             if (mob.dying) continue;
             if (mob.alive) {
@@ -613,6 +614,7 @@ final class MobSystem {
         boolean airborne = mob.verticalVelocity != 0.0f ||
                 !Block.solid(world.get(floor(mob.x), floor(mob.y) - 1, floor(mob.z)));
         float speed = isHostile(mob.type) ? (mob.type == CREEPER ? 0.018f : 0.026f) : 0.014f;
+        if (world.difficulty == VoxelWorld.DIFFICULTY_HARD && isHostile(mob.type)) speed *= 1.15f;
         if (!isHostile(mob.type) && mob.fleeTicks > 0) speed *= 1.6f;
         if (!walking) speed = 0.0f;
         float oldX = mob.x;
@@ -620,11 +622,13 @@ final class MobSystem {
         float radians = mob.yaw * (float)Math.PI / 180.0f;
         float nx = mob.x + (float)Math.sin(radians) * speed + mob.motionX;
         float nz = mob.z + (float)Math.cos(radians) * speed + mob.motionZ;
+        if (!canMove(world, mob, nx, mob.z)) breakDoorAhead(mob, world, nx, mob.z);
         if (canMove(world, mob, nx, mob.z)) mob.x = nx;
         else {
             if (!airborne) mob.targetYaw += 75.0f;
             mob.motionX = 0.0f;
         }
+        if (!canMove(world, mob, mob.x, nz)) breakDoorAhead(mob, world, mob.x, nz);
         if (canMove(world, mob, mob.x, nz)) mob.z = nz;
         else {
             if (!airborne) mob.targetYaw -= 140.0f;
@@ -656,6 +660,31 @@ final class MobSystem {
             }
         } else {
             mob.y = ground;
+        }
+    }
+
+    /** Hard-mode zombies batter a wooden door until it gives way. */
+    private void breakDoorAhead(Mob mob, VoxelWorld world, float x, float z) {
+        if (world.difficulty != VoxelWorld.DIFFICULTY_HARD || mob.type != ZOMBIE) {
+            mob.doorBreakTicks = 0;
+            return;
+        }
+        int bx = floor(x), bz = floor(z), by = floor(mob.y);
+        int doorY = world.get(bx, by, bz) == Block.DOOR ? by :
+                (world.get(bx, by + 1, bz) == Block.DOOR ? by + 1 : -1);
+        if (doorY < 0) {
+            mob.doorBreakTicks = 0;
+            return;
+        }
+        if (mob.doorBreakX != bx || mob.doorBreakY != doorY || mob.doorBreakZ != bz) {
+            mob.doorBreakX = bx; mob.doorBreakY = doorY; mob.doorBreakZ = bz;
+            mob.doorBreakTicks = 0;
+        }
+        mob.doorBreakTicks++;
+        if (mob.doorBreakTicks >= 60) {
+            world.removeDoor(bx, doorY, bz);
+            mob.doorBreakTicks = 0;
+            mob.doorBreakY = -1;
         }
     }
 
