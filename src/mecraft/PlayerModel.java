@@ -36,6 +36,8 @@ final class PlayerModel {
         // Head and torso use the same coordinates and UV rectangles as SkinGallery.
         addBox(root, appearance, -4, 24, -4, 8, 8, 8, 0, 0, false,
                 textureWidth, textureHeight);
+        addBox(root, appearance, -4, 12, -2, 8, 12, 4, 16, 16, false,
+                textureWidth, textureHeight);
 
         // Pivot the limbs at their shoulders/hips; box geometry is local to each pivot.
         addLimb(leftArm, -6, 24, -2, -2, -12, -2, 4, 12, 4,
