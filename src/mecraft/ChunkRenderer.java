@@ -259,6 +259,7 @@ final class ChunkRenderer {
         mobs = new MobSystem(scene, droppedItems, particles);
 
         camera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
+        cameraPivot.setTranslation(0.0f, -0.13f, 0.0f);
         cameraPivot.addChild(cameraEffectPivot);
         cameraEffectPivot.addChild(cameraYawPivot);
         cameraYawPivot.addChild(camera);
@@ -270,7 +271,6 @@ final class ChunkRenderer {
         scene.addChild(droppedItems.mesh);
         scene.addChild(droppedItems.spriteMesh);
         scene.addChild(droppedItems.tntFlashMesh);
-        scene.addChild(cameraPivot);
         scene.setActiveCamera(camera);
         sky.setDepthClearEnable(true);
         scene.setBackground(sky);
@@ -372,9 +372,8 @@ final class ChunkRenderer {
 
     void updateCamera(VoxelWorld world, float pitch) {
         cameraPitch = pitch;
-        cameraPivot.setTranslation(world.playerX, world.playerY + 1.62f, world.playerZ);
-        // M3G cameras look down local -Z; 180 degrees makes yaw zero face +Z.
-        cameraPivot.setOrientation(world.yaw + 180.0f, 0.0f, 1.0f, 0.0f);
+        // cameraPivot is parented to the player's head, so its position and
+        // orientation follow the animated head rather than driving the head.
         skyObjects.update(world, world.yaw + 180.0f,
                 ((float)world.dayTime / (float)VoxelWorld.DAY_LENGTH - 0.15f) * 6.2831855f,
                 currentDaylight, currentSkyColor);
@@ -393,7 +392,7 @@ final class ChunkRenderer {
         if (playerModel != null) {
             playerModel.root.setRenderingEnable(cameraMode != 0);
             playerModel.update(world.playerX, world.playerY, world.playerZ,
-                    world.yaw, moveX, moveZ, cameraPitch, moving, false);
+                    world.yaw, moveX, moveZ, cameraPitch, 0.5f + 0.5f * cameraSensitivityScale(), moving, false);
         }
 
         float cameraOffset = 0.0f;
@@ -418,7 +417,7 @@ final class ChunkRenderer {
         camera.setTranslation(0.0f, 0.0f, cameraOffset);
         // In front-facing mode the camera is in front of the avatar and looks back.
         cameraYawPivot.setOrientation(cameraMode == 2 ? 180.0f : 0.0f, 0.0f, 1.0f, 0.0f);
-        camera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
+        camera.setOrientation(0.0f, 1.0f, 0.0f, 0.0f);
         handPivot.setRenderingEnable(cameraMode == 0);
         handPivot.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
     }
@@ -867,9 +866,13 @@ final class ChunkRenderer {
         texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         handAppearance.setTexture(0, texture);
-        if (playerModel != null) scene.removeChild(playerModel.root);
+        if (playerModel != null) {
+            playerModel.detachCamera(cameraPivot);
+            scene.removeChild(playerModel.root);
+        }
         playerModel = new PlayerModel(image);
         scene.addChild(playerModel.root);
+        playerModel.attachCamera(cameraPivot);
         playerModel.root.setRenderingEnable(cameraMode != 0);
         hasPreviousPlayerPosition = false;
         if (handTexCoords != null) {
