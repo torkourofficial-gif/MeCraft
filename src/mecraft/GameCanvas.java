@@ -1614,9 +1614,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                             Graphics.RIGHT | Graphics.BOTTOM);
             }
         }
-        g.setColor(35, 35, 35);
-        g.drawString(Language.text("2/8 fila  4/6 mover  5 transferir  # cerrar"), w / 2, top + ph + 1,
-                Graphics.TOP | Graphics.HCENTER);
     }
 
     private void openCrafting(boolean workbench) {
@@ -2675,8 +2672,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         drawTouchButton(g, "SI - controles tactiles",  h / 2 - 4, touchSetupSelection == 0);
         drawTouchButton(g, "NO - teclado/botones", h / 2 + 34, touchSetupSelection == 1);
         g.setColor(230, 220, 200);
-        g.drawString("2/8 elegir  5 aceptar  0 = no", w / 2, h / 2 + 65,
-                Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawTouchButton(Graphics g, String label, int y, boolean selected) {
@@ -2993,9 +2988,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 menuSelection == MENU_SETTINGS);
         drawIndevMenuButton(g, "Salir", firstY + buttonStep * 3, buttonHeight,
                 menuSelection == MENU_EXIT);
-        g.setColor(235, 222, 196);
-        g.drawString(Language.text("2/8 elegir   5 aceptar"), w / 2, h - 27,
-                Graphics.TOP | Graphics.HCENTER);
     }
 
     /** Classic Indev gray button with a raised pixel border and gold focus. */
@@ -3046,10 +3038,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         drawMenuItem(g, "Controles", firstRowY + rowStep * 5, settingsSelection == 5);
         drawMenuItem(g, "Controles tactiles: " + (touchEnabled ? "Si" : "No"),
                 firstRowY + rowStep * 6, settingsSelection == 6);
-        g.setColor(240, 224, 190);
-        g.drawString(Language.text("2/8 elegir   4/6 cambiar   5 abrir"), w / 2, panelY + panelHeight - 32,
-                Graphics.TOP | Graphics.HCENTER);
-        g.drawString(Language.text("0 volver"), w / 2, panelY + panelHeight - 16, Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawControls(Graphics g) {
@@ -3086,10 +3074,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (controlsMessage != null)
             g.drawString(Language.text(controlsMessage), w / 2, panelY + panelHeight - 42,
                     Graphics.TOP | Graphics.HCENTER);
-        g.drawString(Language.text("5: reasignar   7: restaurar fila"), w / 2, panelY + panelHeight - 26,
-                Graphics.TOP | Graphics.HCENTER);
-        g.drawString(Language.text("2/8 mover   0 volver"), w / 2, panelY + panelHeight - 12,
-                Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawSkinSelect(Graphics g) {
@@ -3134,8 +3118,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             g.drawString(Language.text("Falta skin") + (skinSelection + 1) + ".png", w / 2, h - 46,
                     Graphics.TOP | Graphics.HCENTER);
         }
-        g.drawString(Language.text("4/6 elegir   5 usar   0 volver"), w / 2, h - 23,
-                Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawMenuItem(Graphics g, String label, int y, boolean selected) {
@@ -3358,9 +3340,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                         Graphics.TOP | Graphics.HCENTER);
             }
         }
-        g.setColor(255, 240, 205);
-        g.drawString(Language.text("2/8 elegir  5 abrir  1 borrar"), w / 2, h - 27,
-                Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawWorldDelete(Graphics g) {
@@ -3378,9 +3357,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         g.setColor(255, 110, 90);
         g.drawString(Language.text(worldDeleteFailed ? "No se pudo borrar" : "Se eliminara para siempre"),
                 w / 2, h / 2 + 3, Graphics.TOP | Graphics.HCENTER);
-        g.setColor(255, 240, 205);
-        g.drawString(Language.text("5 confirmar  0 cancelar"), w / 2, h / 2 + 36,
-                Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawWorldCreate(Graphics g) {
@@ -3395,8 +3371,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         drawMenuItem(g, "Tipo: " + (newWorldType == VoxelWorld.TYPE_FLAT ? "Plano" : "Standard"), 172, createSelection == 3);
         drawMenuItem(g, "Crear mundo", 206, createSelection == 4);
         drawMenuItem(g, "Volver", 240, createSelection == 5);
-        g.setColor(255, 240, 205);
-        g.drawString(Language.text("2/8 mover  4/6 cambiar  5 elegir"), w / 2, 276, Graphics.TOP | Graphics.HCENTER);
     }
 
     private String trimText(String text, int maxChars) {
@@ -3436,9 +3410,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
         g.drawString(Language.text(world.mode == 0 ? "Supervivencia" : "Creativo"), 3, 2, Graphics.TOP | Graphics.LEFT);
         g.drawString(Language.text(world.isNight() ? "Noche" : "Día"), w - 3, 2, Graphics.TOP | Graphics.RIGHT);
-        if (world.mode == 1)
-            g.drawString(Language.text(flying ? "Volando  5 subir  0 bajar" : "5 dos veces: volar"),
-                    centerX, 13, Graphics.TOP | Graphics.HCENTER);
         if (portalChargeTicks > 0) {
             int seconds = (PORTAL_CHARGE_TICKS - portalChargeTicks + 19) / 20;
             g.drawString(Language.text("Portal: sal para cancelar") + " " + seconds + "s",
@@ -3580,11 +3551,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             }
         }
 
-        g.setColor(35, 35, 35);
-        g.drawString(Language.text(available ? "5 crear" : "No disponible"),
-                w / 2, top + panelH + 2, Graphics.TOP | Graphics.HCENTER);
-        g.drawString(Language.text("# cerrar  |  2/8 recetas  4/6 objetos"), w / 2, top + panelH + 15,
-                Graphics.TOP | Graphics.HCENTER);
+        if (!available) {
+            g.setColor(90, 90, 90);
+            g.drawString(Language.text("No disponible"),
+                    w / 2, top + panelH + 2, Graphics.TOP | Graphics.HCENTER);
+        }
     }
 
     private boolean recipeAvailable(int recipe, boolean workbench) {
@@ -3646,8 +3617,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (name.length() > 16) name = name.substring(0, 16);
         g.drawString(name + "  " + (creativeSelection / pageSize + 1) + "/" + pageCount,
                 w / 2, top + 137, Graphics.TOP | Graphics.HCENTER);
-        g.drawString(Language.text("4/6 mover  2/8 fila  5 tomar  # cerrar"),
-                w / 2, top + panelH + 2, Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawInventoryCell(Graphics g, int id, int x, int y) {
@@ -3723,9 +3692,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         g.drawLine(panelX + 9, panelY + 35, panelX + panelWidth - 10, panelY + 35);
         for (int i = 0; i < PAUSE_ROWS.length; i++)
             drawMenuItem(g, PAUSE_ROWS[i], panelY + 40 + i * 27, i == pauseSelection);
-        g.setColor(237, 220, 187);
-        g.drawString(Language.text("2/8 elegir   5 aceptar   0 menú"), w / 2, panelY + 126,
-                Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawGameOver(Graphics g) {
@@ -3813,8 +3779,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
         if (line >= diagnosticScroll && y < bottom)
             g.drawString(text, getWidth() / 2, y, Graphics.HCENTER | Graphics.TOP);
-        g.drawString(diagnosticError ? "2/8 ver detalles  5 volver" : "Pulsa 5 para volver",
-                     getWidth() / 2, getHeight() - 10, Graphics.HCENTER | Graphics.BOTTOM);
     }
 
     private int wrappedLineCount(String value, int max) {
