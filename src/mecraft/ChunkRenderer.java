@@ -153,6 +153,10 @@ final class ChunkRenderer {
     private int builtHeight;
     private float tanHorizontalFov;
     private float cameraPitch;
+    private int cameraMode; // 0 first-person, 1 rear third-person, 2 front-facing second-person
+    private PlayerModel playerModel;
+    private float previousPlayerX, previousPlayerZ;
+    private boolean hasPreviousPlayerPosition;
     private float currentDaylight = 1.0f;
     private int currentSkyColor = 0xFF82B8E8;
 
@@ -372,9 +376,61 @@ final class ChunkRenderer {
         skyObjects.update(world, world.yaw + 180.0f,
                 ((float)world.dayTime / (float)VoxelWorld.DAY_LENGTH - 0.15f) * 6.2831855f,
                 currentDaylight, currentSkyColor);
-        camera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
+
+        boolean moving = false;
+        if (hasPreviousPlayerPosition) {
+            float dx = world.playerX - previousPlayerX;
+            float dz = world.playerZ - previousPlayerZ;
+            moving = dx * dx + dz * dz > 0.0004f;
+        }
+        previousPlayerX = world.playerX;
+        previousPlayerZ = world.playerZ;
+        hasPreviousPlayerPosition = true;
+        if (playerModel != null) {
+            playerModel.root.setRenderingEnable(cameraMode != 0);
+            playerModel.update(world.playerX, world.playerY, world.playerZ,
+                    world.yaw, moving, false);
+        }
+
+        float cameraOffset = 0.0f;
+        if (cameraMode != 0) {
+            float wanted = 3.8f;
+            float yawRadians = world.yaw * 0.0174532925f;
+            float side = cameraMode == 1 ? -1.0f : 1.0f;
+            float dx = (float)Math.sin(yawRadians) * side;
+            float dz = (float)Math.cos(yawRadians) * side;
+            cameraOffset = wanted;
+            // Pull the camera toward the player before it can enter a solid block.
+            for (float distance = 0.20f; distance <= wanted; distance += 0.20f) {
+                if (world.isSolidAt(floorCamera(world.playerX + dx * distance),
+                        floorCamera(world.playerY + 1.55f),
+                        floorCamera(world.playerZ + dz * distance))) {
+                    cameraOffset = distance - 0.28f;
+                    if (cameraOffset < 0.0f) cameraOffset = 0.0f;
+                    break;
+                }
+            }
+        }
+        camera.setTranslation(0.0f, 0.0f, cameraOffset);
+        // In front-facing mode the camera is in front of the avatar and looks back.
+        if (cameraMode == 2) camera.setOrientation(180.0f, 0.0f, 1.0f, 0.0f);
+        else camera.setOrientation(0.0f, 0.0f, 1.0f, 0.0f);
+        cameraEffectPivot.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
+        handPivot.setRenderingEnable(cameraMode == 0);
         handPivot.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
     }
+
+    private int floorCamera(float value) {
+        int result = (int)value;
+        return value < result ? result - 1 : result;
+    }
+
+    void cycleCameraMode() {
+        cameraMode = (cameraMode + 1) % 3;
+        hasPreviousPlayerPosition = false;
+    }
+
+    int getCameraMode() { return cameraMode; }
 
     /** Rotate the full first-person view during the Indev hurt-camera pulse. */
     void setHurtCameraRoll(float degrees) {
@@ -383,16 +439,19 @@ final class ChunkRenderer {
 
     /** Render the first-person hand and held block in a final overlay pass. */
     void render(Graphics3D graphics) {
-        handPivot.setRenderingEnable(false);
+        boolean showHand = cameraMode == 0;
+        if (showHand) handPivot.setRenderingEnable(false);
         try {
             graphics.render(scene);
         } finally {
-            handPivot.setRenderingEnable(true);
+            handPivot.setRenderingEnable(showHand);
         }
-        camera.getTransformTo(scene, cameraTransform);
-        handPivot.getTransformTo(scene, handTransform);
-        graphics.setCamera(camera, cameraTransform);
-        graphics.render(handPivot, handTransform);
+        if (showHand) {
+            camera.getTransformTo(scene, cameraTransform);
+            handPivot.getTransformTo(scene, handTransform);
+            graphics.setCamera(camera, cameraTransform);
+            graphics.render(handPivot, handTransform);
+        }
     }
 
     void updateHeldItem(int itemId, boolean visible) {
@@ -802,6 +861,11 @@ final class ChunkRenderer {
         texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         handAppearance.setTexture(0, texture);
+        if (playerModel != null) scene.removeChild(playerModel.root);
+        playerModel = new PlayerModel(image);
+        scene.addChild(playerModel.root);
+        playerModel.root.setRenderingEnable(cameraMode != 0);
+        hasPreviousPlayerPosition = false;
         if (handTexCoords != null) {
             int vScale = image.getWidth() / image.getHeight();
             if (vScale < 1) vScale = 1;
