@@ -534,6 +534,7 @@ final class ChunkRenderer {
     void swingHand() {
         handSwingTicks = 0;
         handSwinging = true;
+        if (playerModel != null) playerModel.swingAction();
     }
 
     void setHandLooping(boolean looping) {
@@ -543,6 +544,7 @@ final class ChunkRenderer {
 
     /** Indev first-person swing curve, sampled once per 50 ms game tick. */
     void updateHandAnimation() {
+        if (playerModel != null) playerModel.tickActionAnimation();
         if (++portalAnimationTick >= 2) {
             portalAnimationTick = 0;
             portalAnimationFrame = (portalAnimationFrame + 1) & 7;
