@@ -53,6 +53,7 @@ final class ChunkRenderer {
     private final Transform handTransform = new Transform();
     final Group cameraPivot = new Group();
     private final Group cameraEffectPivot = new Group();
+    private final Group cameraYawPivot = new Group();
     private final Group handPivot = new Group();
     private final Group heldItemOffset = new Group();
     private final Group heldItemYaw = new Group();
@@ -259,7 +260,8 @@ final class ChunkRenderer {
 
         camera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
         cameraPivot.addChild(cameraEffectPivot);
-        cameraEffectPivot.addChild(camera);
+        cameraEffectPivot.addChild(cameraYawPivot);
+        cameraYawPivot.addChild(camera);
         cameraEffectPivot.addChild(handPivot);
         skyObjects = new SkySystem(cameraPivot, sky, width, height);
         scene.addChild(terrain);
@@ -413,9 +415,8 @@ final class ChunkRenderer {
         }
         camera.setTranslation(0.0f, 0.0f, cameraMode == 2 ? -cameraOffset : cameraOffset);
         // In front-facing mode the camera is in front of the avatar and looks back.
-        if (cameraMode == 2) camera.setOrientation(180.0f, 0.0f, 1.0f, 0.0f);
-        else camera.setOrientation(0.0f, 0.0f, 1.0f, 0.0f);
-        cameraEffectPivot.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
+        cameraYawPivot.setOrientation(cameraMode == 2 ? 180.0f : 0.0f, 0.0f, 1.0f, 0.0f);
+        camera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
         handPivot.setRenderingEnable(cameraMode == 0);
         handPivot.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
     }
