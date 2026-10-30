@@ -272,6 +272,7 @@ final class ChunkRenderer {
         cameraYawPivot.addChild(camera);
         cameraEffectPivot.addChild(handPivot);
         skyObjects = new SkySystem(cameraPivot, sky, width, height);
+        scene.addChild(cameraPivot);
         scene.addChild(terrain);
         scene.addChild(railSystem.group);
         scene.addChild(particles.mesh);
