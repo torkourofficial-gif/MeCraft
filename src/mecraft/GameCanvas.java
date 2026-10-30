@@ -160,6 +160,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private int touchKey;
     private boolean touchLooking;
     private int touchLastX, touchLastY;
+    private Image dpadTexture;
+    private boolean touchMoveUp, touchMoveDown, touchMoveLeft, touchMoveRight;
+    private boolean touchActionPending, touchMiningStarted;
+    private long touchActionStart;
+    private static final long TOUCH_MINE_DELAY = 260L;
     private int recipeSelection;
     private int recipeScroll;
     private int inventoryPage;
@@ -388,6 +393,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
         if (state != PLAYING) return;
         if (pickedItem > Block.AIR) ensureHotbarItem(pickedItem);
+        if (touchActionPending && !touchMiningStarted &&
+                System.currentTimeMillis() - touchActionStart >= TOUCH_MINE_DELAY) {
+            touchMiningStarted = true;
+            touchLooking = false;
+            keys[1] = true;
+            if (renderer != null) renderer.swingHand();
+        }
         if (keys[1]) updateMining();
         renderer.updateFieldOfView(sprinting);
         renderer.updateCamera(world, cameraPitch);
@@ -2354,6 +2366,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         try { guiTexture = GameAssets.image("gui.png"); } catch (IOException ignored) { guiTexture = null; }
         try { iconsTexture = GameAssets.image("icons.png"); } catch (IOException ignored) { iconsTexture = null; }
         try { containerTexture = GameAssets.image("container.png"); } catch (IOException ignored) { containerTexture = null; }
+        try { dpadTexture = GameAssets.image("dpad.png"); } catch (IOException ignored) { dpadTexture = null; }
         int[] blueTintPixels = new int[16 * 16];
         int[] hurtTintPixels = new int[16 * 16];
         int[] pauseTintPixels = new int[16 * 16];
@@ -2584,17 +2597,34 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void drawTouchControls(Graphics g) {
         int w = getWidth(), h = getHeight();
-        int left = 12, base = h - 116, size = 29, gap = 3;
-        drawTouchButtonAt(g, "^", left + size + gap, base, size);
-        drawTouchButtonAt(g, "<", left, base + size + gap, size);
-        drawTouchButtonAt(g, "v", left + size + gap, base + size + gap, size);
-        drawTouchButtonAt(g, ">", left + (size + gap) * 2, base + size + gap, size);
-        int bx = w - 62;
-        drawTouchButtonAt(g, "PAUSA", bx, 8, 54);
-        drawTouchButtonAt(g, "SALTO", bx, 45, 54);
-        drawTouchButtonAt(g, "ROMPER", bx, 82, 54);
-        drawTouchButtonAt(g, "USAR", bx, 119, 54);
-        drawTouchButtonAt(g, "INV", bx, 156, 54);
+        int dpadW = dpadTexture == null ? 88 : dpadTexture.getWidth();
+        int dpadH = dpadTexture == null ? 88 : dpadTexture.getHeight();
+        int left = 10, top = h - dpadH - 10;
+        if (dpadTexture != null) {
+            g.drawImage(dpadTexture, left, top, Graphics.TOP | Graphics.LEFT);
+        } else {
+            int cell = dpadW / 3;
+            drawTouchButtonAt(g, "^", left + cell, top, cell);
+            drawTouchButtonAt(g, "<", left, top + cell, cell);
+            drawTouchButtonAt(g, "v", left + cell, top + cell * 2, cell);
+            drawTouchButtonAt(g, ">", left + cell * 2, top + cell, cell);
+        }
+        int jumpSize = Math.max(58, Math.min(72, dpadH - 12));
+        int jumpX = left + dpadW + 10;
+        int jumpY = top + dpadH - jumpSize;
+        g.setColor(28, 28, 28);
+        g.fillRect(jumpX + 2, jumpY + 2, jumpSize, jumpSize);
+        g.setColor(85, 85, 85);
+        g.fillRect(jumpX, jumpY, jumpSize, jumpSize);
+        g.setColor(205, 190, 160);
+        g.drawRect(jumpX, jumpY, jumpSize - 1, jumpSize - 1);
+        g.setColor(255, 255, 255);
+        g.drawString("^", jumpX + jumpSize / 2, jumpY + jumpSize / 2 -
+                Font.getDefaultFont().getHeight() / 2, Graphics.TOP | Graphics.HCENTER);
+
+        int pauseW = 54, pauseH = 25;
+        drawTouchButtonAt(g, "II", (w - pauseW) / 2, 7, pauseW);
+        drawTouchButtonAt(g, "INV", w - 62, h - 43, 52);
     }
 
     private void drawTouchButtonAt(Graphics g, String label, int x, int y, int width) {
@@ -2626,31 +2656,75 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 repaint();
                 return;
             }
-            if (x >= w - 66 && y < 38) { touchKey = KEY_STAR; keyPressed(touchKey); return; }
-            if (x >= w - 66 && y >= 42 && y < 78) { touchKey = KEY_NUM5; keyPressed(touchKey); return; }
-            if (x >= w - 66 && y >= 79 && y < 115) { touchKey = KEY_NUM1; keyPressed(touchKey); return; }
-            if (x >= w - 66 && y >= 116 && y < 152) { touchKey = KEY_NUM3; keyPressed(touchKey); return; }
-            if (x >= w - 66 && y >= 153 && y < 190) { touchKey = KEY_POUND; keyPressed(touchKey); return; }
-            int left = 12, base = h - 116, size = 29, gap = 3;
-            if (x >= left && x < left + (size + gap) * 3 - gap &&
-                    y >= base && y < base + (size + gap) * 2 - gap) {
-                if (y < base + size) touchKey = KEY_NUM2;
-                else if (x < left + size) touchKey = KEY_NUM4;
-                else if (x >= left + (size + gap) * 2) touchKey = KEY_NUM6;
-                else touchKey = KEY_NUM8;
-                keyPressed(touchKey);
+            if (x >= w / 2 - 29 && x <= w / 2 + 29 && y <= 39) {
+                openPause();
+                repaint();
                 return;
             }
+            if (x >= w - 66 && y >= h - 52) {
+                if (world.mode == 1) openCreativeInventory(); else openCrafting(false);
+                repaint();
+                return;
+            }
+            int dpadW = dpadTexture == null ? 88 : dpadTexture.getWidth();
+            int dpadH = dpadTexture == null ? 88 : dpadTexture.getHeight();
+            int left = 10, top = h - dpadH - 10;
+            if (x >= left && x < left + dpadW && y >= top && y < top + dpadH) {
+                int col = (x - left) * 3 / dpadW;
+                int row = (y - top) * 3 / dpadH;
+                if (row == 0 && col == 1) touchMoveUp = true;
+                else if (row == 2 && col == 1) touchMoveDown = true;
+                else if (row == 1 && col == 0) touchMoveLeft = true;
+                else if (row == 1 && col == 2) touchMoveRight = true;
+                applyTouchMovement();
+                return;
+            }
+            int jumpSize = Math.max(58, Math.min(72, dpadH - 12));
+            int jumpX = left + dpadW + 10, jumpY = top + dpadH - jumpSize;
+            if (x >= jumpX && x < jumpX + jumpSize && y >= jumpY && y < jumpY + jumpSize) {
+                touchJumpPressed();
+                return;
+            }
+            touchActionPending = true;
+            touchMiningStarted = false;
+            touchActionStart = System.currentTimeMillis();
             touchLooking = true;
-            touchLastX = x; touchLastY = y;
+            touchLastX = x;
+            touchLastY = y;
             return;
         }
         handleTouchMenu(x, y);
     }
 
+    private void applyTouchMovement() {
+        keys[2] = touchMoveUp;
+        keys[8] = touchMoveDown;
+        keys[4] = touchMoveLeft;
+        keys[6] = touchMoveRight;
+        if (!touchMoveUp) sprinting = false;
+    }
+
+    private void touchJumpPressed() {
+        if (!jumpHeld && world.mode == 1) {
+            long now = System.currentTimeMillis();
+            if (hasJumpTap && now - lastJumpTap <= 350L) {
+                flying = !flying;
+                hasJumpTap = false;
+                playerPhysics.clearVerticalMotion();
+            } else {
+                hasJumpTap = true;
+                lastJumpTap = now;
+            }
+        }
+        jumpHeld = true;
+    }
+
     protected synchronized void pointerDragged(int x, int y) {
         if (!touchEnabled || !touchLooking || state != PLAYING || world == null) return;
         int dx = x - touchLastX, dy = y - touchLastY;
+        if (touchActionPending && (dx > 4 || dx < -4 || dy > 4 || dy < -4)) {
+            touchActionPending = false;
+        }
         float sensitivity = cameraSensitivityScale();
         world.yaw -= dx * 0.55f * sensitivity;
         while (world.yaw < 0.0f) world.yaw += 360.0f;
@@ -2663,10 +2737,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     protected synchronized void pointerReleased(int x, int y) {
-        if (touchKey != 0) {
-            keyReleased(touchKey);
-            touchKey = 0;
+        if (touchMoveUp || touchMoveDown || touchMoveLeft || touchMoveRight) {
+            touchMoveUp = touchMoveDown = touchMoveLeft = touchMoveRight = false;
+            applyTouchMovement();
         }
+        if (jumpHeld && touchEnabled) jumpHeld = false;
+        if (touchActionPending && !touchMiningStarted && state == PLAYING && world != null) {
+            useSelectedItem();
+            repaint();
+        }
+        if (touchMiningStarted) {
+            keys[1] = false;
+            cancelMining();
+        }
+        touchActionPending = false;
+        touchMiningStarted = false;
         touchLooking = false;
     }
 
