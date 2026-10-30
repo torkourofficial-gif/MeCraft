@@ -802,6 +802,11 @@ final class MobSystem {
         return 0.6f;
     }
 
+    /** Easy mode limits the active hostile pool to three entities. */
+    private boolean hostileSlotAllowed(int slot, VoxelWorld world) {
+        return world.difficulty != VoxelWorld.DIFFICULTY_EASY || slot <= 9;
+    }
+
     private boolean hostileAllowed(int type, VoxelWorld world) {
         if (world.difficulty == VoxelWorld.DIFFICULTY_PEACEFUL) return false;
         if (type == GHAST || type == PIG_ZOMBIE) return world.nether;
