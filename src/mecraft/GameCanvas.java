@@ -125,6 +125,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private final PlayerPhysics playerPhysics = new PlayerPhysics();
     private boolean jumpHeld;
     private boolean descendHeld;
+    private boolean perspectiveModifierHeld;
+    private boolean perspectiveUpHeld;
+    private boolean perspectiveChordConsumed;
     private boolean flying;
     private boolean hasJumpTap;
     private long lastJumpTap;
@@ -1987,7 +1990,17 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             }
             keys[1] = true;
         }
-        if (isControlKey(CONTROL_LOOK_UP, keyCode, 0, UP)) lookUp = true;
+        if (isControlKey(CONTROL_LOOK_UP, keyCode, 0, UP)) {
+            perspectiveUpHeld = true;
+            if (perspectiveModifierHeld) {
+                if (!perspectiveChordConsumed) {
+                    togglePerspective();
+                    perspectiveChordConsumed = true;
+                }
+                lookUp = false;
+                descendHeld = false;
+            } else lookUp = true;
+        }
         if (isControlKey(CONTROL_LOOK_DOWN, keyCode, 0, DOWN)) lookDown = true;
         if (isControlKey(CONTROL_LOOK_LEFT, keyCode, 0, LEFT)) lookLeft = true;
         if (isControlKey(CONTROL_LOOK_RIGHT, keyCode, 0, RIGHT)) lookRight = true;
@@ -2007,7 +2020,17 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             }
             jumpHeld = !(toggledFlight && !flying);
         }
-        if (isControlKey(CONTROL_DESCEND, keyCode, KEY_NUM0, 0) && world.mode == 1) descendHeld = true;
+        if (isControlKey(CONTROL_DESCEND, keyCode, KEY_NUM0, 0)) {
+            perspectiveModifierHeld = true;
+            if (perspectiveUpHeld) {
+                if (!perspectiveChordConsumed) {
+                    togglePerspective();
+                    perspectiveChordConsumed = true;
+                }
+                lookUp = false;
+                descendHeld = false;
+            } else if (world.mode == 1) descendHeld = true;
+        }
         if (isControlKey(CONTROL_USE, keyCode, KEY_NUM3, 0)) useSelectedItem();
         if (isControlKey(CONTROL_SLOT_PREVIOUS, keyCode, KEY_NUM7, 0)) cycleSlot(-1);
         if (isControlKey(CONTROL_SLOT_NEXT, keyCode, KEY_NUM9, 0)) cycleSlot(1);
@@ -2016,7 +2039,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     public synchronized void keyReleased(int keyCode) {
         if (isControlKey(CONTROL_JUMP, keyCode, KEY_NUM5, 0)) jumpHeld = false;
-        if (isControlKey(CONTROL_DESCEND, keyCode, KEY_NUM0, 0)) descendHeld = false;
+        if (isControlKey(CONTROL_DESCEND, keyCode, KEY_NUM0, 0)) {
+            descendHeld = false;
+            perspectiveModifierHeld = false;
+            perspectiveChordConsumed = false;
+        }
         if (isControlKey(CONTROL_MINE, keyCode, KEY_NUM1, 0)) cancelMining();
         else if (isControlKey(CONTROL_FORWARD, keyCode, KEY_NUM2, 0)) {
             keys[2] = false;
@@ -2025,7 +2052,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         else if (isControlKey(CONTROL_BACK, keyCode, KEY_NUM8, 0)) keys[8] = false;
         else if (isControlKey(CONTROL_STRAFE_LEFT, keyCode, KEY_NUM4, 0)) keys[4] = false;
         else if (isControlKey(CONTROL_STRAFE_RIGHT, keyCode, KEY_NUM6, 0)) keys[6] = false;
-        if (isControlKey(CONTROL_LOOK_UP, keyCode, 0, UP)) lookUp = false;
+        if (isControlKey(CONTROL_LOOK_UP, keyCode, 0, UP)) {
+            lookUp = false;
+            perspectiveUpHeld = false;
+            perspectiveChordConsumed = false;
+        }
         if (isControlKey(CONTROL_LOOK_DOWN, keyCode, 0, DOWN)) lookDown = false;
         if (isControlKey(CONTROL_LOOK_LEFT, keyCode, 0, LEFT)) lookLeft = false;
         if (isControlKey(CONTROL_LOOK_RIGHT, keyCode, 0, RIGHT)) lookRight = false;
@@ -2549,8 +2580,17 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         jumpHeld = false;
         descendHeld = false;
         lookUp = lookDown = lookLeft = lookRight = false;
+        perspectiveModifierHeld = perspectiveUpHeld = perspectiveChordConsumed = false;
         resetMining();
         miningHitWait = 0;
+    }
+
+    private void togglePerspective() {
+        if (renderer != null && world != null) {
+            renderer.cycleCameraMode();
+            renderer.updateCamera(world, cameraPitch);
+            repaint();
+        }
     }
 
     private void cycleSlot(int delta) {
