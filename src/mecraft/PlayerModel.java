@@ -52,13 +52,13 @@ final class PlayerModel {
                 textureWidth, textureHeight);
 
         // Pivot the limbs at their shoulders/hips; box geometry is local to each pivot.
-        addLimb(leftArm, -6, 24, -2, -2, -12, -2, 4, 12, 4,
+        addLimb(leftArm, -6, 24, 0, -2, -12, -2, 4, 12, 4,
                 40, 16, false, appearance, textureWidth, textureHeight);
-        addLimb(rightArm, 6, 24, -2, -2, -12, -2, 4, 12, 4,
+        addLimb(rightArm, 6, 24, 0, -2, -12, -2, 4, 12, 4,
                 40, 16, true, appearance, textureWidth, textureHeight);
-        addLimb(leftLeg, -2, 12, -2, -2, -12, -2, 4, 12, 4,
+        addLimb(leftLeg, -2, 12, 0, -2, -12, -2, 4, 12, 4,
                 0, 16, false, appearance, textureWidth, textureHeight);
-        addLimb(rightLeg, 2, 12, -2, -2, -12, -2, 4, 12, 4,
+        addLimb(rightLeg, 2, 12, 0, -2, -12, -2, 4, 12, 4,
                 0, 16, true, appearance, textureWidth, textureHeight);
 
         root.addChild(leftArm);
@@ -67,12 +67,18 @@ final class PlayerModel {
         root.addChild(rightLeg);
     }
 
-    void update(float x, float y, float z, float yaw, float pitch,
-            boolean moving, boolean airborne) {
+    void update(float x, float y, float z, float yaw, float moveX, float moveZ,
+            float pitch, boolean moving, boolean airborne) {
         root.setTranslation(x, y, z);
         if (!bodyYawInitialized) {
             bodyYaw = yaw;
             bodyYawInitialized = true;
+        }
+        // While walking, face the actual direction of travel rather than the
+        // camera. When stationary, keep the last body direction and let the
+        // head follow the view within its natural 90-degree limit.
+        if (moving && moveX * moveX + moveZ * moveZ > 0.000001f) {
+            bodyYaw = directionYaw(moveX, moveZ);
         }
         float headYaw = wrapAngle(yaw - bodyYaw);
         // Let the head look freely through a 180-degree arc. Once it reaches
@@ -101,6 +107,23 @@ final class PlayerModel {
                 1.0f, 0.0f, 0.0f);
         rightArm.setOrientation(swing * 0.72f - actionSwing,
                 1.0f, 0.0f, 0.0f);
+    }
+
+    // atan2(dx, dz), expressed without Math.atan/atan2 (not present on all CLDC VMs).
+    private float directionYaw(float dx, float dz) {
+        float ax = dx < 0.0f ? -dx : dx;
+        float az = dz < 0.0f ? -dz : dz;
+        float angle;
+        if (az >= ax) {
+            float r = ax / (az + 0.000001f);
+            angle = r * (45.0f - 15.0f * r);
+        } else {
+            float r = az / (ax + 0.000001f);
+            angle = 90.0f - r * (45.0f - 15.0f * r);
+        }
+        if (dz < 0.0f) angle = 180.0f - angle;
+        if (dx < 0.0f) angle = -angle;
+        return wrapAngle(angle);
     }
 
     private float wrapAngle(float angle) {
