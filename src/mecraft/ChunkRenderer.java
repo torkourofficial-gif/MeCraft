@@ -890,20 +890,19 @@ final class ChunkRenderer {
         texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         handAppearance.setTexture(0, texture);
         if (playerModel != null) {
-            if (cameraAttachedToHead) playerModel.detachCamera(cameraPivot);
+            if (cameraAttachedToHead) {
+                playerModel.detachCamera(cameraPivot);
+                cameraAttachedToHead = false;
+            } else {
+                scene.removeChild(cameraPivot);
+            }
             scene.removeChild(playerModel.root);
         }
         playerModel = new PlayerModel(image);
         scene.addChild(playerModel.root);
         if (cameraMode == 0) {
-            if (cameraAttachedToHead) {
-                playerModel.detachCamera(cameraPivot);
-                cameraAttachedToHead = false;
-            }
             scene.addChild(cameraPivot);
         } else {
-            if (cameraAttachedToHead) playerModel.detachCamera(cameraPivot);
-            else scene.removeChild(cameraPivot);
             playerModel.attachCamera(cameraPivot);
             cameraAttachedToHead = true;
         }
