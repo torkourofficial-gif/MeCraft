@@ -413,7 +413,7 @@ final class ChunkRenderer {
                 }
             }
         }
-        camera.setTranslation(0.0f, 0.0f, cameraMode == 2 ? -cameraOffset : cameraOffset);
+        camera.setTranslation(0.0f, 0.0f, cameraOffset);
         // In front-facing mode the camera is in front of the avatar and looks back.
         cameraYawPivot.setOrientation(cameraMode == 2 ? 180.0f : 0.0f, 0.0f, 1.0f, 0.0f);
         camera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
