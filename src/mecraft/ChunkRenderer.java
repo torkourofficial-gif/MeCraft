@@ -156,6 +156,7 @@ final class ChunkRenderer {
     private float cameraPitch;
     private int cameraMode; // 0 first-person, 1 rear third-person, 2 front-facing second-person
     private PlayerModel playerModel;
+    private boolean cameraAttachedToHead;
     private float previousPlayerX, previousPlayerZ;
     private boolean hasPreviousPlayerPosition;
     private float currentDaylight = 1.0f;
@@ -372,8 +373,20 @@ final class ChunkRenderer {
 
     void updateCamera(VoxelWorld world, float pitch) {
         cameraPitch = pitch;
-        // cameraPivot is parented to the player's head, so its position and
-        // orientation follow the animated head rather than driving the head.
+
+        // First person deliberately restores the original Indev camera rig:
+        // the world yaw/position drive the camera, and pitch is applied to the
+        // camera itself. External views instead parent the rig to the head.
+        if (cameraMode == 0 && cameraAttachedToHead) {
+            playerModel.detachCamera(cameraPivot);
+            scene.addChild(cameraPivot);
+            cameraAttachedToHead = false;
+        } else if (cameraMode != 0 && !cameraAttachedToHead && playerModel != null) {
+            scene.removeChild(cameraPivot);
+            playerModel.attachCamera(cameraPivot);
+            cameraAttachedToHead = true;
+        }
+
         skyObjects.update(world, world.yaw + 180.0f,
                 ((float)world.dayTime / (float)VoxelWorld.DAY_LENGTH - 0.15f) * 6.2831855f,
                 currentDaylight, currentSkyColor);
@@ -414,10 +427,20 @@ final class ChunkRenderer {
                 }
             }
         }
-        camera.setTranslation(0.0f, 0.0f, cameraOffset);
-        // In front-facing mode the camera is in front of the avatar and looks back.
-        cameraYawPivot.setOrientation(cameraMode == 2 ? 180.0f : 0.0f, 0.0f, 1.0f, 0.0f);
-        camera.setOrientation(0.0f, 1.0f, 0.0f, 0.0f);
+        if (cameraMode == 0) {
+            // Exact first-person transform used by the touch branch before
+            // the player-head camera rig was introduced.
+            cameraPivot.setTranslation(world.playerX, world.playerY + 1.62f, world.playerZ);
+            cameraPivot.setOrientation(world.yaw + 180.0f, 0.0f, 1.0f, 0.0f);
+            camera.setTranslation(0.0f, 0.0f, 0.0f);
+            cameraYawPivot.setOrientation(0.0f, 0.0f, 1.0f, 0.0f);
+            camera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
+        } else {
+            camera.setTranslation(0.0f, 0.0f, cameraOffset);
+            // In front-facing mode the camera is in front of the avatar and looks back.
+            cameraYawPivot.setOrientation(cameraMode == 2 ? 180.0f : 0.0f, 0.0f, 1.0f, 0.0f);
+            camera.setOrientation(0.0f, 1.0f, 0.0f, 0.0f);
+        }
         handPivot.setRenderingEnable(cameraMode == 0);
         handPivot.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
     }
@@ -867,12 +890,23 @@ final class ChunkRenderer {
         texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         handAppearance.setTexture(0, texture);
         if (playerModel != null) {
-            playerModel.detachCamera(cameraPivot);
+            if (cameraAttachedToHead) playerModel.detachCamera(cameraPivot);
             scene.removeChild(playerModel.root);
         }
         playerModel = new PlayerModel(image);
         scene.addChild(playerModel.root);
-        playerModel.attachCamera(cameraPivot);
+        if (cameraMode == 0) {
+            if (cameraAttachedToHead) {
+                playerModel.detachCamera(cameraPivot);
+                cameraAttachedToHead = false;
+            }
+            scene.addChild(cameraPivot);
+        } else {
+            if (cameraAttachedToHead) playerModel.detachCamera(cameraPivot);
+            else scene.removeChild(cameraPivot);
+            playerModel.attachCamera(cameraPivot);
+            cameraAttachedToHead = true;
+        }
         playerModel.root.setRenderingEnable(cameraMode != 0);
         hasPreviousPlayerPosition = false;
         if (handTexCoords != null) {
