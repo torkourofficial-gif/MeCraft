@@ -192,6 +192,7 @@ final class Language {
         "Controles tactiles",
         "Si",
         "No",
+        "Preparando...", "Cargando...", "Generando...",
     };
     private static final String[] EXTRA_ENGLISH_TEXT = new String[] {
         "Chest", "BACK", "CLOSE", "USE", "JUMP", "INV",
@@ -279,6 +280,7 @@ final class Language {
         "Touch controls",
         "Yes",
         "No",
+        "Preparing...", "Loading...", "Generating...",
     };
 
     private Language() { }
