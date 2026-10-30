@@ -2627,8 +2627,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private boolean isTouchBackState(int currentState) {
-        return currentState == WORLD_CREATE ||
-                currentState == WORLD_DELETE || currentState == SETTINGS ||
+        return currentState == WORLD_DELETE || currentState == SETTINGS ||
                 currentState == CONTROLS || currentState == SKIN_SELECT ||
                 currentState == ERROR || currentState == GAME_OVER ||
                 currentState == INVENTORY || currentState == WORKBENCH ||
