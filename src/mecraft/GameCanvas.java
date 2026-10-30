@@ -166,6 +166,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private boolean touchJumpActive;
     private boolean touchActionPending, touchMiningStarted;
     private long touchActionStart;
+    private float touchActionPlayerX, touchActionPlayerY, touchActionPlayerZ;
+    private float touchMiningLastX, touchMiningLastY, touchMiningLastZ;
     private static final long TOUCH_MINE_DELAY = 260L;
     private int recipeSelection;
     private int recipeScroll;
@@ -398,10 +400,41 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         if (pickedItem > Block.AIR) ensureHotbarItem(pickedItem);
         if (touchActionPending && !touchMiningStarted &&
                 System.currentTimeMillis() - touchActionStart >= TOUCH_MINE_DELAY) {
-            touchMiningStarted = true;
-            touchLooking = false;
-            keys[1] = true;
-            if (renderer != null) renderer.swingHand();
+            boolean movementInput = touchMoveUp || touchMoveDown || touchMoveLeft || touchMoveRight ||
+                    keys[2] || keys[8] || keys[4] || keys[6];
+            boolean movedBeforeMining = Math.abs(world.playerX - touchActionPlayerX) > 0.025f ||
+                    Math.abs(world.playerY - touchActionPlayerY) > 0.025f ||
+                    Math.abs(world.playerZ - touchActionPlayerZ) > 0.025f;
+            if (!movementInput && !movedBeforeMining) {
+                touchMiningStarted = true;
+                touchLooking = false;
+                keys[1] = true;
+                touchMiningLastX = world.playerX;
+                touchMiningLastY = world.playerY;
+                touchMiningLastZ = world.playerZ;
+                if (renderer != null) renderer.swingHand();
+            } else {
+                touchActionPending = false;
+                touchLooking = false;
+            }
+        }
+        if (touchMiningStarted) {
+            boolean movedWhileMining = Math.abs(world.playerX - touchMiningLastX) > 0.002f ||
+                    Math.abs(world.playerY - touchMiningLastY) > 0.002f ||
+                    Math.abs(world.playerZ - touchMiningLastZ) > 0.002f;
+            boolean movementInput = touchMoveUp || touchMoveDown || touchMoveLeft || touchMoveRight ||
+                    keys[2] || keys[8] || keys[4] || keys[6];
+            if (movedWhileMining || movementInput) {
+                keys[1] = false;
+                cancelMining();
+                touchMiningStarted = false;
+                touchActionPending = false;
+                touchLooking = false;
+            } else {
+                touchMiningLastX = world.playerX;
+                touchMiningLastY = world.playerY;
+                touchMiningLastZ = world.playerZ;
+            }
         }
         if (keys[1]) updateMining();
         renderer.updateFieldOfView(sprinting);
@@ -2591,6 +2624,34 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         else if (state == CONTROLS) drawControls(g);
         else if (state == SKIN_SELECT) drawSkinSelect(g);
         else drawMenu(g);
+        if (touchEnabled && isTouchBackState(state)) drawTouchBackButton(g);
+    }
+
+    private boolean isTouchBackState(int currentState) {
+        return currentState == WORLD_SELECT || currentState == WORLD_CREATE ||
+                currentState == WORLD_DELETE || currentState == SETTINGS ||
+                currentState == CONTROLS || currentState == SKIN_SELECT ||
+                currentState == ERROR || currentState == GAME_OVER ||
+                currentState == INVENTORY || currentState == WORKBENCH ||
+                currentState == CREATIVE_INVENTORY || currentState == CHEST_INVENTORY;
+    }
+
+    private boolean isTouchBackButtonHit(int currentState, int x, int y, int w, int h) {
+        if (!touchEnabled || !isTouchBackState(currentState)) return false;
+        int buttonWidth = Math.min(104, w - 24);
+        int buttonX = (w - buttonWidth) / 2;
+        int buttonY = h - 31;
+        return x >= buttonX && x < buttonX + buttonWidth && y >= buttonY && y < buttonY + 25;
+    }
+
+    private void drawTouchBackButton(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        int buttonWidth = Math.min(104, w - 24);
+        int buttonX = (w - buttonWidth) / 2;
+        int buttonY = h - 31;
+        boolean inventoryState = state == INVENTORY || state == WORKBENCH ||
+                state == CREATIVE_INVENTORY || state == CHEST_INVENTORY;
+        drawTouchButtonAt(g, inventoryState ? "CERRAR" : "VOLVER", buttonX, buttonY, buttonWidth);
     }
 
     private void chooseTouchMode(boolean enabled) {
@@ -2629,32 +2690,29 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         g.drawString(label, w / 2, y + 8, Graphics.TOP | Graphics.HCENTER);
     }
 
+    private int touchDpadWidth() { return dpadTexture == null ? 88 : dpadTexture.getWidth(); }
+    private int touchDpadHeight() { return dpadTexture == null ? 88 : dpadTexture.getHeight(); }
+    private int touchDpadLeft() { return 8; }
+    private int touchDpadTop() { return getHeight() - touchDpadHeight() - 40; }
+    private int touchJumpSize() { return Math.max(52, Math.min(60, touchDpadHeight() - 12)); }
+    private int touchJumpLeft() { return getWidth() - touchJumpSize() - 8; }
+    private int touchJumpTop() { return touchDpadTop() + touchDpadHeight() - touchJumpSize(); }
+
     private void drawTouchControls(Graphics g) {
-        int w = getWidth(), h = getHeight();
-        int dpadW = dpadTexture == null ? 88 : dpadTexture.getWidth();
-        int dpadH = dpadTexture == null ? 88 : dpadTexture.getHeight();
-        int left = 10, top = h - dpadH - 10;
-        if (dpadTexture != null) {
-            g.drawImage(dpadTexture, left, top, Graphics.TOP | Graphics.LEFT);
-        } else {
+        int w = getWidth(), dpadW = touchDpadWidth(), dpadH = touchDpadHeight();
+        int left = touchDpadLeft(), top = touchDpadTop();
+        if (dpadTexture != null) g.drawImage(dpadTexture, left, top, Graphics.TOP | Graphics.LEFT);
+        else {
             int cell = dpadW / 3;
             drawTouchButtonAt(g, "^", left + cell, top, cell);
             drawTouchButtonAt(g, "<", left, top + cell, cell);
             drawTouchButtonAt(g, "v", left + cell, top + cell * 2, cell);
             drawTouchButtonAt(g, ">", left + cell * 2, top + cell, cell);
         }
-        int jumpSize = Math.max(58, Math.min(72, dpadH - 12));
-        int jumpX = left + dpadW + 10;
-        int jumpY = top + dpadH - jumpSize;
-        g.setColor(28, 28, 28);
-        g.fillRect(jumpX + 2, jumpY + 2, jumpSize, jumpSize);
-        g.setColor(85, 85, 85);
-        g.fillRect(jumpX, jumpY, jumpSize, jumpSize);
-        g.setColor(205, 190, 160);
-        g.drawRect(jumpX, jumpY, jumpSize - 1, jumpSize - 1);
-        int pauseW = 54, pauseH = 25;
-        drawTouchButtonAt(g, "II", (w - pauseW) / 2, 7, pauseW);
-        drawTouchButtonAt(g, "INV", w - 62, h - 43, 52);
+        drawTouchButtonAt(g, "SALTO", touchJumpLeft(), touchJumpTop(), touchJumpSize());
+        // Navigation controls stay in the top corners, clear of the HUD.
+        drawTouchButtonAt(g, "II", 8, 8, 42);
+        drawTouchButtonAt(g, "INV", w - 58, 8, 50);
     }
 
     private void drawTouchButtonAt(Graphics g, String label, int x, int y, int width) {
@@ -2686,19 +2744,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 repaint();
                 return;
             }
-            if (x >= w / 2 - 29 && x <= w / 2 + 29 && y <= 39) {
+            if (x >= 8 && x < 54 && y >= 8 && y < 39) {
                 openPause();
                 repaint();
                 return;
             }
-            if (x >= w - 66 && y >= h - 52) {
+            if (x >= w - 58 && x < w - 8 && y >= 8 && y < 39) {
                 if (world.mode == 1) openCreativeInventory(); else openCrafting(false);
                 repaint();
                 return;
             }
-            int dpadW = dpadTexture == null ? 88 : dpadTexture.getWidth();
-            int dpadH = dpadTexture == null ? 88 : dpadTexture.getHeight();
-            int left = 10, top = h - dpadH - 10;
+            int dpadW = touchDpadWidth(), dpadH = touchDpadHeight();
+            int left = touchDpadLeft(), top = touchDpadTop();
             if (x >= left && x < left + dpadW && y >= top && y < top + dpadH) {
                 int col = (x - left) * 3 / dpadW;
                 int row = (y - top) * 3 / dpadH;
@@ -2709,8 +2766,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 applyTouchMovement();
                 return;
             }
-            int jumpSize = Math.max(58, Math.min(72, dpadH - 12));
-            int jumpX = left + dpadW + 10, jumpY = top + dpadH - jumpSize;
+            int jumpSize = touchJumpSize();
+            int jumpX = touchJumpLeft(), jumpY = touchJumpTop();
             if (x >= jumpX && x < jumpX + jumpSize && y >= jumpY && y < jumpY + jumpSize) {
                 touchJumpPressed();
                 return;
@@ -2718,6 +2775,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             touchActionPending = true;
             touchMiningStarted = false;
             touchActionStart = System.currentTimeMillis();
+            touchActionPlayerX = world.playerX;
+            touchActionPlayerY = world.playerY;
+            touchActionPlayerZ = world.playerZ;
             touchLooking = true;
             touchLastX = x;
             touchLastY = y;
@@ -2791,6 +2851,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void handleTouchMenu(int x, int y) {
         int w = getWidth(), h = getHeight();
+        if (isTouchBackButtonHit(state, x, y, w, h)) {
+            if (state == GAME_OVER) backToMenu();
+            else keyPressed(KEY_NUM0);
+            repaint();
+            return;
+        }
         if (state == MENU) {
             int bh = Font.getDefaultFont().getHeight() + 8;
             int step = bh + 5;
@@ -2814,10 +2880,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
             int row = (y - (h / 2 - 75 + 40) + 13) / 27;
             if (row >= 0 && row < 3) { pauseSelection = row; activateSelection(); }
         } else if (state == SETTINGS) {
-            int panelY = Math.max(12, (h - 202) / 2);
-            int rowStep = Math.min(23, Math.max(14, (Math.min(h - panelY - 8, 202) - 54) / 6));
+            int panelY = Math.max(8, (h - 222) / 2);
+            int panelHeight = Math.min(h - panelY - 6, 222);
+            int rowStep = Math.min(22, Math.max(13, (panelHeight - 54) / 7));
             int row = (y - (panelY + 32) + rowStep / 2) / rowStep;
-            if (row >= 0 && row < 6) {
+            if (row >= 0 && row < 7) {
                 settingsSelection = row;
                 if (row == 3 || row == 5) keyPressed(KEY_NUM5);
                 else if (row == 4) changeLanguage();
