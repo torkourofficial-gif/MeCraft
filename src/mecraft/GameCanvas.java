@@ -21,7 +21,7 @@ import javax.microedition.lcdui.game.Sprite;
 import javax.microedition.m3g.Graphics3D;
 
 /** Game loop, phone controls, M3G view and compact HUD. */
-final class GameCanvas extends Canvas implements Runnable, CommandListener {
+final class GameCanvas extends Canvas implements Runnable, CommandListener, LanTransport.Listener {
     private static final int MENU = 0;
     private static final int PLAYING = 1;
     private static final int PAUSED = 2;
@@ -40,6 +40,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private static final int CHEST_INVENTORY = 15;
     private static final int LOADING = 16;
     private static final int TOUCH_SETUP = 17;
+    private static final int LAN_MENU = 18;
+    private static final int LAN_HOSTING = 19;
+    private static final int LAN_CONNECTING = 20;
+    private static final int LAN_CODE_INPUT = 21;
+    private static final int LAN_CONNECTED = 22;
     private static final int CONTROL_LOOK_UP = 0, CONTROL_LOOK_DOWN = 1;
     private static final int CONTROL_LOOK_LEFT = 2, CONTROL_LOOK_RIGHT = 3;
     private static final int CONTROL_FORWARD = 4, CONTROL_BACK = 5;
@@ -55,9 +60,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         "Casilla anterior", "Casilla siguiente", "Pausa", "Descender (creativo)"
     };
     private static final int MENU_SINGLEPLAYER = 0;
-    private static final int MENU_CONTROLS = 1;
-    private static final int MENU_SETTINGS = 2;
-    private static final int MENU_EXIT = 3;
+    private static final int MENU_LAN = 1;
+    private static final int MENU_CONTROLS = 2;
+    private static final int MENU_SETTINGS = 3;
+    private static final int MENU_EXIT = 4;
     private static final float PLAYER_WIDTH = 0.6f;
     private static final float PLAYER_HEIGHT = 1.8f;
     private static final float PLAYER_RADIUS = PLAYER_WIDTH * 0.5f;
@@ -119,6 +125,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private TextBox worldNameInput;
     private Command acceptWorldName;
     private Command cancelWorldName;
+    private TextBox lanCodeInput;
+    private Command acceptLanCode;
+    private Command cancelLanCode;
+    private int lanMenuSelection;
+    private String lanRoomCode;
+    private String lanStatus = "";
+    private int lanPlayerCount = 1;
+    private LanTransport lanTransport;
     private int pauseSelection;
     private int gameOverSelection;
     private int gameOverTicks;
@@ -235,12 +249,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     synchronized void stop() {
         running = false;
         if (music != null) music.close();
+        closeLanSession();
         saveIfNeeded();
     }
 
     synchronized void pauseGame() {
         visible = false;
         if (music != null) music.update(MusicController.OFF);
+        closeLanSession();
+        if (state == LAN_HOSTING || state == LAN_CONNECTING || state == LAN_CONNECTED)
+            state = LAN_MENU;
         clearKeys();
         saveIfNeeded();
     }
@@ -269,7 +287,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 state == CREATIVE_INVENTORY || state == CHEST_INVENTORY || state == GAME_OVER) return MusicController.GAMEPLAY;
         if (state == MENU || state == WORLD_SELECT || state == WORLD_CREATE ||
                 state == WORLD_DELETE || state == WORLD_NAME || state == SETTINGS ||
-                state == SKIN_SELECT || state == CONTROLS) return MusicController.MENU;
+                state == SKIN_SELECT || state == CONTROLS || state == LAN_MENU ||
+                state == LAN_HOSTING || state == LAN_CONNECTING || state == LAN_CONNECTED)
+            return MusicController.MENU;
         return MusicController.OFF;
     }
 
@@ -1751,6 +1771,42 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     public synchronized void keyPressed(int keyCode) {
+        if (state == LAN_MENU) {
+            int action = gameAction(keyCode);
+            if (action == UP || keyCode == KEY_NUM2) lanMenuSelection = (lanMenuSelection + 2) % 3;
+            else if (action == DOWN || keyCode == KEY_NUM8) lanMenuSelection = (lanMenuSelection + 1) % 3;
+            else if (action == FIRE || keyCode == KEY_NUM5) activateLanSelection();
+            else if (keyCode == KEY_NUM0) { state = MENU; repaint(); }
+            repaint();
+            return;
+        }
+        if (state == LAN_HOSTING || state == LAN_CONNECTING || state == LAN_CONNECTED) {
+            if (keyCode == KEY_NUM0 || keyCode == KEY_STAR || isLeftSoftkey(keyCode)) {
+                closeLanSession();
+                state = LAN_MENU;
+                lanStatus = lanLabel("Sesion cerrada", "Session closed");
+                repaint();
+            }
+            return;
+        }
+        if (state == LAN_MENU) {
+            int action = gameAction(keyCode);
+            if (action == UP || keyCode == KEY_NUM2) lanMenuSelection = (lanMenuSelection + 2) % 3;
+            else if (action == DOWN || keyCode == KEY_NUM8) lanMenuSelection = (lanMenuSelection + 1) % 3;
+            else if (action == FIRE || keyCode == KEY_NUM5) activateLanSelection();
+            else if (keyCode == KEY_NUM0) { state = MENU; repaint(); }
+            repaint();
+            return;
+        }
+        if (state == LAN_HOSTING || state == LAN_CONNECTING || state == LAN_CONNECTED) {
+            if (keyCode == KEY_NUM0 || keyCode == KEY_STAR || isLeftSoftkey(keyCode)) {
+                closeLanSession();
+                state = LAN_MENU;
+                lanStatus = lanLabel("Sesion cerrada", "Session closed");
+                repaint();
+            }
+            return;
+        }
         if (state == TOUCH_SETUP) {
             int action = gameAction(keyCode);
             if (keyCode == KEY_NUM2 || keyCode == KEY_NUM4 || action == UP || action == LEFT) {
@@ -2084,7 +2140,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
 
     private void moveSelection(int delta) {
         if (state == MENU) {
-            menuSelection = (menuSelection + delta + 4) % 4;
+            menuSelection = (menuSelection + delta + 5) % 5;
         } else if (state == PAUSED) {
             pauseSelection += delta;
             if (pauseSelection < 0) pauseSelection = 2;
@@ -2337,6 +2393,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     public synchronized void commandAction(Command command, Displayable displayable) {
+        if (displayable == lanCodeInput && state == LAN_CODE_INPUT) {
+            String code = lanCodeInput.getString().trim();
+            boolean join = command == acceptLanCode;
+            lanCodeInput = null;
+            acceptLanCode = null;
+            cancelLanCode = null;
+            Display.getDisplay(app).setCurrent(this);
+            if (join && LanProtocol.isValidRoomCode(code)) startLanJoin(code);
+            else {
+                state = LAN_MENU;
+                lanStatus = join ? lanLabel("El codigo debe tener 6 digitos.", "Code must contain 6 digits.") : "";
+                repaint();
+            }
+            return;
+        }
         if (displayable != worldNameInput || state != WORLD_NAME) return;
         if (command == acceptWorldName) {
             String value = worldNameInput.getString().trim();
@@ -2356,6 +2427,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 refreshWorldList();
                 worldSelection = 0;
                 state = WORLD_SELECT;
+                repaint();
+            }
+            else if (menuSelection == MENU_LAN) {
+                lanMenuSelection = 0;
+                lanStatus = "";
+                state = LAN_MENU;
                 repaint();
             }
             else if (menuSelection == MENU_CONTROLS) {
@@ -2391,6 +2468,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     }
 
     private void backToMainMenu() {
+        closeLanSession();
         refreshWorldList();
         state = MENU;
         menuSelection = MENU_SINGLEPLAYER;
@@ -2695,6 +2773,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
                 drawError(g);
             }
         } else if (state == LOADING) drawLoading(g);
+        else if (state == LAN_MENU) drawLanMenu(g);
+        else if (state == LAN_HOSTING) drawLanHosting(g);
+        else if (state == LAN_CONNECTING) drawLanConnecting(g);
+        else if (state == LAN_CONNECTED) drawLanConnected(g);
         else if (state == ERROR) drawError(g);
         else if (state == WORLD_SELECT) drawWorldSelect(g);
         else if (state == WORLD_DELETE) drawWorldDelete(g);
@@ -2709,6 +2791,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
     private boolean isTouchBackState(int currentState) {
         return currentState == WORLD_DELETE || currentState == SETTINGS ||
                 currentState == CONTROLS || currentState == SKIN_SELECT ||
+                currentState == LAN_MENU || currentState == LAN_HOSTING ||
+                currentState == LAN_CONNECTING || currentState == LAN_CONNECTED ||
                 currentState == ERROR || currentState == GAME_OVER ||
                 currentState == INVENTORY || currentState == WORKBENCH ||
                 currentState == CREATIVE_INVENTORY || currentState == CHEST_INVENTORY;
@@ -3081,16 +3165,174 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         }
         int buttonHeight = Font.getDefaultFont().getHeight() + 8;
         int buttonStep = buttonHeight + 5;
-        int stackHeight = buttonHeight * 4 + 15;
+        int stackHeight = buttonHeight * 5 + 20;
         int firstY = h / 2 - stackHeight / 2 + 15;
-        drawIndevMenuButton(g, "Un jugador", firstY, buttonHeight,
+        drawIndevMenuButton(g, lanLabel("Un jugador", "Singleplayer"), firstY, buttonHeight,
                 menuSelection == MENU_SINGLEPLAYER);
-        drawIndevMenuButton(g, "Controles", firstY + buttonStep, buttonHeight,
+        drawIndevMenuButton(g, lanLabel("Multijugador LAN", "LAN Multiplayer"), firstY + buttonStep, buttonHeight,
+                menuSelection == MENU_LAN);
+        drawIndevMenuButton(g, lanLabel("Controles", "Controls"), firstY + buttonStep * 2, buttonHeight,
                 menuSelection == MENU_CONTROLS);
-        drawIndevMenuButton(g, "Ajustes", firstY + buttonStep * 2, buttonHeight,
+        drawIndevMenuButton(g, lanLabel("Ajustes", "Settings"), firstY + buttonStep * 3, buttonHeight,
                 menuSelection == MENU_SETTINGS);
-        drawIndevMenuButton(g, "Salir", firstY + buttonStep * 3, buttonHeight,
+        drawIndevMenuButton(g, lanLabel("Salir", "Exit"), firstY + buttonStep * 4, buttonHeight,
                 menuSelection == MENU_EXIT);
+    }
+
+    private String lanLabel(String spanish, String english) {
+        return Language.isEnglish() ? english : spanish;
+    }
+
+    private void activateLanSelection() {
+        if (lanMenuSelection == 0) startLanHost();
+        else if (lanMenuSelection == 1) openLanCodeInput();
+        else { state = MENU; repaint(); }
+    }
+
+    private void openLanCodeInput() {
+        try {
+            lanCodeInput = new TextBox(lanLabel("Codigo de partida", "Room code"),
+                    "", LanProtocol.CODE_LENGTH, TextField.NUMERIC);
+            acceptLanCode = new Command(lanLabel("Unirse", "Join"), Command.OK, 1);
+            cancelLanCode = new Command(lanLabel("Cancelar", "Cancel"), Command.CANCEL, 2);
+            lanCodeInput.addCommand(acceptLanCode);
+            lanCodeInput.addCommand(cancelLanCode);
+            lanCodeInput.setCommandListener(this);
+            state = LAN_CODE_INPUT;
+            Display.getDisplay(app).setCurrent(lanCodeInput);
+        } catch (Throwable unavailable) {
+            lanCodeInput = null;
+            state = LAN_MENU;
+            lanStatus = lanLabel("No se pudo abrir el teclado.", "Could not open the keypad.");
+            repaint();
+        }
+    }
+
+    private void startLanHost() {
+        closeLanSession();
+        lanRoomCode = LanProtocol.createRoomCode();
+        lanPlayerCount = 1;
+        lanStatus = lanLabel("Iniciando sala...", "Starting room...");
+        state = LAN_HOSTING;
+        lanTransport = LanTransport.host(this, lanRoomCode, "Host");
+        lanTransport.start();
+        repaint();
+    }
+
+    private void startLanJoin(String code) {
+        closeLanSession();
+        lanRoomCode = code;
+        lanStatus = lanLabel("Buscando anfitrion...", "Searching for host...");
+        state = LAN_CONNECTING;
+        lanTransport = LanTransport.join(this, code, "Jugador");
+        lanTransport.start();
+        repaint();
+    }
+
+    private void closeLanSession() {
+        LanTransport current = lanTransport;
+        lanTransport = null;
+        if (current != null) current.stop();
+        lanPlayerCount = 1;
+    }
+
+    public synchronized void onLanStatus(String status) {
+        lanStatus = status == null ? "" : status;
+        repaint();
+    }
+
+    public synchronized void onLanPeerCount(int count) {
+        lanPlayerCount = count;
+        repaint();
+    }
+
+    public synchronized void onLanConnected(String hostName) {
+        lanStatus = lanLabel("Conectado al anfitrion.", "Connected to host.");
+        state = LAN_CONNECTED;
+        repaint();
+    }
+
+    public synchronized void onLanError(String message) {
+        lanStatus = message == null ? lanLabel("Error de red.", "Network error.") : message;
+        repaint();
+    }
+
+    private void drawLanMenu(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        drawDirtBackground(g);
+        drawInsetPanel(g, 12, h / 2 - 88, w - 24, 176);
+        g.setColor(255, 244, 210);
+        g.drawString(lanLabel("Multijugador LAN", "LAN Multiplayer"),
+                w / 2, h / 2 - 72, Graphics.TOP | Graphics.HCENTER);
+        int bh = Font.getDefaultFont().getHeight() + 8;
+        int step = bh + 7;
+        int y = h / 2 - 35;
+        drawIndevMenuButton(g, lanLabel("Crear partida", "Host a game"),
+                y, bh, lanMenuSelection == 0);
+        drawIndevMenuButton(g, lanLabel("Unirse con codigo", "Join with code"),
+                y + step, bh, lanMenuSelection == 1);
+        drawIndevMenuButton(g, lanLabel("Volver", "Back"),
+                y + step * 2, bh, lanMenuSelection == 2);
+        if (lanStatus.length() > 0) {
+            g.setColor(220, 205, 175);
+            g.drawString(trimText(lanStatus, 30), w / 2, h / 2 + 65,
+                    Graphics.TOP | Graphics.HCENTER);
+        }
+    }
+
+    private void drawLanHosting(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        drawDirtBackground(g);
+        drawInsetPanel(g, 10, h / 2 - 100, w - 20, 200);
+        g.setColor(255, 244, 210);
+        g.drawString(lanLabel("Partida LAN", "LAN game"),
+                w / 2, h / 2 - 82, Graphics.TOP | Graphics.HCENTER);
+        g.setColor(255, 255, 255);
+        g.drawString(lanLabel("CODIGO", "CODE"),
+                w / 2, h / 2 - 48, Graphics.TOP | Graphics.HCENTER);
+        Font old = g.getFont();
+        g.setFont(Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_LARGE));
+        g.setColor(255, 221, 110);
+        String code = lanRoomCode == null ? "------" :
+                lanRoomCode.substring(0, 3) + " " + lanRoomCode.substring(3);
+        g.drawString(code, w / 2, h / 2 - 25, Graphics.TOP | Graphics.HCENTER);
+        g.setFont(old);
+        g.setColor(235, 225, 205);
+        g.drawString(lanLabel("Jugadores: ", "Players: ") + lanPlayerCount + "/" +
+                LanProtocol.MAX_PLAYERS, w / 2, h / 2 + 15,
+                Graphics.TOP | Graphics.HCENTER);
+        g.drawString(trimText(lanStatus, 30), w / 2, h / 2 + 38,
+                Graphics.TOP | Graphics.HCENTER);
+        g.setColor(195, 185, 165);
+        g.drawString(lanLabel("Comparte el codigo en tu Wi-Fi", "Share the code on your Wi-Fi"),
+                w / 2, h / 2 + 63, Graphics.TOP | Graphics.HCENTER);
+        g.drawString(lanLabel("0: cerrar sala", "0: close room"),
+                w / 2, h / 2 + 82, Graphics.TOP | Graphics.HCENTER);
+    }
+
+    private void drawLanConnecting(Graphics g) {
+        drawLanMessage(g, lanLabel("Buscando partida", "Finding game"),
+                lanStatus, lanLabel("0: cancelar", "0: cancel"));
+    }
+
+    private void drawLanConnected(Graphics g) {
+        drawLanMessage(g, lanLabel("Conexion establecida", "Connection established"),
+                lanLabel("Enlace LAN activo. La sincronizacion del mundo aun no esta integrada.",
+                        "LAN link is active. World synchronization is not integrated yet."),
+                lanLabel("0: desconectar", "0: disconnect"));
+    }
+
+    private void drawLanMessage(Graphics g, String title, String message, String hint) {
+        int w = getWidth(), h = getHeight();
+        drawDirtBackground(g);
+        drawInsetPanel(g, 10, h / 2 - 78, w - 20, 156);
+        g.setColor(255, 244, 210);
+        g.drawString(title, w / 2, h / 2 - 58, Graphics.TOP | Graphics.HCENTER);
+        g.setColor(235, 225, 205);
+        g.drawString(trimText(message, 30), w / 2, h / 2 - 12,
+                Graphics.TOP | Graphics.HCENTER);
+        g.setColor(195, 185, 165);
+        g.drawString(hint, w / 2, h / 2 + 45, Graphics.TOP | Graphics.HCENTER);
     }
 
     /** Classic Indev gray button with a raised pixel border and gold focus. */
