@@ -45,6 +45,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private static final int LAN_CONNECTING = 20;
     private static final int LAN_CODE_INPUT = 21;
     private static final int LAN_CONNECTED = 22;
+    private static final int DEBUG_ITEMS = 23;
     private static final int CONTROL_LOOK_UP = 0, CONTROL_LOOK_DOWN = 1;
     private static final int CONTROL_LOOK_LEFT = 2, CONTROL_LOOK_RIGHT = 3;
     private static final int CONTROL_FORWARD = 4, CONTROL_BACK = 5;
@@ -98,6 +99,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private volatile boolean visible;
     private volatile int state = MENU;
     private int menuSelection = MENU_SINGLEPLAYER;
+    private int debugMenuSequence;
+    private int debugItemScroll;
     private int settingsSelection;
     private int touchSetupSelection;
     private int language = Language.ENGLISH;
@@ -1797,6 +1800,27 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     public synchronized void keyPressed(int keyCode) {
+        if (state == DEBUG_ITEMS) {
+            int action = gameAction(keyCode);
+            if (keyCode == KEY_NUM0 || keyCode == KEY_POUND) {
+                state = MENU;
+                debugItemScroll = 0;
+            } else if (keyCode == KEY_NUM2 || action == UP) {
+                if (debugItemScroll > 0) debugItemScroll--;
+            } else if (keyCode == KEY_NUM8 || action == DOWN) {
+                int visible = Math.max(1, (getHeight() - 48) / 18);
+                int maxScroll = Math.max(0, ItemCatalog.COUNT - 1 - visible);
+                if (debugItemScroll < maxScroll) debugItemScroll++;
+            } else if (keyCode == KEY_NUM4 || action == LEFT) {
+                debugItemScroll = Math.max(0, debugItemScroll - 8);
+            } else if (keyCode == KEY_NUM6 || action == RIGHT) {
+                int visible = Math.max(1, (getHeight() - 48) / 18);
+                int maxScroll = Math.max(0, ItemCatalog.COUNT - 1 - visible);
+                debugItemScroll = Math.min(maxScroll, debugItemScroll + 8);
+            }
+            repaint();
+            return;
+        }
         if (state == LAN_MENU) {
             int action = gameAction(keyCode);
             if (action == UP || keyCode == KEY_NUM2) lanMenuSelection = (lanMenuSelection + 2) % 3;
@@ -2007,7 +2031,23 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             }
             return;
         }
+        if (state == MENU && keyCode >= KEY_NUM1 && keyCode <= KEY_NUM9) {
+            int digit = keyCode - KEY_NUM0;
+            if (digit == debugMenuSequence + 1) {
+                debugMenuSequence++;
+                if (debugMenuSequence == 9) {
+                    debugMenuSequence = 0;
+                    debugItemScroll = 0;
+                    state = DEBUG_ITEMS;
+                }
+            } else {
+                debugMenuSequence = digit == 1 ? 1 : 0;
+            }
+            repaint();
+            return;
+        }
         if (state == MENU || state == PAUSED || state == ERROR) {
+            if (state == MENU) debugMenuSequence = 0;
             int action = gameAction(keyCode);
             if (action == UP || keyCode == KEY_NUM2) moveSelection(-1);
             else if (action == DOWN || keyCode == KEY_NUM8) moveSelection(1);
@@ -2829,6 +2869,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         else if (state == SETTINGS) drawSettings(g);
         else if (state == CONTROLS) drawControls(g);
         else if (state == SKIN_SELECT) drawSkinSelect(g);
+        else if (state == DEBUG_ITEMS) drawDebugItems(g);
         else drawMenu(g);
         if (touchEnabled && isTouchBackState(state)) drawTouchBackButton(g);
     }
@@ -3233,6 +3274,42 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 menuSelection == MENU_SETTINGS);
         drawIndevMenuButton(g, lanLabel("Salir", "Exit"), firstY + buttonStep * 4, buttonHeight,
                 menuSelection == MENU_EXIT);
+    }
+
+    /** Hidden diagnostics screen: every block/item ID, its displayed name and loaded icon. */
+    private void drawDebugItems(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        drawDirtBackground(g);
+        drawInsetPanel(g, 5, 5, w - 10, h - 10);
+        g.setColor(255, 255, 255);
+        g.drawString(lanLabel("DEBUG: todos los items", "DEBUG: all items"),
+                w / 2, 9, Graphics.TOP | Graphics.HCENTER);
+        int rowHeight = 18;
+        int visible = Math.max(1, (h - 48) / rowHeight);
+        int total = ItemCatalog.COUNT - 1;
+        int maxScroll = Math.max(0, total - visible);
+        if (debugItemScroll > maxScroll) debugItemScroll = maxScroll;
+        for (int row = 0; row < visible; row++) {
+            int id = debugItemScroll + row + 1;
+            if (id >= ItemCatalog.COUNT) break;
+            int y = 29 + row * rowHeight;
+            if ((row & 1) == 0) {
+                g.setColor(45, 34, 26);
+                g.fillRect(10, y, w - 20, rowHeight);
+            }
+            drawIcon(g, id, 12, y + 1, false);
+            g.setColor(255, 244, 220);
+            String label = Language.text(ItemCatalog.name(id));
+            int maxChars = Math.max(8, (w - 78) / Math.max(5, Font.getDefaultFont().charWidth('M')));
+            if (label.length() > maxChars) label = label.substring(0, maxChars - 2) + "..";
+            g.drawString(label, 32, y + 2, Graphics.TOP | Graphics.LEFT);
+            g.setColor(190, 170, 145);
+            g.drawString("#" + id, w - 13, y + 2, Graphics.TOP | Graphics.RIGHT);
+        }
+        g.setColor(255, 255, 255);
+        g.drawString((debugItemScroll + 1) + "-" + Math.min(total, debugItemScroll + visible) +
+                "/" + total + "   " + lanLabel("0: volver", "0: back"),
+                w / 2, h - 18, Graphics.BOTTOM | Graphics.HCENTER);
     }
 
     private String lanLabel(String spanish, String english) {
