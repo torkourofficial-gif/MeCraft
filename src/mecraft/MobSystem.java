@@ -208,8 +208,8 @@ final class MobSystem {
             Fireball ball = fireballs[i];
             if (!ball.active || ball.reflected) continue;
             float along = rayBox(originX, originY, originZ, dirX, dirY, dirZ,
-                    ball.x - 2.0f, ball.y - 2.0f, ball.z - 2.0f,
-                    ball.x + 2.0f, ball.y + 2.0f, ball.z + 2.0f);
+                    ball.x - 0.8f, ball.y - 0.8f, ball.z - 0.8f,
+                    ball.x + 0.8f, ball.y + 0.8f, ball.z + 0.8f);
             if (along >= 0.0f && along <= fireballDistance) {
                 fireballHit = i;
                 fireballDistance = along;
@@ -783,9 +783,9 @@ final class MobSystem {
                 for (int m = 0; m < mobs.length; m++) {
                     Mob target = mobs[m];
                     if (target == null || !target.alive || target.type != GHAST) continue;
-                    float half = mobWidth(target) * 0.5f + 2.0f;
+                    float half = mobWidth(target) * 0.5f + 0.8f;
                     if (Math.abs(ball.x - target.x) <= half && Math.abs(ball.z - target.z) <= half &&
-                        ball.y >= target.y - 2.0f && ball.y <= target.y + mobHeight(target) + 2.0f) {
+                        ball.y >= target.y - 0.8f && ball.y <= target.y + mobHeight(target) + 0.8f) {
                         dropForDeath(target); beginDeath(target);
                         ball.active = false; ball.root.setRenderingEnable(false); break;
                     }
@@ -794,7 +794,7 @@ final class MobSystem {
                 float dx = ball.x - world.playerX;
                 float dy = ball.y - (world.playerY + 1.0f);
                 float dz = ball.z - world.playerZ;
-                if (dx * dx + dy * dy + dz * dz < 2.0f * 2.0f) {
+                if (dx * dx + dy * dy + dz * dz < 0.8f * 0.8f) {
                     if (damage < 6) damage = 6;
                     ball.active = false; ball.root.setRenderingEnable(false);
                 }
@@ -1154,10 +1154,10 @@ final class MobSystem {
                 float[] latitudes = new float[] { latitude0, latitude1 };
                 for (int side = 0; side < 2; side++) {
                     float latitude = latitudes[side];
-                    float radius = (float)Math.cos(latitude) * 1.9f;
+                    float radius = (float)Math.cos(latitude) * 0.76f;
                     positions[vertex * 3] = (short)(radius * cosine * 1024.0f);
                     positions[vertex * 3 + 1] =
-                            (short)((float)Math.sin(latitude) * 1.9f * 1024.0f);
+                            (short)((float)Math.sin(latitude) * 0.76f * 1024.0f);
                     positions[vertex * 3 + 2] = (short)(radius * sine * 1024.0f);
                     texCoords[vertex * 2] = (short)(segment * 1024 / segments);
                     texCoords[vertex * 2 + 1] =
