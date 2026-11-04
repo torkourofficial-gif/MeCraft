@@ -421,9 +421,14 @@ final class DroppedItemSystem {
             positions[at++] = (short)(centerYS + ly);
             positions[at++] = (short)(centerZ + (int)(-lx * sin + lz * cos));
             if (flashTnt) {
-                tntFlashPositions[flashAt++] = (short)(centerX + (int)(LOCAL[v * 3] * 4.02f));
-                tntFlashPositions[flashAt++] = (short)(centerYS + (int)(LOCAL[v * 3 + 1] * 4.02f));
-                tntFlashPositions[flashAt++] = (short)(centerZ + (int)(LOCAL[v * 3 + 2] * 4.02f));
+                // Expand the already transformed vertex, not LOCAL: all six faces
+                // inherit the exact same rotation and final pulse scale as the TNT.
+                tntFlashPositions[flashAt++] = (short)(centerX +
+                    (int)((positions[at - 3] - centerX) * 1.005f));
+                tntFlashPositions[flashAt++] = (short)(centerYS +
+                    (int)((positions[at - 2] - centerYS) * 1.005f));
+                tntFlashPositions[flashAt++] = (short)(centerZ +
+                    (int)((positions[at - 1] - centerZ) * 1.005f));
             } else {
                 tntFlashPositions[flashAt++] = 0;
                 tntFlashPositions[flashAt++] = 0;
