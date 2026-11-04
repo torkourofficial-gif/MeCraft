@@ -51,3 +51,14 @@ The current LAN screen establishes a network lobby only. It does **not** yet sta
 - UDP broadcast support and server sockets must be verified on the target JBed runtime before treating LAN multiplayer as working.
 - Keep network I/O off the render/game loop. Bound packet sizes and queue sizes to protect the S730's limited memory.
 - A six-digit code can collide. Hosts must detect an active duplicate code on their local session and regenerate; clients should show a clear not-found/timeout result.
+
+## How to test the LAN lobby
+
+1. Install the same MeCraft build on two MIDP 2.0 devices.
+2. Connect both devices to the same Wi-Fi network. The access point must allow devices to communicate with each other.
+3. On the host, open **Multijugador LAN → Crear partida** and share the six-digit code.
+4. On the guest, open **Multijugador LAN → Unirse con codigo**, enter the code and accept any MIDP network permission prompts.
+5. The host should show **2/4 players** and the guest should show **Connection established**.
+6. Press **0**, *****, or the left softkey to disconnect and close the lobby.
+
+If discovery fails, check that both devices are on the same local network, that the router/hotspot does not enable client isolation, and that the JBed runtime permits UDP datagrams and TCP server sockets.
