@@ -208,8 +208,8 @@ final class MobSystem {
             Fireball ball = fireballs[i];
             if (!ball.active || ball.reflected) continue;
             float along = rayBox(originX, originY, originZ, dirX, dirY, dirZ,
-                    ball.x - 0.45f, ball.y - 0.45f, ball.z - 0.45f,
-                    ball.x + 0.45f, ball.y + 0.45f, ball.z + 0.45f);
+                    ball.x - 0.8f, ball.y - 0.8f, ball.z - 0.8f,
+                    ball.x + 0.8f, ball.y + 0.8f, ball.z + 0.8f);
             if (along >= 0.0f && along <= fireballDistance) {
                 fireballHit = i;
                 fireballDistance = along;
@@ -755,11 +755,12 @@ final class MobSystem {
         }
         if (ball == null) return;
         float dx = world.playerX - ghast.x;
-        float dy = world.playerY + 1.0f - (ghast.y + 0.5f);
+        // Aim at the player's camera/eye position, not the feet or body center.
+        float dy = world.playerY + 1.62f - (ghast.y + 0.5f);
         float dz = world.playerZ - ghast.z;
         float length = (float)Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (length < 0.001f) return;
-        float speed = 0.28f;
+        float speed = 0.30f;
         ball.x = ghast.x; ball.y = ghast.y + 0.5f; ball.z = ghast.z;
         ball.vx = dx / length * speed; ball.vy = dy / length * speed; ball.vz = dz / length * speed;
         ball.life = 0; ball.reflected = false; ball.active = true;
@@ -782,9 +783,9 @@ final class MobSystem {
                 for (int m = 0; m < mobs.length; m++) {
                     Mob target = mobs[m];
                     if (target == null || !target.alive || target.type != GHAST) continue;
-                    float half = mobWidth(target) * 0.5f + 0.45f;
+                    float half = mobWidth(target) * 0.5f + 0.8f;
                     if (Math.abs(ball.x - target.x) <= half && Math.abs(ball.z - target.z) <= half &&
-                        ball.y >= target.y - 0.45f && ball.y <= target.y + mobHeight(target) + 0.45f) {
+                        ball.y >= target.y - 0.8f && ball.y <= target.y + mobHeight(target) + 0.8f) {
                         dropForDeath(target); beginDeath(target);
                         ball.active = false; ball.root.setRenderingEnable(false); break;
                     }
@@ -793,7 +794,7 @@ final class MobSystem {
                 float dx = ball.x - world.playerX;
                 float dy = ball.y - (world.playerY + 1.0f);
                 float dz = ball.z - world.playerZ;
-                if (dx * dx + dy * dy + dz * dz < 0.75f * 0.75f) {
+                if (dx * dx + dy * dy + dz * dz < 1.15f * 1.15f) {
                     if (damage < 6) damage = 6;
                     ball.active = false; ball.root.setRenderingEnable(false);
                 }
@@ -1145,7 +1146,7 @@ final class MobSystem {
         int life;
         float x, y, z, vx, vy, vz;
         Fireball(Appearance appearance) {
-            root.addChild(makeBox(0, 0, 0.7f, 0.7f, 0.7f, 1, 1, 1, appearance, false));
+            root.addChild(makeBox(0, 0, 1.4f, 1.4f, 1.4f, 1, 1, 1, appearance, false));
             root.setRenderingEnable(false);
         }
     }
