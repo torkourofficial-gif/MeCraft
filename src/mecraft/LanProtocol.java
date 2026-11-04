@@ -20,8 +20,8 @@ final class LanProtocol {
     static final int DISCOVERY_QUERY = 1;
     static final int DISCOVERY_RESPONSE = 2;
     static final int HELLO = 3;
-    static final int ACCEPT = 2;
-    static final int REJECT = 3;
+    static final int ACCEPT = 4;
+    static final int REJECT = 5;
     static final int PLAYER_STATE = 10;
     static final int PLAYER_LEAVE = 11;
     static final int BLOCK_CHANGE = 20;
