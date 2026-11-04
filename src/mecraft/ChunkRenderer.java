@@ -32,7 +32,7 @@ final class ChunkRenderer {
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
-    private static final int TORCH_LIGHT_RADIUS = 7;
+    private static final int TORCH_LIGHT_RADIUS = 4;
     private static final int MAX_CHUNK_TORCHES = 128;
     private final int[] chunkTorchX = new int[MAX_CHUNK_TORCHES];
     private final int[] chunkTorchY = new int[MAX_CHUNK_TORCHES];
@@ -1078,7 +1078,7 @@ final class ChunkRenderer {
         return mobs.spawnFromEgg(world, eggType, x, y, z);
     }
 
-    /** Applies Indev's 24000-tick celestial curve and lights nearby torches with a fixed M3G pool. */
+    /** Applies Indev's 24000-tick celestial curve; torch light is baked into voxel face colors. */
     void updateDayNight(VoxelWorld world) {
         if (world.nether) {
             currentDaylight = 0.32f;
@@ -1110,8 +1110,8 @@ final class ChunkRenderer {
     }
 
     private void updateTorchLights(VoxelWorld world) {
-        // Torch contribution is baked into block-face colors during chunk meshing.
-        // M3G omni lights would reintroduce triangle-interpolated lighting.
+        // No M3G point lights: nearby blocks receive discrete brightness levels
+        // in torchLightAt() while their chunk meshes are built.
         for (int i = 0; i < torchLights.length; i++) torchLights[i].setIntensity(0.0f);
     }
 
@@ -1601,7 +1601,7 @@ final class ChunkRenderer {
                 }
     }
 
-    /** Manhattan falloff approximates classic voxel light levels, never triangle interpolation. */
+    /** Block-quantized torch falloff: each Manhattan step loses one brightness level. */
     private int torchLightAt(int x, int y, int z) {
         // Most chunks have no torches nearby. Avoid entering the per-block
         // torch loop entirely in that common case.
@@ -1610,9 +1610,9 @@ final class ChunkRenderer {
         for (int i = 0; i < chunkTorchCount; i++) {
             int distance = Math.abs(x - chunkTorchX[i]) +
                     Math.abs(y - chunkTorchY[i]) + Math.abs(z - chunkTorchZ[i]);
-            int level = 14 - distance;
+            int level = TORCH_LIGHT_RADIUS + 1 - distance;
             if (level > best) best = level;
-            if (best >= 14) return 14;
+            if (best > TORCH_LIGHT_RADIUS) return TORCH_LIGHT_RADIUS;
         }
         return best;
     }
