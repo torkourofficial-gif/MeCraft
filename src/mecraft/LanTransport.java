@@ -21,6 +21,7 @@ final class LanTransport implements Runnable {
         void onLanPeerCount(int count);
         void onLanConnected(String hostName);
         void onLanError(String message);
+        void onLanPacket(int playerId, byte[] packet);
     }
 
     private static final int HOST = 1;
@@ -35,6 +36,8 @@ final class LanTransport implements Runnable {
     private ServerSocketConnection server;
     private DatagramConnection discovery;
     private SocketConnection clientSocket;
+    private DataOutputStream clientOutput;
+    private final DataOutputStream[] peerOutputs = new DataOutputStream[LanProtocol.MAX_PLAYERS - 1];
     private final SocketConnection[] peerSockets =
             new SocketConnection[LanProtocol.MAX_PLAYERS - 1];
     private volatile int peerCount;
@@ -251,6 +254,10 @@ final class LanTransport implements Runnable {
         clientSocket = (SocketConnection)Connector.open(
                 "socket://" + hostAddress + ":" + LanProtocol.GAME_PORT);
         DataOutputStream output = clientSocket.openDataOutputStream();
+        synchronized (this) {
+            if (!running) return;
+            clientOutput = output;
+        }
         DataInputStream input = clientSocket.openDataInputStream();
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DataOutputStream hello = new DataOutputStream(bytes);
@@ -275,7 +282,7 @@ final class LanTransport implements Runnable {
         while (running) {
             byte[] packet = LanProtocol.readFrame(input);
             if (packet == null) break;
-            // World/player replication messages are added in the next milestone.
+            if (listener != null) listener.onLanPacket(0, response);
         }
         if (running) {
             stop();
@@ -321,6 +328,7 @@ final class LanTransport implements Runnable {
                         }
                         if (slot >= 0) {
                             peerSockets[slot] = socket;
+                            peerOutputs[slot] = output;
                             peerCount++;
                         }
                     }
@@ -340,8 +348,7 @@ final class LanTransport implements Runnable {
                 while (running) {
                     byte[] incoming = LanProtocol.readFrame(input);
                     if (incoming == null) break;
-                    // Client actions will be decoded and validated in the
-                    // world-synchronization milestone.
+                    if (listener != null) listener.onLanPacket(slot + 1, incoming);
                 }
             } catch (Throwable problem) {
                 if (running) notifyStatus("Un jugador se desconecto.");
@@ -349,6 +356,7 @@ final class LanTransport implements Runnable {
                 synchronized (LanTransport.this) {
                     if (slot >= 0 && peerSockets[slot] == socket) {
                         peerSockets[slot] = null;
+                        peerOutputs[slot] = null;
                         peerCount--;
                     } else if (slot < 0 && !pendingReleased && pendingPeers > 0) {
                         pendingPeers--;
@@ -356,6 +364,51 @@ final class LanTransport implements Runnable {
                 }
                 closeSocket(socket);
                 notifyPeerCount();
+            }
+        }
+    }
+
+    /**
+     * Sends a framed gameplay packet to the host (client mode).
+     * Packet payload must begin with a LanProtocol opcode.
+     */
+    void sendToHost(byte[] packet) throws IOException {
+        DataOutputStream output;
+        synchronized (this) {
+            if (!running || mode != JOIN || clientOutput == null)
+                throw new IOException("LAN client is not connected");
+            output = clientOutput;
+        }
+        LanProtocol.writeFrame(output, packet);
+    }
+
+    /** Sends a framed packet to one guest; player IDs 1..3 belong to guests. */
+    void sendToPlayer(int playerId, byte[] packet) throws IOException {
+        if (mode != HOST || playerId < 1 || playerId >= LanProtocol.MAX_PLAYERS)
+            throw new IOException("Invalid LAN player");
+        DataOutputStream output;
+        synchronized (this) {
+            if (!running || peerOutputs[playerId - 1] == null)
+                throw new IOException("LAN player is not connected");
+            output = peerOutputs[playerId - 1];
+        }
+        LanProtocol.writeFrame(output, packet);
+    }
+
+    /** Broadcasts a framed packet to every connected guest. */
+    void broadcast(byte[] packet) {
+        if (mode != HOST) return;
+        int i;
+        for (i = 0; i < peerOutputs.length; i++) {
+            DataOutputStream output;
+            synchronized (this) {
+                output = running ? peerOutputs[i] : null;
+            }
+            if (output != null) {
+                try { LanProtocol.writeFrame(output, packet); }
+                catch (IOException problem) {
+                    // The peer reader will perform normal disconnect cleanup.
+                }
             }
         }
     }
@@ -434,10 +487,14 @@ final class LanTransport implements Runnable {
             server = null;
             discovery = null;
             clientSocket = null;
+            clientOutput = null;
             peer0 = peerSockets.length > 0 ? peerSockets[0] : null;
             peer1 = peerSockets.length > 1 ? peerSockets[1] : null;
             peer2 = peerSockets.length > 2 ? peerSockets[2] : null;
-            for (int i = 0; i < peerSockets.length; i++) peerSockets[i] = null;
+            for (int i = 0; i < peerSockets.length; i++) {
+                peerSockets[i] = null;
+                peerOutputs[i] = null;
+            }
             peerCount = 0;
             pendingPeers = 0;
         }
