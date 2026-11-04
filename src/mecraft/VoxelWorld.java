@@ -473,18 +473,31 @@ final class VoxelWorld {
     }
 
     private float explosionResistance(byte id) {
-        // Alpha's Block.func_227_a returns blockResistance / 5.0F.
+        // Alpha 1.2.6 blockResistance values, divided by five as in Block.func_227_a.
         if (id == Block.BEDROCK) return 3600000.0f;
         if (id == Block.OBSIDIAN) return 1200.0f;
         if (id == Block.STONE || id == Block.COBBLESTONE || id == Block.IRON)
             return 6.0f;
         if (id == Block.PLANKS || id == Block.LOG) return 3.0f;
         if (id == Block.GOLD_ORE || id == Block.DIAMOND_ORE ||
-            id == Block.REDSTONE_ORE) return 3.0f;
+            id == Block.REDSTONE_ORE || id == Block.COAL) return 3.0f;
+        if (id == Block.GOLD_BLOCK) return 3.0f;
+        if (id == Block.IRON_BLOCK || id == Block.DIAMOND_BLOCK) return 5.0f;
+        if (id == Block.CRAFTING_TABLE || id == Block.FURNACE) return 3.0f;
+        if (id == Block.CHEST) return 2.5f;
+        if (id == Block.WOOL) return 0.8f;
+        if (id == Block.LEAVES || id == Block.NETHERRACK) return 0.2f;
+        if (id == Block.GLASS || id == Block.GLOWSTONE) return 0.3f;
+        if (id == Block.CACTUS) return 0.4f;
+        if (id == Block.SNOW) return 0.1f;
+        if (id == Block.GRASS || id == Block.DIRT || id == Block.SAND ||
+            id == Block.GRAVEL || id == Block.FARMLAND || id == Block.CLAY_BLOCK ||
+            id == Block.SOUL_SAND) return 0.5f;
         if (Block.isFluid(id)) return 100.0f;
-        if (id == Block.DIRT || id == Block.SAND) return 0.5f;
-        if (id == Block.GLASS) return 0.3f;
-        return 0.0f;
+        // Non-solid decoration (flowers, torches, rails, fire and TNT) has no blast resistance.
+        if (id == Block.AIR || id == Block.TNT || id == Block.TORCH ||
+            id == Block.FIRE || id == Block.RAIL || Block.isFlower(id)) return 0.0f;
+        return 0.5f;
     }
 
     private int randomInt(int bound) {
