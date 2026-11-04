@@ -297,14 +297,16 @@ final class LanTransport implements Runnable {
                     return;
                 }
                 synchronized (LanTransport.this) {
-                    pendingPeers--;
+                    if (pendingPeers > 0) pendingPeers--;
                     pendingReleased = true;
-                    for (int i = 0; i < peerSockets.length; i++) {
-                        if (peerSockets[i] == null) { slot = i; break; }
-                    }
-                    if (slot >= 0) {
-                        peerSockets[slot] = socket;
-                        peerCount++;
+                    if (running) {
+                        for (int i = 0; i < peerSockets.length; i++) {
+                            if (peerSockets[i] == null) { slot = i; break; }
+                        }
+                        if (slot >= 0) {
+                            peerSockets[slot] = socket;
+                            peerCount++;
+                        }
                     }
                 }
                 if (slot < 0) {
