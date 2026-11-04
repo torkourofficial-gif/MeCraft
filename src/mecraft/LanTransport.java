@@ -130,8 +130,9 @@ final class LanTransport implements Runnable {
 
     private void runDiscoveryResponder(DatagramConnection channel) {
         while (running) {
-            Datagram request = channel.newDatagram(96);
+            Datagram request;
             try {
+                request = channel.newDatagram(96);
                 channel.receive(request);
             } catch (Throwable problem) {
                 if (running) {
