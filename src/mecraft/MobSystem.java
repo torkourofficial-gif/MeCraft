@@ -384,23 +384,41 @@ final class MobSystem {
     boolean spawnFromEgg(VoxelWorld world, int eggType, float x, float y, float z) {
         if (world == null || eggType < 0 || eggType >= 11 || y < 1.0f || y + 2.0f >= VoxelWorld.HEIGHT)
             return false;
-        int slot;
-        if (eggType == 0) slot = 0;
-        else if (eggType == 1) slot = 1;
-        else if (eggType == 2) slot = 7;
-        else if (eggType == 3) slot = 9;
-        else if (eggType == 4) slot = 8;
-        else if (eggType == 5) slot = 2;
-        else if (eggType == 6) slot = 3;
-        else if (eggType == 7) slot = 10;
-        else if (eggType == 8) slot = 11;
-        else if (eggType == 9) slot = 12;
-        else slot = 13;
+        int preferredSlot;
+        if (eggType == 0) preferredSlot = 0;
+        else if (eggType == 1) preferredSlot = 1;
+        else if (eggType == 2) preferredSlot = 7;
+        else if (eggType == 3) preferredSlot = 9;
+        else if (eggType == 4) preferredSlot = 8;
+        else if (eggType == 5) preferredSlot = 2;
+        else if (eggType == 6) preferredSlot = 3;
+        else if (eggType == 7) preferredSlot = 10;
+        else if (eggType == 8) preferredSlot = 11;
+        else if (eggType == 9) preferredSlot = 12;
+        else preferredSlot = 13;
         int bx = floor(x), by = floor(y), bz = floor(z);
         if (world.get(bx, by, bz) != Block.AIR || world.get(bx, by + 1, bz) != Block.AIR)
             return false;
+        int slot = -1;
+        for (int i = 0; i < mobs.length; i++) {
+            if (mobs[i] == null || (!mobs[i].alive && !mobs[i].dying)) { slot = i; break; }
+        }
+        if (slot < 0) slot = preferredSlot;
         releaseMob(slot);
-        Mob mob = createMob(slot);
+        int type = eggType;
+        if (type == 0) type = PIG;
+        else if (type == 1) type = SHEEP;
+        else if (type == 2) type = ZOMBIE;
+        else if (type == 3) type = CREEPER;
+        else if (type == 4) type = SKELETON;
+        else if (type == 5) type = COW;
+        else if (type == 6) type = CHICKEN;
+        else if (type == 7) type = SPIDER;
+        else if (type == 8) type = SLIME;
+        else if (type == 9) type = GHAST;
+        else type = PIG_ZOMBIE;
+        Mob mob = createMob(slot, type);
+        mob.eggSpawned = true;
         mob.x = x; mob.y = y; mob.z = z;
         mob.yaw = random.nextInt(360);
         mob.targetYaw = mob.yaw;
@@ -430,9 +448,12 @@ final class MobSystem {
     }
 
     private Mob createMob(int slot) {
+        return createMob(slot, mobTypeForSlot(slot));
+    }
+
+    private Mob createMob(int slot, int type) {
         Mob mob = mobs[slot];
         if (mob != null) return mob;
-        int type = mobTypeForSlot(slot);
         int woolColor = type == SHEEP ? naturalSheepColor() : 0;
         Appearance fleece = type == SHEEP ? skin(fleeceTextures[woolColor]) : null;
         mob = new Mob(type, skin(mobTextures[type]), fleece, fireAppearance,
@@ -538,13 +559,13 @@ final class MobSystem {
         }
         boolean night = world.nether || world.isNight();
         for (int i = 0; i < mobs.length; i++) {
-            if (isHostile(mobTypeForSlot(i)) && !hostileAllowed(mobTypeForSlot(i), world) &&
-                    mobs[i] != null) releaseMob(i);
+            if (isHostile(mobTypeForSlot(i)) && (mobs[i] == null || !mobs[i].eggSpawned) &&
+                    !hostileAllowed(mobTypeForSlot(i), world) && mobs[i] != null) releaseMob(i);
         }
         if (!night) {
             for (int i = 0; i < mobs.length; i++) {
                 Mob mob = mobs[i];
-                if (!isHostile(mobTypeForSlot(i))) continue;
+                if (!isHostile(mobTypeForSlot(i)) || mob != null && mob.eggSpawned) continue;
                 if (!hostileAllowed(mobTypeForSlot(i), world) || !hostileSlotAllowed(i, world)) {
                     if (mob != null) releaseMob(i);
                     continue;
@@ -566,7 +587,7 @@ final class MobSystem {
             if (tick % respawnInterval == 0) {
                 for (int i = 0; i < mobs.length; i++) {
                     Mob mob = mobs[i];
-                    if (isHostile(mobTypeForSlot(i)) && hostileAllowed(mobTypeForSlot(i), world) && hostileSlotAllowed(i, world) &&
+                    if ((mob == null || !mob.eggSpawned) && isHostile(mobTypeForSlot(i)) && hostileAllowed(mobTypeForSlot(i), world) && hostileSlotAllowed(i, world) &&
                         (mob == null || (!mob.alive && !mob.dying))) {
                         spawnZombie(world, createMob(i));
                         break;
@@ -578,7 +599,7 @@ final class MobSystem {
         zombiesNightActive = true;
         for (int i = 0; i < mobs.length; i++) {
             Mob mob = mobs[i];
-            if (!isHostile(mobTypeForSlot(i)) || !hostileAllowed(mobTypeForSlot(i), world) || !hostileSlotAllowed(i, world)) continue;
+            if (mob != null && mob.eggSpawned || !isHostile(mobTypeForSlot(i)) || !hostileAllowed(mobTypeForSlot(i), world) || !hostileSlotAllowed(i, world)) continue;
             if (mob == null) mob = createMob(i);
             if (mob.dying) continue;
             if (mob.alive) {
@@ -1140,6 +1161,7 @@ final class MobSystem {
         int nextWander;
         boolean alive;
         boolean dying;
+        boolean eggSpawned;
         boolean chasing;
         boolean sheared;
         int woolColor;
