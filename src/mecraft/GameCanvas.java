@@ -3263,6 +3263,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         repaint();
     }
 
+    public synchronized void onLanPacket(int playerId, byte[] packet) {
+        // The gameplay layer consumes framed protocol payloads here. Keep
+        // packet decoding off the render loop and never mutate M3G from a
+        // network worker thread.
+    }
+
     public synchronized void onLanError(String message) {
         lanStatus = message == null ? lanLabel("Error de red.", "Network error.") : message;
         repaint();
