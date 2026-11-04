@@ -2666,7 +2666,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             int[] eggPixels = new int[16 * 16];
             for (int egg = 0; egg < ItemCatalog.SPAWN_EGG_COUNT; egg++) {
                 int id = ItemCatalog.SPAWN_EGG_PIG + egg;
-                eggAtlas.getRGB(eggPixels, 0, 16, (egg & 7) * 16, (egg >> 3) * 16, 16, 16);
+                // The first three atlas cells are generic templates, not mob eggs.
+                int atlasTile = egg + 3;
+                eggAtlas.getRGB(eggPixels, 0, 16, (atlasTile & 7) * 16, (atlasTile >> 3) * 16, 16, 16);
                 itemIcons[id] = Image.createRGBImage(eggPixels, 16, 16, true);
                 mutedItemIcons[id] = makeMutedIcon(itemIcons[id]);
             }
