@@ -2911,7 +2911,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 if (state == INVENTORY || state == WORKBENCH) drawCrafting(g, state == WORKBENCH);
                 if (state == CREATIVE_INVENTORY) drawCreativeInventory(g);
             } catch (OutOfMemoryError exhausted) {
-                showError("M3G agotó el heap. El diseño apunta a móviles con heap total de 4 MiB o más.");
+                showError("M3G agotó la memoria disponible durante el dibujo. Cierra y vuelve a abrir el mundo para liberar recursos.");
                 drawError(g);
             } catch (Throwable problem) {
                 showDiagnostic(stage, problem);
