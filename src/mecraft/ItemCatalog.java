@@ -220,10 +220,10 @@ final class ItemCatalog {
 
     static String name(int id) {
         if (isSpawnEgg(id)) {
-            String[] eggNames = new String[] { "Huevo generador de cerdo", "Huevo generador de oveja",
-                "Huevo generador de zombi", "Huevo generador de creeper", "Huevo generador de esqueleto",
-                "Huevo generador de vaca", "Huevo generador de gallina", "Huevo generador de araña",
-                "Huevo generador de slime", "Huevo generador de ghast", "Huevo generador de cerdo zombi" };
+            String[] eggNames = new String[] { "Huevo de spawn de cerdo", "Huevo de spawn de oveja",
+                "Huevo de spawn de zombi", "Huevo de spawn de creeper", "Huevo de spawn de esqueleto",
+                "Huevo de spawn de vaca", "Huevo de spawn de gallina", "Huevo de spawn de araña",
+                "Huevo de spawn de slime", "Huevo de spawn de ghast", "Huevo de spawn de cerdo zombi" };
             return eggNames[id - SPAWN_EGG_PIG];
         }
         if (id == STICK) return "Palo";
