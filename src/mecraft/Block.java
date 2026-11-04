@@ -312,7 +312,8 @@ final class Block {
     }
 
     static boolean dropsItem(byte id) {
-        return id != AIR && !isFluid(id) && id != BEDROCK && id != TNT && id != PORTAL;
+        // Fire is a transient world effect, never a collectible block.
+        return id != AIR && id != FIRE && !isFluid(id) && id != BEDROCK && id != TNT && id != PORTAL;
     }
 
     static int dropId(byte id) {
