@@ -257,18 +257,48 @@ final class InfdevTerrain {
                     int radius = 3 + ((h >>> 27) & 1);
                     carveCaveRoom(originX, originZ, heights, blocks, cx, cy, cz,
                                   radius, 2, true);
-                    int shaftRadius = (h & 0x100) == 0 ? 0 : 1;
-                    for (int sy = cy + 1; sy <= surface; sy++) {
-                        for (int dz = -shaftRadius; dz <= shaftRadius; dz++) {
-                            for (int dx = -shaftRadius; dx <= shaftRadius; dx++) {
-                                int wx = cx + dx, wz = cz + dz;
+                    // Most surface cave mouths descend as a broad, walkable
+                    // switchback-free ramp instead of a vertical shaft.
+                    int direction = (h >>> 18) & 3;
+                    int dirX = direction == 0 ? 1 : direction == 1 ? -1 : 0;
+                    int dirZ = direction == 2 ? 1 : direction == 3 ? -1 : 0;
+                    int rampDepth = 5 + ((h >>> 24) & 3);
+                    for (int step = 0; step <= rampDepth; step++) {
+                        int px = cx + dirX * step;
+                        int pz = cz + dirZ * step;
+                        int floorY = surface - step;
+                        for (int width = -1; width <= 1; width++) {
+                            int wx = px + (dirX == 0 ? width : 0);
+                            int wz = pz + (dirZ == 0 ? width : 0);
+                            if (wx < originX || wx >= originX + CHUNK_SIZE ||
+                                wz < originZ || wz >= originZ + CHUNK_SIZE) continue;
+                            int col = (wz - originZ) * CHUNK_SIZE + wx - originX;
+                            // Leave the block under each step intact as a stair-like
+                            // floor, and clear enough headroom for the player.
+                            for (int clearY = floorY + 1; clearY <= floorY + 3; clearY++) {
+                                if (clearY > 1 && clearY < WORLD_HEIGHT &&
+                                    clearY <= heights[col])
+                                    blocks[col * WORLD_HEIGHT + clearY] = Block.AIR;
+                            }
+                        }
+                    }
+                    // Connect the ramp to the chamber without making a drop shaft.
+                    carveCaveRoom(originX, originZ, heights, blocks, cx, cy, cz,
+                                  radius, 2, true);
+                    // Some caves contain a small lava pocket at their lowest point.
+                    if ((h & 7) == 3) {
+                        int lavaY = Math.max(2, cy - 2);
+                        int lavaRadius = 1 + ((h >>> 29) & 1);
+                        for (int lz = -lavaRadius; lz <= lavaRadius; lz++) {
+                            for (int lx = -lavaRadius; lx <= lavaRadius; lx++) {
+                                if (lx * lx + lz * lz > lavaRadius * lavaRadius + 1) continue;
+                                int wx = cx + lx, wz = cz + lz;
                                 if (wx < originX || wx >= originX + CHUNK_SIZE ||
                                     wz < originZ || wz >= originZ + CHUNK_SIZE) continue;
                                 int col = (wz - originZ) * CHUNK_SIZE + wx - originX;
-                                // Clear the top block too: otherwise this is a
-                                // sealed underground shaft, not a surface opening.
-                                if (sy <= heights[col] && sy > 1)
-                                    blocks[col * WORLD_HEIGHT + sy] = Block.AIR;
+                                int at = col * WORLD_HEIGHT + lavaY;
+                                if (blocks[at] == Block.AIR)
+                                    blocks[at] = Block.LAVA;
                             }
                         }
                     }
