@@ -409,7 +409,7 @@ final class VoxelWorld {
         return id == Block.DOOR ? (doorMetadata(x, y, z) & 4) == 0 : Block.solid(id);
     }
 
-    /** Indev's shell ray blast, scaled to TNT radius 4 and stored in a reusable bitset. */
+    /** Alpha 1.2.6 Explosion ray marching, stored in a reusable bitset. */
     void explode(float x, float y, float z, float radius, DroppedItemSystem drops) {
         if (!inside(floorBlock(x), floorBlock(z))) {
             int reach = (int)(radius * 2.0f) + 1;
@@ -495,9 +495,17 @@ final class VoxelWorld {
     }
 
     private float explosionResistance(byte id) {
-        if (id == Block.BEDROCK) return 10000.0f;
-        if (id == Block.STONE || id == Block.COBBLESTONE || id == Block.IRON) return 2.0f;
+        // Alpha's Block.func_227_a returns blockResistance / 5.0F.
+        if (id == Block.BEDROCK) return 3600000.0f;
+        if (id == Block.OBSIDIAN) return 1200.0f;
+        if (id == Block.STONE || id == Block.COBBLESTONE || id == Block.IRON)
+            return 6.0f;
+        if (id == Block.PLANKS || id == Block.LOG) return 3.0f;
+        if (id == Block.GOLD_ORE || id == Block.DIAMOND_ORE ||
+            id == Block.REDSTONE_ORE) return 3.0f;
         if (Block.isFluid(id)) return 100.0f;
+        if (id == Block.DIRT || id == Block.SAND) return 0.5f;
+        if (id == Block.GLASS) return 0.3f;
         return 0.0f;
     }
 
