@@ -1075,6 +1075,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         boolean placed = coloredWool ? world.setWool(x, y, z,
                 ItemCatalog.woolColor(selectedItem)) : world.set(x, y, z, (byte)block);
         if (!placed) return;
+        if (block == Block.CHEST) {
+            // Match the horizontal direction the player is looking toward.
+            int facing = floorBlock((world.yaw + 45.0f) / 90.0f) & 3;
+            world.setChestFacing(x, y, z, facing);
+        }
         if (block == Block.RAIL) {
             // Alpha 1.2.6 derives rail metadata from connected rails, including
             // corners and uphill/downhill links, then refreshes nearby pieces.
