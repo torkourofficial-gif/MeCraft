@@ -1362,7 +1362,7 @@ final class ChunkRenderer {
                                 neighbor = chunkVoxelScratch[voxelIndex - CHUNK_AREA];
                             else neighbor = world.get(nx, ny, nz);
                             if (Block.faceVisible(id, neighbor)) {
-                                int tile = renderWorldTile(world, id, face, world.woolColor(x, y, z));
+                                int tile = renderWorldTile(world, id, face, x, y, z, world.woolColor(x, y, z));
                                 int light = chunkLightScratch[voxelIndex] & 255;
                                 key = light * TILE_COUNT + tile + 1;
                             }
@@ -1613,13 +1613,21 @@ final class ChunkRenderer {
         return best;
     }
 
-    private int renderWorldTile(VoxelWorld world, byte id, int face, int woolColor) {
+    private int renderWorldTile(VoxelWorld world, byte id, int face,
+                                int x, int y, int z, int woolColor) {
         if (id == Block.LAVA) return 234;
         if (world.nether) {
             if (id == Block.STONE) return 232;
             if (id == Block.SAND) return 233;
             if (id == Block.WATER) return 234;
             if (id == Block.COAL) return 235;
+        }
+        if (id == Block.CHEST) {
+            int facing = world.chestFacing(x, y, z);
+            int frontFace = facing == 0 ? 3 : (facing == 1 ? 2 : (facing == 2 ? 4 : 1));
+            if (face == frontFace) return 27;
+            if (face == 0) return 25;
+            return 26;
         }
         return Block.renderTile(id, face, woolColor);
     }
