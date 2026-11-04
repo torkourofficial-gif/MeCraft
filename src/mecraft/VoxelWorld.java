@@ -268,6 +268,24 @@ final class VoxelWorld {
         }
     }
 
+    /** Four horizontal chest facings: 0=-Z, 1=+X, 2=+Z, 3=-X. */
+    int chestFacing(int x, int y, int z) {
+        if (get(x, y, z) != Block.CHEST) return 0;
+        return metadataAt(x, y, z) & 3;
+    }
+
+    void setChestFacing(int x, int y, int z, int facing) {
+        if (get(x, y, z) != Block.CHEST) return;
+        int next = facing & 3;
+        if (chestFacing(x, y, z) == next) return;
+        setMetadata(x, y, z, next);
+        changedOldId = Block.CHEST;
+        changedX = x;
+        changedY = y;
+        changedZ = z;
+        revision++;
+    }
+
     /** Alpha 1.2.6 rail orientation metadata (0-9); shares the saved metadata byte. */
     int railMetadata(int x, int y, int z) {
         if (get(x, y, z) != Block.RAIL) return 0;
