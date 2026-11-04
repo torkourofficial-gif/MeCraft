@@ -31,6 +31,7 @@ final class LanTransport implements Runnable {
     private final String playerName;
     private volatile boolean running = true;
     private volatile boolean discoveryFound;
+    private volatile boolean discoveryTimedOut;
     private ServerSocketConnection server;
     private DatagramConnection discovery;
     private SocketConnection clientSocket;
@@ -68,7 +69,9 @@ final class LanTransport implements Runnable {
             else runJoin();
         } catch (Throwable problem) {
             if (running) {
-                String message = messageOf(problem);
+                String message = discoveryTimedOut ?
+                        "No se encontro esa sala. Comprueba el codigo y la red Wi-Fi." :
+                        messageOf(problem);
                 stop();
                 notifyError(message);
             }
@@ -104,9 +107,16 @@ final class LanTransport implements Runnable {
 
     private void runDiscoveryResponder() {
         while (running) {
+            Datagram request = discovery.newDatagram(96);
             try {
-                Datagram request = discovery.newDatagram(96);
                 discovery.receive(request);
+            } catch (Throwable problem) {
+                if (running) notifyError("LAN UDP: " + messageOf(problem));
+                return;
+            }
+
+            boolean matchingRequest = false;
+            try {
                 DataInputStream input = new DataInputStream(
                         new ByteArrayInputStream(request.getData(),
                                 request.getOffset(), request.getLength()));
@@ -114,11 +124,17 @@ final class LanTransport implements Runnable {
                 int version = input.readUnsignedByte();
                 int operation = input.readUnsignedByte();
                 String requestedCode = input.readUTF();
-                if (magic != LanProtocol.DISCOVERY_MAGIC ||
-                        version != LanProtocol.PROTOCOL_VERSION ||
-                        operation != LanProtocol.DISCOVERY_QUERY ||
-                        !roomCode.equals(requestedCode)) continue;
+                matchingRequest = magic == LanProtocol.DISCOVERY_MAGIC &&
+                        version == LanProtocol.PROTOCOL_VERSION &&
+                        operation == LanProtocol.DISCOVERY_QUERY &&
+                        roomCode.equals(requestedCode);
+            } catch (Throwable malformedPacket) {
+                // Ignore unrelated or truncated UDP packets; keep listening.
+                continue;
+            }
+            if (!matchingRequest) continue;
 
+            try {
                 Datagram reply = discovery.newDatagram(96);
                 reply.setAddress(request);
                 reply.writeInt(LanProtocol.DISCOVERY_MAGIC);
@@ -141,7 +157,10 @@ final class LanTransport implements Runnable {
         Thread timeout = new Thread(new Runnable() {
             public void run() {
                 try { Thread.sleep(7000L); } catch (InterruptedException ignored) { }
-                if (running && !discoveryFound) closeDatagram(waitingConnection);
+                if (running && !discoveryFound) {
+                    discoveryTimedOut = true;
+                    closeDatagram(waitingConnection);
+                }
             }
         });
         timeout.start();
@@ -158,21 +177,25 @@ final class LanTransport implements Runnable {
         while (running && !discoveryFound) {
             Datagram reply = discovery.newDatagram(96);
             discovery.receive(reply);
-            DataInputStream input = new DataInputStream(
-                    new ByteArrayInputStream(reply.getData(),
-                            reply.getOffset(), reply.getLength()));
-            int magic = input.readInt();
-            int version = input.readUnsignedByte();
-            int operation = input.readUnsignedByte();
-            String receivedCode = input.readUTF();
-            int port = input.readUnsignedShort();
-            if (magic == LanProtocol.DISCOVERY_MAGIC &&
-                    version == LanProtocol.PROTOCOL_VERSION &&
-                    operation == LanProtocol.DISCOVERY_RESPONSE &&
-                    roomCode.equals(receivedCode) &&
-                    port == LanProtocol.GAME_PORT) {
-                hostAddress = extractHost(reply.getAddress());
-                if (hostAddress != null) discoveryFound = true;
+            try {
+                DataInputStream input = new DataInputStream(
+                        new ByteArrayInputStream(reply.getData(),
+                                reply.getOffset(), reply.getLength()));
+                int magic = input.readInt();
+                int version = input.readUnsignedByte();
+                int operation = input.readUnsignedByte();
+                String receivedCode = input.readUTF();
+                int port = input.readUnsignedShort();
+                if (magic == LanProtocol.DISCOVERY_MAGIC &&
+                        version == LanProtocol.PROTOCOL_VERSION &&
+                        operation == LanProtocol.DISCOVERY_RESPONSE &&
+                        roomCode.equals(receivedCode) &&
+                        port == LanProtocol.GAME_PORT) {
+                    hostAddress = extractHost(reply.getAddress());
+                    if (hostAddress != null) discoveryFound = true;
+                }
+            } catch (Throwable malformedPacket) {
+                // Ignore unrelated datagrams while searching for the room.
             }
         }
         closeDatagram(discovery);
