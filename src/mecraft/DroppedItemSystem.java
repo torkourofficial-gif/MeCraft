@@ -221,7 +221,8 @@ final class DroppedItemSystem {
             }
 
             boolean primedTnt = tntFuse[i] > 0;
-            if (primedTnt && tntFuse[i] < 10 && tntFuse[i] / 5 % 2 == 0) hasTntFlash = true;
+            // Alpha 1.2.6 flashes the unchanged TNT texture white every five fuse ticks.
+            if (primedTnt && tntFuse[i] / 5 % 2 == 0) hasTntFlash = true;
             float entityHalfSize = primedTnt ? 0.5f : HALF_SIZE;
             vy[i] -= 0.04f;
             float preCollisionVerticalVelocity = vy[i];
@@ -364,7 +365,7 @@ final class DroppedItemSystem {
             return;
         }
         boolean primedTnt = itemId[slot] == Block.TNT && tntFuse[slot] > 0;
-        boolean flashTnt = primedTnt && tntFuse[slot] < 10 && tntFuse[slot] / 5 % 2 == 0;
+        boolean flashTnt = primedTnt && tntFuse[slot] / 5 % 2 == 0;
         float angle = primedTnt ? 0.0f : (age[slot] * 4.0f) * (float)Math.PI / 180.0f;
         float sin = (float)Math.sin(angle);
         float cos = (float)Math.cos(angle);
