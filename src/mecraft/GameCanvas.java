@@ -2666,8 +2666,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             int[] eggPixels = new int[16 * 16];
             for (int egg = 0; egg < ItemCatalog.SPAWN_EGG_COUNT; egg++) {
                 int id = ItemCatalog.SPAWN_EGG_PIG + egg;
-                // The first three atlas cells are generic templates, not mob eggs.
-                int atlasTile = egg + 3;
+                // eggs.png follows the 1.2.5 EntityList egg order after 8 template/empty cells:
+                // Creeper, Skeleton, Spider, Zombie, Slime, Ghast, PigZombie, Pig, Sheep, Cow, Chicken.
+                final int[] atlasTileByMob = new int[] { 15, 16, 11, 8, 9, 17, 18, 10, 12, 13, 14 };
+                int atlasTile = atlasTileByMob[egg];
                 eggAtlas.getRGB(eggPixels, 0, 16, (atlasTile & 7) * 16, (atlasTile >> 3) * 16, 16, 16);
                 itemIcons[id] = Image.createRGBImage(eggPixels, 16, 16, true);
                 mutedItemIcons[id] = makeMutedIcon(itemIcons[id]);
@@ -4018,10 +4020,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
         int selectedBlock = creativeItemAt(creativeSelection);
         g.setColor(35, 35, 35);
-        String name = Language.text(ItemCatalog.name(selectedBlock));
-        if (name.length() > 16) name = name.substring(0, 16);
-        g.drawString(name + "  " + (creativeSelection / pageSize + 1) + "/" + pageCount,
-                w / 2, top + 137, Graphics.TOP | Graphics.HCENTER);
+        if (ItemCatalog.isSpawnEgg(selectedBlock)) {
+            g.drawString("Huevo de spawn", w / 2, top + 132, Graphics.TOP | Graphics.HCENTER);
+            g.drawString(ItemCatalog.spawnEggMobName(selectedBlock), w / 2, top + 146,
+                    Graphics.TOP | Graphics.HCENTER);
+            g.drawString((creativeSelection / pageSize + 1) + "/" + pageCount,
+                    left + panelW - 7, top + 132, Graphics.TOP | Graphics.RIGHT);
+        } else {
+            String name = Language.text(ItemCatalog.name(selectedBlock));
+            if (name.length() > 16) name = name.substring(0, 16);
+            g.drawString(name + "  " + (creativeSelection / pageSize + 1) + "/" + pageCount,
+                    w / 2, top + 137, Graphics.TOP | Graphics.HCENTER);
+        }
     }
 
     private void drawInventoryCell(Graphics g, int id, int x, int y) {
