@@ -165,13 +165,20 @@ final class LanTransport implements Runnable {
         });
         timeout.start();
 
-        Datagram request = discovery.newDatagram(96,
-                "datagram://255.255.255.255:" + LanProtocol.DISCOVERY_PORT);
-        request.writeInt(LanProtocol.DISCOVERY_MAGIC);
-        request.writeByte(LanProtocol.PROTOCOL_VERSION);
-        request.writeByte(LanProtocol.DISCOVERY_QUERY);
-        request.writeUTF(roomCode);
-        discovery.send(request);
+        int attempt;
+        for (attempt = 0; attempt < 3 && running; attempt++) {
+            Datagram request = discovery.newDatagram(96,
+                    "datagram://255.255.255.255:" + LanProtocol.DISCOVERY_PORT);
+            request.writeInt(LanProtocol.DISCOVERY_MAGIC);
+            request.writeByte(LanProtocol.PROTOCOL_VERSION);
+            request.writeByte(LanProtocol.DISCOVERY_QUERY);
+            request.writeUTF(roomCode);
+            discovery.send(request);
+            if (attempt < 2) {
+                try { Thread.sleep(180L); }
+                catch (InterruptedException ignored) { }
+            }
+        }
 
         String hostAddress = null;
         while (running && !discoveryFound) {
@@ -234,7 +241,10 @@ final class LanTransport implements Runnable {
             if (packet == null) break;
             // World/player replication messages are added in the next milestone.
         }
-        if (running) notifyError("La conexion con el anfitrion termino.");
+        if (running) {
+            stop();
+            notifyError("La conexion con el anfitrion termino.");
+        }
     }
 
     private final class PeerTask implements Runnable {
