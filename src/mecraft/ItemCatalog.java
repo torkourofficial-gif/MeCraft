@@ -203,6 +203,13 @@ final class ItemCatalog {
         return isSpawnEgg(id) ? id - SPAWN_EGG_PIG : -1;
     }
 
+    static String spawnEggMobName(int id) {
+        if (!isSpawnEgg(id)) return "";
+        String[] mobNames = new String[] { "cerdo", "oveja", "zombi", "creeper", "esqueleto",
+            "vaca", "gallina", "araña", "slime", "ghast", "cerdo zombi" };
+        return mobNames[id - SPAWN_EGG_PIG];
+    }
+
     static int iconIndex(int id) {
         if (isSpawnEgg(id)) return -1;
         // Alpha's wooden door item icon in items.png (tile 43).
