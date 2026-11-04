@@ -1610,9 +1610,10 @@ final class ChunkRenderer {
         for (int i = 0; i < chunkTorchCount; i++) {
             int distance = Math.abs(x - chunkTorchX[i]) +
                     Math.abs(y - chunkTorchY[i]) + Math.abs(z - chunkTorchZ[i]);
-            int level = TORCH_LIGHT_RADIUS + 1 - distance;
+            int level = (TORCH_LIGHT_RADIUS + 1 - distance) * 3;
+            if (level > 14) level = 14;
             if (level > best) best = level;
-            if (best > TORCH_LIGHT_RADIUS) return TORCH_LIGHT_RADIUS;
+            if (best >= 14) return 14;
         }
         return best;
     }
