@@ -1127,9 +1127,9 @@ final class MobSystem {
         return damage;
     }
 
-    private Appearance createFireballAppearance() {
-        // Use the actual orange-wool fleece texture, not the old glowing flame color.
-        return skin(texture(recolor(GameAssets.image("sheep_fur.png"), 1)));
+    private Appearance createFireballAppearance() throws IOException {
+        // Crop and dye the wool block directly from the terrain atlas (textures.png).
+        return skin(texture(WoolColors.texture(GameAssets.terrain(), 1)));
     }
 
     private Mesh makeFireballSphere(Appearance appearance) {
