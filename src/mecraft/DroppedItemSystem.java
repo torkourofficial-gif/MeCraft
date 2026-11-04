@@ -195,7 +195,7 @@ final class DroppedItemSystem {
     }
 
     /** Returns one collected block ID, or -1 when nothing was collected. */
-    int update(VoxelWorld world, int[] inventory) {
+    int update(VoxelWorld world, int[] inventory, PlayerPhysics physics) {
         if (activeCount == 0) {
             mesh.setRenderingEnable(false);
             spriteMesh.setRenderingEnable(false);
@@ -246,7 +246,7 @@ final class DroppedItemSystem {
                 explosionY = floorBlock(y[i]);
                 explosionZ = floorBlock(z[i]);
                 explosionPending = true;
-                damagePlayerFromExplosion(world, x[i], y[i], z[i]);
+                damagePlayerFromExplosion(world, x[i], y[i], z[i], physics);
                 world.explode(x[i], y[i], z[i], 4.0f, this);
                 itemId[i] = 0;
                 tntFuse[i] = 0;
@@ -300,7 +300,8 @@ final class DroppedItemSystem {
     int explosionY() { return explosionY; }
     int explosionZ() { return explosionZ; }
 
-    private void damagePlayerFromExplosion(VoxelWorld world, float ex, float ey, float ez) {
+    private void damagePlayerFromExplosion(VoxelWorld world, float ex, float ey, float ez,
+                                           PlayerPhysics physics) {
         if (world.mode != 0) return;
         float dx = world.playerX - ex;
         float dy = world.playerY + 0.9f - ey;
@@ -311,6 +312,13 @@ final class DroppedItemSystem {
         int damage = (int)((impact * impact + impact) * 32.0f + 1.0f);
         world.health -= damage;
         if (world.health < 0) world.health = 0;
+        if (distance > 0.0001f && physics != null) {
+            // Alpha Explosion applies the same normalized, exposure-scaled
+            // impulse used for damage; this bounded world has no AABB ray sampler,
+            // so retain its current distance-only exposure approximation.
+            physics.addExplosionImpulse(dx / distance * impact,
+                    dy / distance * impact, dz / distance * impact);
+        }
     }
 
     private void move(VoxelWorld world, int i, float halfSize) {
