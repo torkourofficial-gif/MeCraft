@@ -282,7 +282,7 @@ final class LanTransport implements Runnable {
         while (running) {
             byte[] packet = LanProtocol.readFrame(input);
             if (packet == null) break;
-            if (listener != null) listener.onLanPacket(0, response);
+            if (listener != null) listener.onLanPacket(0, packet);
         }
         if (running) {
             stop();
@@ -379,7 +379,9 @@ final class LanTransport implements Runnable {
                 throw new IOException("LAN client is not connected");
             output = clientOutput;
         }
-        LanProtocol.writeFrame(output, packet);
+        synchronized (output) {
+            LanProtocol.writeFrame(output, packet);
+        }
     }
 
     /** Sends a framed packet to one guest; player IDs 1..3 belong to guests. */
@@ -405,7 +407,11 @@ final class LanTransport implements Runnable {
                 output = running ? peerOutputs[i] : null;
             }
             if (output != null) {
-                try { LanProtocol.writeFrame(output, packet); }
+                try {
+                    synchronized (output) {
+                        LanProtocol.writeFrame(output, packet);
+                    }
+                }
                 catch (IOException problem) {
                     // The peer reader will perform normal disconnect cleanup.
                 }
