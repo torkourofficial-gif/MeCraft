@@ -143,8 +143,9 @@ final class Block {
         for (int id = DECORATIVE_START; id < COUNT; id++) {
             int tile = TILE[id];
             if (alphaBlockName(tile) == null || !hasAtlasTexture(tile)) continue;
-            // Fire and redstone torch states are internal/variant blocks.
-            if (tile == 31 || tile == 96 || tile == 99 || tile == 115) continue;
+            // Fire and portal are world-generated/internal blocks, not inventory items.
+            // Redstone torch states are also internal variants; the normal torch stays available.
+            if (tile == 14 || tile == 31 || tile == 96 || tile == 99 || tile == 115) continue;
             boolean duplicate = false;
             for (int i = 0; i < count; i++) {
                 if (TILE[temporary[i]] == tile) { duplicate = true; break; }
