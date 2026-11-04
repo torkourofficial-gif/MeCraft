@@ -384,18 +384,6 @@ final class MobSystem {
     boolean spawnFromEgg(VoxelWorld world, int eggType, float x, float y, float z) {
         if (world == null || eggType < 0 || eggType >= 11 || y < 1.0f || y + 2.0f >= VoxelWorld.HEIGHT)
             return false;
-        int preferredSlot;
-        if (eggType == 0) preferredSlot = 0;
-        else if (eggType == 1) preferredSlot = 1;
-        else if (eggType == 2) preferredSlot = 7;
-        else if (eggType == 3) preferredSlot = 9;
-        else if (eggType == 4) preferredSlot = 8;
-        else if (eggType == 5) preferredSlot = 2;
-        else if (eggType == 6) preferredSlot = 3;
-        else if (eggType == 7) preferredSlot = 10;
-        else if (eggType == 8) preferredSlot = 11;
-        else if (eggType == 9) preferredSlot = 12;
-        else preferredSlot = 13;
         int bx = floor(x), by = floor(y), bz = floor(z);
         if (world.get(bx, by, bz) != Block.AIR || world.get(bx, by + 1, bz) != Block.AIR)
             return false;
@@ -403,7 +391,7 @@ final class MobSystem {
         for (int i = 0; i < mobs.length; i++) {
             if (mobs[i] == null || (!mobs[i].alive && !mobs[i].dying)) { slot = i; break; }
         }
-        if (slot < 0) slot = preferredSlot;
+        if (slot < 0) return false;
         releaseMob(slot);
         int type = eggType;
         if (type == 0) type = PIG;
