@@ -1074,6 +1074,10 @@ final class ChunkRenderer {
         return mobs.update(world);
     }
 
+    boolean spawnMobFromEgg(VoxelWorld world, int eggType, float x, float y, float z) {
+        return mobs.spawnFromEgg(world, eggType, x, y, z);
+    }
+
     /** Applies Indev's 24000-tick celestial curve and lights nearby torches with a fixed M3G pool. */
     void updateDayNight(VoxelWorld world) {
         if (world.nether) {
