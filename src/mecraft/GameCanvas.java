@@ -3284,32 +3284,53 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         g.setColor(255, 255, 255);
         g.drawString(lanLabel("DEBUG: todos los items", "DEBUG: all items"),
                 w / 2, 9, Graphics.TOP | Graphics.HCENTER);
-        int rowHeight = 18;
-        int visible = Math.max(1, (h - 48) / rowHeight);
+
+        int rowHeight = 30;
+        int listTop = 25;
+        int visible = Math.max(1, (h - 34) / rowHeight);
         int total = ItemCatalog.COUNT - 1;
         int maxScroll = Math.max(0, total - visible);
         if (debugItemScroll > maxScroll) debugItemScroll = maxScroll;
+        Font font = Font.getDefaultFont();
+        int nameWidth = Math.max(24, w - 86);
+
         for (int row = 0; row < visible; row++) {
             int id = debugItemScroll + row + 1;
             if (id >= ItemCatalog.COUNT) break;
-            int y = 29 + row * rowHeight;
+            int y = listTop + row * rowHeight;
             if ((row & 1) == 0) {
                 g.setColor(45, 34, 26);
                 g.fillRect(10, y, w - 20, rowHeight);
             }
-            drawIcon(g, id, 12, y + 1, false);
+
+            drawIcon(g, id, 12, y + 7, false);
             g.setColor(255, 244, 220);
             String label = Language.text(ItemCatalog.name(id));
-            int maxChars = Math.max(8, (w - 78) / Math.max(5, Font.getDefaultFont().charWidth('M')));
-            if (label.length() > maxChars) label = label.substring(0, maxChars - 2) + "..";
-            g.drawString(label, 32, y + 2, Graphics.TOP | Graphics.LEFT);
+            if (label == null) label = "";
+            int split = label.length();
+            while (split > 0 && font.stringWidth(label.substring(0, split)) > nameWidth) {
+                split--;
+            }
+            if (split < label.length()) {
+                int space = label.lastIndexOf(' ', split);
+                if (space > 0) split = space;
+            }
+            String firstLine = label.substring(0, split).trim();
+            String secondLine = split < label.length() ? label.substring(split).trim() : "";
+            while (secondLine.length() > 0 && font.stringWidth(secondLine) > nameWidth) {
+                secondLine = secondLine.substring(0, secondLine.length() - 1);
+            }
+            if (split < label.length() && secondLine.length() < label.substring(split).trim().length()
+                    && secondLine.length() > 2) {
+                secondLine = secondLine.substring(0, secondLine.length() - 2) + "..";
+            }
+            g.drawString(firstLine, 32, y + 1, Graphics.TOP | Graphics.LEFT);
+            if (secondLine.length() > 0) {
+                g.drawString(secondLine, 32, y + 15, Graphics.TOP | Graphics.LEFT);
+            }
             g.setColor(190, 170, 145);
-            g.drawString("#" + id, w - 13, y + 2, Graphics.TOP | Graphics.RIGHT);
+            g.drawString("#" + id, w - 13, y + 8, Graphics.TOP | Graphics.RIGHT);
         }
-        g.setColor(255, 255, 255);
-        g.drawString((debugItemScroll + 1) + "-" + Math.min(total, debugItemScroll + visible) +
-                "/" + total + "   " + lanLabel("0: volver", "0: back"),
-                w / 2, h - 18, Graphics.BOTTOM | Graphics.HCENTER);
     }
 
     private String lanLabel(String spanish, String english) {
