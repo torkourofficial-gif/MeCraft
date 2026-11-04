@@ -3032,10 +3032,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (state == MENU) {
             int bh = Font.getDefaultFont().getHeight() + 8;
             int step = bh + 5;
-            int first = h / 2 - (bh * 4 + 15) / 2 + 15;
-            if (y >= first - 3 && y < first + step * 4) {
+            int first = h / 2 - (bh * 5 + 20) / 2 + 15;
+            if (y >= first - 3 && y < first + step * 5) {
                 int row = (y - first) / step;
-                if (row >= 0 && row < 4) { menuSelection = row; activateSelection(); }
+                if (row >= 0 && row < 5) { menuSelection = row; activateSelection(); }
+            }
+        } else if (state == LAN_MENU) {
+            int bh = Font.getDefaultFont().getHeight() + 8;
+            int step = bh + 7;
+            int first = h / 2 - 35;
+            if (y >= first - 3 && y < first + step * 3) {
+                int row = (y - first) / step;
+                if (row >= 0 && row < 3) {
+                    lanMenuSelection = row;
+                    activateLanSelection();
+                }
             }
         } else if (state == WORLD_SELECT) {
             int row = (y - 38) / 30;
