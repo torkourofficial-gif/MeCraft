@@ -1627,7 +1627,7 @@ final class ChunkRenderer {
     private void collectChunkTorches(VoxelWorld world, int x0, int y0, int z0,
                                      int x1, int y1, int z1) {
         chunkTorchCount = 0;
-        int scanRadius = world.nether ? LAVA_LIGHT_RADIUS : TORCH_LIGHT_RADIUS;
+        int scanRadius = LAVA_LIGHT_RADIUS;
         int minX = x0 - scanRadius, maxX = x1 + scanRadius;
         int minY = y0 - scanRadius, maxY = y1 + scanRadius;
         int minZ = z0 - scanRadius, maxZ = z1 + scanRadius;
@@ -1637,7 +1637,7 @@ final class ChunkRenderer {
             for (int z = minZ; z < maxZ && chunkTorchCount < MAX_CHUNK_TORCHES; z++)
                 for (int x = minX; x < maxX && chunkTorchCount < MAX_CHUNK_TORCHES; x++) {
                     byte source = world.getTorchCandidate(x, y, z);
-                    if (source != Block.TORCH && !(world.nether && source == Block.LAVA)) continue;
+                    if (source != Block.TORCH && source != Block.LAVA) continue;
                     chunkTorchX[chunkTorchCount] = x;
                     chunkTorchY[chunkTorchCount] = y;
                     chunkTorchZ[chunkTorchCount] = z;
