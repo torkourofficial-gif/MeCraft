@@ -3285,7 +3285,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         g.drawString(lanLabel("DEBUG: todos los items", "DEBUG: all items"),
                 w / 2, 9, Graphics.TOP | Graphics.HCENTER);
 
-        int rowHeight = 30;
+        int rowHeight = 24;
         int listTop = 25;
         int visible = Math.max(1, (h - 34) / rowHeight);
         int total = ItemCatalog.COUNT - 1;
@@ -3295,15 +3295,24 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         int nameWidth = Math.max(24, w - 86);
 
         for (int row = 0; row < visible; row++) {
-            int id = debugItemScroll + row + 1;
-            if (id >= ItemCatalog.COUNT) break;
+            int listIndex = debugItemScroll + row;
+            if (listIndex >= total) break;
+            // Keep all 11 spawn eggs together at the top of the debug catalog.
+            int id;
+            if (listIndex < ItemCatalog.SPAWN_EGG_COUNT) {
+                id = ItemCatalog.SPAWN_EGG_PIG + listIndex;
+            } else {
+                id = listIndex - ItemCatalog.SPAWN_EGG_COUNT + 1;
+                if (id >= ItemCatalog.SPAWN_EGG_PIG) id += ItemCatalog.SPAWN_EGG_COUNT;
+            }
+            if (id <= 0 || id >= ItemCatalog.COUNT) continue;
             int y = listTop + row * rowHeight;
             if ((row & 1) == 0) {
                 g.setColor(45, 34, 26);
                 g.fillRect(10, y, w - 20, rowHeight);
             }
 
-            drawIcon(g, id, 12, y + 7, false);
+            drawIcon(g, id, 12, y + 4, false);
             g.setColor(255, 244, 220);
             String label = Language.text(ItemCatalog.name(id));
             if (label == null) label = "";
@@ -3324,12 +3333,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     && secondLine.length() > 2) {
                 secondLine = secondLine.substring(0, secondLine.length() - 2) + "..";
             }
-            g.drawString(firstLine, 32, y + 1, Graphics.TOP | Graphics.LEFT);
+            g.drawString(firstLine, 32, y, Graphics.TOP | Graphics.LEFT);
             if (secondLine.length() > 0) {
-                g.drawString(secondLine, 32, y + 15, Graphics.TOP | Graphics.LEFT);
+                g.drawString(secondLine, 32, y + 12, Graphics.TOP | Graphics.LEFT);
             }
             g.setColor(190, 170, 145);
-            g.drawString("#" + id, w - 13, y + 8, Graphics.TOP | Graphics.RIGHT);
+            g.drawString("#" + id, w - 13, y + 5, Graphics.TOP | Graphics.RIGHT);
         }
     }
 
