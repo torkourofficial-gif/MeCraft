@@ -208,6 +208,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private int hurtTicks;
     private int cactusDamageCooldown;
     private int netherLavaDamageCooldown;
+    private int playerFireTicks;
+    private int playerBurnDamageTicks = 20;
     private int portalChargeTicks;
     private float overworldPortalReturnX, overworldPortalReturnY, overworldPortalReturnZ;
     private float netherPortalReturnX, netherPortalReturnY, netherPortalReturnZ;
@@ -405,6 +407,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (state != PLAYING) return;
         int mobDamage = renderer.updateMobs(world);
         if (world.mode == 0 && mobDamage > 0) damagePlayer(mobDamage);
+        if (state != PLAYING) return;
+        if (world.mode == 0) tickPlayerFire();
+        if (state != PLAYING) return;
         if (cactusDamageCooldown > 0) cactusDamageCooldown--;
         if (netherLavaDamageCooldown > 0) netherLavaDamageCooldown--;
         if (world.mode == 0 && cactusDamageCooldown == 0 && playerPhysics.touchesCactus(world)) {
@@ -509,6 +514,32 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         return false;
     }
 
+    private boolean playerTouchesFire() {
+        float x = world.playerX, y = world.playerY, z = world.playerZ;
+        int minX = floorBlock(x - PLAYER_RADIUS), maxX = floorBlock(x + PLAYER_RADIUS);
+        int minY = floorBlock(y), maxY = floorBlock(y + PLAYER_HEIGHT - 0.0001f);
+        int minZ = floorBlock(z - PLAYER_RADIUS), maxZ = floorBlock(z + PLAYER_RADIUS);
+        for (int by = minY; by <= maxY; by++)
+            for (int bx = minX; bx <= maxX; bx++)
+                for (int bz = minZ; bz <= maxZ; bz++)
+                    if (world.get(bx, by, bz) == Block.FIRE) return true;
+        return false;
+    }
+
+    /** Fire lasts 300 ticks after contact and deals one health point every 20 ticks. */
+    private void tickPlayerFire() {
+        if (playerTouchesFire()) {
+            if (playerFireTicks <= 0) playerBurnDamageTicks = 20;
+            playerFireTicks = 300;
+        }
+        if (playerFireTicks <= 0) return;
+        playerFireTicks--;
+        if (--playerBurnDamageTicks <= 0) {
+            playerBurnDamageTicks = 20;
+            damagePlayer(1);
+        }
+    }
+
     private void damagePlayer(int amount) {
         if (world == null || world.mode != 0 || world.health <= 0) return;
         if (world.difficulty == VoxelWorld.DIFFICULTY_PEACEFUL) amount /= 2;
@@ -537,6 +568,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         hurtTicks = 0;
         cactusDamageCooldown = 0;
         netherLavaDamageCooldown = 0;
+        playerFireTicks = 0;
+        playerBurnDamageTicks = 20;
     }
 
     private void enterGameOver() {
@@ -617,6 +650,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             hurtTicks = 0;
             cactusDamageCooldown = 0;
             netherLavaDamageCooldown = 0;
+            playerFireTicks = 0;
+            playerBurnDamageTicks = 20;
             resetInventory(mode);
             copyInventoryToWorld();
             stage = "guardando el mundo recién creado";
@@ -680,6 +715,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             hurtTicks = 0;
             cactusDamageCooldown = 0;
             netherLavaDamageCooldown = 0;
+            playerFireTicks = 0;
+            playerBurnDamageTicks = 20;
             copyHotbarFromWorld();
             resetInventory(world.mode);
             for (int i = 0; i < inventory.length; i++) inventory[i] = world.inventory[i];
