@@ -536,7 +536,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         playerFireTicks--;
         if (--playerBurnDamageTicks <= 0) {
             playerBurnDamageTicks = 20;
-            damagePlayer(1);
+            damagePlayer(2);
         }
     }
 
