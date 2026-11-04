@@ -380,6 +380,55 @@ final class MobSystem {
         return PIG_ZOMBIE;
     }
 
+    /** Spawn an egg-selected mob at the clicked block face, replacing its pooled slot. */
+    boolean spawnFromEgg(VoxelWorld world, int eggType, float x, float y, float z) {
+        if (world == null || eggType < 0 || eggType >= 11 || y < 1.0f || y + 2.0f >= VoxelWorld.HEIGHT)
+            return false;
+        int slot;
+        if (eggType == 0) slot = 0;
+        else if (eggType == 1) slot = 1;
+        else if (eggType == 2) slot = 7;
+        else if (eggType == 3) slot = 9;
+        else if (eggType == 4) slot = 8;
+        else if (eggType == 5) slot = 2;
+        else if (eggType == 6) slot = 3;
+        else if (eggType == 7) slot = 10;
+        else if (eggType == 8) slot = 11;
+        else if (eggType == 9) slot = 12;
+        else slot = 13;
+        int bx = floor(x), by = floor(y), bz = floor(z);
+        if (world.get(bx, by, bz) != Block.AIR || world.get(bx, by + 1, bz) != Block.AIR)
+            return false;
+        releaseMob(slot);
+        Mob mob = createMob(slot);
+        mob.x = x; mob.y = y; mob.z = z;
+        mob.yaw = random.nextInt(360);
+        mob.targetYaw = mob.yaw;
+        mob.age = 0;
+        mob.health = mob.type == SLIME ? 1 : (isHostile(mob.type) ? 20 : 10);
+        mob.slimeSize = mob.type == SLIME ? 1 : 1;
+        mob.deathTicks = mob.fireTicks = mob.burnDamageTicks = 0;
+        mob.attackDelay = mob.fuseTicks = mob.fleeTicks = mob.hurtTicks = 0;
+        mob.doorBreakTicks = 0; mob.doorBreakY = -1;
+        mob.verticalVelocity = mob.motionX = mob.motionZ = 0.0f;
+        mob.walkPhase = mob.walkAmount = 0.0f;
+        mob.walkTicks = 0;
+        mob.chasing = false;
+        mob.dying = false;
+        mob.nextWander = tick + 20 + random.nextInt(100);
+        mob.fireMesh.setRenderingEnable(false);
+        mob.pose.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
+        mob.setHurt(false);
+        mob.setFlashWhite(false);
+        mob.setSheared(false);
+        mob.root.setTranslation(x, y, z);
+        mob.root.setScale(1.0f, 1.0f, 1.0f);
+        mob.root.setOrientation(modelYaw(mob.yaw), 0.0f, 1.0f, 0.0f);
+        mob.alive = true;
+        mob.root.setRenderingEnable(true);
+        return true;
+    }
+
     private Mob createMob(int slot) {
         Mob mob = mobs[slot];
         if (mob != null) return mob;
