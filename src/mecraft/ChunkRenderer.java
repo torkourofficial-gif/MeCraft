@@ -33,10 +33,13 @@ final class ChunkRenderer {
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
     private static final int TORCH_LIGHT_RADIUS = 4;
+    private static final int LAVA_LIGHT_RADIUS = 6;
     private static final int MAX_CHUNK_TORCHES = 128;
     private final int[] chunkTorchX = new int[MAX_CHUNK_TORCHES];
     private final int[] chunkTorchY = new int[MAX_CHUNK_TORCHES];
     private final int[] chunkTorchZ = new int[MAX_CHUNK_TORCHES];
+    private final byte[] chunkLightRadius = new byte[MAX_CHUNK_TORCHES];
+    private final boolean[] chunkLavaSource = new boolean[MAX_CHUNK_TORCHES];
     private int chunkTorchCount;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
     private static final float CHUNK_RADIUS = 12.0f;
@@ -1312,7 +1315,7 @@ final class ChunkRenderer {
                     int localIndex = (((y - y0) * VoxelWorld.CHUNK_XZ) + (z - z0)) *
                             VoxelWorld.CHUNK_XZ + (x - x0);
                     chunkVoxelScratch[localIndex] = id;
-                    chunkLightScratch[localIndex] = (byte)torchLightAt(x, y, z);
+                    chunkLightScratch[localIndex] = (byte)(id == Block.LAVA ? 14 : torchLightAt(x, y, z));
                     if (id == Block.PORTAL) {
                         if (portals == null) portals = new PortalBuilder();
                         portals.add(x - x0, y - y0, z - z0,
@@ -1614,6 +1617,8 @@ final class ChunkRenderer {
         texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         texture.setWrapping(Texture2D.WRAP_REPEAT, Texture2D.WRAP_REPEAT);
         appearance = createBlockAppearance(texture, tile == Block.atlasTile(Block.WATER));
+        if (tile == 234 && appearance.getMaterial() != null)
+            appearance.getMaterial().setColor(Material.EMISSIVE, 0xFFFF6A18);
         tileAppearances[tile] = appearance;
         return appearance;
     }
@@ -1622,18 +1627,22 @@ final class ChunkRenderer {
     private void collectChunkTorches(VoxelWorld world, int x0, int y0, int z0,
                                      int x1, int y1, int z1) {
         chunkTorchCount = 0;
-        int minX = x0 - TORCH_LIGHT_RADIUS, maxX = x1 + TORCH_LIGHT_RADIUS;
-        int minY = y0 - TORCH_LIGHT_RADIUS, maxY = y1 + TORCH_LIGHT_RADIUS;
-        int minZ = z0 - TORCH_LIGHT_RADIUS, maxZ = z1 + TORCH_LIGHT_RADIUS;
+        int scanRadius = world.nether ? LAVA_LIGHT_RADIUS : TORCH_LIGHT_RADIUS;
+        int minX = x0 - scanRadius, maxX = x1 + scanRadius;
+        int minY = y0 - scanRadius, maxY = y1 + scanRadius;
+        int minZ = z0 - scanRadius, maxZ = z1 + scanRadius;
         if (minY < 0) minY = 0;
         if (maxY > VoxelWorld.HEIGHT) maxY = VoxelWorld.HEIGHT;
         for (int y = minY; y < maxY && chunkTorchCount < MAX_CHUNK_TORCHES; y++)
             for (int z = minZ; z < maxZ && chunkTorchCount < MAX_CHUNK_TORCHES; z++)
                 for (int x = minX; x < maxX && chunkTorchCount < MAX_CHUNK_TORCHES; x++) {
-                    if (world.getTorchCandidate(x, y, z) != Block.TORCH) continue;
+                    byte source = world.getTorchCandidate(x, y, z);
+                    if (source != Block.TORCH && !(world.nether && source == Block.LAVA)) continue;
                     chunkTorchX[chunkTorchCount] = x;
                     chunkTorchY[chunkTorchCount] = y;
                     chunkTorchZ[chunkTorchCount] = z;
+                    chunkLavaSource[chunkTorchCount] = source == Block.LAVA;
+                    chunkLightRadius[chunkTorchCount] = (byte)(source == Block.LAVA ? LAVA_LIGHT_RADIUS : TORCH_LIGHT_RADIUS);
                     chunkTorchCount++;
                 }
     }
@@ -1647,7 +1656,8 @@ final class ChunkRenderer {
         for (int i = 0; i < chunkTorchCount; i++) {
             int distance = Math.abs(x - chunkTorchX[i]) +
                     Math.abs(y - chunkTorchY[i]) + Math.abs(z - chunkTorchZ[i]);
-            int level = (TORCH_LIGHT_RADIUS + 1 - distance) * 3;
+            int radius = chunkLightRadius[i] & 255;
+            int level = (radius + 1 - distance) * (chunkLavaSource[i] ? 2 : 3);
             if (level > 14) level = 14;
             if (level > best) best = level;
             if (best >= 14) return 14;
