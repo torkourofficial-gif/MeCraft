@@ -67,7 +67,11 @@ final class LanTransport implements Runnable {
             if (mode == HOST) runHost();
             else runJoin();
         } catch (Throwable problem) {
-            if (running) notifyError(messageOf(problem));
+            if (running) {
+                String message = messageOf(problem);
+                stop();
+                notifyError(message);
+            }
         }
     }
 
@@ -219,6 +223,7 @@ final class LanTransport implements Runnable {
 
         public void run() {
             int slot = -1;
+            boolean pendingReleased = false;
             DataInputStream input = null;
             DataOutputStream output = null;
             try {
@@ -240,6 +245,7 @@ final class LanTransport implements Runnable {
                 }
                 synchronized (LanTransport.this) {
                     pendingPeers--;
+                    pendingReleased = true;
                     for (int i = 0; i < peerSockets.length; i++) {
                         if (peerSockets[i] == null) { slot = i; break; }
                     }
@@ -273,7 +279,7 @@ final class LanTransport implements Runnable {
                     if (slot >= 0 && peerSockets[slot] == socket) {
                         peerSockets[slot] = null;
                         peerCount--;
-                    } else if (slot < 0 && pendingPeers > 0) {
+                    } else if (slot < 0 && !pendingReleased && pendingPeers > 0) {
                         pendingPeers--;
                     }
                 }
