@@ -411,29 +411,7 @@ final class VoxelWorld {
 
     /** Alpha 1.2.6 Explosion ray marching, stored in a reusable bitset. */
     void explode(float x, float y, float z, float radius, DroppedItemSystem drops) {
-        if (!inside(floorBlock(x), floorBlock(z))) {
-            int reach = (int)(radius * 2.0f) + 1;
-            int minX = floorBlock(x) - reach, maxX = floorBlock(x) + reach;
-            int minY = Math.max(1, floorBlock(y) - reach), maxY = Math.min(HEIGHT - 1, floorBlock(y) + reach);
-            int minZ = floorBlock(z) - reach, maxZ = floorBlock(z) + reach;
-            float radiusSquared = radius * radius * 4.0f;
-            for (int by = minY; by <= maxY; by++) {
-                for (int bz = minZ; bz <= maxZ; bz++) {
-                    for (int bx = minX; bx <= maxX; bx++) {
-                        float dx = bx + 0.5f - x, dy = by + 0.5f - y, dz = bz + 0.5f - z;
-                        if (dx * dx + dy * dy + dz * dz > radiusSquared) continue;
-                        byte id = get(bx, by, bz);
-                        if (id == Block.AIR || id == Block.BEDROCK || Block.isFluid(id)) continue;
-                        if (id == Block.TNT) drops.spawnPrimedTnt(bx, by, bz, 10 + randomInt(20));
-                        else if (Block.dropsItem(id) && randomFloat() < 0.3f)
-                            drops.spawn(dropItemId(bx, by, bz), bx, by, bz);
-                        set(bx, by, bz, Block.AIR);
-                    }
-                }
-            }
-            fullRebuild = true;
-            return;
-        }
+        // Run the same resistance-aware ray march at world edges too.
         for (int i = 0; i < explosionBits.length; i++) explosionBits[i] = 0;
         for (int rx = 0; rx < 16; rx++) {
             for (int ry = 0; ry < 16; ry++) {
