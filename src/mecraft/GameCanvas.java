@@ -398,7 +398,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener {
         tickAirAndHurt();
         if (state != PLAYING) return;
         int healthBeforeDrops = world.health;
-        int pickedItem = renderer.updateDroppedItems(world, inventory);
+        int pickedItem = renderer.updateDroppedItems(world, inventory, playerPhysics);
         if (world.mode == 0 && world.health < healthBeforeDrops) {
             hurtTicks = 10;
             if (world.health <= 0) enterGameOver();
