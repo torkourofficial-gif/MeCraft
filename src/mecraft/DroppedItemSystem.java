@@ -12,7 +12,7 @@ import javax.microedition.m3g.VertexBuffer;
 
 /** Bounded Indev-style item entities using a block mesh and a small item-sprite mesh. */
 final class DroppedItemSystem {
-    private static final int CAPACITY = 24;
+    private static final int CAPACITY = 32;
     private static final int VERTICES_PER_ITEM = 24;
     private static final int VERTEX_COUNT = CAPACITY * VERTICES_PER_ITEM;
     private static final float POSITION_SCALE = 256.0f;
@@ -221,7 +221,7 @@ final class DroppedItemSystem {
             }
 
             boolean primedTnt = tntFuse[i] > 0;
-            // Alpha 1.2.6 flashes the unchanged TNT texture white every five fuse ticks.
+            // White flash overlay reuses the TNT atlas texture; keep it almost coplanar with the original cube.
             if (primedTnt && tntFuse[i] / 5 % 2 == 0) hasTntFlash = true;
             float entityHalfSize = primedTnt ? 0.5f : HALF_SIZE;
             vy[i] -= 0.04f;
@@ -418,9 +418,9 @@ final class DroppedItemSystem {
             positions[at++] = (short)(centerYS + ly);
             positions[at++] = (short)(centerZ + (int)(-lx * sin + lz * cos));
             if (flashTnt) {
-                tntFlashPositions[flashAt++] = (short)(centerX + (int)(LOCAL[v * 3] * 4.125f));
-                tntFlashPositions[flashAt++] = (short)(centerYS + (int)(LOCAL[v * 3 + 1] * 4.125f));
-                tntFlashPositions[flashAt++] = (short)(centerZ + (int)(LOCAL[v * 3 + 2] * 4.125f));
+                tntFlashPositions[flashAt++] = (short)(centerX + (int)(LOCAL[v * 3] * 4.02f));
+                tntFlashPositions[flashAt++] = (short)(centerYS + (int)(LOCAL[v * 3 + 1] * 4.02f));
+                tntFlashPositions[flashAt++] = (short)(centerZ + (int)(LOCAL[v * 3 + 2] * 4.02f));
             } else {
                 tntFlashPositions[flashAt++] = 0;
                 tntFlashPositions[flashAt++] = 0;
