@@ -262,13 +262,10 @@ final class MobSystem {
     }
 
     private boolean updateBurning(Mob mob, VoxelWorld world) {
-        if (mob.type != ZOMBIE && mob.type != SKELETON) return false;
-        if (world.isNight()) {
-            mob.fireTicks = 0;
-            mob.fireMesh.setRenderingEnable(false);
-            return false;
-        }
-        if (mob.fireTicks <= 0 && hasSkyExposure(world, mob)) {
+        boolean undead = mob.type == ZOMBIE || mob.type == SKELETON;
+        if (mob.fireTicks <= 0 &&
+                (touchesFire(world, mob) || (undead && !world.isNight() &&
+                                             hasSkyExposure(world, mob)))) {
             mob.fireTicks = 300;
             mob.burnDamageTicks = 20;
         }
@@ -291,6 +288,17 @@ final class MobSystem {
             }
         }
         if (mob.fireTicks == 0) mob.fireMesh.setRenderingEnable(false);
+        return false;
+    }
+
+    private boolean touchesFire(VoxelWorld world, Mob mob) {
+        int minX = floor(mob.x - 0.35f), maxX = floor(mob.x + 0.35f);
+        int minY = floor(mob.y), maxY = floor(mob.y + 1.7f);
+        int minZ = floor(mob.z - 0.35f), maxZ = floor(mob.z + 0.35f);
+        for (int y = minY; y <= maxY; y++)
+            for (int x = minX; x <= maxX; x++)
+                for (int z = minZ; z <= maxZ; z++)
+                    if (world.get(x, y, z) == Block.FIRE) return true;
         return false;
     }
 
