@@ -394,7 +394,9 @@ final class LanTransport implements Runnable {
                 throw new IOException("LAN player is not connected");
             output = peerOutputs[playerId - 1];
         }
-        LanProtocol.writeFrame(output, packet);
+        synchronized (output) {
+            LanProtocol.writeFrame(output, packet);
+        }
     }
 
     /** Broadcasts a framed packet to every connected guest. */
