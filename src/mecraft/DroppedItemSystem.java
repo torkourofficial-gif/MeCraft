@@ -99,7 +99,10 @@ final class DroppedItemSystem {
         tntFlashPositionArray.set(0, VERTEX_COUNT, tntFlashPositions);
         VertexBuffer tntFlashBuffer = new VertexBuffer();
         tntFlashBuffer.setPositions(tntFlashPositionArray, 1.0f / POSITION_SCALE, null);
+        // Reuse the exact TNT atlas UVs: flashing must never substitute a second texture.
+        tntFlashBuffer.setTexCoords(0, texCoordArray, 1.0f / POSITION_SCALE, null);
         Appearance tntFlashAppearance = new Appearance();
+        tntFlashAppearance.setTexture(0, atlas);
         Material tntFlashMaterial = new Material();
         tntFlashMaterial.setColor(Material.AMBIENT, 0xBFFFFFFF);
         tntFlashMaterial.setColor(Material.DIFFUSE, 0xBFFFFFFF);
@@ -221,7 +224,7 @@ final class DroppedItemSystem {
             }
 
             boolean primedTnt = tntFuse[i] > 0;
-            // White flash overlay reuses the TNT atlas texture; keep it almost coplanar with the original cube.
+            // Brighten the original TNT atlas on matching geometry; keep the overlay almost coplanar.
             if (primedTnt && tntFuse[i] / 5 % 2 == 0) hasTntFlash = true;
             float entityHalfSize = primedTnt ? 0.5f : HALF_SIZE;
             vy[i] -= 0.04f;
