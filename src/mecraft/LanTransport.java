@@ -79,20 +79,40 @@ final class LanTransport implements Runnable {
     }
 
     private void runHost() throws IOException {
-        server = (ServerSocketConnection)Connector.open(
-                "socket://:" + LanProtocol.GAME_PORT);
-        discovery = (DatagramConnection)Connector.open(
-                "datagram://:" + LanProtocol.DISCOVERY_PORT);
+        ServerSocketConnection openedServer =
+                (ServerSocketConnection)Connector.open(
+                        "socket://:" + LanProtocol.GAME_PORT);
+        synchronized (this) {
+            if (!running) {
+                try { openedServer.close(); } catch (IOException ignored) { }
+                return;
+            }
+            server = openedServer;
+        }
+
+        if (!running) return;
+        final DatagramConnection openedDiscovery =
+                (DatagramConnection)Connector.open(
+                        "datagram://:" + LanProtocol.DISCOVERY_PORT);
+        synchronized (this) {
+            if (!running) {
+                closeDatagram(openedDiscovery);
+                return;
+            }
+            discovery = openedDiscovery;
+        }
+
         Thread beacon = new Thread(new Runnable() {
-            public void run() { runDiscoveryResponder(); }
+            public void run() { runDiscoveryResponder(openedDiscovery); }
         });
         beacon.start();
         notifyStatus("Sala abierta. Esperando jugadores...");
         while (running) {
-            SocketConnection accepted = (SocketConnection)server.acceptAndOpen();
+            SocketConnection accepted =
+                    (SocketConnection)server.acceptAndOpen();
             boolean allowed;
             synchronized (this) {
-                allowed = peerCount + pendingPeers <
+                allowed = running && peerCount + pendingPeers <
                         LanProtocol.MAX_PLAYERS - 1;
                 if (allowed) pendingPeers++;
             }
@@ -105,11 +125,11 @@ final class LanTransport implements Runnable {
         }
     }
 
-    private void runDiscoveryResponder() {
+    private void runDiscoveryResponder(DatagramConnection channel) {
         while (running) {
-            Datagram request = discovery.newDatagram(96);
+            Datagram request = channel.newDatagram(96);
             try {
-                discovery.receive(request);
+                channel.receive(request);
             } catch (Throwable problem) {
                 if (running) notifyError("LAN UDP: " + messageOf(problem));
                 return;
@@ -135,14 +155,14 @@ final class LanTransport implements Runnable {
             if (!matchingRequest) continue;
 
             try {
-                Datagram reply = discovery.newDatagram(96);
+                Datagram reply = channel.newDatagram(96);
                 reply.setAddress(request);
                 reply.writeInt(LanProtocol.DISCOVERY_MAGIC);
                 reply.writeByte(LanProtocol.PROTOCOL_VERSION);
                 reply.writeByte(LanProtocol.DISCOVERY_RESPONSE);
                 reply.writeUTF(roomCode);
                 reply.writeShort(LanProtocol.GAME_PORT);
-                discovery.send(reply);
+                channel.send(reply);
             } catch (Throwable problem) {
                 if (running) notifyError("LAN UDP: " + messageOf(problem));
                 return;
@@ -384,19 +404,32 @@ final class LanTransport implements Runnable {
     }
 
     void stop() {
-        running = false;
-        closeDatagram(discovery);
-        if (server != null) {
-            try { server.close(); } catch (IOException ignored) { }
-        }
-        closeSocket(clientSocket);
+        ServerSocketConnection oldServer;
+        DatagramConnection oldDiscovery;
+        SocketConnection oldClient;
+        SocketConnection peer0, peer1, peer2;
         synchronized (this) {
-            for (int i = 0; i < peerSockets.length; i++) {
-                closeSocket(peerSockets[i]);
-                peerSockets[i] = null;
-            }
+            running = false;
+            oldServer = server;
+            oldDiscovery = discovery;
+            oldClient = clientSocket;
+            server = null;
+            discovery = null;
+            clientSocket = null;
+            peer0 = peerSockets.length > 0 ? peerSockets[0] : null;
+            peer1 = peerSockets.length > 1 ? peerSockets[1] : null;
+            peer2 = peerSockets.length > 2 ? peerSockets[2] : null;
+            for (int i = 0; i < peerSockets.length; i++) peerSockets[i] = null;
             peerCount = 0;
             pendingPeers = 0;
         }
+        closeDatagram(oldDiscovery);
+        if (oldServer != null) {
+            try { oldServer.close(); } catch (IOException ignored) { }
+        }
+        closeSocket(oldClient);
+        closeSocket(peer0);
+        closeSocket(peer1);
+        closeSocket(peer2);
     }
 }
