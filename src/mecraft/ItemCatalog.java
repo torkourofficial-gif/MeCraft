@@ -79,7 +79,19 @@ final class ItemCatalog {
     static final int FISH_COOKED = FISH_RAW + 1;
     static final int RECORD_13 = FISH_COOKED + 1;
     static final int RECORD_CAT = RECORD_13 + 1;
-    static final int COUNT = RECORD_CAT + 1;
+    static final int SPAWN_EGG_PIG = RECORD_CAT + 1;
+    static final int SPAWN_EGG_SHEEP = SPAWN_EGG_PIG + 1;
+    static final int SPAWN_EGG_ZOMBIE = SPAWN_EGG_SHEEP + 1;
+    static final int SPAWN_EGG_CREEPER = SPAWN_EGG_ZOMBIE + 1;
+    static final int SPAWN_EGG_SKELETON = SPAWN_EGG_CREEPER + 1;
+    static final int SPAWN_EGG_COW = SPAWN_EGG_SKELETON + 1;
+    static final int SPAWN_EGG_CHICKEN = SPAWN_EGG_COW + 1;
+    static final int SPAWN_EGG_SPIDER = SPAWN_EGG_CHICKEN + 1;
+    static final int SPAWN_EGG_SLIME = SPAWN_EGG_SPIDER + 1;
+    static final int SPAWN_EGG_GHAST = SPAWN_EGG_SLIME + 1;
+    static final int SPAWN_EGG_PIG_ZOMBIE = SPAWN_EGG_GHAST + 1;
+    static final int SPAWN_EGG_COUNT = 11;
+    static final int COUNT = SPAWN_EGG_PIG_ZOMBIE + 1;
 
     static final int SWORD = 0;
     static final int SHOVEL = 1;
@@ -183,7 +195,16 @@ final class ItemCatalog {
         return 64;
     }
 
+    static boolean isSpawnEgg(int id) {
+        return id >= SPAWN_EGG_PIG && id < COUNT;
+    }
+
+    static int spawnEggType(int id) {
+        return isSpawnEgg(id) ? id - SPAWN_EGG_PIG : -1;
+    }
+
     static int iconIndex(int id) {
+        if (isSpawnEgg(id)) return -1;
         // Alpha's wooden door item icon in items.png (tile 43).
         if (id == Block.DOOR) return 43;
         if (id == STICK) return 53;
@@ -198,6 +219,13 @@ final class ItemCatalog {
     }
 
     static String name(int id) {
+        if (isSpawnEgg(id)) {
+            String[] eggNames = new String[] { "Huevo generador de cerdo", "Huevo generador de oveja",
+                "Huevo generador de zombi", "Huevo generador de creeper", "Huevo generador de esqueleto",
+                "Huevo generador de vaca", "Huevo generador de gallina", "Huevo generador de araña",
+                "Huevo generador de slime", "Huevo generador de ghast", "Huevo generador de cerdo zombi" };
+            return eggNames[id - SPAWN_EGG_PIG];
+        }
         if (id == STICK) return "Palo";
         if (isTool(id)) {
             int kind = kind(id), tier = tier(id);
