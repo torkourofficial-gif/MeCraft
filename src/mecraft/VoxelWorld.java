@@ -70,7 +70,10 @@ final class VoxelWorld {
     private byte[] otherDimensionBlocks;
     private byte[] otherDimensionWaterLevels;
     private boolean otherDimensionIsNether;
-    private final byte[] explosionBits = new byte[(BLOCK_COUNT + 7) / 8];
+    // Local reusable mask: TNT blast bounds are at most 19x19x19 blocks (radius 4).
+    private static final int EXPLOSION_MASK_SIZE = 20;
+    private static final int EXPLOSION_MASK_AREA = EXPLOSION_MASK_SIZE * EXPLOSION_MASK_SIZE;
+    private final byte[] explosionBits = new byte[(EXPLOSION_MASK_SIZE * EXPLOSION_MASK_AREA + 7) / 8];
     private static final int FLUID_QUEUE_SIZE = 2048;
     private final short[] fluidQueue = new short[FLUID_QUEUE_SIZE];
     private final byte[] fluidQueued = new byte[(BLOCK_COUNT + 7) / 8];
@@ -409,10 +412,21 @@ final class VoxelWorld {
         return id == Block.DOOR ? (doorMetadata(x, y, z) & 4) == 0 : Block.solid(id);
     }
 
-    /** Alpha 1.2.6 Explosion ray marching, stored in a reusable bitset. */
+    /** Alpha 1.2.6 resistance-aware ray marching, using a local mask for finite and infinite worlds. */
     void explode(float x, float y, float z, float radius, DroppedItemSystem drops) {
-        // Run the same resistance-aware ray march at world edges too.
+        int minX = floorBlock(x - radius * 2.0f - 1.0f);
+        int maxX = floorBlock(x + radius * 2.0f + 1.0f);
+        int minY = Math.max(1, floorBlock(y - radius * 2.0f - 1.0f));
+        int maxY = Math.min(HEIGHT - 1, floorBlock(y + radius * 2.0f + 1.0f));
+        int minZ = floorBlock(z - radius * 2.0f - 1.0f);
+        int maxZ = floorBlock(z + radius * 2.0f + 1.0f);
+        int spanX = maxX - minX + 1;
+        int spanY = maxY - minY + 1;
+        int spanZ = maxZ - minZ + 1;
+        if (spanX > EXPLOSION_MASK_SIZE || spanY > EXPLOSION_MASK_SIZE ||
+            spanZ > EXPLOSION_MASK_SIZE) return;
         for (int i = 0; i < explosionBits.length; i++) explosionBits[i] = 0;
+
         for (int rx = 0; rx < 16; rx++) {
             for (int ry = 0; ry < 16; ry++) {
                 for (int rz = 0; rz < 16; rz++) {
@@ -428,10 +442,13 @@ final class VoxelWorld {
                     while (strength > 0.0f) {
                         int bx = floorBlock(px), by = floorBlock(py), bz = floorBlock(pz);
                         byte id = get(bx, by, bz);
-                        if (id != Block.AIR) strength -= (explosionResistance(id) + 0.3f) * 0.3f;
-                        if (strength > 0.0f && bx >= 0 && bx < WIDTH && by > 0 && by < HEIGHT && bz >= 0 && bz < DEPTH) {
-                            int index = index(bx, by, bz);
-                            explosionBits[index >> 3] |= (byte)(1 << (index & 7));
+                        if (id != Block.AIR)
+                            strength -= (explosionResistance(id) + 0.3f) * 0.3f;
+                        if (strength > 0.0f && bx >= minX && bx <= maxX &&
+                            by >= minY && by <= maxY && bz >= minZ && bz <= maxZ) {
+                            int local = ((by - minY) * EXPLOSION_MASK_SIZE + (bz - minZ)) *
+                                EXPLOSION_MASK_SIZE + (bx - minX);
+                            explosionBits[local >> 3] |= (byte)(1 << (local & 7));
                         }
                         px += dx * 0.3f; py += dy * 0.3f; pz += dz * 0.3f;
                         strength -= 0.22500001f;
@@ -439,27 +456,25 @@ final class VoxelWorld {
                 }
             }
         }
-        int minX = Math.max(0, floorBlock(x - radius * 2.0f - 1.0f));
-        int maxX = Math.min(WIDTH - 1, floorBlock(x + radius * 2.0f + 1.0f));
-        int minY = Math.max(1, floorBlock(y - radius * 2.0f - 1.0f));
-        int maxY = Math.min(HEIGHT - 1, floorBlock(y + radius * 2.0f + 1.0f));
-        int minZ = Math.max(0, floorBlock(z - radius * 2.0f - 1.0f));
-        int maxZ = Math.min(DEPTH - 1, floorBlock(z + radius * 2.0f + 1.0f));
+
         for (int by = minY; by <= maxY; by++) {
             for (int bz = minZ; bz <= maxZ; bz++) {
                 for (int bx = minX; bx <= maxX; bx++) {
-                    int index = index(bx, by, bz);
-                    if ((explosionBits[index >> 3] & (1 << (index & 7))) == 0) continue;
+                    int local = ((by - minY) * EXPLOSION_MASK_SIZE + (bz - minZ)) *
+                        EXPLOSION_MASK_SIZE + (bx - minX);
+                    if ((explosionBits[local >> 3] & (1 << (local & 7))) == 0) continue;
                     byte id = get(bx, by, bz);
                     if (id == Block.AIR) continue;
-                    if (id == Block.TNT) drops.spawnPrimedTnt(bx, by, bz, 10 + randomInt(20));
-                    else if (id == Block.DOOR) {
+                    if (id == Block.TNT) {
+                        // The affected TNT block becomes an entity with the original short chain fuse.
+                        drops.spawnPrimedTnt(bx, by, bz, 10 + randomInt(20));
+                    } else if (id == Block.DOOR) {
                         if (randomFloat() < 0.3f) drops.spawn(Block.DOOR, bx, by, bz);
                         removeDoor(bx, by, bz);
                         continue;
-                    }
-                    else if (Block.dropsItem(id) && randomFloat() < 0.3f)
+                    } else if (Block.dropsItem(id) && randomFloat() < 0.3f) {
                         drops.spawn(dropItemId(bx, by, bz), bx, by, bz);
+                    }
                     set(bx, by, bz, Block.AIR);
                     if (by + 1 < HEIGHT && get(bx, by + 1, bz) == Block.DOOR &&
                         !Block.solid(get(bx, by, bz))) {
