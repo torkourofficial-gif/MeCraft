@@ -1018,16 +1018,28 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             if (world.mode == 0 && Block.dropsItem(id) && canHarvest)
                 renderer.spawnDroppedItem(dropId, x, y, z);
             renderer.swingHand();
-            if (y + 1 < VoxelWorld.HEIGHT &&
-                world.get(x, y + 1, z) == Block.DOOR && !Block.solid(world.get(x, y, z))) {
-                if (world.mode == 0) renderer.spawnDroppedItem(Block.DOOR, x, y + 1, z);
-                world.removeDoor(x, y + 1, z);
+            if (y + 1 < VoxelWorld.HEIGHT) {
+                byte above = world.get(x, y + 1, z);
+                // Flowers are attached to the block below: breaking their support
+                // removes them too and drops the flower item in survival.
+                if (above == Block.RED_FLOWER || above == Block.YELLOW_FLOWER) {
+                    if (world.set(x, y + 1, z, Block.AIR) && world.mode == 0)
+                        renderer.spawnDroppedItem(world.dropItemId(x, y + 1, z), x, y + 1, z);
+                } else if (above == Block.FIRE) {
+                    // Fire simply vanishes when its support is removed: no drops,
+                    // particles, or extra break effects.
+                    world.set(x, y + 1, z, Block.AIR);
+                } else if (above == Block.DOOR && !Block.solid(world.get(x, y, z))) {
+                    if (world.mode == 0) renderer.spawnDroppedItem(Block.DOOR, x, y + 1, z);
+                    world.removeDoor(x, y + 1, z);
+                }
             }
-            if (world.mode == 0) damageTool(heldItem, ItemCatalog.durabilityCost(heldItem));
-            // Sync the changed terrain before creating the burst. This keeps
-            // particle creation separate from mesh replacement during block breaks.
+            if (world.mode == 0 && id != Block.FIRE)
+                damageTool(heldItem, ItemCatalog.durabilityCost(heldItem));
+            // Sync the changed terrain before creating the burst. Fire vanishes
+            // silently, while ordinary blocks retain their destruction particles.
             renderer.sync(world);
-            renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
+            if (id != Block.FIRE) renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
             resetMining();
             miningHitWait = 5;
         }
