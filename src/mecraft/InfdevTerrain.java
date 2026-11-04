@@ -322,33 +322,6 @@ final class InfdevTerrain {
         }
     }
 
-    private static void carveCaveRoom(int originX, int originZ, int[] heights,
-                                      byte[] blocks, int centerX, int centerY, int centerZ,
-                                      int radius, int verticalRadius, boolean allowNearSurface) {
-        int minX = Math.max(originX, centerX - radius);
-        int maxX = Math.min(originX + CHUNK_SIZE - 1, centerX + radius);
-        int minZ = Math.max(originZ, centerZ - radius);
-        int maxZ = Math.min(originZ + CHUNK_SIZE - 1, centerZ + radius);
-        for (int z = minZ; z <= maxZ; z++) {
-            for (int x = minX; x <= maxX; x++) {
-                int dx = x - centerX, dz = z - centerZ;
-                int horizontal = dx * dx + dz * dz;
-                if (horizontal > radius * radius) continue;
-                int column = (z - originZ) * CHUNK_SIZE + x - originX;
-                int ceiling = allowNearSurface ? heights[column] - 1 : heights[column] - 3;
-                int low = Math.max(2, centerY - verticalRadius);
-                int high = Math.min(Math.min(centerY + verticalRadius, ceiling), WORLD_HEIGHT - 2);
-                for (int y = low; y <= high; y++) {
-                    int dy = y - centerY;
-                    if (horizontal * verticalRadius * verticalRadius +
-                        dy * dy * radius * radius >
-                        radius * radius * verticalRadius * verticalRadius) continue;
-                    blocks[column * WORLD_HEIGHT + y] = Block.AIR;
-                }
-            }
-        }
-    }
-
     private static void decorate(int seed, int originX, int originZ, int[] heights,
                                  byte[] biomes, byte[] blocks) {
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.decorate: calculando regiones de decoración");
