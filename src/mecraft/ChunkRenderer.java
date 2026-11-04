@@ -127,6 +127,10 @@ final class ChunkRenderer {
     private final short[] crackPositionData = new short[] { 0,0,0, 0,1,0, 1,0,0, 1,1,0 };
     private final short[] crackUVData = new short[] { 0,16, 0,0, 16,16, 16,0 };
     private final Appearance portalAppearance;
+    private final Texture2D worldFireTexture;
+    private final Appearance worldFireAppearance;
+    private int fireAnimationTick;
+    private int fireAnimationFrame;
     private int portalFrameSize = 16;
     private int portalAnimationTick;
     private int portalAnimationFrame;
@@ -201,6 +205,11 @@ final class ChunkRenderer {
         crackMesh.setRenderingEnable(false);
         scene.addChild(crackMesh);
         portalAppearance = createPortalAppearance(portalFrames[0]);
+        Image fireImage = GameAssets.image("fire.png");
+        worldFireTexture = new Texture2D(new Image2D(Image2D.RGBA, fireImage));
+        worldFireTexture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
+        worldFireTexture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
+        worldFireAppearance = createFireAppearance(worldFireTexture);
         flowerAppearance = createFlowerAppearance();
         heldItemAppearance = createFirstPersonAppearance(atlas, true, true, true);
         Image itemSource = GameAssets.image("items.png");
@@ -575,6 +584,11 @@ final class ChunkRenderer {
             portalAnimationTick = 0;
             portalAnimationFrame = (portalAnimationFrame + 1) & 7;
             portalAppearance.setTexture(0, portalFrames[portalAnimationFrame]);
+        }
+        if (++fireAnimationTick >= 2) {
+            fireAnimationTick = 0;
+            fireAnimationFrame = (fireAnimationFrame + 1) & 7;
+            updateFireMeshes();
         }
         if (handSwinging) {
             handSwingTicks++;
@@ -1275,6 +1289,7 @@ final class ChunkRenderer {
     private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {
         FaceBuilder[] builders = chunkFaceBuilders;
         FlowerBuilder flowers = null;
+        FireBuilder fires = null;
         PortalBuilder portals = null;
         int x0 = cx * VoxelWorld.CHUNK_XZ;
         int y0 = cy * VoxelWorld.CHUNK_Y;
@@ -1302,6 +1317,9 @@ final class ChunkRenderer {
                         if (portals == null) portals = new PortalBuilder();
                         portals.add(x - x0, y - y0, z - z0,
                                 world.portalAxisAt(x, y, z), portalFrameSize);
+                    } else if (id == Block.FIRE) {
+                        if (fires == null) fires = new FireBuilder();
+                        fires.add(x - x0, y - y0, z - z0);
                     } else if (Block.isFlower(id)) {
                         if (flowers == null) flowers = new FlowerBuilder();
                         flowers.add(x - x0, y - y0, z - z0, Block.sideTile(id));
@@ -1420,9 +1438,10 @@ final class ChunkRenderer {
         int count = 0;
         for (int i = 0; i < builders.length; i++) if (builders[i] != null) count++;
         int flowerCount = flowers == null ? 0 : 1;
+        int fireCount = fires == null ? 0 : 1;
         int portalCount = portals == null ? 0 : 1;
-        if (count + flowerCount + portalCount == 0) return null;
-        Mesh[] meshes = new Mesh[count + flowerCount + portalCount];
+        if (count + flowerCount + fireCount + portalCount == 0) return null;
+        Mesh[] meshes = new Mesh[count + flowerCount + fireCount + portalCount];
         int at = 0;
         for (int i = 0; i < builders.length; i++) {
             if (builders[i] == null) continue;
@@ -1432,9 +1451,14 @@ final class ChunkRenderer {
             builders[i] = null;
         }
         if (flowers != null) meshes[at++] = makeFlowerMesh(flowers, flowerAppearance);
+        if (fires != null) {
+            fires.setFrame(fireAnimationFrame);
+            meshes[at++] = makeFireMesh(fires, worldFireAppearance);
+        }
         if (portals != null) meshes[at++] = makePortalMesh(portals);
         Chunk chunk = new Chunk();
         chunk.meshes = meshes;
+        chunk.fires = fires;
         int wx = x0, wy = y0, wz = z0;
         for (int i = 0; i < meshes.length; i++) meshes[i].setTranslation(wx, wy, wz);
         return chunk;
@@ -1486,6 +1510,19 @@ final class ChunkRenderer {
         TriangleStripArray triangles = new TriangleStripArray(0, strips);
 
         return new Mesh(vertices, triangles, appearance);
+    }
+
+    private Mesh makeFireMesh(FireBuilder data, Appearance appearance) {
+        VertexArray positions = new VertexArray(data.vertexCount, 3, 2);
+        positions.set(0, data.vertexCount, data.p);
+        data.texCoords = new VertexArray(data.vertexCount, 2, 2);
+        data.texCoords.set(0, data.vertexCount, data.uv);
+        VertexBuffer vertices = new VertexBuffer();
+        vertices.setPositions(positions, 1.0f / 256.0f, null);
+        vertices.setTexCoords(0, data.texCoords, 1.0f / 1024.0f, null);
+        int[] strips = new int[data.vertexCount / 4];
+        for (int i = 0; i < strips.length; i++) strips[i] = 4;
+        return new Mesh(vertices, new TriangleStripArray(0, strips), appearance);
     }
 
     private Mesh makeFlowerMesh(FlowerBuilder data, Appearance appearance) {
@@ -1691,7 +1728,34 @@ final class ChunkRenderer {
         return appearance;
     }
 
-    private static final class Chunk { Mesh[] meshes; }
+    private Appearance createFireAppearance(Texture2D texture) {
+        Appearance appearance = new Appearance();
+        appearance.setTexture(0, texture);
+        Material material = new Material();
+        material.setColor(Material.AMBIENT, 0xFFFFFFFF);
+        material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
+        appearance.setMaterial(material);
+        PolygonMode polygon = new PolygonMode();
+        polygon.setCulling(PolygonMode.CULL_NONE);
+        polygon.setShading(PolygonMode.SHADE_FLAT);
+        appearance.setPolygonMode(polygon);
+        CompositingMode compositing = new CompositingMode();
+        compositing.setAlphaThreshold(0.01f);
+        compositing.setBlending(CompositingMode.ALPHA);
+        compositing.setDepthTestEnable(true);
+        compositing.setDepthWriteEnable(false);
+        appearance.setCompositingMode(compositing);
+        return appearance;
+    }
+
+    private void updateFireMeshes() {
+        for (int i = 0; i < chunks.length; i++) {
+            Chunk chunk = chunks[i];
+            if (chunk != null && chunk.fires != null) chunk.fires.setFrame(fireAnimationFrame);
+        }
+    }
+
+    private static final class Chunk { Mesh[] meshes; FireBuilder fires; }
 
     /** One full-cell portal plane, sharing the eight-frame portal material. */
     private static final class PortalBuilder {
@@ -1714,6 +1778,63 @@ final class ChunkRenderer {
                 vertex(plane,y0,z0, 0,frameSize); vertex(plane,y1,z0, 0,0);
                 vertex(plane,y0,z1, u1,frameSize); vertex(plane,y1,z1, u1,0);
             }
+        }
+
+        private void vertex(int x, int y, int z, int u, int v) {
+            int pi = vertexCount * 3;
+            p[pi] = (short)x; p[pi + 1] = (short)y; p[pi + 2] = (short)z;
+            int ti = vertexCount * 2;
+            uv[ti] = (short)u; uv[ti + 1] = (short)v;
+            vertexCount++;
+        }
+
+        private void ensure(int needed) {
+            if (needed <= p.length / 3) return;
+            int size = p.length / 3;
+            while (size < needed) size <<= 1;
+            short[] nextP = new short[size * 3];
+            short[] nextUv = new short[size * 2];
+            System.arraycopy(p, 0, nextP, 0, vertexCount * 3);
+            System.arraycopy(uv, 0, nextUv, 0, vertexCount * 2);
+            p = nextP; uv = nextUv;
+        }
+    }
+
+    /** Two crossed, alpha-cutout quads per fire block, animated from fire.png. */
+    private static final class FireBuilder {
+        private static final int FRAME_UV_HEIGHT = 32;
+        short[] p = new short[48];
+        short[] uv = new short[32];
+        int vertexCount;
+        VertexArray texCoords;
+
+        void add(int x, int y, int z) {
+            ensure(vertexCount + 8);
+            int x0 = x * 256, x1 = x0 + 256;
+            int y0 = y * 256, y1 = y0 + 256;
+            int z0 = z * 256, z1 = z0 + 256;
+            addQuad(x0,y0,z0, x1,y0,z1, x1,y1,z1, x0,y1,z0);
+            addQuad(x0,y0,z1, x1,y0,z0, x1,y1,z0, x0,y1,z1);
+        }
+
+        private void addQuad(int x0,int y0,int z0, int x1,int y1,int z1,
+                             int x2,int y2,int z2, int x3,int y3,int z3) {
+            int v0 = 0, v1 = FRAME_UV_HEIGHT;
+            vertex(x0,y0,z0, 0,v1); vertex(x1,y1,z1, 1024,v1);
+            vertex(x2,y2,z2, 1024,v0); vertex(x3,y3,z3, 0,v0);
+        }
+
+        void setFrame(int frame) {
+            int v0 = frame * FRAME_UV_HEIGHT;
+            int v1 = v0 + FRAME_UV_HEIGHT;
+            for (int i = 0; i < vertexCount; i += 4) {
+                int at = i * 2;
+                uv[at] = 0; uv[at + 1] = (short)v1;
+                uv[at + 2] = 1024; uv[at + 3] = (short)v1;
+                uv[at + 4] = 1024; uv[at + 5] = (short)v0;
+                uv[at + 6] = 0; uv[at + 7] = (short)v0;
+            }
+            if (texCoords != null) texCoords.set(0, vertexCount, uv);
         }
 
         private void vertex(int x, int y, int z, int u, int v) {
