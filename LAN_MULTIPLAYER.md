@@ -22,14 +22,27 @@
 - Initial message families: handshake, player state, player leave, block changes, world time, inventory changes, entity state, ping and pong.
 - Room codes are six decimal digits and must be treated as session locators, not as strong authentication.
 
-## Implementation milestones
+## Implementation status
 
-1. **Protocol foundation:** code generation/validation, message IDs and bounded TCP framing.
-2. **LAN transport:** UDP discovery, TCP host listener, handshake, disconnect and timeout handling.
-3. **Menu integration:** Host LAN / Join LAN screens and six-digit code entry/display.
-4. **Player synchronization:** remote player positions, yaw, pitch and skin.
-5. **World synchronization:** block changes, metadata, time and inventory.
-6. **Entities and hardening:** dropped items, mobs, vehicles, reconnect handling and low-memory testing.
+### Implemented in the current branch
+
+- Six-digit room-code generation and validation.
+- UDP broadcast discovery on port **27186**, including repeated query attempts and a seven-second search timeout.
+- TCP host listener on port **27185**.
+- Versioned HELLO / ACCEPT / REJECT handshake with room-code validation.
+- One host plus up to three connected clients.
+- Background network threads, bounded TCP frames, disconnect cleanup and peer count updates.
+- Main-menu LAN entry, host-code lobby, numeric join-code editor, keyboard and touch navigation.
+- Optional MIDP permissions requested in the generated JAD/manifest.
+
+### Still to implement
+
+1. **Player synchronization:** remote player positions, yaw, pitch, skins and spawn points.
+2. **World synchronization:** initial world transfer, block changes, metadata, time and inventory.
+3. **Entities:** dropped items, mobs, boats, minecarts and damage.
+4. **Hardening:** reconnection, duplicate room-code handling, packet validation, latency handling and low-memory testing.
+
+The current LAN screen establishes a network lobby only. It does **not** yet start a shared world or synchronize gameplay.
 
 ## Compatibility and limitations
 
