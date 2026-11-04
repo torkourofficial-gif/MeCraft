@@ -39,6 +39,8 @@ final class MobSystem {
 
     private final Mob[] mobs = new Mob[MOB_COUNT];
     private final Arrow[] arrows = new Arrow[6];
+    private final Fireball[] fireballs = new Fireball[2];
+    private final Appearance fireballAppearance;
     private final Group scene;
     private final DroppedItemSystem drops;
     private final ParticleSystem particles;
@@ -62,6 +64,7 @@ final class MobSystem {
         fireAppearance = skin(texture(GameAssets.image("fire.png")));
         spiderEyesAppearance = skin(texture("alpha_spider_eyes.png"));
         spiderEyesAppearance.getMaterial().setColor(Material.EMISSIVE, 0xFFAA2222);
+        fireballAppearance = createFireballAppearance();
         Texture2D[] skinTextures = new Texture2D[] {
             texture("pig.png"), texture("sheep.png"), texture("zombie.png"),
             texture("creeper.png"), texture("skeleton.png"), texture("cow.png"),
@@ -79,6 +82,10 @@ final class MobSystem {
         for (int i = 0; i < arrows.length; i++) {
             arrows[i] = new Arrow(arrowAppearance);
             scene.addChild(arrows[i].root);
+        }
+        for (int i = 0; i < fireballs.length; i++) {
+            fireballs[i] = new Fireball(fireballAppearance);
+            scene.addChild(fireballs[i].root);
         }
     }
 
@@ -106,6 +113,14 @@ final class MobSystem {
             if (mob.hurtTicks > 0 && --mob.hurtTicks == 0) mob.setHurt(false);
             mob.chasing = false;
             if (mob.attackDelay > 0) mob.attackDelay--;
+            if (mob.type == GHAST) {
+                updateGhast(mob, world);
+                animate(mob);
+                mob.root.setTranslation(mob.x, mob.y, mob.z);
+                mob.root.setScale(4.0f, 4.0f, 4.0f);
+                mob.root.setOrientation(modelYaw(mob.yaw), 0.0f, 1.0f, 0.0f);
+                continue;
+            }
             if (isHostile(mob.type)) {
                 float dx = world.playerX - mob.x;
                 float dz = world.playerZ - mob.z;
@@ -171,6 +186,7 @@ final class MobSystem {
             } else mob.root.setScale(1.0f, 1.0f, 1.0f);
             mob.root.setOrientation(modelYaw(mob.yaw), 0.0f, 1.0f, 0.0f);
         }
+        playerDamage = updateFireballs(world, playerDamage);
         playerDamage = updateArrows(world, playerDamage);
         return playerDamage;
     }
@@ -186,6 +202,31 @@ final class MobSystem {
         float originX = world.playerX;
         float originY = world.playerY + 1.62f;
         float originZ = world.playerZ;
+        int fireballHit = -1;
+        float fireballDistance = 4.0f;
+        for (int i = 0; i < fireballs.length; i++) {
+            Fireball ball = fireballs[i];
+            if (!ball.active || ball.reflected) continue;
+            float along = rayBox(originX, originY, originZ, dirX, dirY, dirZ,
+                    ball.x - 0.45f, ball.y - 0.45f, ball.z - 0.45f,
+                    ball.x + 0.45f, ball.y + 0.45f, ball.z + 0.45f);
+            if (along >= 0.0f && along <= fireballDistance) {
+                fireballHit = i;
+                fireballDistance = along;
+            }
+        }
+        if (fireballHit >= 0 && !blocked(world, originX, originY, originZ,
+                dirX, dirY, dirZ, fireballDistance)) {
+            if (attackCooldown > 0) return 0;
+            attackCooldown = 8;
+            Fireball ball = fireballs[fireballHit];
+            ball.reflected = true;
+            ball.life = 0;
+            ball.vx = dirX * 0.62f;
+            ball.vy = dirY * 0.62f;
+            ball.vz = dirZ * 0.62f;
+            return 1;
+        }
         int closest = -1;
         float closestDistance = 4.0f;
         for (int i = 0; i < mobs.length; i++) {
@@ -372,7 +413,7 @@ final class MobSystem {
     private int mobTypeForSlot(int slot) {
         // The Nether pool contains only its two native species. Reuse the
         // fixed actor slots instead of allocating a larger entity array.
-        if (netherMode) return (slot & 1) == 0 ? PIG_ZOMBIE : GHAST;
+        if (netherMode) return (slot == 2 || slot == 10) ? GHAST : PIG_ZOMBIE;
         // Hard mode reuses three passive slots for extra hostile entities,
         // increasing the active hostile cap without allocating a larger mob pool.
         if (difficulty == VoxelWorld.DIFFICULTY_HARD) {
@@ -626,7 +667,8 @@ final class MobSystem {
         int ground = world.surfaceY(x, z);
         mob.x = x + 0.5f;
         mob.z = z + 0.5f;
-        mob.y = ground + 1.0f;
+        mob.y = ground + (mob.type == GHAST ? 8.0f : 1.0f);
+        if (mob.y > VoxelWorld.HEIGHT - 6.0f) mob.y = VoxelWorld.HEIGHT - 6.0f;
         mob.yaw = random.nextInt(360);
         mob.targetYaw = mob.yaw;
         mob.age = random.nextInt(100);
@@ -672,6 +714,88 @@ final class MobSystem {
             if (dx * dx + dz * dz < 9.0f) return true;
         }
         return false;
+    }
+
+    /** Ghasts hover in open air, keep their distance, and fire slow, hittable projectiles. */
+    private void updateGhast(Mob mob, VoxelWorld world) {
+        float dx = world.playerX - mob.x;
+        float dz = world.playerZ - mob.z;
+        float distanceSquared = dx * dx + dz * dz;
+        float distance = (float)Math.sqrt(distanceSquared);
+        if (distance > 14.0f) {
+            mob.x += dx / (distance + 0.0001f) * 0.045f;
+            mob.z += dz / (distance + 0.0001f) * 0.045f;
+        } else if (distance < 9.0f) {
+            mob.x -= dx / (distance + 0.0001f) * 0.035f;
+            mob.z -= dz / (distance + 0.0001f) * 0.035f;
+        } else {
+            mob.x += (float)Math.sin(mob.age * 0.025f) * 0.012f;
+            mob.z += (float)Math.cos(mob.age * 0.021f) * 0.012f;
+        }
+        float targetY = world.playerY + 7.0f + (float)Math.sin(mob.age * 0.045f) * 1.5f;
+        if (targetY < 5.0f) targetY = 5.0f;
+        if (targetY > VoxelWorld.HEIGHT - 5.0f) targetY = VoxelWorld.HEIGHT - 5.0f;
+        mob.y += (targetY - mob.y) * 0.035f;
+        mob.targetYaw = yawTo(dx, dz);
+        turn(mob);
+        if (mob.attackDelay <= 0 && distance < 32.0f && distance > 0.1f) {
+            shootGhastFireball(mob, world);
+            mob.attackDelay = 100 + random.nextInt(45);
+        }
+    }
+
+    private void shootGhastFireball(Mob ghast, VoxelWorld world) {
+        Fireball ball = null;
+        for (int i = 0; i < fireballs.length; i++) {
+            if (!fireballs[i].active) { ball = fireballs[i]; break; }
+        }
+        if (ball == null) return;
+        float dx = world.playerX - ghast.x;
+        float dy = world.playerY + 1.0f - (ghast.y + 0.5f);
+        float dz = world.playerZ - ghast.z;
+        float length = (float)Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (length < 0.001f) return;
+        float speed = 0.28f;
+        ball.x = ghast.x; ball.y = ghast.y + 0.5f; ball.z = ghast.z;
+        ball.vx = dx / length * speed; ball.vy = dy / length * speed; ball.vz = dz / length * speed;
+        ball.life = 0; ball.reflected = false; ball.active = true;
+        ball.root.setTranslation(ball.x, ball.y, ball.z);
+        ball.root.setRenderingEnable(true);
+    }
+
+    private int updateFireballs(VoxelWorld world, int damage) {
+        for (int i = 0; i < fireballs.length; i++) {
+            Fireball ball = fireballs[i];
+            if (!ball.active) continue;
+            ball.x += ball.vx; ball.y += ball.vy; ball.z += ball.vz;
+            ball.life++;
+            ball.root.setTranslation(ball.x, ball.y, ball.z);
+            int bx = floor(ball.x), by = floor(ball.y), bz = floor(ball.z);
+            if (world.isSolidAt(bx, by, bz) || by < 0 || by >= VoxelWorld.HEIGHT || ball.life > 110) {
+                ball.active = false; ball.root.setRenderingEnable(false); continue;
+            }
+            if (ball.reflected) {
+                for (int m = 0; m < mobs.length; m++) {
+                    Mob target = mobs[m];
+                    if (target == null || !target.alive || target.type != GHAST) continue;
+                    float half = mobWidth(target) * 0.5f + 0.45f;
+                    if (Math.abs(ball.x - target.x) <= half && Math.abs(ball.z - target.z) <= half &&
+                        ball.y >= target.y - 0.45f && ball.y <= target.y + mobHeight(target) + 0.45f) {
+                        dropForDeath(target); beginDeath(target);
+                        ball.active = false; ball.root.setRenderingEnable(false); break;
+                    }
+                }
+            } else {
+                float dx = ball.x - world.playerX;
+                float dy = ball.y - (world.playerY + 1.0f);
+                float dz = ball.z - world.playerZ;
+                if (dx * dx + dy * dy + dz * dz < 0.75f * 0.75f) {
+                    if (damage < 6) damage = 6;
+                    ball.active = false; ball.root.setRenderingEnable(false);
+                }
+            }
+        }
+        return damage;
     }
 
     private void wander(Mob mob, int interval) {
@@ -998,6 +1122,30 @@ final class MobSystem {
         return damage;
     }
 
+    private Appearance createFireballAppearance() {
+        Appearance appearance = new Appearance();
+        Material material = new Material();
+        material.setColor(Material.AMBIENT, 0xFFFF6A18);
+        material.setColor(Material.DIFFUSE, 0xFFFF8A22);
+        material.setColor(Material.EMISSIVE, 0xFFFF5A10);
+        appearance.setMaterial(material);
+        PolygonMode polygon = new PolygonMode();
+        polygon.setCulling(PolygonMode.CULL_NONE);
+        appearance.setPolygonMode(polygon);
+        return appearance;
+    }
+
+    private final class Fireball {
+        final Group root = new Group();
+        boolean active, reflected;
+        int life;
+        float x, y, z, vx, vy, vz;
+        Fireball(Appearance appearance) {
+            root.addChild(makeBox(0, 0, 0.7f, 0.7f, 0.7f, 1, 1, 1, appearance, false));
+            root.setRenderingEnable(false);
+        }
+    }
+
     private final class Arrow {
         final Group root = new Group();
         final Group pitch = new Group();
@@ -1185,7 +1333,10 @@ final class MobSystem {
             else if (type == COW) buildCow(appearance);
             else if (type == SPIDER) buildSpider(appearance, spiderEyes);
             else if (type == SLIME) buildSlime(appearance);
-            else if (type == GHAST) buildGhast(appearance);
+            else if (type == GHAST) {
+                buildGhast(appearance);
+                pose.setTranslation(0.0f, -2.0f, 0.0f);
+            }
             else if (type == CHICKEN) buildChicken(appearance);
             else buildQuadruped(appearance, type == PIG, fur);
             fireTexArray = new VertexArray(8, 2, 2);
