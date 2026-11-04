@@ -186,10 +186,11 @@ final class DroppedItemSystem {
         x[slot] = bx + 0.5f;
         y[slot] = by + 0.5f;
         z[slot] = bz + 0.5f;
-        float angle = nextRandom() * 6.2831855f;
-        vx[slot] = (float)Math.sin(angle) * 0.02f;
+        float angle = nextRandom() * 3.1415927f * 2.0f;
+        // Alpha 1.2.6 EntityTNTPrimed starts with a small outward impulse.
+        vx[slot] = (float)-Math.sin(angle) * 0.02f;
         vy[slot] = 0.2f;
-        vz[slot] = (float)Math.cos(angle) * 0.02f;
+        vz[slot] = (float)-Math.cos(angle) * 0.02f;
         writeTexture(slot, Block.TNT);
     }
 
@@ -223,6 +224,7 @@ final class DroppedItemSystem {
             if (primedTnt && tntFuse[i] < 10 && tntFuse[i] / 5 % 2 == 0) hasTntFlash = true;
             float entityHalfSize = primedTnt ? 0.5f : HALF_SIZE;
             vy[i] -= 0.04f;
+            float preCollisionVerticalVelocity = vy[i];
             move(world, i, entityHalfSize);
             vx[i] *= 0.98f;
             vy[i] *= 0.98f;
@@ -232,7 +234,9 @@ final class DroppedItemSystem {
             if (onGround) {
                 vx[i] *= 0.7f;
                 vz[i] *= 0.7f;
-                vy[i] = 0.0f;
+                // EntityTNTPrimed bounces when it lands instead of sticking.
+                if (primedTnt && preCollisionVerticalVelocity < 0.0f)
+                    vy[i] = -preCollisionVerticalVelocity * 0.5f * 0.98f;
             }
             // Decrement before checking: a fuse of 1 must explode on this
             // tick. Post-decrement left it at 0, where primedTnt became false
