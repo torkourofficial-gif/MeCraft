@@ -210,6 +210,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private int netherLavaDamageCooldown;
     private int playerFireTicks;
     private int playerBurnDamageTicks = 20;
+    private int playerLavaBurnTicks;
+    private int playerLavaDamageTicks = 20;
     private int portalChargeTicks;
     private float overworldPortalReturnX, overworldPortalReturnY, overworldPortalReturnZ;
     private float netherPortalReturnX, netherPortalReturnY, netherPortalReturnZ;
@@ -408,7 +410,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         int mobDamage = renderer.updateMobs(world);
         if (world.mode == 0 && mobDamage > 0) damagePlayer(mobDamage);
         if (state != PLAYING) return;
-        if (world.mode == 0) tickPlayerFire();
+        if (world.mode == 0) {
+            tickPlayerFire();
+            tickPlayerLavaBurn();
+        }
         if (state != PLAYING) return;
         if (cactusDamageCooldown > 0) cactusDamageCooldown--;
         if (netherLavaDamageCooldown > 0) netherLavaDamageCooldown--;
@@ -416,12 +421,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             damagePlayer(1);
             cactusDamageCooldown = 10;
         }
-        boolean touchingLava = playerTouchesLava();
-        if (world.nether && playerPhysics.isInWater(world)) touchingLava = true;
-        if (world.mode == 0 && netherLavaDamageCooldown == 0 && touchingLava) {
-            damagePlayer(2);
-            netherLavaDamageCooldown = 10;
-        }
+        // Lava damage is handled by tickPlayerLavaBurn() above, including after escape.
         if (state != PLAYING) return;
         tickAirAndHurt();
         if (state != PLAYING) return;
@@ -537,6 +537,22 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (--playerBurnDamageTicks <= 0) {
             playerBurnDamageTicks = 20;
             damagePlayer(2);
+        }
+    }
+
+    /** Lava leaves a longer, more dangerous burn than ordinary fire. */
+    private void tickPlayerLavaBurn() {
+        boolean touchingLava = playerTouchesLava() ||
+                (world.nether && playerPhysics.isInWater(world));
+        if (touchingLava) {
+            if (playerLavaBurnTicks <= 0) playerLavaDamageTicks = 20;
+            playerLavaBurnTicks = 300;
+        }
+        if (playerLavaBurnTicks <= 0) return;
+        playerLavaBurnTicks--;
+        if (--playerLavaDamageTicks <= 0) {
+            playerLavaDamageTicks = 20;
+            damagePlayer(4);
         }
     }
 
