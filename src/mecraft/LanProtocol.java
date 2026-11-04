@@ -17,7 +17,9 @@ final class LanProtocol {
     static final int CODE_LENGTH = 6;
     static final int DISCOVERY_MAGIC = 0x4D434C4E;
     static final int PROTOCOL_VERSION = 1;
-    static final int HELLO = 1;
+    static final int DISCOVERY_QUERY = 1;
+    static final int DISCOVERY_RESPONSE = 2;
+    static final int HELLO = 3;
     static final int ACCEPT = 2;
     static final int REJECT = 3;
     static final int PLAYER_STATE = 10;
