@@ -768,6 +768,32 @@ final class MobSystem {
         ball.root.setRenderingEnable(true);
     }
 
+    private void explodeFireballImpact(VoxelWorld world, float x, float y, float z) {
+        int centerX = floor(x);
+        int centerY = floor(y);
+        int centerZ = floor(z);
+
+        // A compact blast leaves a shallow crater instead of a Creeper-sized hole.
+        world.explode(x, y, z, 1.25f, drops);
+
+        // Ignite a broken ring of nearby ground blocks around the crater.
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                if (dx * dx + dz * dz > 5 || random.nextInt(4) == 0) continue;
+                int fireX = centerX + dx;
+                int fireZ = centerZ + dz;
+                for (int groundY = centerY + 1; groundY >= centerY - 3; groundY--) {
+                    if (groundY <= 0 || groundY + 1 >= VoxelWorld.HEIGHT) continue;
+                    if (!Block.solid(world.get(fireX, groundY, fireZ))) continue;
+                    if (world.get(fireX, groundY + 1, fireZ) == Block.AIR) {
+                        world.set(fireX, groundY + 1, fireZ, Block.FIRE);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
     private int updateFireballs(VoxelWorld world, int damage) {
         for (int i = 0; i < fireballs.length; i++) {
             Fireball ball = fireballs[i];
@@ -776,7 +802,11 @@ final class MobSystem {
             ball.life++;
             ball.root.setTranslation(ball.x, ball.y, ball.z);
             int bx = floor(ball.x), by = floor(ball.y), bz = floor(ball.z);
-            if (world.isSolidAt(bx, by, bz) || by < 0 || by >= VoxelWorld.HEIGHT || ball.life > 110) {
+            if (world.isSolidAt(bx, by, bz)) {
+                if (!ball.reflected) explodeFireballImpact(world, ball.x, ball.y, ball.z);
+                ball.active = false; ball.root.setRenderingEnable(false); continue;
+            }
+            if (by < 0 || by >= VoxelWorld.HEIGHT || ball.life > 110) {
                 ball.active = false; ball.root.setRenderingEnable(false); continue;
             }
             if (ball.reflected) {
