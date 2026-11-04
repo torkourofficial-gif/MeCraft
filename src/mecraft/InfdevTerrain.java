@@ -218,8 +218,8 @@ final class InfdevTerrain {
                     int surface = surfaceHeight(seed, x, z);
                     int y = 5 + ((h >>> 20) & 15);
                     if (y > surface - 5) y = Math.max(4, surface - 5);
-                    int dirX = ((h >>> 2) & 7) - 3;
-                    int dirZ = ((h >>> 9) & 7) - 3;
+                    int dirX = ((h >>> 2) & 3) - 1;
+                    int dirZ = ((h >>> 9) & 3) - 1;
                     if (dirX == 0 && dirZ == 0) dirX = 1;
                     int pitch = ((h >>> 25) & 3) - 1;
                     int length = 12 + ((h >>> 27) & 15);
@@ -232,10 +232,10 @@ final class InfdevTerrain {
                         if ((step & 3) == 0) {
                             dirX += ((wobble >>> 3) & 1) - ((wobble >>> 5) & 1);
                             dirZ += ((wobble >>> 7) & 1) - ((wobble >>> 9) & 1);
-                            if (dirX > 4) dirX = 4;
-                            if (dirX < -4) dirX = -4;
-                            if (dirZ > 4) dirZ = 4;
-                            if (dirZ < -4) dirZ = -4;
+                            if (dirX > 1) dirX = 1;
+                            if (dirX < -1) dirX = -1;
+                            if (dirZ > 1) dirZ = 1;
+                            if (dirZ < -1) dirZ = -1;
                             pitch += ((wobble >>> 11) & 1) - ((wobble >>> 13) & 1);
                             if (pitch > 1) pitch = 1;
                             if (pitch < -1) pitch = -1;
