@@ -21,6 +21,12 @@ final class PlayerPhysics {
     boolean isOnGround() { return onGround; }
     boolean hasHorizontalCollision() { return horizontalCollision; }
 
+    void addExplosionImpulse(float x, float y, float z) {
+        motionX += x;
+        motionY += y;
+        motionZ += z;
+    }
+
     boolean touchesCactus(VoxelWorld world) {
         float x = world.playerX, y = world.playerY, z = world.playerZ;
         float margin = 0.015f;
