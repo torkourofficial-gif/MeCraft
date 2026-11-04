@@ -131,7 +131,11 @@ final class LanTransport implements Runnable {
             try {
                 channel.receive(request);
             } catch (Throwable problem) {
-                if (running) notifyError("LAN UDP: " + messageOf(problem));
+                if (running) {
+                    String message = "LAN UDP: " + messageOf(problem);
+                    stop();
+                    notifyError(message);
+                }
                 return;
             }
 
@@ -164,7 +168,11 @@ final class LanTransport implements Runnable {
                 reply.writeShort(LanProtocol.GAME_PORT);
                 channel.send(reply);
             } catch (Throwable problem) {
-                if (running) notifyError("LAN UDP: " + messageOf(problem));
+                if (running) {
+                    String message = "LAN UDP: " + messageOf(problem);
+                    stop();
+                    notifyError(message);
+                }
                 return;
             }
         }
