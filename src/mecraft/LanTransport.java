@@ -37,7 +37,7 @@ final class LanTransport implements Runnable {
     private SocketConnection clientSocket;
     private final SocketConnection[] peerSockets =
             new SocketConnection[LanProtocol.MAX_PLAYERS - 1];
-    private int peerCount;
+    private volatile int peerCount;
     private int pendingPeers;
     private Thread worker;
 
@@ -172,8 +172,16 @@ final class LanTransport implements Runnable {
 
     private void runJoin() throws IOException {
         notifyStatus("Buscando la partida en esta red Wi-Fi...");
-        discovery = (DatagramConnection)Connector.open("datagram://");
-        final DatagramConnection waitingConnection = discovery;
+        DatagramConnection openedDiscovery =
+                (DatagramConnection)Connector.open("datagram://");
+        synchronized (this) {
+            if (!running) {
+                closeDatagram(openedDiscovery);
+                return;
+            }
+            discovery = openedDiscovery;
+        }
+        final DatagramConnection waitingConnection = openedDiscovery;
         Thread timeout = new Thread(new Runnable() {
             public void run() {
                 try { Thread.sleep(7000L); } catch (InterruptedException ignored) { }
