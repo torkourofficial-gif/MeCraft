@@ -48,6 +48,7 @@ final class MobSystem {
     private final Texture2D[] fleeceTextures = new Texture2D[WoolColors.COUNT];
     private final Random random = new Random(1L);
     private int worldSeed = Integer.MIN_VALUE;
+    private boolean netherMode;
     private int difficulty = VoxelWorld.DIFFICULTY_NORMAL;
     private int tick;
     private int attackCooldown;
@@ -83,10 +84,10 @@ final class MobSystem {
 
     /** Returns damage dealt to the player on this tick. */
     int update(VoxelWorld world) {
-        if (worldSeed != world.seed) reset(world);
+        if (worldSeed != world.seed || netherMode != world.nether) reset(world);
         tick++;
         unloadDistantMobs(world);
-        if (tick % PASSIVE_RESPAWN_INTERVAL == 0) respawnPassiveMob(world);
+        if (!world.nether && tick % PASSIVE_RESPAWN_INTERVAL == 0) respawnPassiveMob(world);
         updateHostileCycle(world);
         if (attackCooldown > 0) attackCooldown--;
         int playerDamage = 0;
@@ -354,6 +355,7 @@ final class MobSystem {
 
     private void reset(VoxelWorld world) {
         worldSeed = world.seed;
+        netherMode = world.nether;
         difficulty = world.difficulty;
         tick = 0;
         attackCooldown = 0;
@@ -368,6 +370,9 @@ final class MobSystem {
     }
 
     private int mobTypeForSlot(int slot) {
+        // The Nether pool contains only its two native species. Reuse the
+        // fixed actor slots instead of allocating a larger entity array.
+        if (netherMode) return (slot & 1) == 0 ? PIG_ZOMBIE : GHAST;
         // Hard mode reuses three passive slots for extra hostile entities,
         // increasing the active hostile cap without allocating a larger mob pool.
         if (difficulty == VoxelWorld.DIFFICULTY_HARD) {
@@ -885,8 +890,8 @@ final class MobSystem {
 
     private boolean hostileAllowed(int type, VoxelWorld world) {
         if (world.difficulty == VoxelWorld.DIFFICULTY_PEACEFUL) return false;
-        if (type == GHAST || type == PIG_ZOMBIE) return world.nether;
-        return !world.nether;
+        if (world.nether) return type == GHAST || type == PIG_ZOMBIE;
+        return type != GHAST && type != PIG_ZOMBIE;
     }
 
     private void shootArrow(Mob shooter, VoxelWorld world) {
