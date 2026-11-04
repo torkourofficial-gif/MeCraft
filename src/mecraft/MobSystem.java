@@ -402,6 +402,10 @@ final class MobSystem {
         attackCooldown = 0;
         zombiesNightActive = false;
         for (int i = 0; i < arrows.length; i++) arrows[i].active = false;
+        for (int i = 0; i < fireballs.length; i++) {
+            fireballs[i].active = false;
+            fireballs[i].root.setRenderingEnable(false);
+        }
         for (int i = 0; i < mobs.length; i++) releaseMob(i);
         random.setSeed(world.seed ^ 0x51ED270B);
         for (int i = 0; i < mobs.length; i++) {
@@ -1335,7 +1339,7 @@ final class MobSystem {
             else if (type == SLIME) buildSlime(appearance);
             else if (type == GHAST) {
                 buildGhast(appearance);
-                pose.setTranslation(0.0f, -2.0f, 0.0f);
+                pose.setTranslation(0.0f, -0.5f, 0.0f);
             }
             else if (type == CHICKEN) buildChicken(appearance);
             else buildQuadruped(appearance, type == PIG, fur);
