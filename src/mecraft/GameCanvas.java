@@ -1084,7 +1084,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             renderer.sync(world);
             return;
         }
-        if (block == Block.TORCH && !Block.solid(world.get(x, y - 1, z))) return;
+        if (block == Block.TORCH) {
+            // Floor torches need a solid block below; wall torches attach to the
+            // face that was actually clicked, as in Minecraft.
+            boolean supported = target[4] == 1 ?
+                    Block.solid(world.get(x, y - 1, z)) :
+                    Block.solid(world.get(target[0], target[1], target[2]));
+            if (!supported) return;
+        }
         // Alpha rails are non-solid flat pieces and require a solid block beneath them.
         if (block == Block.RAIL && !Block.solid(world.get(x, y - 1, z))) return;
         if (!canPlaceAlphaPlant((byte)block, x, y, z)) return;
