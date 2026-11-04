@@ -553,7 +553,7 @@ final class MobSystem {
     private void updateHostileCycle(VoxelWorld world) {
         if (world.difficulty == VoxelWorld.DIFFICULTY_PEACEFUL) {
             for (int i = 0; i < mobs.length; i++)
-                if (isHostile(mobTypeForSlot(i)) && mobs[i] != null) releaseMob(i);
+                if (mobs[i] != null && isHostile(mobs[i].type)) releaseMob(i);
             zombiesNightActive = false;
             return;
         }
