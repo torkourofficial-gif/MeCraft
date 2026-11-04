@@ -1225,6 +1225,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             return;
         }
         int selected = hotbar[world.selectedSlot];
+        if (ItemCatalog.isSpawnEgg(selected)) {
+            useSpawnEgg(selected);
+            return;
+        }
         if (selected == ItemCatalog.BOAT) {
             placeBoat();
             return;
@@ -1283,6 +1287,28 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             return;
         }
         placeBlock();
+    }
+
+    private void useSpawnEgg(int item) {
+        if (world == null || renderer == null) return;
+        int[] target = trace(5.0f);
+        if (target == null) return;
+        int x = target[0] + target[3];
+        int y = target[1] + target[4];
+        int z = target[2] + target[5];
+        if (y < 1 || y + 2 >= VoxelWorld.HEIGHT) return;
+        if (world.get(x, y, z) != Block.AIR || world.get(x, y + 1, z) != Block.AIR) return;
+        if (world.mode == 0 && inventory[item] <= 0) return;
+        if (!renderer.spawnMobFromEgg(world, ItemCatalog.spawnEggType(item),
+                x + 0.5f, (float)y, z + 0.5f)) return;
+        if (world.mode == 0) {
+            inventory[item]--;
+            if (inventory[item] <= 0) restoreHotbarItem(item);
+        }
+        renderer.swingHand();
+        copyInventoryToWorld();
+        world.save();
+        repaint();
     }
 
     private void placeBoat() {
@@ -2635,6 +2661,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
         source = null;
         Image woolSource = null;
+        try {
+            Image eggAtlas = GameAssets.image("eggs.png");
+            int[] eggPixels = new int[16 * 16];
+            for (int egg = 0; egg < ItemCatalog.SPAWN_EGG_COUNT; egg++) {
+                int id = ItemCatalog.SPAWN_EGG_PIG + egg;
+                eggAtlas.getRGB(eggPixels, 0, 16, (egg & 7) * 16, (egg >> 3) * 16, 16, 16);
+                itemIcons[id] = Image.createRGBImage(eggPixels, 16, 16, true);
+                mutedItemIcons[id] = makeMutedIcon(itemIcons[id]);
+            }
+        } catch (Throwable unavailableEggAtlas) {
+            for (int id = ItemCatalog.SPAWN_EGG_PIG; id < ItemCatalog.COUNT; id++) {
+                itemIcons[id] = null;
+                mutedItemIcons[id] = null;
+            }
+        }
         try {
             woolSource = GameAssets.terrain();
             source = GameAssets.image("items.png");
