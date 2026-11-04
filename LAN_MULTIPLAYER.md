@@ -32,17 +32,19 @@
 - Versioned HELLO / ACCEPT / REJECT handshake with room-code validation.
 - One host plus up to three connected clients.
 - Background network threads, bounded TCP frames, disconnect cleanup and peer count updates.
+- Bidirectional framed-packet transport API: clients can send to the host; the host can send to one guest or broadcast; received payloads are delivered to the listener with the sender's player ID.
 - Main-menu LAN entry, host-code lobby, numeric join-code editor, keyboard and touch navigation.
 - Optional MIDP permissions requested in the generated JAD/manifest.
 
 ### Still to implement
 
-1. **Player synchronization:** remote player positions, yaw, pitch, skins and spawn points.
-2. **World synchronization:** initial world transfer, block changes, metadata, time and inventory.
-3. **Entities:** dropped items, mobs, boats, minecarts and damage.
-4. **Hardening:** reconnection, duplicate room-code handling, packet validation, latency handling and low-memory testing.
+1. **Gameplay integration (not yet implemented):** connect the LAN lobby to world creation/loading, assign the host's world as authoritative, and decode the packet callbacks into game-state updates.
+2. **Player synchronization:** remote player positions, yaw, pitch, skins and spawn points.
+3. **World synchronization:** initial world snapshot/seed and edit transfer, block changes with metadata, time and inventory.
+4. **Entities:** dropped items, mobs, boats, minecarts and damage.
+5. **Hardening:** reconnection, duplicate room-code handling, packet validation, latency handling and low-memory testing.
 
-The current LAN screen establishes a network lobby only. It does **not** yet start a shared world or synchronize gameplay.
+The current LAN screen establishes a network lobby only. The transport now supports bidirectional gameplay frames and dispatches received payloads to the game listener, but the listener does not yet apply them. It does **not** yet start a shared world or synchronize gameplay.
 
 ## Compatibility and limitations
 
