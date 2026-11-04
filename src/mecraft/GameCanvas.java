@@ -1024,7 +1024,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 // removes them too and drops the flower item in survival.
                 if (above == Block.RED_FLOWER || above == Block.YELLOW_FLOWER) {
                     if (world.set(x, y + 1, z, Block.AIR) && world.mode == 0)
-                        renderer.spawnDroppedItem(world.dropItemId(x, y + 1, z), x, y + 1, z);
+                        renderer.spawnDroppedItem(Block.dropId(above), x, y + 1, z);
                 } else if (above == Block.FIRE) {
                     // Fire simply vanishes when its support is removed: no drops,
                     // particles, or extra break effects.
