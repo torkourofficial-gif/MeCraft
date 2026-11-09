@@ -338,6 +338,7 @@ final class Language {
         if (!english && value.endsWith(" axe")) return "Hacha de " + text(value.substring(0, value.length() - 4));
         if (!english && value.endsWith(" hoe")) return "Azada de " + text(value.substring(0, value.length() - 4));
         if (english) {
+            if (value.equals("3 Puertas de hierro")) return "3 Iron Doors";
             for (int i = 0; i < SPANISH_TEXT.length; i++)
                 if (SPANISH_TEXT[i].equals(value)) return ENGLISH_TEXT[i];
             for (int i = 0; i < EXTRA_SPANISH_TEXT.length; i++)
