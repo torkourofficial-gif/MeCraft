@@ -8,12 +8,13 @@ final class Crafting {
     static final int TORCHES = 3;
     static final int BASIC_RECIPES = 4;
     static final int DOOR = BASIC_RECIPES;
-    static final int TOOL_RECIPES = BASIC_RECIPES + 1;
+    static final int IRON_DOOR = BASIC_RECIPES + 1;
+    static final int TOOL_RECIPES = BASIC_RECIPES + 2;
     private static final int TOOL_RECIPE_COUNT = ItemCatalog.TOOL_KINDS * ItemCatalog.TOOL_TIERS;
     private static final int FOOD_AND_ITEM_RECIPES = 8;
     private static final int ARMOR_RECIPES = 4 * 4;
     static final int RECIPE_COUNT = TOOL_RECIPES + TOOL_RECIPE_COUNT +
-                                    FOOD_AND_ITEM_RECIPES + ARMOR_RECIPES + 2;
+                                    FOOD_AND_ITEM_RECIPES + ARMOR_RECIPES + 3;
 
     static final int[] OUTPUT = new int[RECIPE_COUNT];
     static final int[] OUTPUT_COUNT = new int[RECIPE_COUNT];
@@ -26,6 +27,8 @@ final class Crafting {
         setRecipe(PLANKS_TO_STICKS, ItemCatalog.STICK, 4, "4 Palos", Block.PLANKS, 2, 0, 0);
         setRecipe(TORCHES, Block.TORCH, 4, "4 Antorchas", Block.COAL, 1, ItemCatalog.STICK, 1);
         setRecipe(DOOR, Block.DOOR, 3, "3 Puertas", Block.PLANKS, 6, 0, 0);
+        setRecipe(IRON_DOOR, ItemCatalog.IRON_DOOR, 3, "3 Puertas de hierro",
+                ItemCatalog.IRON_INGOT, 6);
         for (int tier = 0; tier < ItemCatalog.TOOL_TIERS; tier++) {
             int material = ItemCatalog.materialItem(tier);
             for (int kind = 0; kind < ItemCatalog.TOOL_KINDS; kind++) {
