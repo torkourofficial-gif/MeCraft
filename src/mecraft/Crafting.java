@@ -79,6 +79,7 @@ final class Crafting {
         for (int i = 0; i < armorItems.length; i++)
             setRecipe(extra++, armorItems[i], 1, ItemCatalog.name(armorItems[i]),
                     armorMaterials[i], armorCounts[i]);
+        setRecipe(extra++, Block.FURNACE, 1, "Horno", Block.COBBLESTONE, 8);
     }
 
     private Crafting() { }
