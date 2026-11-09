@@ -1148,7 +1148,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             tillSoil(target[0], target[1], target[2], selectedItem);
             return;
         }
-        if (selectedItem == Block.AIR || selectedItem >= Block.COUNT && !coloredWool) return;
+        if (selectedItem == Block.AIR ||
+            selectedItem >= Block.COUNT && selectedItem != ItemCatalog.IRON_DOOR && !coloredWool) return;
         int block = coloredWool ? Block.WOOL : selectedItem;
         int x = target[0] + target[3];
         int y = target[1] + target[4];
