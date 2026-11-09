@@ -45,6 +45,8 @@ final class Block {
     /** Uses the original wooden-door tile already present in the terrain atlas. */
     static final byte CHEST = (byte)findTileBlock(85); // Original chest tile in the terrain atlas.
     static final byte DOOR = (byte)findTileBlock(97);
+    /** Alpha iron-door lower panel tile; kept on its existing atlas-backed block ID. */
+    static final byte IRON_DOOR = (byte)findTileBlock(98);
     static final byte CACTUS = (byte)findTileBlock(70);
     static final int CACTUS_TOP_TILE = 71;
     static final byte SNOW = (byte)findTileBlock(66);
@@ -260,8 +262,10 @@ final class Block {
 
     private Block() { }
 
+    static boolean isDoor(byte id) { return id == DOOR || id == IRON_DOOR; }
+
     static boolean solid(byte id) {
-        return id != AIR && !isFluid(id) && id != DOOR && id != RAIL && !isFlower(id) && id != TORCH;
+        return id != AIR && !isFluid(id) && !isDoor(id) && id != RAIL && !isFlower(id) && id != TORCH;
     }
 
     static boolean isFluid(byte id) {
@@ -317,6 +321,7 @@ final class Block {
     }
 
     static int dropId(byte id) {
+        if (id == IRON_DOOR) return ItemCatalog.IRON_DOOR;
         if (id == CHEST) return CHEST;
         if (id == GRASS || id == FARMLAND) return DIRT;
         if (id == STONE) return COBBLESTONE;
@@ -349,7 +354,7 @@ final class Block {
         if (id == GOLD_BLOCK || id == IRON_BLOCK || id == DIAMOND_BLOCK) return 50;
         if (id == OBSIDIAN) return 100;
         if (id == GLASS) return 3;
-        if (id == DOOR) return 30;
+        if (isDoor(id)) return 30;
         if (id == COBBLESTONE) return 20;
         if (id == FARMLAND) return 6;
         return 10;
@@ -379,6 +384,7 @@ final class Block {
         // Alpha 1.2.6 BlockChest: ordinary sides use tile 26; the front is 27.
         if (id == CHEST) return 26;
         if (id == DOOR) return 97;
+        if (id == IRON_DOOR) return 98;
         if (id == TNT) return 8;
         if (isDecorative(id)) return TILE[id & 255];
         if (id == GRASS) return 3;
@@ -392,6 +398,7 @@ final class Block {
     static int faceTile(byte id, int face) {
         if (id == LAVA) return 234;
         if (id == DOOR) return face == 0 || face == 5 ? 81 : 97;
+        if (id == IRON_DOOR) return face == 0 || face == 5 ? 82 : 98;
         if (id == FURNACE) return face == 0 || face == 5 ? 61 : 62;
         if (face == 0) return topTile(id);
         // Alpha 1.2.6 BlockChest uses tile 27 for its default front
@@ -416,7 +423,7 @@ final class Block {
     }
 
     static boolean isDecorative(byte id) {
-        return (id & 255) >= DECORATIVE_START && (id & 255) < COUNT && id != DOOR;
+        return (id & 255) >= DECORATIVE_START && (id & 255) < COUNT && !isDoor(id);
     }
 
     static int atlasTile(int id) {
