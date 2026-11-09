@@ -1941,8 +1941,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         int output = Crafting.OUTPUT[recipeSelection];
         int slot = hotbarIndex(output);
         if (slot < 0) slot = emptyHotbarIndex();
-        if (slot < 0 && world.mode == 1) slot = 8;
-        if (slot < 0) return;
+        // The inventory is count-based, while the hotbar is only a quick-access
+        // mapping. A full hotbar must never prevent crafting or consume ingredients.
+        if (slot < 0) slot = clamp(world.selectedSlot, 0, hotbar.length - 1);
         if (!Crafting.craft(recipeSelection, inventory, world.mode == 1)) return;
         hotbar[slot] = output;
         world.selectedSlot = slot;
