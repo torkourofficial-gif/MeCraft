@@ -370,7 +370,7 @@ final class VoxelWorld {
     }
 
     int doorMetadata(int x, int y, int z) {
-        if (get(x, y, z) != Block.DOOR) return 0;
+        if (!Block.isDoor(get(x, y, z))) return 0;
         return metadataAt(x, y, z) & 15;
     }
 
@@ -380,10 +380,15 @@ final class VoxelWorld {
     }
 
     boolean placeDoor(int x, int y, int z, int orientation) {
-        if (y <= 0 || y + 1 >= HEIGHT || !Block.solid(get(x, y - 1, z)) ||
-            !Block.replaceable(get(x, y, z)) || !Block.replaceable(get(x, y + 1, z))) return false;
-        if (!setBlock(x, y, z, Block.DOOR, 0)) return false;
-        if (!setBlock(x, y + 1, z, Block.DOOR, 0)) {
+        return placeDoor(x, y, z, orientation, Block.DOOR);
+    }
+
+    boolean placeDoor(int x, int y, int z, int orientation, byte doorBlock) {
+        if (!Block.isDoor(doorBlock) || y <= 0 || y + 1 >= HEIGHT ||
+            !Block.solid(get(x, y - 1, z)) || !Block.replaceable(get(x, y, z)) ||
+            !Block.replaceable(get(x, y + 1, z))) return false;
+        if (!setBlock(x, y, z, doorBlock, 0)) return false;
+        if (!setBlock(x, y + 1, z, doorBlock, 0)) {
             setBlock(x, y, z, Block.AIR, 0);
             return false;
         }
@@ -397,10 +402,10 @@ final class VoxelWorld {
     }
 
     boolean toggleDoor(int x, int y, int z) {
-        if (get(x, y, z) != Block.DOOR) return false;
+        if (!Block.isDoor(get(x, y, z))) return false;
         int metadata = doorMetadata(x, y, z);
         if ((metadata & 8) != 0) { y--; metadata = doorMetadata(x, y, z); }
-        if (get(x, y, z) != Block.DOOR || get(x, y + 1, z) != Block.DOOR) return false;
+        if (!Block.isDoor(get(x, y, z)) || get(x, y + 1, z) != get(x, y, z)) return false;
         metadata ^= 4;
         setMetadata(x, y, z, metadata);
         setMetadata(x, y + 1, z, metadata | 8);
@@ -411,10 +416,11 @@ final class VoxelWorld {
     }
 
     boolean removeDoor(int x, int y, int z) {
-        if (get(x, y, z) != Block.DOOR) return false;
+        if (!Block.isDoor(get(x, y, z))) return false;
         if ((doorMetadata(x, y, z) & 8) != 0) y--;
-        if (get(x, y, z) != Block.DOOR) return false;
-        boolean hasUpper = y + 1 < HEIGHT && get(x, y + 1, z) == Block.DOOR;
+        byte doorBlock = get(x, y, z);
+        if (!Block.isDoor(doorBlock)) return false;
+        boolean hasUpper = y + 1 < HEIGHT && get(x, y + 1, z) == doorBlock;
         if (!setBlock(x, y, z, Block.AIR, 0)) return false;
         if (hasUpper && !setBlock(x, y + 1, z, Block.AIR, 0)) return false;
         fullRebuild = true;
@@ -427,7 +433,7 @@ final class VoxelWorld {
         if (worldSize == SIZE_OLD && y >= 0 && y < HEIGHT && outsideWorld(x, z))
             return true;
         byte id = get(x, y, z);
-        return id == Block.DOOR ? (doorMetadata(x, y, z) & 4) == 0 : Block.solid(id);
+        return Block.isDoor(id) ? (doorMetadata(x, y, z) & 4) == 0 : Block.solid(id);
     }
 
     /** Alpha 1.2.6 resistance-aware ray marching, using a local mask for finite and infinite worlds. */
@@ -486,17 +492,17 @@ final class VoxelWorld {
                     if (id == Block.TNT) {
                         // The affected TNT block becomes an entity with the original short chain fuse.
                         drops.spawnPrimedTnt(bx, by, bz, 10 + randomInt(20));
-                    } else if (id == Block.DOOR) {
-                        if (randomFloat() < 0.3f) drops.spawn(Block.DOOR, bx, by, bz);
+                    } else if (Block.isDoor(id)) {
+                        if (randomFloat() < 0.3f) drops.spawn(Block.dropId(id), bx, by, bz);
                         removeDoor(bx, by, bz);
                         continue;
                     } else if (Block.dropsItem(id) && randomFloat() < 0.3f) {
                         drops.spawn(dropItemId(bx, by, bz), bx, by, bz);
                     }
                     set(bx, by, bz, Block.AIR);
-                    if (by + 1 < HEIGHT && get(bx, by + 1, bz) == Block.DOOR &&
+                    if (by + 1 < HEIGHT && Block.isDoor(get(bx, by + 1, bz)) &&
                         !Block.solid(get(bx, by, bz))) {
-                        if (randomFloat() < 0.3f) drops.spawn(Block.DOOR, bx, by + 1, bz);
+                        if (randomFloat() < 0.3f) drops.spawn(Block.dropId(get(bx, by + 1, bz)), bx, by + 1, bz);
                         removeDoor(bx, by + 1, bz);
                     }
                 }
