@@ -1735,7 +1735,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if(furnaceTexture!=null&&furnaceTexture.getWidth()>=176&&furnaceTexture.getHeight()>=166)
             g.drawRegion(furnaceTexture,0,0,176,166,Sprite.TRANS_NONE,left,top,Graphics.TOP|Graphics.LEFT);
         else{g.setColor(198,198,198);g.fillRect(left,top,176,166);g.setColor(35,35,35);g.drawRect(left,top,175,165);}
-        g.setColor(35,35,35);g.drawString("Horno",left+60,top+6,Graphics.TOP|Graphics.LEFT);
+        g.setColor(35,35,35);g.drawString(Language.text("Horno"),left+60,top+6,Graphics.TOP|Graphics.LEFT);
         g.drawString(Language.text("Inventario"),left+8,top+73,Graphics.TOP|Graphics.LEFT);
         int[] sx={56,56,116},sy={17,53,35};
         for(int i=0;i<3;i++){int x=left+sx[i],y=top+sy[i];if(furnaceSelection==i){g.setColor(255,255,160);g.drawRect(x-1,y-1,17,17);}
