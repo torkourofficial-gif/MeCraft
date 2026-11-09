@@ -107,7 +107,7 @@ final class Language {
     };
 
     private static final String[] EXTRA_SPANISH_TEXT = new String[] {
-        "Cofre", "VOLVER", "CERRAR", "USAR", "SALTO", "INV",
+        "Cofre", "Horno", "VOLVER", "CERRAR", "USAR", "SALTO", "INV",
         "¿Dispositivo con pantalla tactil?", "SI - controles tactiles", "NO - teclado/botones",
         "Desactivado", "Muy baja", "Baja", "Alta", "Muy alta", "Corta", "Lejana", "Máxima", "Mínima",
         "Render: ", "Controles tactiles: ", "Si", "No", "Nombre: ", "Modo: ", "Tamaño: ",
@@ -195,7 +195,7 @@ final class Language {
         "Preparando...", "Cargando...", "Generando...",
     };
     private static final String[] EXTRA_ENGLISH_TEXT = new String[] {
-        "Chest", "BACK", "CLOSE", "USE", "JUMP", "INV",
+        "Chest", "Furnace", "BACK", "CLOSE", "USE", "JUMP", "INV",
         "Touchscreen device?", "YES - touch controls", "NO - keyboard/buttons",
         "Off", "Very low", "Low", "High", "Very high", "Short", "Far", "Maximum", "Shortest",
         "Render: ", "Touch controls: ", "Yes", "No", "Name: ", "Mode: ", "Size: ",
