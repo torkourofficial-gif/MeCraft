@@ -198,7 +198,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private final int[] furnaceCounts = new int[3];
     private int furnaceX, furnaceY, furnaceZ, furnaceSelection, furnacePlayerSelection;
     private String furnaceStoreName;
-    private int furnaceBurnTicks, furnaceCookTicks;
+    private int furnaceBurnTicks, furnaceCookTicks, furnaceSaveTicks;
     private static final int FURNACE_COOK_TICKS = 200, FURNACE_COAL_TICKS = 1600;
     private Image furnaceTexture;
     private final int[] chestItems = new int[27];
@@ -1643,7 +1643,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private void loadFurnaceContents(int x,int y,int z) {
         furnaceStoreName=furnaceStoreName(x,y,z);
         for(int i=0;i<3;i++){furnaceItems[i]=0;furnaceCounts[i]=0;}
-        furnaceBurnTicks=furnaceCookTicks=0;RecordStore rs=null;
+        furnaceBurnTicks=furnaceCookTicks=furnaceSaveTicks=0;RecordStore rs=null;
         try {
             rs=RecordStore.openRecordStore(furnaceStoreName,false);
             if(rs.getNumRecords()>0){
@@ -1695,7 +1695,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 furnaceCookTicks=0;
             }
         }else furnaceCookTicks=0;
-        saveFurnaceContents();
+        if(++furnaceSaveTicks>=20){furnaceSaveTicks=0;saveFurnaceContents();}
     }
     private void transferFurnaceSlot() {
         if(world==null)return;
