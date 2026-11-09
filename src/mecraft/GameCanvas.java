@@ -232,7 +232,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         cameraSensitivity = clamp(settings[1], 0, 4);
         selectedPlayerSkin = clamp(settings[2], 0, 4);
         language = clamp(settings[3], Language.ENGLISH, Language.SPANISH);
-        renderDistance = clamp(settings[4], 0, 3);
+        renderDistance = clamp(settings[4], 0, 4);
         touchEnabled = settings[5] == 1;
         Language.set(language);
         try { music = new MusicController(); }
@@ -2310,8 +2310,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void changeRenderDistance(int delta) {
         renderDistance += delta;
-        if (renderDistance < 0) renderDistance = 3;
-        if (renderDistance > 3) renderDistance = 0;
+        if (renderDistance < 0) renderDistance = 4;
+        if (renderDistance > 4) renderDistance = 0;
         saveSettings();
         repaint();
     }
@@ -3611,8 +3611,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         String value = Language.text(frameSkip == 0 ? "Desactivado" : (frameSkip == 1 ? "1 de cada 2" : "2 de cada 3"));
         String[] sensitivityNames = new String[] { "Muy baja", "Baja", "Normal", "Alta", "Muy alta" };
         String[] distanceNames = language == Language.ENGLISH ?
-                new String[] { "Short", "Normal", "Far", "Maximum" } :
-                new String[] { "Corta", "Normal", "Lejana", "Máxima" };
+                new String[] { "Short", "Normal", "Far", "Maximum", "Shortest" } :
+                new String[] { "Corta", "Normal", "Lejana", "Máxima", "Mínima" };
         drawMenuItem(g, "Frameskip: " + value, firstRowY, settingsSelection == 0);
         drawMenuItem(g, "Sensibilidad: " + sensitivityNames[cameraSensitivity], firstRowY + rowStep,
                 settingsSelection == 1);
