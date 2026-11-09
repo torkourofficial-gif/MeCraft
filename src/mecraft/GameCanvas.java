@@ -202,6 +202,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private int miningFaceX, miningFaceY, miningFaceZ;
     private float miningDamage;
     private int miningHitWait;
+    private int pendingIronDoorX = Integer.MIN_VALUE, pendingIronDoorY, pendingIronDoorZ;
+    private int pendingIronDoorTicks;
     private final int[] traceResult = new int[6];
     private static final int MAX_AIR = 300;
     private int airTicks = MAX_AIR;
@@ -303,6 +305,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private synchronized void updateGame() {
         if (!visible || state != PLAYING || world == null || renderer == null) return;
         if (sprintToggleTimer > 0) sprintToggleTimer--;
+        if (pendingIronDoorTicks > 0 && --pendingIronDoorTicks == 0)
+            pendingIronDoorX = Integer.MIN_VALUE;
         float sensitivity = cameraSensitivityScale();
         if (lookLeft) world.yaw += 3.0f * sensitivity;
         if (lookRight) world.yaw -= 3.0f * sensitivity;
@@ -976,15 +980,17 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             copyInventoryToWorld();
             clearChestContents();
         }
-        if (id == Block.DOOR) {
+        if (Block.isDoor(id)) {
             int meta = world.doorMetadata(x, y, z);
             int lowerY = (meta & 8) != 0 ? y - 1 : y;
+            int drop = Block.dropId(id);
+            int debrisTile = id == Block.IRON_DOOR ? 98 : 97;
             if (!world.removeDoor(x, y, z)) {
                 miningDamage = 0.99f;
                 return;
             }
             if (world.mode == 0)
-                renderer.spawnDroppedItem(Block.DOOR, x, lowerY, z);
+                renderer.spawnDroppedItem(drop, x, lowerY, z);
             renderer.swingHand();
             if (world.mode == 0)
                 damageTool(hotbar[world.selectedSlot],
@@ -992,7 +998,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             // Rebuild the removed door first, then emit debris so the visual burst
             // cannot be lost behind a terrain rebuild on slower M3G implementations.
             renderer.sync(world);
-            renderer.spawnBlockDestroy(x, lowerY, z, 97);
+            renderer.spawnBlockDestroy(x, lowerY, z, debrisTile);
             resetMining();
             miningHitWait = 5;
             return;
@@ -1029,8 +1035,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     // Fire simply vanishes when its support is removed: no drops,
                     // particles, or extra break effects.
                     world.set(x, y + 1, z, Block.AIR);
-                } else if (above == Block.DOOR && !Block.solid(world.get(x, y, z))) {
-                    if (world.mode == 0) renderer.spawnDroppedItem(Block.DOOR, x, y + 1, z);
+                } else if (Block.isDoor(above) && !Block.solid(world.get(x, y, z))) {
+                    if (world.mode == 0) renderer.spawnDroppedItem(Block.dropId(above), x, y + 1, z);
                     world.removeDoor(x, y + 1, z);
                 }
             }
@@ -1099,8 +1105,26 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             openChest(target[0], target[1], target[2]);
             return;
         }
-        if (target != null && world.get(target[0], target[1], target[2]) == Block.DOOR) {
-            if (world.toggleDoor(target[0], target[1], target[2])) {
+        if (target != null && Block.isDoor(world.get(target[0], target[1], target[2]))) {
+            byte targetedDoor = world.get(target[0], target[1], target[2]);
+            if (targetedDoor == Block.IRON_DOOR) {
+                int meta = world.doorMetadata(target[0], target[1], target[2]);
+                int lowerY = (meta & 8) != 0 ? target[1] - 1 : target[1];
+                if (pendingIronDoorTicks > 0 && pendingIronDoorX == target[0] &&
+                    pendingIronDoorY == lowerY && pendingIronDoorZ == target[2]) {
+                    pendingIronDoorTicks = 0;
+                    pendingIronDoorX = Integer.MIN_VALUE;
+                    if (world.toggleDoor(target[0], target[1], target[2])) {
+                        renderer.swingHand();
+                        renderer.sync(world);
+                    }
+                } else {
+                    pendingIronDoorX = target[0]; pendingIronDoorY = lowerY;
+                    pendingIronDoorZ = target[2]; pendingIronDoorTicks = 12;
+                }
+            } else if (world.toggleDoor(target[0], target[1], target[2])) {
+                pendingIronDoorTicks = 0;
+                pendingIronDoorX = Integer.MIN_VALUE;
                 renderer.swingHand();
                 renderer.sync(world);
             }
@@ -1130,21 +1154,23 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         int y = target[1] + target[4];
         int z = target[2] + target[5];
         if (y <= 0 || y >= VoxelWorld.HEIGHT) return;
-        if (selectedItem == Block.DOOR) {
-            // Alpha ItemDoor only accepts the upper face and places a two-cell
-            // door on the supporting block.
-            if (target[4] != 1 || world.mode == 0 && inventory[Block.DOOR] <= 0) return;
+        if (selectedItem == Block.DOOR || selectedItem == ItemCatalog.IRON_DOOR) {
+            // Both door items place a two-cell door on the upper face of support.
+            int doorItem = selectedItem;
+            byte doorBlock = selectedItem == ItemCatalog.IRON_DOOR ?
+                    Block.IRON_DOOR : Block.DOOR;
+            if (target[4] != 1 || world.mode == 0 && inventory[doorItem] <= 0) return;
             int doorY = target[1] + 1;
             int orientation = doorOrientation(x, doorY, z);
             float px = world.playerX, py = world.playerY, pz = world.playerZ;
             if (x + 1.0f > px - PLAYER_RADIUS && x < px + PLAYER_RADIUS &&
                 z + 1.0f > pz - PLAYER_RADIUS && z < pz + PLAYER_RADIUS &&
                 doorY + 2.0f > py && doorY < py + PLAYER_HEIGHT) return;
-            if (!world.placeDoor(x, doorY, z, orientation)) return;
+            if (!world.placeDoor(x, doorY, z, orientation, doorBlock)) return;
             renderer.swingHand();
             if (world.mode == 0) {
-                inventory[Block.DOOR]--;
-                if (inventory[Block.DOOR] == 0) restoreHotbarItem(Block.DOOR);
+                inventory[doorItem]--;
+                if (inventory[doorItem] == 0) restoreHotbarItem(doorItem);
             }
             renderer.sync(world);
             return;
@@ -2796,6 +2822,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             woolSource = GameAssets.terrain();
             source = GameAssets.image("items.png");
             int[] iconPixels = new int[16 * 16];
+            // The wooden door is a block ID, but its inventory appearance is
+            // the single 16x16 item sprite from items.png, not terrain.png.
+            int woodenDoorTile = ItemCatalog.iconIndex(Block.DOOR);
+            if (woodenDoorTile >= 0) {
+                source.getRGB(iconPixels, 0, 16, (woodenDoorTile & 15) * 16,
+                        (woodenDoorTile >> 4) * 16, 16, 16);
+                itemIcons[Block.DOOR] = Image.createRGBImage(iconPixels, 16, 16, true);
+                mutedItemIcons[Block.DOOR] = makeMutedIcon(itemIcons[Block.DOOR]);
+            }
             for (int id = Block.COUNT; id < ItemCatalog.COUNT; id++) {
                 if (ItemCatalog.isColoredWool(id)) {
                     if (woolSource != null) {
@@ -4247,6 +4282,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             return;
         }
         Image icon = muted ? mutedItemIcons[id] : itemIcons[id];
+        if (id == Block.DOOR) {
+            if (icon != null) g.drawImage(icon, x, y, Graphics.TOP | Graphics.LEFT);
+            else {
+                g.setColor(muted ? 120 : 0x9B713F);
+                g.fillRect(x + 5, y + 1, 6, 14);
+                g.setColor(0xE3C28A);
+                g.fillRect(x + 6, y + 2, 4, 12);
+            }
+            return;
+        }
         if (icon == null && id < blockIcons.length) icon = blockIcons[id];
         if (icon != null) g.drawImage(icon, x, y, Graphics.TOP | Graphics.LEFT);
         else {
