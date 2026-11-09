@@ -348,7 +348,7 @@ final class ChunkRenderer {
     void setRenderDistance(int setting) {
         if (setting < 0) setting = 0;
         if (setting > 4) setting = 4;
-        // Shortest keeps exactly four chunks (2x2) around the player.
+        // Shortest keeps a stable 3x3 neighborhood around the player.
         // The grid is biased toward the player's half of the current chunk,
         // keeping the player near its centre without allocating distant meshes.
         shortestDistance = setting == 4;
@@ -1235,18 +1235,13 @@ final class ChunkRenderer {
         int centerZ = floorDiv((int)eyeZ, VoxelWorld.CHUNK_XZ);
         int span = MAX_STREAM_SPAN;
         for (int i = 0; i < CACHE_SIZE; i++) desiredVisibleChunks[i] = false;
-        int shortestStartX = centerX;
-        int shortestStartZ = centerZ;
-        if (shortestDistance) {
-            float localX = eyeX - centerX * VoxelWorld.CHUNK_XZ;
-            float localZ = eyeZ - centerZ * VoxelWorld.CHUNK_XZ;
-            if (localX >= VoxelWorld.CHUNK_XZ * 0.5f) shortestStartX--;
-            if (localZ >= VoxelWorld.CHUNK_XZ * 0.5f) shortestStartZ--;
-        }
-        int firstChunkX = shortestDistance ? shortestStartX : centerX - streamRadius;
-        int lastChunkX = shortestDistance ? shortestStartX + 1 : centerX + streamRadius;
-        int firstChunkZ = shortestDistance ? shortestStartZ : centerZ - streamRadius;
-        int lastChunkZ = shortestDistance ? shortestStartZ + 1 : centerZ + streamRadius;
+        // Match EaglercraftDS's smallest stable window: a complete 3x3
+        // neighborhood around the player's chunk. Keep it independent of camera
+        // direction; M3G performs frustum culling after the nearby chunks exist.
+        int firstChunkX = shortestDistance ? centerX - 1 : centerX - streamRadius;
+        int lastChunkX = shortestDistance ? centerX + 1 : centerX + streamRadius;
+        int firstChunkZ = shortestDistance ? centerZ - 1 : centerZ - streamRadius;
+        int lastChunkZ = shortestDistance ? centerZ + 1 : centerZ + streamRadius;
         for (int i = 0; i < CACHE_SIZE; i++) {
             if (residentChunks[i] &&
                     (chunkWorldX[i] < firstChunkX || chunkWorldX[i] > lastChunkX ||
@@ -1278,7 +1273,10 @@ final class ChunkRenderer {
                     // Camera rotation must not evict off-screen chunks, or turning back
                     // forces the same M3G meshes to be allocated and rebuilt repeatedly.
                     if (residentChunks[i] && !sameChunk) removeChunk(i);
-                    if (visible && (!sameChunk || dirtyChunks[i])) {
+                    // Shortest prebuilds the full nearby 3x3 window, like
+                    // EaglercraftDS. This avoids holes when turning the camera;
+                    // the scene renderer still culls chunks outside the view.
+                    if ((shortestDistance || visible) && (!sameChunk || dirtyChunks[i])) {
                         if (!sameChunk) {
                             chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
                         }
