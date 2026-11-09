@@ -302,7 +302,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private int musicModeForState() {
         if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH ||
-                state == CREATIVE_INVENTORY || state == CHEST_INVENTORY || state == GAME_OVER) return MusicController.GAMEPLAY;
+                state == CREATIVE_INVENTORY || state == CHEST_INVENTORY || state == FURNACE_INVENTORY || state == GAME_OVER) return MusicController.GAMEPLAY;
         if (state == MENU || state == WORLD_SELECT || state == WORLD_CREATE ||
                 state == WORLD_DELETE || state == WORLD_NAME || state == SETTINGS ||
                 state == SKIN_SELECT || state == CONTROLS || state == LAN_MENU ||
@@ -1694,7 +1694,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 if(furnaceCounts[0]<=0){furnaceItems[0]=0;furnaceCounts[0]=0;}
                 furnaceCookTicks=0;
             }
-        }else if(!furnaceCanSmelt())furnaceCookTicks=0;
+        }else furnaceCookTicks=0;
         saveFurnaceContents();
     }
     private void transferFurnaceSlot() {
@@ -1708,16 +1708,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 int moved=Math.min(amount,Math.max(0,64-inventory[id]));
                 if(moved>0){inventory[id]+=moved;furnaceCounts[slot]-=moved;if(furnaceCounts[slot]<=0){furnaceItems[slot]=0;furnaceCounts[slot]=0;}}
             }else{
-                int source=inventoryCellItem(furnacePlayerSelection);
-                if(source>0&&inventory[source]>0&&(slot==1?source==ItemCatalog.COAL_ITEM:furnaceResult(source)>0)){
+                int source=furnacePlayerSelection>=27?hotbar[furnacePlayerSelection-27]:inventoryCellItem(furnacePlayerSelection);
+                if(source>0&&source<ItemCatalog.COUNT&&inventory[source]>0&&(slot==1?source==ItemCatalog.COAL_ITEM:furnaceResult(source)>0)){
                     furnaceItems[slot]=source;furnaceCounts[slot]=Math.min(64,inventory[source]);
                     inventory[source]-=furnaceCounts[slot];if(inventory[source]<=0){inventory[source]=0;restoreHotbarItem(source);}
                 }
             }
         }else{
             furnacePlayerSelection=furnaceSelection-3;
-            int source=inventoryCellItem(furnacePlayerSelection);
-            if(source>0&&inventory[source]>0){
+            int source=furnaceSelection>=30?hotbar[furnaceSelection-30]:inventoryCellItem(furnaceSelection-3);
+            if(source>0&&source<ItemCatalog.COUNT&&inventory[source]>0){
                 int slot=furnaceResult(source)>0?0:(source==ItemCatalog.COAL_ITEM?1:-1);
                 if(slot>=0&&(furnaceItems[slot]==0||furnaceItems[slot]==source)){
                     int moved=Math.min(inventory[source],64-furnaceCounts[slot]);
@@ -3440,7 +3440,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             if(!hit&&x>=left+8&&x<left+170&&y>=top+85&&y<top+162){int col=(x-left-8)/18;if(col<0)col=0;if(col>8)col=8;
                 if(y<top+139){int row=(y-top-85)/18;if(row<0)row=0;if(row>2)row=2;furnaceSelection=3+row*9+col;furnacePlayerSelection=row*9+col;}
                 else{furnaceSelection=30+col;furnacePlayerSelection=27+col;}}
-            if(hit||(!hit&&x>=left+8&&x<left+170&&y>=top+85&&y<top+162))transferFurnaceSlot();
+            if(hit){if(furnaceSelection==2||furnaceCounts[furnaceSelection]>0)transferFurnaceSlot();}
+            else if(x>=left+8&&x<left+170&&y>=top+85&&y<top+162)transferFurnaceSlot();
             else if(y>top+166||x<left||x>left+176)closeCrafting();repaint();
         } else if (state == CHEST_INVENTORY) {
             int left = (w - 176) / 2, top = (h - 166) / 2;
