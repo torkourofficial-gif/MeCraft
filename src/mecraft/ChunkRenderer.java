@@ -507,7 +507,7 @@ final class ChunkRenderer {
 
     private void setHeldVisualVisible(int itemId, boolean visible) {
         if (itemId <= Block.AIR) return;
-        if (itemId == Block.DOOR) {
+        if (itemId < Block.COUNT && Block.isDoor((byte)itemId)) {
             if (visible) setItemSprite(itemId);
             itemSpriteMesh.setRenderingEnable(visible && ItemCatalog.iconIndex(itemId) >= 0);
         } else if (Block.isDecorative((byte)itemId) || itemId == Block.TNT ||
@@ -659,7 +659,7 @@ final class ChunkRenderer {
 
     /** Flowers use the same first-person grip and swing path as Indev's stick. */
     private boolean usesSpriteHandPose(int itemId) {
-        return itemId == Block.DOOR || itemId >= ItemCatalog.STICK ||
+        return (itemId < Block.COUNT && Block.isDoor((byte)itemId)) || itemId >= ItemCatalog.STICK ||
                (itemId > Block.AIR && itemId < Block.COUNT && Block.isFlower((byte)itemId));
     }
 
@@ -1343,9 +1343,9 @@ final class ChunkRenderer {
                     } else if (Block.isFlower(id)) {
                         if (flowers == null) flowers = new FlowerBuilder();
                         flowers.add(x - x0, y - y0, z - z0, Block.sideTile(id));
-                    } else if (id == Block.DOOR) {
+                    } else if (Block.isDoor(id)) {
                         if (flowers == null) flowers = new FlowerBuilder();
-                        flowers.addDoor(x - x0, y - y0, z - z0,
+                        flowers.addDoor(x - x0, y - y0, z - z0, id,
                                 world.doorMetadata(x, y, z));
                     }
                 }
@@ -1380,7 +1380,7 @@ final class ChunkRenderer {
                                 VoxelWorld.CHUNK_XZ + (x - x0);
                         byte id = chunkVoxelScratch[voxelIndex];
                         int key = 0;
-                        if (id != Block.AIR && id != Block.RAIL && !Block.isFlower(id) && id != Block.DOOR &&
+                        if (id != Block.AIR && id != Block.RAIL && !Block.isFlower(id) && !Block.isDoor(id) &&
                             !(face == 5 && y == 0)) {
                             int nx = x, ny = y, nz = z;
                             if (face == 0) ny++;
@@ -1904,14 +1904,16 @@ final class ChunkRenderer {
         }
 
         /** Alpha's door is a two-sided thin panel, rotated by its 4-bit state. */
-        void addDoor(int x, int y, int z, int metadata) {
+        void addDoor(int x, int y, int z, byte doorBlock, int metadata) {
             ensure(vertexCount + 4);
             int state = (metadata & 4) != 0 ? metadata & 3 : (metadata - 1) & 3;
             int x0 = x * 256, x1 = x0 + 256;
             int y0 = y * 256, y1 = y0 + 256;
             int z0 = z * 256, z1 = z0 + 256;
             int edge = 48; // Alpha's 3/16-block door thickness.
-            int tile = (metadata & 8) != 0 ? 81 : 97;
+            int tile = doorBlock == Block.IRON_DOOR ?
+                    ((metadata & 8) != 0 ? 82 : 98) :
+                    ((metadata & 8) != 0 ? 81 : 97);
             int u0 = (tile & 15) * 16 + 1, v0 = (tile >> 4) * 16 + 1;
             int u1 = u0 + 14, v1 = v0 + 14;
             // TriangleStripArray joins vertices 1 and 2. Order the vertices
