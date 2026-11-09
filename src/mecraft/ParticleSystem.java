@@ -30,6 +30,9 @@ final class ParticleSystem {
     private final int[] tileOffsetX = new int[CAPACITY];
     private final int[] tileOffsetY = new int[CAPACITY];
     private final boolean[] deathDust = new boolean[CAPACITY];
+    // Block-break fragments remain until their pool slots are reused. The pool
+    // is fixed-size, so this removes the short timeout without unbounded RAM use.
+    private final boolean[] persistent = new boolean[CAPACITY];
     private final short[] positions = new short[VERTICES * 3];
     private final short[] texCoords = new short[VERTICES * 2];
     private final byte[] colors = new byte[VERTICES * 4];
@@ -111,7 +114,8 @@ final class ParticleSystem {
                     size[i] = 0.075f + nextRandom() * 0.055f;
                     age[i] = 0;
                     // Keep debris visible long enough to survive frame skipping on slow Java ME devices.
-                    lifetime[i] = 18 + (int)(nextRandom() * 15.0f);
+                    lifetime[i] = Integer.MAX_VALUE;
+                    persistent[i] = true;
                     tile[i] = blockTile;
                     tileOffsetX[i] = (int)(nextRandom() * 4.0f);
                     tileOffsetY[i] = (int)(nextRandom() * 4.0f);
@@ -140,6 +144,7 @@ final class ParticleSystem {
             tileOffsetX[i] = (int)(nextRandom() * 12.0f);
             tileOffsetY[i] = (int)(nextRandom() * 12.0f);
             deathDust[i] = true;
+            persistent[i] = false;
             setParticleColor(i, 165, 132, 91, 230);
         }
     }
@@ -160,7 +165,7 @@ final class ParticleSystem {
         float upY = (float)Math.cos(pitch);
         float upZ = -(float)(Math.cos(yaw) * Math.sin(pitch));
         for (int i = 0; i < CAPACITY; i++) {
-            if (age[i] < lifetime[i]) {
+            if (persistent[i] || age[i] < lifetime[i]) {
                 age[i]++;
                 if (deathDust[i]) vy[i] += 0.001f;
                 else vy[i] -= 0.04f;
