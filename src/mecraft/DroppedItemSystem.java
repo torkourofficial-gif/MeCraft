@@ -148,22 +148,21 @@ final class DroppedItemSystem {
         tntFlashPositionArray.set(0, VERTEX_COUNT, tntFlashPositions);
     }
 
-    void spawn(int id, int bx, int by, int bz) {
-        if (id <= Block.AIR || id >= ItemCatalog.COUNT) return;
+    int spawn(int id, int bx, int by, int bz) {
+        if (id <= Block.AIR || id >= ItemCatalog.COUNT || activeCount >= CAPACITY) return -1;
         int slot = -1;
         for (int n = 0; n < CAPACITY; n++) {
             int candidate = (cursor + n) % CAPACITY;
             if (itemId[candidate] == 0) { slot = candidate; break; }
         }
-        // A fixed pool keeps memory bounded; recycle the oldest visible drop if full.
-        if (slot < 0) slot = cursor;
+        // Never evict an existing drop: collecting one frees this slot for a new drop.
+        if (slot < 0) return -1;
         cursor = slot + 1;
         if (cursor == CAPACITY) cursor = 0;
         if (itemId[slot] == 0) activeCount++;
 
         itemId[slot] = id;
         tntFuse[slot] = 0;
-        age[slot] = 0;
         pickupDelay[slot] = 10;
         x[slot] = bx + 0.15f + nextRandom() * 0.70f;
         y[slot] = by + 0.5f;
@@ -177,11 +176,12 @@ final class DroppedItemSystem {
             setVertexColor(slot, ItemCatalog.isColoredWool(id) ? ItemCatalog.woolColor(id) : 0);
             if (!ItemCatalog.isColoredWool(id)) setAlphaVertexTint(slot, blockId);
         } else writeSpriteTexture(slot, id);
+        return slot;
     }
 
     void spawnPrimedTnt(int bx, int by, int bz, int fuse) {
-        spawn(Block.TNT, bx, by, bz);
-        int slot = cursor == 0 ? CAPACITY - 1 : cursor - 1;
+        int slot = spawn(Block.TNT, bx, by, bz);
+        if (slot < 0) return;
         tntFuse[slot] = fuse;
         pickupDelay[slot] = fuse + 20;
         // Indev replaces the block with an EntityTNTPrimed, not a collectible
@@ -215,7 +215,7 @@ final class DroppedItemSystem {
             }
             age[i]++;
             if (pickupDelay[i] > 0) pickupDelay[i]--;
-            if (age[i] >= 6000 || y[i] < -2.0f) {
+            if (y[i] < -2.0f) {
                 itemId[i] = 0;
                 tntFuse[i] = 0;
                 activeCount--;
