@@ -1276,7 +1276,10 @@ final class ChunkRenderer {
                     // Shortest prebuilds the full nearby 3x3 window, like
                     // EaglercraftDS. This avoids holes when turning the camera;
                     // the scene renderer still culls chunks outside the view.
-                    if ((shortestDistance || visible) && (!sameChunk || dirtyChunks[i])) {
+                    boolean inShortestVerticalRange = !shortestDistance ||
+                            Math.abs(dy) <= cameraFar * tanVerticalFov + CHUNK_RADIUS;
+                    if (inShortestVerticalRange && (shortestDistance || visible) &&
+                            (!sameChunk || dirtyChunks[i])) {
                         if (!sameChunk) {
                             chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
                         }
