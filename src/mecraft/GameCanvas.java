@@ -46,6 +46,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private static final int LAN_CODE_INPUT = 21;
     private static final int LAN_CONNECTED = 22;
     private static final int DEBUG_ITEMS = 23;
+    private static final int FURNACE_INVENTORY = 24;
     private static final int CONTROL_LOOK_UP = 0, CONTROL_LOOK_DOWN = 1;
     private static final int CONTROL_LOOK_LEFT = 2, CONTROL_LOOK_RIGHT = 3;
     private static final int CONTROL_FORWARD = 4, CONTROL_BACK = 5;
@@ -193,6 +194,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private int recipeSelection;
     private int recipeScroll;
     private int inventoryPage;
+    private final int[] furnaceItems = new int[3];
+    private final int[] furnaceCounts = new int[3];
+    private int furnaceX, furnaceY, furnaceZ, furnaceSelection, furnacePlayerSelection;
+    private String furnaceStoreName;
+    private int furnaceBurnTicks, furnaceCookTicks;
+    private static final int FURNACE_COOK_TICKS = 200, FURNACE_COAL_TICKS = 1600;
+    private Image furnaceTexture;
     private final int[] chestItems = new int[27];
     private final int[] chestCounts = new int[27];
     private int chestX, chestY, chestZ, chestSelection;
@@ -281,6 +289,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             long start = System.currentTimeMillis();
             if (music != null) music.update(visible ? musicModeForState() : MusicController.OFF);
             if (visible && state == PLAYING) updateGame();
+            if (visible && state == FURNACE_INVENTORY) { updateFurnace(); repaint(); }
             if (visible && state == GAME_OVER && gameOverTicks < 12) gameOverTicks++;
             if (visible && state == MENU) panoramaTick++;
             if (visible && (state != PLAYING || renderFrame++ % (frameSkip + 1) == 0)) repaint();
@@ -830,6 +839,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void saveIfNeeded() {
         if (state == CHEST_INVENTORY) saveChestContents();
+        if (state == FURNACE_INVENTORY) saveFurnaceContents();
         if (world != null && state != MENU && state != ERROR) {
             copyInventoryToWorld();
             world.save();
@@ -1103,6 +1113,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
         if (target != null && world.get(target[0], target[1], target[2]) == Block.CHEST) {
             openChest(target[0], target[1], target[2]);
+            return;
+        }
+        if (target != null && world.get(target[0], target[1], target[2]) == Block.FURNACE) {
+            openFurnace(target[0], target[1], target[2]);
             return;
         }
         if (target != null && Block.isDoor(world.get(target[0], target[1], target[2]))) {
@@ -1616,6 +1630,124 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         world.save();
     }
 
+
+    private void openFurnace(int x,int y,int z) {
+        if(state!=PLAYING||world==null)return;
+        furnaceX=x;furnaceY=y;furnaceZ=z;furnaceSelection=0;furnacePlayerSelection=0;
+        loadFurnaceContents(x,y,z);state=FURNACE_INVENTORY;clearKeys();repaint();
+    }
+    private String furnaceStoreName(int x,int y,int z) {
+        String base=world==null||world.saveStoreName==null?"mecraft-save":world.saveStoreName;
+        return "mcfu"+Integer.toHexString((base+":"+world.nether+":"+x+":"+y+":"+z).hashCode());
+    }
+    private void loadFurnaceContents(int x,int y,int z) {
+        furnaceStoreName=furnaceStoreName(x,y,z);
+        for(int i=0;i<3;i++){furnaceItems[i]=0;furnaceCounts[i]=0;}
+        furnaceBurnTicks=furnaceCookTicks=0;RecordStore rs=null;
+        try {
+            rs=RecordStore.openRecordStore(furnaceStoreName,false);
+            if(rs.getNumRecords()>0){
+                DataInputStream in=new DataInputStream(new ByteArrayInputStream(rs.getRecord(1)));
+                if(in.readInt()==0x4D434655){
+                    for(int i=0;i<3;i++){furnaceItems[i]=in.readInt();furnaceCounts[i]=in.readInt();
+                        if(furnaceItems[i]<0||furnaceItems[i]>=ItemCatalog.COUNT||furnaceCounts[i]<0||furnaceCounts[i]>64){furnaceItems[i]=0;furnaceCounts[i]=0;}}
+                    furnaceBurnTicks=Math.max(0,in.readInt());furnaceCookTicks=Math.max(0,in.readInt());
+                }in.close();
+            }
+        }catch(Exception ignored){}finally{if(rs!=null)try{rs.closeRecordStore();}catch(Exception ignored){}}
+    }
+    private void saveFurnaceContents() {
+        if(furnaceStoreName==null)return;RecordStore rs=null;
+        try {
+            ByteArrayOutputStream bytes=new ByteArrayOutputStream(64);DataOutputStream out=new DataOutputStream(bytes);
+            out.writeInt(0x4D434655);
+            for(int i=0;i<3;i++){out.writeInt(furnaceItems[i]);out.writeInt(furnaceCounts[i]);}
+            out.writeInt(furnaceBurnTicks);out.writeInt(furnaceCookTicks);out.flush();byte[] data=bytes.toByteArray();
+            rs=RecordStore.openRecordStore(furnaceStoreName,true);
+            if(rs.getNumRecords()==0)rs.addRecord(data,0,data.length);else rs.setRecord(1,data,0,data.length);
+            out.close();
+        }catch(Exception ignored){}finally{if(rs!=null)try{rs.closeRecordStore();}catch(Exception ignored){}}
+    }
+    private int furnaceResult(int item) {
+        if(item==Block.IRON)return ItemCatalog.IRON_INGOT;
+        if(item==Block.GOLD_ORE)return ItemCatalog.GOLD_INGOT;
+        if(item==ItemCatalog.PORK_RAW)return ItemCatalog.PORK_COOKED;
+        if(item==ItemCatalog.FISH_RAW)return ItemCatalog.FISH_COOKED;
+        return 0;
+    }
+    private boolean furnaceCanSmelt() {
+        int result=furnaceResult(furnaceItems[0]);
+        return result>0&&furnaceCounts[0]>0&&(furnaceItems[2]==0||
+            (furnaceItems[2]==result&&furnaceCounts[2]<ItemCatalog.maxStack(result)));
+    }
+    private void updateFurnace() {
+        if(furnaceBurnTicks>0)furnaceBurnTicks--;
+        if(furnaceBurnTicks==0&&furnaceCanSmelt()&&furnaceItems[1]==ItemCatalog.COAL_ITEM&&furnaceCounts[1]>0){
+            furnaceBurnTicks=FURNACE_COAL_TICKS;furnaceCounts[1]--;
+            if(furnaceCounts[1]<=0){furnaceItems[1]=0;furnaceCounts[1]=0;}
+        }
+        if(furnaceBurnTicks>0&&furnaceCanSmelt()){
+            furnaceCookTicks++;
+            if(furnaceCookTicks>=FURNACE_COOK_TICKS){
+                int result=furnaceResult(furnaceItems[0]);if(furnaceItems[2]==0)furnaceItems[2]=result;
+                furnaceCounts[2]++;furnaceCounts[0]--;
+                if(furnaceCounts[0]<=0){furnaceItems[0]=0;furnaceCounts[0]=0;}
+                furnaceCookTicks=0;
+            }
+        }else if(!furnaceCanSmelt())furnaceCookTicks=0;
+        saveFurnaceContents();
+    }
+    private void transferFurnaceSlot() {
+        if(world==null)return;
+        if(furnaceSelection<3){
+            int slot=furnaceSelection,id=furnaceItems[slot],amount=furnaceCounts[slot];
+            if(slot==2&&id>0&&amount>0){
+                int moved=Math.min(amount,Math.max(0,ItemCatalog.maxStack(id)-inventory[id]));
+                if(moved>0){inventory[id]+=moved;furnaceCounts[slot]-=moved;if(furnaceCounts[slot]<=0){furnaceItems[slot]=0;furnaceCounts[slot]=0;}}
+            }else if(id>0&&amount>0){
+                int moved=Math.min(amount,Math.max(0,64-inventory[id]));
+                if(moved>0){inventory[id]+=moved;furnaceCounts[slot]-=moved;if(furnaceCounts[slot]<=0){furnaceItems[slot]=0;furnaceCounts[slot]=0;}}
+            }else{
+                int source=inventoryCellItem(furnacePlayerSelection);
+                if(source>0&&inventory[source]>0&&(slot==1?source==ItemCatalog.COAL_ITEM:furnaceResult(source)>0)){
+                    furnaceItems[slot]=source;furnaceCounts[slot]=Math.min(64,inventory[source]);
+                    inventory[source]-=furnaceCounts[slot];if(inventory[source]<=0){inventory[source]=0;restoreHotbarItem(source);}
+                }
+            }
+        }else{
+            furnacePlayerSelection=furnaceSelection-3;
+            int source=inventoryCellItem(furnacePlayerSelection);
+            if(source>0&&inventory[source]>0){
+                int slot=furnaceResult(source)>0?0:(source==ItemCatalog.COAL_ITEM?1:-1);
+                if(slot>=0&&(furnaceItems[slot]==0||furnaceItems[slot]==source)){
+                    int moved=Math.min(inventory[source],64-furnaceCounts[slot]);
+                    if(furnaceItems[slot]==0)furnaceItems[slot]=source;
+                    furnaceCounts[slot]+=moved;inventory[source]-=moved;
+                    if(inventory[source]<=0){inventory[source]=0;restoreHotbarItem(source);}
+                }
+            }
+        }
+        copyInventoryToWorld();saveFurnaceContents();repaint();
+    }
+    private void moveFurnaceSelection(int delta){furnaceSelection=(furnaceSelection+delta+39)%39;if(furnaceSelection>=3)furnacePlayerSelection=furnaceSelection-3;repaint();}
+    private void drawFurnace(Graphics g) {
+        int w=getWidth(),h=getHeight(),left=(w-176)/2,top=(h-166)/2;
+        if(furnaceTexture!=null&&furnaceTexture.getWidth()>=176&&furnaceTexture.getHeight()>=166)
+            g.drawRegion(furnaceTexture,0,0,176,166,Sprite.TRANS_NONE,left,top,Graphics.TOP|Graphics.LEFT);
+        else{g.setColor(198,198,198);g.fillRect(left,top,176,166);g.setColor(35,35,35);g.drawRect(left,top,175,165);}
+        g.setColor(35,35,35);g.drawString("Horno",left+60,top+6,Graphics.TOP|Graphics.LEFT);
+        g.drawString(Language.text("Inventario"),left+8,top+73,Graphics.TOP|Graphics.LEFT);
+        int[] sx={56,56,116},sy={17,53,35};
+        for(int i=0;i<3;i++){int x=left+sx[i],y=top+sy[i];if(furnaceSelection==i){g.setColor(255,255,160);g.drawRect(x-1,y-1,17,17);}
+            if(furnaceItems[i]>0&&furnaceCounts[i]>0){drawIcon(g,furnaceItems[i],x,y,false);if(furnaceCounts[i]>1)drawOutlinedCount(g,Integer.toString(furnaceCounts[i]),x+16,y+16,Graphics.RIGHT|Graphics.BOTTOM);}}
+        int progress=furnaceCookTicks*24/FURNACE_COOK_TICKS;
+        if(progress>0){g.setColor(230,150,40);g.fillRect(left+79,top+35,progress,5);}
+        for(int i=0;i<27;i++){int x=left+8+(i%9)*18,y=top+85+(i/9)*18;if(furnaceSelection==i+3){g.setColor(255,255,160);g.drawRect(x-1,y-1,17,17);}
+            int id=inventoryCellItem(i);if(id>0&&id<ItemCatalog.COUNT&&inventory[id]>0){drawIcon(g,id,x,y,false);if(inventory[id]>1)drawOutlinedCount(g,Integer.toString(inventory[id]),x+16,y+16,Graphics.RIGHT|Graphics.BOTTOM);}}
+        for(int i=0;i<9;i++){int x=left+8+i*18,y=top+143;if(furnaceSelection==i+30){g.setColor(255,255,160);g.drawRect(x-1,y-1,17,17);}
+            int id=hotbar[i];if(id>0&&id<ItemCatalog.COUNT&&inventory[id]>0){drawIcon(g,id,x,y,false);if(inventory[id]>1)drawOutlinedCount(g,Integer.toString(inventory[id]),x+16,y+16,Graphics.RIGHT|Graphics.BOTTOM);}}
+    }
+
     private void openChest(int x, int y, int z) {
         if (state != PLAYING || world == null) return;
         chestX=x; chestY=y; chestZ=z; chestSelection=0;
@@ -1794,6 +1926,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void closeCrafting() {
         if (state == CHEST_INVENTORY) { saveChestContents(); state = PLAYING; repaint(); return; }
+        if (state == FURNACE_INVENTORY) { saveFurnaceContents(); state = PLAYING; repaint(); return; }
         if (state != INVENTORY && state != WORKBENCH) return;
         state = PLAYING;
         repaint();
@@ -2153,6 +2286,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             else if (action == FIRE || keyCode == KEY_NUM5) activateSelection();
             else if (keyCode == KEY_NUM0) backToMenu();
             return;
+        }
+        if (state == FURNACE_INVENTORY) {
+            int action=gameAction(keyCode);
+            if(keyCode==KEY_POUND||keyCode==KEY_NUM0)closeCrafting();
+            else if(keyCode==KEY_NUM2||action==UP)moveFurnaceSelection(-9);
+            else if(keyCode==KEY_NUM8||action==DOWN)moveFurnaceSelection(9);
+            else if(keyCode==KEY_NUM4||action==LEFT)moveFurnaceSelection(-1);
+            else if(keyCode==KEY_NUM6||action==RIGHT)moveFurnaceSelection(1);
+            else if(keyCode==KEY_NUM5||action==FIRE)transferFurnaceSlot();
+            repaint();return;
         }
         if (state == CHEST_INVENTORY) {
             int action = gameAction(keyCode);
@@ -2723,6 +2866,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         try { guiTexture = GameAssets.image("gui.png"); } catch (IOException ignored) { guiTexture = null; }
         try { iconsTexture = GameAssets.image("icons.png"); } catch (IOException ignored) { iconsTexture = null; }
         try { containerTexture = GameAssets.image("container.png"); } catch (IOException ignored) { containerTexture = null; }
+        try { furnaceTexture = GameAssets.image("furnace.png"); } catch (IOException ignored) { furnaceTexture = null; }
         try {
             Image sourceDpad = GameAssets.image("dpad.png");
             int targetSize = Math.min(100, Math.max(72, getWidth() / 2 - 28));
@@ -2922,7 +3066,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (state == TOUCH_SETUP) {
             drawTouchSetup(g);
         } else if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH ||
-            state == CREATIVE_INVENTORY || state == GAME_OVER || state == CHEST_INVENTORY) {
+            state == CREATIVE_INVENTORY || state == GAME_OVER || state == CHEST_INVENTORY || state == FURNACE_INVENTORY) {
             String stage = "actualizando mallas M3G";
             try {
                 renderer.sync(world);
@@ -2944,6 +3088,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 if (state == CHEST_INVENTORY) {
                     drawTint(g, chestOverlay());
                     drawChest(g);
+                } else if (state == FURNACE_INVENTORY) {
+                    drawTint(g, chestOverlay());
+                    drawFurnace(g);
                 }
                 if (state == PLAYING || state == PAUSED) {
                     if (cameraUnderwater()) drawTint(g, waterTint);
@@ -3287,6 +3434,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     selectCreativeBlock();
                 }
             }
+        } else if (state == FURNACE_INVENTORY) {
+            int left=(w-176)/2,top=(h-166)/2;int[] sx={56,56,116},sy={17,53,35};boolean hit=false;
+            for(int i=0;i<3;i++)if(x>=left+sx[i]&&x<left+sx[i]+18&&y>=top+sy[i]&&y<top+sy[i]+18){furnaceSelection=i;hit=true;break;}
+            if(!hit&&x>=left+8&&x<left+170&&y>=top+85&&y<top+162){int col=(x-left-8)/18;if(col<0)col=0;if(col>8)col=8;
+                if(y<top+139){int row=(y-top-85)/18;if(row<0)row=0;if(row>2)row=2;furnaceSelection=3+row*9+col;furnacePlayerSelection=row*9+col;}
+                else{furnaceSelection=30+col;furnacePlayerSelection=27+col;}}
+            if(hit||(!hit&&x>=left+8&&x<left+170&&y>=top+85&&y<top+162))transferFurnaceSlot();
+            else if(y>top+166||x<left||x>left+176)closeCrafting();repaint();
         } else if (state == CHEST_INVENTORY) {
             int left = (w - 176) / 2, top = (h - 166) / 2;
             if (x >= left + 7 && x < left + 8 + 9 * 18 &&
