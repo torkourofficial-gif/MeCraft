@@ -1707,7 +1707,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             }else if(id>0&&amount>0){
                 int moved=Math.min(amount,Math.max(0,64-inventory[id]));
                 if(moved>0){inventory[id]+=moved;furnaceCounts[slot]-=moved;if(furnaceCounts[slot]<=0){furnaceItems[slot]=0;furnaceCounts[slot]=0;}}
-            }else{
+            }else if(slot!=2){
                 int source=furnacePlayerSelection>=27?hotbar[furnacePlayerSelection-27]:inventoryCellItem(furnacePlayerSelection);
                 if(source>0&&source<ItemCatalog.COUNT&&inventory[source]>0&&(slot==1?source==ItemCatalog.COAL_ITEM:furnaceResult(source)>0)){
                     furnaceItems[slot]=source;furnaceCounts[slot]=Math.min(64,inventory[source]);
