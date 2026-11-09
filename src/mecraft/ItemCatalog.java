@@ -311,7 +311,7 @@ final class ItemCatalog {
         if (kind == SHOVEL) return block == Block.GRASS || block == Block.DIRT ||
                                     block == Block.SAND || block == Block.FARMLAND || block == Block.SNOW;
         if (kind == AXE) return block == Block.LOG || block == Block.PLANKS ||
-                                  block == Block.CRAFTING_TABLE || block == Block.DOOR || block == Block.CACTUS;
+                                  block == Block.CRAFTING_TABLE || Block.isDoor(block) || block == Block.CACTUS;
         return kind == SWORD;
     }
 }
