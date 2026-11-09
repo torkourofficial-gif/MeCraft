@@ -214,6 +214,7 @@ final class ItemCatalog {
         if (isSpawnEgg(id)) return -1;
         // Alpha's wooden door item icon in items.png (tile 43).
         if (id == Block.DOOR) return 43;
+        if (id == Block.IRON_DOOR) return 44;
         if (id == STICK) return 53;
         if (isTool(id)) {
             int offset = id - TOOL_START;
