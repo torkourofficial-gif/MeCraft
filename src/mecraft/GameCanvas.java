@@ -1297,10 +1297,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                         (Block.solid(world.get(x - sideX, y + 1, z - sideZ)) ? 1 : 0);
         int farWalls = (Block.solid(world.get(x + sideX, y, z + sideZ)) ? 1 : 0) +
                        (Block.solid(world.get(x + sideX, y + 1, z + sideZ)) ? 1 : 0);
-        boolean nearDoor = world.get(x - sideX, y, z - sideZ) == Block.DOOR ||
-                           world.get(x - sideX, y + 1, z - sideZ) == Block.DOOR;
-        boolean farDoor = world.get(x + sideX, y, z + sideZ) == Block.DOOR ||
-                          world.get(x + sideX, y + 1, z + sideZ) == Block.DOOR;
+        boolean nearDoor = Block.isDoor(world.get(x - sideX, y, z - sideZ)) ||
+                           Block.isDoor(world.get(x - sideX, y + 1, z - sideZ));
+        boolean farDoor = Block.isDoor(world.get(x + sideX, y, z + sideZ)) ||
+                          Block.isDoor(world.get(x + sideX, y + 1, z + sideZ));
         boolean reverseHinge = nearDoor && !farDoor || farWalls > nearWalls;
         if (reverseHinge) orientation = (orientation - 1) & 3 | 4;
         return orientation;
