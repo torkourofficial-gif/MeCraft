@@ -109,7 +109,7 @@ final class Language {
     private static final String[] EXTRA_SPANISH_TEXT = new String[] {
         "Cofre", "VOLVER", "CERRAR", "USAR", "SALTO", "INV",
         "¿Dispositivo con pantalla tactil?", "SI - controles tactiles", "NO - teclado/botones",
-        "Desactivado", "Muy baja", "Baja", "Alta", "Muy alta", "Corta", "Lejana", "Máxima",
+        "Desactivado", "Muy baja", "Baja", "Alta", "Muy alta", "Corta", "Lejana", "Máxima", "Mínima",
         "Render: ", "Controles tactiles: ", "Si", "No", "Nombre: ", "Modo: ", "Tamaño: ",
         "Tipo: ", "Plano", "Mundo", "Mundo guardado", "Objeto", "Mesa", "Rieles",
         "16 Rieles", "Vagoneta", "Barca", "Mesa de trabajo", "4 Tablones", "4 Palos",
@@ -197,7 +197,7 @@ final class Language {
     private static final String[] EXTRA_ENGLISH_TEXT = new String[] {
         "Chest", "BACK", "CLOSE", "USE", "JUMP", "INV",
         "Touchscreen device?", "YES - touch controls", "NO - keyboard/buttons",
-        "Off", "Very low", "Low", "High", "Very high", "Short", "Far", "Maximum",
+        "Off", "Very low", "Low", "High", "Very high", "Short", "Far", "Maximum", "Shortest",
         "Render: ", "Touch controls: ", "Yes", "No", "Name: ", "Mode: ", "Size: ",
         "Type: ", "Flat", "World", "Saved world", "Item", "Table", "Rails",
         "16 Rails", "Minecart", "Boat", "Crafting table", "4 Planks", "4 Sticks",
