@@ -671,7 +671,8 @@ final class InfdevTerrain {
                     (biome == JUNGLE ? 1 : biome == DARK_FOREST ? 1 : biome == PLAINS ? 2 : 0) :
                     (biome == JUNGLE ? 3 : biome == DARK_FOREST ? 2 : biome == PLAINS ? 7 : 0);
                 if (chance == 0 || (treeHash & 15) >= chance) continue;
-                int ty = surfaceHeight(seed, tx, tz, biome);
+                int ty = economic ? economicSurfaceHeight(seed, tx, tz, biome) :
+                    surfaceHeight(seed, tx, tz, biome);
                 if (ty <= SEA_LEVEL + 1 || ty + 4 >= WORLD_HEIGHT || biome == SNOWY) continue;
                 for (int oy = 1; oy <= 4; oy++) {
                     for (int dz = -2; dz <= 2; dz++) {
