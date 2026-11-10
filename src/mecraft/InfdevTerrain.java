@@ -119,6 +119,17 @@ final class InfdevTerrain {
     /** Compact Alpha-style Nether: netherrack floor, cave volume, lava sea and roof. */
     static void generateNether(int seed, int chunkX, int chunkZ, byte[] blocks,
                                int[] floorHeights) {
+        generateNether(seed, chunkX, chunkZ, blocks, floorHeights, false);
+    }
+
+    /** Economic Nether uses fewer height-noise samples while retaining lava rivers. */
+    static void generateEconomicNether(int seed, int chunkX, int chunkZ, byte[] blocks,
+                                       int[] floorHeights) {
+        generateNether(seed, chunkX, chunkZ, blocks, floorHeights, true);
+    }
+
+    private static void generateNether(int seed, int chunkX, int chunkZ, byte[] blocks,
+                                       int[] floorHeights, boolean economic) {
         if (blocks == null || blocks.length < CHUNK_VOLUME || floorHeights == null ||
             floorHeights.length < CHUNK_SIZE * CHUNK_SIZE) return;
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generateNether: calculando origen del chunk " + chunkX + "," + chunkZ);
@@ -129,8 +140,9 @@ final class InfdevTerrain {
             for (int x = 0; x < CHUNK_SIZE; x++) {
                 int wx = originX + x, wz = originZ + z;
                 int column = z * CHUNK_SIZE + x;
-                int floor = netherFloorHeight(seed, wx, wz);
-                int roof = 16 + (valueNoise(seed ^ 0x3B91, wx, wz, 40) >> 5);
+                int floor = economic ? economicNetherFloorHeight(seed, wx, wz) : netherFloorHeight(seed, wx, wz);
+                int roof = economic ? 18 + (valueNoise(seed ^ 0x3B91, wx, wz, 64) >> 5) :
+                    16 + (valueNoise(seed ^ 0x3B91, wx, wz, 40) >> 5);
                 if (roof > WORLD_HEIGHT - 2) roof = WORLD_HEIGHT - 2;
                 floorHeights[column] = floor;
                 int base = column * WORLD_HEIGHT;
@@ -151,6 +163,14 @@ final class InfdevTerrain {
                     if ((surfaceHash & 128) != 0 && floor + 3 < roof)
                         blocks[surface + 2] = Block.STONE;
                 }
+                // A low-frequency contour creates continuous, winding lava rivers
+                // across chunk borders. World-coordinate sampling prevents seams.
+                int riverField = valueNoise(seed ^ 0x4C415641, wx, wz, economic ? 72 : 56);
+                if (floor > 2 && Math.abs(riverField - 128) <= (economic ? 5 : 7)) {
+                    blocks[base + floor] = Block.LAVA;
+                    blocks[base + floor - 1] = Block.LAVA;
+                }
+
                 int roofHash = hash(seed ^ 0x1057, wx, roof, wz);
                 if ((roofHash & 31) == 0 && roof > floor + 2) {
                     blocks[base + (roof - 1)] = Block.COAL;
@@ -159,6 +179,13 @@ final class InfdevTerrain {
                 }
             }
         }
+    }
+
+    static int economicNetherFloorHeight(int seed, int x, int z) {
+        int broad = valueNoise(seed ^ 0x6A09, x, z, 64);
+        int floor = 4 + (broad * 4 >> 8);
+        if (floor > 7) floor = 7;
+        return floor;
     }
 
     static int netherFloorHeight(int seed, int x, int z) {
