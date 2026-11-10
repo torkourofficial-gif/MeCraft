@@ -1276,10 +1276,11 @@ final class ChunkRenderer {
                     // Shortest prebuilds the full nearby 3x3 window, like
                     // EaglercraftDS. This avoids holes when turning the camera;
                     // the scene renderer still culls chunks outside the view.
-                    boolean inShortestVerticalRange = !shortestDistance ||
-                            Math.abs(dy) <= cameraFar * tanVerticalFov + CHUNK_RADIUS;
-                    if (inShortestVerticalRange && (shortestDistance || visible) &&
-                            (!sameChunk || dirtyChunks[i])) {
+                    // The shortest-distance preset limits horizontal streaming,
+                    // not world height. Ravines can reach deep underground, so keep
+                    // every vertical sector in the nearby 3x3 columns eligible.
+                    // cameraFar remains the actual M3G view-distance limit.
+                    if ((shortestDistance || visible) && (!sameChunk || dirtyChunks[i])) {
                         if (!sameChunk) {
                             chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
                         }
