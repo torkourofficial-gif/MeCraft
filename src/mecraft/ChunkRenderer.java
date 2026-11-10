@@ -1221,36 +1221,49 @@ final class ChunkRenderer {
 
     /** Keep M3G buffers only for chunks intersecting the camera frustum. */
     private void updateVisibleChunks(VoxelWorld world) {
-        float yaw = (float)(world.yaw * Math.PI / 180.0);
-        float pitch = (float)(cameraPitch * Math.PI / 180.0);
-        float sinYaw = (float)Math.sin(yaw), cosYaw = (float)Math.cos(yaw);
-        float sinPitch = (float)Math.sin(pitch), cosPitch = (float)Math.cos(pitch);
-        float forwardX = sinYaw * cosPitch, forwardY = sinPitch, forwardZ = cosYaw * cosPitch;
-        float rightX = cosYaw, rightZ = -sinYaw;
-        float upX = -sinYaw * sinPitch, upY = cosPitch, upZ = -cosYaw * sinPitch;
-        float tanVertical = tanVerticalFov;
         float eyeX = world.playerX, eyeY = world.playerY + 1.62f, eyeZ = world.playerZ;
-
         int centerX = floorDiv((int)eyeX, VoxelWorld.CHUNK_XZ);
         int centerZ = floorDiv((int)eyeZ, VoxelWorld.CHUNK_XZ);
         int span = MAX_STREAM_SPAN;
-        for (int i = 0; i < CACHE_SIZE; i++) desiredVisibleChunks[i] = false;
-        // Match EaglercraftDS's smallest stable window: a complete 3x3
-        // neighborhood around the player's chunk. Keep it independent of camera
-        // direction; M3G performs frustum culling after the nearby chunks exist.
+
+        // The shortest preset always keeps a complete 3x3 window. Do not
+        // calculate a camera frustum for sectors that will be selected anyway.
+        float sinYaw = 0.0f, cosYaw = 1.0f;
+        float sinPitch = 0.0f, cosPitch = 1.0f;
+        float forwardX = 0.0f, forwardY = 0.0f, forwardZ = 1.0f;
+        float rightX = 1.0f, rightZ = 0.0f;
+        float upX = 0.0f, upY = 1.0f, upZ = 0.0f;
+        if (!shortestDistance) {
+            float yaw = (float)(world.yaw * Math.PI / 180.0);
+            float pitch = (float)(cameraPitch * Math.PI / 180.0);
+            sinYaw = (float)Math.sin(yaw); cosYaw = (float)Math.cos(yaw);
+            sinPitch = (float)Math.sin(pitch); cosPitch = (float)Math.cos(pitch);
+            forwardX = sinYaw * cosPitch; forwardY = sinPitch; forwardZ = cosYaw * cosPitch;
+            rightX = cosYaw; rightZ = -sinYaw;
+            upX = -sinYaw * sinPitch; upY = cosPitch; upZ = -cosYaw * sinPitch;
+        }
+
         int firstChunkX = shortestDistance ? centerX - 1 : centerX - streamRadius;
         int lastChunkX = shortestDistance ? centerX + 1 : centerX + streamRadius;
         int firstChunkZ = shortestDistance ? centerZ - 1 : centerZ - streamRadius;
         int lastChunkZ = shortestDistance ? centerZ + 1 : centerZ + streamRadius;
+
+        // Evict only chunks that have actually left the horizontal stream window.
         for (int i = 0; i < CACHE_SIZE; i++) {
             if (residentChunks[i] &&
                     (chunkWorldX[i] < firstChunkX || chunkWorldX[i] > lastChunkX ||
                      chunkWorldZ[i] < firstChunkZ || chunkWorldZ[i] > lastChunkZ)) removeChunk(i);
         }
+
         int firstRx = firstChunkX - centerX + MAX_STREAM_RADIUS;
         int lastRx = lastChunkX - centerX + MAX_STREAM_RADIUS;
         int firstRz = firstChunkZ - centerZ + MAX_STREAM_RADIUS;
         int lastRz = lastChunkZ - centerZ + MAX_STREAM_RADIUS;
+        int best = -1;
+        float bestDistance = Float.MAX_VALUE;
+
+        // Search and rank candidates only in the active window, not all 648
+        // cache slots. In shortest mode this is 72 sectors (3x3x8).
         for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++) {
             for (int rz = firstRz; rz <= lastRz; rz++) {
                 for (int rx = firstRx; rx <= lastRx; rx++) {
@@ -1260,51 +1273,60 @@ final class ChunkRenderer {
                     float dx = cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeX;
                     float dy = cy * VoxelWorld.CHUNK_Y + VoxelWorld.CHUNK_Y * 0.5f - eyeY;
                     float dz = cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
-                    float depth = dx * forwardX + dy * forwardY + dz * forwardZ;
-                    float horizontal = dx * rightX + dz * rightZ;
-                    float vertical = dx * upX + dy * upY + dz * upZ;
-                    boolean visible = depth + CHUNK_RADIUS >= 0.1f &&
-                        depth - CHUNK_RADIUS <= cameraFar &&
-                        Math.abs(horizontal) <= Math.max(0.0f, depth) * tanHorizontalFov + CHUNK_RADIUS &&
-                        Math.abs(vertical) <= Math.max(0.0f, depth) * tanVertical + CHUNK_RADIUS;
+
+                    boolean visible = shortestDistance;
+                    if (!shortestDistance) {
+                        float depth = dx * forwardX + dy * forwardY + dz * forwardZ;
+                        float horizontal = dx * rightX + dz * rightZ;
+                        float vertical = dx * upX + dy * upY + dz * upZ;
+                        visible = depth + CHUNK_RADIUS >= 0.1f &&
+                            depth - CHUNK_RADIUS <= cameraFar &&
+                            Math.abs(horizontal) <= Math.max(0.0f, depth) * tanHorizontalFov + CHUNK_RADIUS &&
+                            Math.abs(vertical) <= Math.max(0.0f, depth) * tanVerticalFov + CHUNK_RADIUS;
+                    }
+
                     boolean sameChunk = residentChunks[i] && chunkWorldX[i] == cx &&
                         chunkWorldY[i] == cy && chunkWorldZ[i] == cz;
-                    // Keep a built chunk resident while it remains in the player's stream grid.
-                    // Camera rotation must not evict off-screen chunks, or turning back
-                    // forces the same M3G meshes to be allocated and rebuilt repeatedly.
                     if (residentChunks[i] && !sameChunk) removeChunk(i);
-                    // Shortest prebuilds the full nearby 3x3 window, like
-                    // EaglercraftDS. This avoids holes when turning the camera;
-                    // the scene renderer still culls chunks outside the view.
-                    // The shortest-distance preset limits horizontal streaming,
-                    // not world height. Ravines can reach deep underground, so keep
-                    // every vertical sector in the nearby 3x3 columns eligible.
-                    // cameraFar remains the actual M3G view-distance limit.
-                    if ((shortestDistance || visible) && (!sameChunk || dirtyChunks[i])) {
-                        if (!sameChunk) {
-                            chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
+                    if (!visible) continue;
+
+                    if (!sameChunk) {
+                        chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
+                        dirtyChunks[i] = false;
+                    }
+                    if (!sameChunk || dirtyChunks[i]) {
+                        float distance = dx * dx + dz * dz + dy * dy * 2.0f;
+                        if (distance < bestDistance) {
+                            bestDistance = distance;
+                            best = i;
                         }
-                        desiredVisibleChunks[i] = true;
                     }
                 }
             }
         }
 
-        // Build the nearest missing sector only, spreading M3G allocation and
-        // greedy meshing over successive game frames when a new area appears.
-        for (int build = 0; build < CHUNKS_PER_FRAME; build++) {
-            int best = -1;
-            float bestDistance = Float.MAX_VALUE;
-            for (int i = 0; i < CACHE_SIZE; i++) {
-                if (!desiredVisibleChunks[i] || (residentChunks[i] && !dirtyChunks[i])) continue;
-                float dx = chunkWorldX[i] * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeX;
-                float dy = chunkWorldY[i] * VoxelWorld.CHUNK_Y + VoxelWorld.CHUNK_Y * 0.5f - eyeY;
-                float dz = chunkWorldZ[i] * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
-                float distance = dx * dx + dz * dz + dy * dy * 2.0f;
-                if (distance < bestDistance) { bestDistance = distance; best = i; }
-            }
-            if (best < 0) break;
+        // Build one nearest sector per frame; no second full-cache scan needed.
+        for (int build = 0; build < CHUNKS_PER_FRAME && best >= 0; build++) {
             replaceChunk(world, best, chunkWorldX[best], chunkWorldY[best], chunkWorldZ[best]);
+            best = -1;
+            bestDistance = Float.MAX_VALUE;
+            // A second candidate is only needed if CHUNKS_PER_FRAME is raised.
+            if (build + 1 < CHUNKS_PER_FRAME) {
+                for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++)
+                    for (int rz = firstRz; rz <= lastRz; rz++)
+                        for (int rx = firstRx; rx <= lastRx; rx++) {
+                            int i = (cy * span + rz) * span + rx;
+                            if (!residentChunks[i] || dirtyChunks[i]) {
+                                int cx = centerX + rx - MAX_STREAM_RADIUS;
+                                int cz = centerZ + rz - MAX_STREAM_RADIUS;
+                                float dx = cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeX;
+                                float dy = cy * VoxelWorld.CHUNK_Y + VoxelWorld.CHUNK_Y * 0.5f - eyeY;
+                                float dz = cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
+                                float distance = dx * dx + dz * dz + dy * dy * 2.0f;
+                                if (distance < bestDistance) { bestDistance = distance; best = i; }
+                            }
+                        }
+            }
         }
     }
 
