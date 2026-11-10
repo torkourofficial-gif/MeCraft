@@ -30,6 +30,16 @@ final class InfdevTerrain {
      */
     static void generate(int seed, int chunkX, int chunkZ, byte[] blocks,
                          int[] heights, byte[] biomes) {
+        generate(seed, chunkX, chunkZ, blocks, heights, biomes, false);
+    }
+
+    static void generateEconomic(int seed, int chunkX, int chunkZ, byte[] blocks,
+                                 int[] heights, byte[] biomes) {
+        generate(seed, chunkX, chunkZ, blocks, heights, biomes, true);
+    }
+
+    private static void generate(int seed, int chunkX, int chunkZ, byte[] blocks,
+                                 int[] heights, byte[] biomes, boolean economic) {
         if (blocks == null || blocks.length < CHUNK_VOLUME || heights == null ||
             heights.length < CHUNK_SIZE * CHUNK_SIZE || biomes == null ||
             biomes.length < CHUNK_SIZE * CHUNK_SIZE) return;
@@ -44,7 +54,8 @@ final class InfdevTerrain {
                 int worldX = originX + x;
                 int column = z * CHUNK_SIZE + x;
                 int biome = biomeAt(seed, worldX, worldZ);
-                int height = surfaceHeight(seed, worldX, worldZ, biome);
+                int height = economic ? economicSurfaceHeight(seed, worldX, worldZ, biome) :
+                    surfaceHeight(seed, worldX, worldZ, biome);
                 heights[column] = height;
                 biomes[column] = (byte)biome;
                 int top = biome == DESERT || biome == OCEAN ? Block.SAND :
@@ -67,19 +78,42 @@ final class InfdevTerrain {
         }
 
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: generando vetas minerales");
-        generateOreVeins(seed, originX, originZ, blocks);
+        if (economic) generateEconomicOreVeins(seed, originX, originZ, blocks);
+        else generateOreVeins(seed, originX, originZ, blocks);
 
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: tallando cuevas");
-        carveCaves(seed, originX, originZ, heights, blocks);
+        if (economic) carveEconomicCaves(seed, originX, originZ, heights, blocks);
+        else carveCaves(seed, originX, originZ, heights, blocks);
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: formando ravines");
-        carveRavines(seed, originX, originZ, heights, blocks);
+        if (economic) carveEconomicRavines(seed, originX, originZ, heights, blocks);
+        else carveRavines(seed, originX, originZ, heights, blocks);
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: decorando terreno");
-        decorate(seed, originX, originZ, heights, biomes, blocks);
+        decorate(seed, originX, originZ, heights, biomes, blocks, economic);
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: chunk completado " + chunkX + "," + chunkZ);
     }
 
     static int surfaceHeight(int seed, int x, int z) {
         return surfaceHeight(seed, x, z, biomeAt(seed, x, z));
+    }
+
+    static int economicSurfaceHeight(int seed, int x, int z) {
+        return economicSurfaceHeight(seed, x, z, biomeAt(seed, x, z));
+    }
+
+    /** Low-amplitude two-octave terrain for devices that need cheaper worlds. */
+    private static int economicSurfaceHeight(int seed, int x, int z, int biome) {
+        int broad = valueNoise(seed ^ 0x2A4B6C, x, z, 128) - 128;
+        int detail = valueNoise(seed ^ 0x5D7E9F, x, z, 48) - 128;
+        int variation = (broad * 5 + detail * 2) >> 8;
+        int height;
+        if (biome == OCEAN) height = 27 + (variation >> 1);
+        else if (biome == SNOWY) height = 35 + variation;
+        else if (biome == DESERT) height = 33 + variation;
+        else if (biome == DARK_FOREST || biome == JUNGLE) height = 35 + variation;
+        else height = 34 + variation;
+        if (height < 24) return 24;
+        if (height > 40) return 40;
+        return height;
     }
 
     /** Compact Alpha-style Nether: netherrack floor, cave volume, lava sea and roof. */
@@ -204,6 +238,44 @@ final class InfdevTerrain {
         return value;
     }
 
+    /** Sparse, short, mostly unbranched tunnels for Economic worlds. */
+    private static void carveEconomicCaves(int seed, int originX, int originZ,
+                                           int[] heights, byte[] blocks) {
+        final int region = 40;
+        int firstX = floorDiv(originX - 18, region);
+        int lastX = floorDiv(originX + CHUNK_SIZE + 18, region);
+        int firstZ = floorDiv(originZ - 18, region);
+        int lastZ = floorDiv(originZ + CHUNK_SIZE + 18, region);
+        for (int rz = firstZ; rz <= lastZ; rz++) {
+            for (int rx = firstX; rx <= lastX; rx++) {
+                int h = hash(seed ^ 0x29A4C731, rx, 0, rz);
+                if ((h & 3) == 0) continue;
+                int x = rx * region + 8 + ((h >>> 4) & 23);
+                int z = rz * region + 8 + ((h >>> 10) & 23);
+                int surface = economicSurfaceHeight(seed, x, z);
+                int y = 7 + ((h >>> 18) & 15);
+                if (y > surface - 5) y = surface - 5;
+                int dx = ((h >>> 2) & 1) == 0 ? 1 : -1;
+                int dz = ((h >>> 7) & 1) == 0 ? 0 : 1;
+                int length = 10 + ((h >>> 25) & 15);
+                for (int step = 0; step < length; step++) {
+                    int wobble = hash(seed ^ h, step, rx, rz);
+                    if ((step & 3) == 0) {
+                        if ((wobble & 3) == 0) dx = -dx;
+                        if ((wobble & 12) == 4) dz = dz == 0 ? 1 : -dz;
+                    }
+                    x += dx;
+                    z += dz;
+                    if ((wobble & 7) == 0) y += (wobble & 8) == 0 ? 1 : -1;
+                    if (y < 4) y = 4;
+                    if (y > surface - 4) y = surface - 4;
+                    carveTunnelPocket(originX, originZ, heights, blocks,
+                                      x, y, z, 1, 1);
+                }
+            }
+        }
+    }
+
     private static void carveCaves(int seed, int originX, int originZ, int[] heights, byte[] blocks) {
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.carveCaves: túneles Alpha ligeros");
         // Alpha's cave generator walks a small number of curved 3D paths and
@@ -293,6 +365,40 @@ final class InfdevTerrain {
                             if (ey < 4) break;
                         }
                     }
+                }
+            }
+        }
+    }
+
+    /** Very occasional narrow fissures; avoids the wide ravine pass in Economic. */
+    private static void carveEconomicRavines(int seed, int originX, int originZ,
+                                             int[] heights, byte[] blocks) {
+        final int region = 96;
+        int firstX = floorDiv(originX - 24, region);
+        int lastX = floorDiv(originX + CHUNK_SIZE + 24, region);
+        int firstZ = floorDiv(originZ - 24, region);
+        int lastZ = floorDiv(originZ + CHUNK_SIZE + 24, region);
+        for (int rz = firstZ; rz <= lastZ; rz++) {
+            for (int rx = firstX; rx <= lastX; rx++) {
+                int h = hash(seed ^ 0x61C88647, rx, 0, rz);
+                if ((h & 15) != 0) continue;
+                int x = rx * region + 12 + ((h >>> 4) & 63);
+                int z = rz * region + 12 + ((h >>> 11) & 63);
+                int y = economicSurfaceHeight(seed, x, z) - 2;
+                int dx = ((h >>> 2) & 1) == 0 ? 1 : -1;
+                int dz = ((h >>> 8) & 1) == 0 ? 0 : 1;
+                int length = 18 + ((h >>> 20) & 15);
+                for (int step = 0; step < length; step++) {
+                    int wobble = hash(seed ^ h, step, rx, rz);
+                    if ((step & 3) == 0) {
+                        if ((wobble & 3) == 0) dx = -dx;
+                        if ((wobble & 12) == 4) dz = dz == 0 ? 1 : -dz;
+                    }
+                    x += dx;
+                    z += dz;
+                    if ((wobble & 7) == 0) y += (wobble & 8) == 0 ? 1 : -1;
+                    carveRavineSlice(originX, originZ, heights, blocks,
+                                     x, y, z, 1, 4);
                 }
             }
         }
@@ -449,6 +555,39 @@ final class InfdevTerrain {
         }
     }
 
+    /** One short, sparse vein per selected 8x8x8 cell for Economic worlds. */
+    private static void generateEconomicOreVeins(int seed, int originX, int originZ,
+                                                  byte[] blocks) {
+        int firstCellX = floorDiv(originX, 8) - 1;
+        int lastCellX = floorDiv(originX + CHUNK_SIZE - 1, 8) + 1;
+        int firstCellZ = floorDiv(originZ, 8) - 1;
+        int lastCellZ = floorDiv(originZ + CHUNK_SIZE - 1, 8) + 1;
+        int lastCellY = floorDiv(WORLD_HEIGHT - 2, 8);
+        for (int cy = 0; cy <= lastCellY; cy++) {
+            for (int cz = firstCellZ; cz <= lastCellZ; cz++) {
+                for (int cx = firstCellX; cx <= lastCellX; cx++) {
+                    int h = hash(seed ^ 0x2C9277B5, cx, cy, cz);
+                    int kind = h & 31;
+                    if (kind < 12)
+                        placeOreVein(seed, originX, originZ, blocks, cx, cy, cz,
+                                     Block.COAL, 3, Math.min(46, WORLD_HEIGHT - 3), 2, 4, h);
+                    else if (kind < 21)
+                        placeOreVein(seed, originX, originZ, blocks, cx, cy, cz,
+                                     Block.IRON, 3, Math.min(36, WORLD_HEIGHT - 3), 2, 3, h);
+                    else if (kind < 26)
+                        placeOreVein(seed, originX, originZ, blocks, cx, cy, cz,
+                                     Block.GOLD_ORE, 3, Math.min(26, WORLD_HEIGHT - 3), 2, 3, h);
+                    else if (kind < 30)
+                        placeOreVein(seed, originX, originZ, blocks, cx, cy, cz,
+                                     Block.REDSTONE_ORE, 2, Math.min(20, WORLD_HEIGHT - 3), 2, 3, h);
+                    else
+                        placeOreVein(seed, originX, originZ, blocks, cx, cy, cz,
+                                     Block.DIAMOND_ORE, 2, Math.min(14, WORLD_HEIGHT - 3), 2, 2, h);
+                }
+            }
+        }
+    }
+
     /**
      * Deterministic mineral veins. Neighboring 8-block cells are visited too,
      * so veins crossing chunk borders are generated consistently.
@@ -515,7 +654,7 @@ final class InfdevTerrain {
     }
 
     private static void decorate(int seed, int originX, int originZ, int[] heights,
-                                 byte[] biomes, byte[] blocks) {
+                                 byte[] biomes, byte[] blocks, boolean economic) {
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.decorate: calculando regiones de decoración");
         int firstCellX = floorDiv(originX - 2 - 4, 9);
         int lastCellX = floorDiv(originX + CHUNK_SIZE + 1 - 4, 9);
@@ -528,7 +667,9 @@ final class InfdevTerrain {
                 int biome = biomeAt(seed, tx, tz);
                 if (biome == OCEAN) continue;
                 int treeHash = hash(seed ^ 0x16A5B, rx, 0, rz);
-                int chance = biome == JUNGLE ? 3 : biome == DARK_FOREST ? 2 : biome == PLAINS ? 7 : 0;
+                int chance = economic ?
+                    (biome == JUNGLE ? 1 : biome == DARK_FOREST ? 1 : biome == PLAINS ? 2 : 0) :
+                    (biome == JUNGLE ? 3 : biome == DARK_FOREST ? 2 : biome == PLAINS ? 7 : 0);
                 if (chance == 0 || (treeHash & 15) >= chance) continue;
                 int ty = surfaceHeight(seed, tx, tz, biome);
                 if (ty <= SEA_LEVEL + 1 || ty + 4 >= WORLD_HEIGHT || biome == SNOWY) continue;
@@ -569,7 +710,8 @@ final class InfdevTerrain {
                     continue;
                 }
                 if (biome == SNOWY) continue;
-                int flowerMask = biome == PLAINS ? 7 : 63;
+                int flowerMask = economic ? (biome == PLAINS ? 31 : 127) :
+                    (biome == PLAINS ? 7 : 63);
                 if ((hash(seed ^ 0x73B91, originX + x, height, originZ + z) & flowerMask) != 0 ||
                     height + 1 >= WORLD_HEIGHT) continue;
                 int at = column * WORLD_HEIGHT + height + 1;
