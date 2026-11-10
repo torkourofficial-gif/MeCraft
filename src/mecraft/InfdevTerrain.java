@@ -345,14 +345,15 @@ final class InfdevTerrain {
                     if (y < 9) { y = 9; pitch = 1; }
                     if (y > WORLD_HEIGHT - 18) { y = WORLD_HEIGHT - 18; pitch = -1; }
 
-                    surface = surfaceHeight(seed, x, z);
                     int profile = step < length / 2 ? step : length - step;
                     int width = 2 + profile * 2 / (length / 2);
                     if (width > 4) width = 4;
                     int verticalRadius = depth;
-                    int centerY = surface - (verticalRadius >> 1);
+                    // Keep the ravine's vertical path. The previous code
+                    // recalculated centerY from the surface on every step,
+                    // discarding the accumulated pitch stored in y.
                     carveRavineSlice(originX, originZ, heights, blocks,
-                                     x, centerY, z, width, verticalRadius);
+                                     x, y, z, width, verticalRadius);
                 }
             }
         }
