@@ -1326,10 +1326,10 @@ final class ChunkRenderer {
                 for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++)
                     for (int rz = firstRz; rz <= lastRz; rz++)
                         for (int rx = firstRx; rx <= lastRx; rx++) {
+                            int cx = centerX + rx - MAX_STREAM_RADIUS;
+                            int cz = centerZ + rz - MAX_STREAM_RADIUS;
                             int i = (cy * span + floorMod(cz, span)) * span + floorMod(cx, span);
                             if (!residentChunks[i] || dirtyChunks[i]) {
-                                int cx = centerX + rx - MAX_STREAM_RADIUS;
-                                int cz = centerZ + rz - MAX_STREAM_RADIUS;
                                 float dx = cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeX;
                                 float dy = cy * VoxelWorld.CHUNK_Y + VoxelWorld.CHUNK_Y * 0.5f - eyeY;
                                 float dz = cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
