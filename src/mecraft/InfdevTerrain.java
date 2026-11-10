@@ -374,15 +374,15 @@ final class InfdevTerrain {
         // column; otherwise the fissure would immediately fill with water.
         for (int z = minZ; z <= maxZ; z++) {
             for (int x = minX; x <= maxX; x++) {
+                // Vanilla checks the boundary of the carving box for water;
+                // scanning only its rim avoids a full 3D pre-pass on every step.
+                if (x != minX && x != maxX && z != minZ && z != maxZ) continue;
                 int column = (z - originZ) * CHUNK_SIZE + x - originX;
-                int ceiling = heights[column] - 1;
-                int top = Math.min(high, ceiling);
+                int top = Math.min(high, heights[column] - 1);
                 int dx = x - cx, dz = z - cz;
-                int horizontal = dx * dx + dz * dz;
-                if (horizontal > radiusSquared) continue;
+                if (dx * dx + dz * dz > radiusSquared) continue;
                 for (int y = top; y >= low; y--) {
-                    byte block = blocks[column * WORLD_HEIGHT + y];
-                    if (block == Block.WATER) return;
+                    if (blocks[column * WORLD_HEIGHT + y] == Block.WATER) return;
                 }
             }
         }
