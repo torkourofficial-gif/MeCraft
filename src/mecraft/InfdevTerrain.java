@@ -66,6 +66,9 @@ final class InfdevTerrain {
             }
         }
 
+        VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: generando vetas minerales");
+        generateOreVeins(seed, originX, originZ, blocks);
+
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: tallando cuevas");
         carveCaves(seed, originX, originZ, heights, blocks);
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: decorando terreno");
@@ -321,6 +324,71 @@ final class InfdevTerrain {
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * Deterministic mineral veins. Neighboring 8-block cells are visited too,
+     * so veins crossing chunk borders are generated consistently.
+     */
+    private static void generateOreVeins(int seed, int originX, int originZ, byte[] blocks) {
+        int firstCellX = floorDiv(originX, 8) - 1;
+        int lastCellX = floorDiv(originX + CHUNK_SIZE - 1, 8) + 1;
+        int firstCellZ = floorDiv(originZ, 8) - 1;
+        int lastCellZ = floorDiv(originZ + CHUNK_SIZE - 1, 8) + 1;
+        int lastCellY = floorDiv(WORLD_HEIGHT - 2, 8);
+        for (int cy = 0; cy <= lastCellY; cy++) {
+            for (int cz = firstCellZ; cz <= lastCellZ; cz++) {
+                for (int cx = firstCellX; cx <= lastCellX; cx++) {
+                    int h = hash(seed ^ 0x2C9277B5, cx, cy, cz);
+                    if ((h & 1) == 0)
+                        placeOreVein(seed, originX, originZ, blocks, cx, cy, cz,
+                                     Block.COAL, 3, Math.min(30, WORLD_HEIGHT - 3), 5, 9, h);
+                    int ironHash = hash(seed ^ 0x165667B1, cx, cy, cz);
+                    if ((ironHash & 3) != 0)
+                        placeOreVein(seed, originX, originZ, blocks, cx, cy, cz,
+                                     Block.IRON, 3, Math.min(24, WORLD_HEIGHT - 3), 4, 7, ironHash);
+                    int goldHash = hash(seed ^ 0x7F4A7C15, cx, cy, cz);
+                    if ((goldHash & 7) == 0)
+                        placeOreVein(seed, originX, originZ, blocks, cx, cy, cz,
+                                     Block.GOLD_ORE, 3, Math.min(18, WORLD_HEIGHT - 3), 3, 5, goldHash);
+                    int redHash = hash(seed ^ 0x94D049BB, cx, cy, cz);
+                    if ((redHash & 3) == 0)
+                        placeOreVein(seed, originX, originZ, blocks, cx, cy, cz,
+                                     Block.REDSTONE_ORE, 2, Math.min(12, WORLD_HEIGHT - 3), 4, 7, redHash);
+                    int diamondHash = hash(seed ^ 0x369DEA0F, cx, cy, cz);
+                    if ((diamondHash & 15) == 0)
+                        placeOreVein(seed, originX, originZ, blocks, cx, cy, cz,
+                                     Block.DIAMOND_ORE, 2, Math.min(10, WORLD_HEIGHT - 3), 2, 4, diamondHash);
+                }
+            }
+        }
+    }
+
+    private static void placeOreVein(int seed, int originX, int originZ, byte[] blocks,
+                                    int cellX, int cellY, int cellZ, byte ore,
+                                    int minY, int maxY, int minLength, int maxLength, int h) {
+        if (maxY < minY) return;
+        int x = cellX * 8 + ((h >>> 4) & 7);
+        int z = cellZ * 8 + ((h >>> 12) & 7);
+        int y = minY + ((h >>> 20) & 0x7FFFFFFF) % (maxY - minY + 1);
+        int length = minLength + ((h >>> 27) & 0x7FFFFFFF) % (maxLength - minLength + 1);
+        for (int step = 0; step < length; step++) {
+            if (x >= originX && x < originX + CHUNK_SIZE &&
+                z >= originZ && z < originZ + CHUNK_SIZE &&
+                y > 1 && y < WORLD_HEIGHT - 1) {
+                int column = (z - originZ) * CHUNK_SIZE + x - originX;
+                int at = column * WORLD_HEIGHT + y;
+                if (blocks[at] == Block.STONE) blocks[at] = ore;
+            }
+            int wobble = hash(seed ^ h, step, cellY, cellX + cellZ);
+            x += ((wobble >>> 2) & 3) - 1;
+            z += ((wobble >>> 7) & 3) - 1;
+            y += ((wobble >>> 12) & 3) - 1;
+            int cellMinY = Math.max(minY, cellY * 8 - 2);
+            int cellMaxY = Math.min(maxY, cellY * 8 + 9);
+            if (y < cellMinY) y = cellMinY;
+            if (y > cellMaxY) y = cellMaxY;
         }
     }
 
