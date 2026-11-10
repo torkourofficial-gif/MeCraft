@@ -2676,7 +2676,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private void changeCreateOption(int delta) {
         if (createSelection == 1) newWorldMode = 1 - newWorldMode;
         else if (createSelection == 2) newWorldSize = 1 - newWorldSize;
-        else if (createSelection == 3) newWorldType = 1 - newWorldType;
+        else if (createSelection == 3) newWorldType = (newWorldType + (delta > 0 ? 1 : 2)) % 3;
         else if (createSelection == 4) newWorldDifficulty = (newWorldDifficulty + (delta > 0 ? 1 : 3)) % 4;
         repaint();
     }
@@ -4147,7 +4147,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         drawMenuItem(g, "Nombre: " + trimText(newWorldName, 17), 70, createSelection == 0);
         drawMenuItem(g, "Modo: " + (newWorldMode == 0 ? "Supervivencia" : "Creativo"), 104, createSelection == 1);
         drawMenuItem(g, "Tamaño: " + (newWorldSize == VoxelWorld.SIZE_OLD ? "Old 240x240" : "Infinite"), 138, createSelection == 2);
-        drawMenuItem(g, "Tipo: " + (newWorldType == VoxelWorld.TYPE_FLAT ? "Plano" : "Standard"), 172, createSelection == 3);
+        String worldTypeName = newWorldType == VoxelWorld.TYPE_FLAT ? "Plano" :
+                (newWorldType == VoxelWorld.TYPE_ECONOMIC ? "Economic" : "Standard");
+        drawMenuItem(g, "Tipo: " + worldTypeName, 172, createSelection == 3);
         String[] difficultyNames = new String[] { "Pacifico", "Facil", "Normal", "Dificil" };
         drawMenuItem(g, "Dificultad: " + difficultyNames[clamp(newWorldDifficulty, 0, 3)], 206, createSelection == 4);
         drawMenuItem(g, "Crear mundo", 240, createSelection == 5);
