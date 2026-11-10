@@ -51,6 +51,7 @@ final class MobSystem {
     private final Random random = new Random(1L);
     private int worldSeed = Integer.MIN_VALUE;
     private boolean netherMode;
+    private boolean economicMode;
     private int difficulty = VoxelWorld.DIFFICULTY_NORMAL;
     private int tick;
     private int attackCooldown;
@@ -91,7 +92,7 @@ final class MobSystem {
 
     /** Returns damage dealt to the player on this tick. */
     int update(VoxelWorld world) {
-        if (worldSeed != world.seed || netherMode != world.nether) reset(world);
+        if (worldSeed != world.seed || netherMode != world.nether || economicMode != world.economicMode) reset(world);
         tick++;
         unloadDistantMobs(world);
         if (!world.nether && tick % PASSIVE_RESPAWN_INTERVAL == 0) respawnPassiveMob(world);
@@ -397,6 +398,7 @@ final class MobSystem {
     private void reset(VoxelWorld world) {
         worldSeed = world.seed;
         netherMode = world.nether;
+        economicMode = world.economicMode;
         difficulty = world.difficulty;
         tick = 0;
         attackCooldown = 0;
@@ -409,7 +411,7 @@ final class MobSystem {
         for (int i = 0; i < mobs.length; i++) releaseMob(i);
         random.setSeed(world.seed ^ 0x51ED270B);
         for (int i = 0; i < mobs.length; i++) {
-            if (isHostile(mobTypeForSlot(i))) continue;
+            if (isHostile(mobTypeForSlot(i)) || !passiveSlotAllowed(i, world)) continue;
             spawnPassive(world, createMob(i));
         }
     }
@@ -567,7 +569,8 @@ final class MobSystem {
     private void respawnPassiveMob(VoxelWorld world) {
         for (int i = 0; i < mobs.length; i++) {
             Mob mob = mobs[i];
-            if (isHostile(mobTypeForSlot(i)) || (mob != null && (mob.alive || mob.dying))) continue;
+            if (isHostile(mobTypeForSlot(i)) || !passiveSlotAllowed(i, world) ||
+                    (mob != null && (mob.alive || mob.dying))) continue;
             spawnPassive(world, createMob(i));
             return;
         }
@@ -1058,9 +1061,15 @@ final class MobSystem {
         return 0.6f;
     }
 
-    /** Easy mode limits the active hostile pool to three entities. */
+    /** Economic mode trims one mob slot without making the world feel empty. */
     private boolean hostileSlotAllowed(int slot, VoxelWorld world) {
+        if (world.economicMode && slot == (world.nether ? 13 : 11)) return false;
         return world.difficulty != VoxelWorld.DIFFICULTY_EASY || slot <= 9;
+    }
+
+    /** Keep one fewer passive mob in Economic mode (about a 14% reduction). */
+    private boolean passiveSlotAllowed(int slot, VoxelWorld world) {
+        return !world.economicMode || slot != 6 || isHostile(mobTypeForSlot(slot));
     }
 
     private boolean hostileAllowed(int type, VoxelWorld world) {
