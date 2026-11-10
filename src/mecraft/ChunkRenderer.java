@@ -1194,6 +1194,12 @@ final class ChunkRenderer {
         return value < 0 && value % divisor != 0 ? result - 1 : result;
     }
 
+    /** Stable cache coordinate: moving the player must not reshuffle resident chunks. */
+    private int floorMod(int value, int divisor) {
+        int result = value % divisor;
+        return result < 0 ? result + divisor : result;
+    }
+
     private void replaceChunk(VoxelWorld world, int i, int cx, int cy, int cz) {
         // Build the replacement before removing the old mesh. If meshing fails,
         // the previous terrain remains visible instead of leaving a hole.
@@ -1274,7 +1280,7 @@ final class ChunkRenderer {
                 for (int rx = firstRx; rx <= lastRx; rx++) {
                     int cx = centerX + rx - MAX_STREAM_RADIUS;
                     int cz = centerZ + rz - MAX_STREAM_RADIUS;
-                    int i = (cy * span + rz) * span + rx;
+                    int i = (cy * span + floorMod(cz, span)) * span + floorMod(cx, span);
                     float dx = cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeX;
                     float dy = cy * VoxelWorld.CHUNK_Y + VoxelWorld.CHUNK_Y * 0.5f - eyeY;
                     float dz = cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
@@ -1320,7 +1326,7 @@ final class ChunkRenderer {
                 for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++)
                     for (int rz = firstRz; rz <= lastRz; rz++)
                         for (int rx = firstRx; rx <= lastRx; rx++) {
-                            int i = (cy * span + rz) * span + rx;
+                            int i = (cy * span + floorMod(cz, span)) * span + floorMod(cx, span);
                             if (!residentChunks[i] || dirtyChunks[i]) {
                                 int cx = centerX + rx - MAX_STREAM_RADIUS;
                                 int cz = centerZ + rz - MAX_STREAM_RADIUS;
