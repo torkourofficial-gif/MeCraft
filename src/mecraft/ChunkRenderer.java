@@ -116,7 +116,7 @@ final class ChunkRenderer {
     private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[TILE_COUNT * 15];
     // A bounded pool avoids allocating FaceBuilder arrays for every streamed
     // chunk without retaining one builder for every possible tile/light pair.
-    private final FaceBuilder[] freeFaceBuilders = new FaceBuilder[128];
+    private final FaceBuilder[] freeFaceBuilders = new FaceBuilder[32];
     private int freeFaceBuilderCount;
     private final FlowerBuilder reusableFlowerBuilder = new FlowerBuilder();
     private final PortalBuilder reusablePortalBuilder = new PortalBuilder();
@@ -1509,7 +1509,8 @@ final class ChunkRenderer {
             builders[i] = null;
             // Retain at most 128 reusable builders. Oversized/extra builders
             // naturally become collectible instead of growing the pool forever.
-            if (freeFaceBuilderCount < freeFaceBuilders.length) {
+            if (freeFaceBuilderCount < freeFaceBuilders.length &&
+                    builder.p.length <= 1536) {
                 builder.reset(0, 0);
                 freeFaceBuilders[freeFaceBuilderCount++] = builder;
             }
