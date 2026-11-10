@@ -34,6 +34,8 @@ final class VoxelWorld {
     int worldSize = SIZE_INFINITE;
     int worldType = TYPE_STANDARD;
     int difficulty = DIFFICULTY_NORMAL;
+    static boolean economicModeEnabled;
+    boolean economicMode;
     // Minecraft advances one world-time tick per game tick: 24,000 ticks at
     // 20 ticks/second gives the original 20-minute day/night cycle.
     private static final int DAY_TICKS_PER_UPDATE = 1;
@@ -147,6 +149,7 @@ final class VoxelWorld {
         this.worldSize = worldSize == SIZE_OLD ? SIZE_OLD : SIZE_INFINITE;
         this.worldType = worldType == TYPE_FLAT ? TYPE_FLAT :
                 (worldType == TYPE_ECONOMIC ? TYPE_ECONOMIC : TYPE_STANDARD);
+        this.economicMode = economicModeEnabled || this.worldType == TYPE_ECONOMIC;
         setGenerationDiagnosticStage("VoxelWorld: inicializando caché procedural");
         for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
             setGenerationDiagnosticStage("VoxelWorld: inicializando caché [" + i + "]");
@@ -747,7 +750,7 @@ final class VoxelWorld {
         setGenerationDiagnosticStage("VoxelWorld.generate: calculando altura inicial del jugador");
         int spawnHeight = nether ? InfdevTerrain.netherFloorHeight(seed, spawnCenter, spawnCenter) :
                 (worldType == TYPE_FLAT ? 4 :
-                 (worldType == TYPE_ECONOMIC ?
+                 (economicMode ?
                   InfdevTerrain.economicSurfaceHeight(seed, spawnCenter, spawnCenter) :
                   InfdevTerrain.surfaceHeight(seed, spawnCenter, spawnCenter)));
         playerY = spawnHeight + 1.0f;
@@ -768,7 +771,7 @@ final class VoxelWorld {
         } else if (nether) {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generateNether; cx=" + cx + ", cz=" + cz);
             InfdevTerrain.generateNether(seed, cx, cz, target, proceduralHeights);
-        } else if (worldType == TYPE_ECONOMIC) {
+        } else if (economicMode) {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generateEconomic; cx=" + cx + ", cz=" + cz);
             InfdevTerrain.generateEconomic(seed, cx, cz, target, proceduralHeights, proceduralBiomes);
         } else {
