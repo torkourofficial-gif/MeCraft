@@ -8,7 +8,7 @@ Referencia consultada: [EaglerPorts/in-20100223](https://github.com/EaglerPorts/
 
 - Menú principal con fondo de tierra del atlas y selector de varios mundos. Cada partida conserva su propio nombre, modo y progreso; al crear una se puede editar el nombre y elegir Supervivencia o Creativo. Las partidas guardadas por versiones anteriores aparecen como «Mundo guardado».
 - Música MIDI: `menu.mid` acompaña el menú; durante el juego se elige al azar entre `calm1.mid` y `calm4.mid`, dejando diez segundos de silencio al terminar cada pista. El reproductor MMAPI mantiene una sola pista abierta y la música se silencia al pausar la aplicación.
-- Mundo de isla procedural de 48 × 24 × 48 bloques, con costa, agua, árboles, carbón, hierro y roca madre.
+- Mundo procedural infinito por chunks, con costa, agua, biomas, árboles, minerales y roca madre. Al crear un mundo se puede elegir Standard, Economic o Flat; Economic usa elevaciones suaves, cuevas cortas y escasas, ravines muy raras, menos vegetación y vetas minerales simplificadas para reducir el trabajo de generación.
 - Modo supervivencia empieza con el inventario vacío; los bloques rotos se recogen, y modo creativo tiene bloques ilimitados.
 - En creativo, `#` abre una paleta paginada con los bloques texturados del atlas `textures.png`; se elige uno con `5` para ponerlo en la casilla rápida seleccionada. Las celdas vacías del atlas no aparecen. La TNT se activa al golpearla con `1`, sin soltar un bloque normal; cae, rebota y explota tras 80 ticks. La explosión puede encadenar otras TNT y dañar criaturas y al jugador.
 - En creativo, pulsa `5` dos veces dentro de 350 ms para activar o desactivar el vuelo; mantén `5` para subir lentamente y `0` para bajar.
