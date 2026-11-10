@@ -107,6 +107,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private int language = Language.ENGLISH;
     private int cameraSensitivity = 2;
     private int renderDistance = 1;
+    private boolean economicMode;
     private boolean controlsReturnSettings;
     private final int[] controlCodes = new int[CONTROL_COUNT];
     private final boolean[] customControls = new boolean[CONTROL_COUNT];
@@ -236,7 +237,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     GameCanvas(MeCraft app) {
         this.app = app;
         int[] settings = new int[] { GameSettings.loadFrameSkip(), cameraSensitivity,
-                                     selectedPlayerSkin, language, renderDistance, -1 };
+                                     selectedPlayerSkin, language, renderDistance, -1, 0 };
         GameSettings.load(settings, controlCodes, customControls);
         frameSkip = clamp(settings[0], 0, 2);
         cameraSensitivity = clamp(settings[1], 0, 4);
@@ -244,6 +245,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         language = clamp(settings[3], Language.ENGLISH, Language.SPANISH);
         renderDistance = clamp(settings[4], 0, 4);
         touchEnabled = settings[5] == 1;
+        economicMode = settings[6] == 1;
+        VoxelWorld.economicModeEnabled = economicMode;
         Language.set(language);
         try { music = new MusicController(); }
         catch (NoClassDefFoundError unsupported) { music = null; }
@@ -2181,10 +2184,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (state == SETTINGS) {
             int action = gameAction(keyCode);
             if (keyCode == KEY_NUM2 || action == UP) {
-                settingsSelection = (settingsSelection + 6) % 7;
+                settingsSelection = (settingsSelection + 7) % 8;
                 repaint();
             } else if (keyCode == KEY_NUM8 || action == DOWN) {
-                settingsSelection = (settingsSelection + 1) % 7;
+                settingsSelection = (settingsSelection + 1) % 8;
                 repaint();
             } else if (settingsSelection == 0 && (keyCode == KEY_NUM4 || action == LEFT)) changeFrameSkip(-1);
             else if (settingsSelection == 0 && (keyCode == KEY_NUM6 || action == RIGHT)) changeFrameSkip(1);
@@ -2202,6 +2205,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             } else if (settingsSelection == 6 && (keyCode == KEY_NUM4 || action == LEFT ||
                     keyCode == KEY_NUM6 || action == RIGHT || keyCode == KEY_NUM5 || action == FIRE)) {
                 touchEnabled = !touchEnabled;
+                saveSettings();
+                repaint();
+            } else if (settingsSelection == 7 && (keyCode == KEY_NUM4 || action == LEFT ||
+                    keyCode == KEY_NUM6 || action == RIGHT || keyCode == KEY_NUM5 || action == FIRE)) {
+                economicMode = !economicMode;
+                VoxelWorld.economicModeEnabled = economicMode;
                 saveSettings();
                 repaint();
             }
@@ -2501,7 +2510,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void saveSettings() {
         GameSettings.save(new int[] { frameSkip, cameraSensitivity, selectedPlayerSkin,
-                                      language, renderDistance, touchEnabled ? 1 : 0 },
+                                      language, renderDistance, touchEnabled ? 1 : 0, economicMode ? 1 : 0 },
                 controlCodes, customControls);
     }
 
@@ -2688,7 +2697,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private void changeCreateOption(int delta) {
         if (createSelection == 1) newWorldMode = 1 - newWorldMode;
         else if (createSelection == 2) newWorldSize = 1 - newWorldSize;
-        else if (createSelection == 3) newWorldType = (newWorldType + (delta > 0 ? 1 : 2)) % 3;
+        else if (createSelection == 3) newWorldType = (newWorldType + (delta > 0 ? 1 : 1)) % 2;
         else if (createSelection == 4) newWorldDifficulty = (newWorldDifficulty + (delta > 0 ? 1 : 3)) % 4;
         repaint();
     }
@@ -3417,13 +3426,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             int row = (y - (h / 2 - 75 + 40) + 13) / 27;
             if (row >= 0 && row < 3) { pauseSelection = row; activateSelection(); }
         } else if (state == SETTINGS) {
-            int panelY = Math.max(8, (h - 222) / 2);
-            int panelHeight = Math.min(h - panelY - 6, 222);
-            int rowStep = Math.min(22, Math.max(13, (panelHeight - 54) / 7));
+            int panelY = Math.max(8, (h - 242) / 2);
+            int panelHeight = Math.min(h - panelY - 6, 242);
+            int rowStep = Math.min(22, Math.max(13, (panelHeight - 54) / 8));
             int row = (y - (panelY + 32) + rowStep / 2) / rowStep;
-            if (row >= 0 && row < 7) {
+            if (row >= 0 && row < 8) {
                 settingsSelection = row;
-                if (row == 3 || row == 5) keyPressed(KEY_NUM5);
+                if (row == 3 || row == 5 || row == 6 || row == 7) keyPressed(KEY_NUM5);
                 else if (row == 4) changeLanguage();
                 else if (row == 0) changeFrameSkip(1);
                 else if (row == 1) changeSensitivity(1);
@@ -3806,9 +3815,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private void drawSettings(Graphics g) {
         int w = getWidth(), h = getHeight();
         drawDirtBackground(g);
-        int panelY = Math.max(8, (h - 222) / 2);
-        int panelHeight = Math.min(h - panelY - 6, 222);
-        int rowStep = Math.min(22, Math.max(13, (panelHeight - 54) / 7));
+        int panelY = Math.max(8, (h - 242) / 2);
+        int panelHeight = Math.min(h - panelY - 6, 242);
+        int rowStep = Math.min(22, Math.max(13, (panelHeight - 54) / 8));
         int firstRowY = panelY + 32;
         drawInsetPanel(g, 12, panelY, w - 24, panelHeight);
         g.setColor(255, 244, 200);
@@ -3829,6 +3838,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         drawMenuItem(g, "Controles", firstRowY + rowStep * 5, settingsSelection == 5);
         drawMenuItem(g, "Controles tactiles: " + (touchEnabled ? "Si" : "No"),
                 firstRowY + rowStep * 6, settingsSelection == 6);
+        drawMenuItem(g, "Modo económico: " + (economicMode ? "Si" : "No"),
+                firstRowY + rowStep * 7, settingsSelection == 7);
     }
 
     private void drawControls(Graphics g) {
@@ -4159,8 +4170,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         drawMenuItem(g, "Nombre: " + trimText(newWorldName, 17), 70, createSelection == 0);
         drawMenuItem(g, "Modo: " + (newWorldMode == 0 ? "Supervivencia" : "Creativo"), 104, createSelection == 1);
         drawMenuItem(g, "Tamaño: " + (newWorldSize == VoxelWorld.SIZE_OLD ? "Old 240x240" : "Infinite"), 138, createSelection == 2);
-        String worldTypeName = newWorldType == VoxelWorld.TYPE_FLAT ? "Plano" :
-                (newWorldType == VoxelWorld.TYPE_ECONOMIC ? "Economic" : "Standard");
+        String worldTypeName = newWorldType == VoxelWorld.TYPE_FLAT ? "Plano" : "Standard";
         drawMenuItem(g, "Tipo: " + worldTypeName, 172, createSelection == 3);
         String[] difficultyNames = new String[] { "Pacifico", "Facil", "Normal", "Dificil" };
         drawMenuItem(g, "Dificultad: " + difficultyNames[clamp(newWorldDifficulty, 0, 3)], 206, createSelection == 4);
