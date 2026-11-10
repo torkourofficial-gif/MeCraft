@@ -417,9 +417,13 @@ final class MobSystem {
     }
 
     private int mobTypeForSlot(int slot) {
-        // The Nether pool contains only its two native species. Reuse the
-        // fixed actor slots instead of allocating a larger entity array.
-        if (netherMode) return (slot == 2 || slot == 10) ? GHAST : PIG_ZOMBIE;
+        // Nether spawns are restricted to Nether creatures plus skeletons.
+        // Reuse the fixed actor slots instead of allocating a larger entity array.
+        if (netherMode) {
+            if (slot == 2 || slot == 10) return GHAST;
+            if (slot == 5) return SKELETON;
+            return PIG_ZOMBIE;
+        }
         // Hard mode reuses three passive slots for extra hostile entities,
         // increasing the active hostile cap without allocating a larger mob pool.
         if (difficulty == VoxelWorld.DIFFICULTY_HARD) {
@@ -1074,7 +1078,7 @@ final class MobSystem {
 
     private boolean hostileAllowed(int type, VoxelWorld world) {
         if (world.difficulty == VoxelWorld.DIFFICULTY_PEACEFUL) return false;
-        if (world.nether) return type == GHAST || type == PIG_ZOMBIE;
+        if (world.nether) return type == GHAST || type == PIG_ZOMBIE || type == SKELETON;
         return type != GHAST && type != PIG_ZOMBIE;
     }
 
