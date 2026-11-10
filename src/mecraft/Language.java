@@ -309,6 +309,8 @@ final class Language {
         if (value.startsWith("Modo: ")) return (english ? "Mode: " : "Modo: ") + text(value.substring(6));
         if (value.startsWith("Mode: ")) return (english ? "Mode: " : "Modo: ") + text(value.substring(6));
         if (value.startsWith("Frameskip: ")) return "Frameskip: " + text(value.substring(11));
+        if (value.startsWith("Modo económico: ")) return (english ? "Economic mode: " : "Modo económico: ") + text(value.substring(16));
+        if (value.startsWith("Economic mode: ")) return (english ? "Economic mode: " : "Modo económico: ") + text(value.substring(15));
         if (value.startsWith("Sensitivity: ")) return (english ? "Sensitivity: " : "Sensibilidad: ") + text(value.substring(13));
         if (value.startsWith("Sensibilidad: ")) return (english ? "Sensitivity: " : "Sensibilidad: ") + text(value.substring(14));
         if (value.startsWith("Idioma: ")) return (english ? "Language: " : "Idioma: ") + text(value.substring(8));
