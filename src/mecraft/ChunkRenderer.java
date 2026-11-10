@@ -114,6 +114,12 @@ final class ChunkRenderer {
     // One chunk is meshed at a time; reuse the large material lookup table to
     // avoid allocating thousands of references every time the player moves.
     private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[TILE_COUNT * 15];
+    // A bounded pool avoids allocating FaceBuilder arrays for every streamed
+    // chunk without retaining one builder for every possible tile/light pair.
+    private final FaceBuilder[] freeFaceBuilders = new FaceBuilder[128];
+    private int freeFaceBuilderCount;
+    private final FlowerBuilder reusableFlowerBuilder = new FlowerBuilder();
+    private final PortalBuilder reusablePortalBuilder = new PortalBuilder();
     private final Image terrainImage;
     private final Texture2D atlas;
     private final Texture2D itemAtlas;
@@ -1334,6 +1340,8 @@ final class ChunkRenderer {
         FlowerBuilder flowers = null;
         FireBuilder fires = null;
         PortalBuilder portals = null;
+        reusableFlowerBuilder.reset();
+        reusablePortalBuilder.reset();
         int x0 = cx * VoxelWorld.CHUNK_XZ;
         int y0 = cy * VoxelWorld.CHUNK_Y;
         int z0 = cz * VoxelWorld.CHUNK_XZ;
@@ -1357,14 +1365,14 @@ final class ChunkRenderer {
                     chunkVoxelScratch[localIndex] = id;
                     chunkLightScratch[localIndex] = (byte)(id == Block.LAVA ? 14 : torchLightAt(x, y, z));
                     if (id == Block.PORTAL) {
-                        if (portals == null) portals = new PortalBuilder();
+                        if (portals == null) portals = reusablePortalBuilder;
                         portals.add(x - x0, y - y0, z - z0,
                                 world.portalAxisAt(x, y, z), portalFrameSize);
                     } else if (id == Block.FIRE) {
                         if (fires == null) fires = new FireBuilder();
                         fires.add(x - x0, y - y0, z - z0);
                     } else if (Block.isFlower(id)) {
-                        if (flowers == null) flowers = new FlowerBuilder();
+                        if (flowers == null) flowers = reusableFlowerBuilder;
                         flowers.add(x - x0, y - y0, z - z0, Block.sideTile(id));
                     } else if (Block.isDoor(id)) {
                         if (flowers == null) flowers = new FlowerBuilder();
@@ -1470,7 +1478,13 @@ final class ChunkRenderer {
                         int tile = encoded % TILE_COUNT;
                         int light = encoded / TILE_COUNT;
                         int builderIndex = light * TILE_COUNT + tile;
-                        if (builders[builderIndex] == null) builders[builderIndex] = new FaceBuilder(tile, light);
+                        if (builders[builderIndex] == null) {
+                            FaceBuilder builder = freeFaceBuilderCount > 0 ?
+                                    freeFaceBuilders[--freeFaceBuilderCount] : null;
+                            if (builder == null) builder = new FaceBuilder(tile, light);
+                            else builder.reset(tile, light);
+                            builders[builderIndex] = builder;
+                        }
                         builders[builderIndex].addRect(x, y, z, faceWidth, faceHeight, face);
                         a += rectWidth;
                     }
@@ -1490,8 +1504,15 @@ final class ChunkRenderer {
             if (builders[i] == null) continue;
             int tile = i % TILE_COUNT;
             float textureScale = tile == Block.sideTile(Block.GRASS) ? 0.999f / 16.0f : 1.0f / 16.0f;
-            meshes[at++] = makeMesh(builders[i], tileAppearance(tile), textureScale);
+            FaceBuilder builder = builders[i];
+            meshes[at++] = makeMesh(builder, tileAppearance(tile), textureScale);
             builders[i] = null;
+            // Retain at most 128 reusable builders. Oversized/extra builders
+            // naturally become collectible instead of growing the pool forever.
+            if (freeFaceBuilderCount < freeFaceBuilders.length) {
+                builder.reset(0, 0);
+                freeFaceBuilders[freeFaceBuilderCount++] = builder;
+            }
         }
         if (flowers != null) meshes[at++] = makeFlowerMesh(flowers, flowerAppearance);
         if (fires != null) {
@@ -1813,6 +1834,8 @@ final class ChunkRenderer {
         short[] uv = new short[32];
         int vertexCount;
 
+        void reset() { vertexCount = 0; }
+
         void add(int x, int y, int z, int axis, int frameSize) {
             ensure(vertexCount + 4);
             int x0 = x * 256, x1 = x0 + 256;
@@ -1913,6 +1936,8 @@ final class ChunkRenderer {
         short[] uv = new short[32];
         int vertexCount;
 
+        void reset() { vertexCount = 0; }
+
         void add(int x, int y, int z, int tile) {
             ensure(vertexCount + 8);
             int x0 = x * 256 + 77, x1 = x * 256 + 179;
@@ -1978,8 +2003,8 @@ final class ChunkRenderer {
 
     /** Reuses one short position array per material; no per-block scene nodes. */
     private static final class FaceBuilder {
-        final int tile;
-        final int lightLevel;
+        int tile;
+        int lightLevel;
         short[] p = new short[192];
         short[] uv = new short[128];
         byte[] c = new byte[256];
@@ -1987,7 +2012,14 @@ final class ChunkRenderer {
         int faceCount;
 
         FaceBuilder(int tile) { this(tile, 0); }
-        FaceBuilder(int tile, int lightLevel) { this.tile = tile; this.lightLevel = lightLevel; }
+        FaceBuilder(int tile, int lightLevel) { reset(tile, lightLevel); }
+
+        void reset(int nextTile, int nextLightLevel) {
+            tile = nextTile;
+            lightLevel = nextLightLevel;
+            vertexCount = 0;
+            faceCount = 0;
+        }
 
         /** Add one tiled rectangle produced by the chunk's greedy face scan. */
         void addRect(int x, int y, int z, int width, int height, int face) {
