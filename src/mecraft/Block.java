@@ -399,7 +399,12 @@ final class Block {
         if (id == LAVA) return 234;
         if (id == DOOR) return face == 0 || face == 5 ? 81 : 97;
         if (id == IRON_DOOR) return face == 0 || face == 5 ? 82 : 98;
-        if (id == FURNACE) return face == 0 || face == 5 ? 61 : 62;
+        // Alpha 1.2.6 BlockFurnace UVs: stone on top/bottom (tile 1),
+        // side texture 45, and the idle front texture 44 on the default -Z face.
+        if (id == FURNACE) {
+            if (face == 0 || face == 5) return 1;
+            return face == 3 ? 44 : 45;
+        }
         if (face == 0) return topTile(id);
         // Alpha 1.2.6 BlockChest uses tile 27 for its default front
         // (side 3 / -Z), tile 26 for the other vertical faces, and tile 25
