@@ -499,7 +499,15 @@ final class MobSystem {
 
     private Mob createMob(int slot, int type) {
         Mob mob = mobs[slot];
-        if (mob != null) return mob;
+        if (mob != null && mob.type == type) return mob;
+        // A slot normally keeps the same model for its whole lifetime. Only
+        // discard it when the slot changes species (egg, difficulty or dimension).
+        if (mob != null) {
+            mob.root.setRenderingEnable(false);
+            mob.fireMesh.setRenderingEnable(false);
+            scene.removeChild(mob.root);
+            mobs[slot] = null;
+        }
         int woolColor = type == SHEEP ? naturalSheepColor() : 0;
         Appearance fleece = type == SHEEP ? skin(fleeceTextures[woolColor]) : null;
         mob = new Mob(type, skin(mobTextures[type]), fleece, fireAppearance,
@@ -528,10 +536,18 @@ final class MobSystem {
     private void releaseMob(int slot) {
         Mob mob = mobs[slot];
         if (mob == null) return;
+        // Keep the bounded model in its slot. Respawns of the same species
+        // reuse every Group, Mesh, VertexArray and VertexBuffer it owns.
         mob.fireMesh.setRenderingEnable(false);
         mob.root.setRenderingEnable(false);
-        scene.removeChild(mob.root);
-        mobs[slot] = null;
+        mob.alive = false;
+        mob.dying = false;
+        mob.eggSpawned = false;
+        mob.hurtTicks = 0;
+        mob.fireTicks = 0;
+        mob.setHurt(false);
+        mob.setFlashWhite(false);
+        mob.pose.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
     }
 
     /** Remove distant actors from the active world and clear their transient state. */
