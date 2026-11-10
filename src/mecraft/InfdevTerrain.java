@@ -403,7 +403,11 @@ final class InfdevTerrain {
                     int at = column * WORLD_HEIGHT + y;
                     byte block = blocks[at];
                     if (block == Block.STONE || block == Block.DIRT ||
-                        block == Block.GRASS) {
+                        block == Block.GRASS || block == Block.COAL ||
+                        block == Block.IRON || block == Block.GOLD_ORE ||
+                        block == Block.REDSTONE_ORE || block == Block.DIAMOND_ORE) {
+                        // Ores inside the ravine volume are excavated too;
+                        // ores just outside it remain embedded in the walls.
                         blocks[at] = y < 5 ? Block.LAVA : Block.AIR;
                     }
                 }
