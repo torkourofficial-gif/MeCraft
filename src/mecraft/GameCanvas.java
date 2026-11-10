@@ -888,6 +888,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
         if (miningHitWait > 0) {
             miningHitWait--;
+            // A hit cooldown is not active block mining. Never leave the arm
+            // looping or a stale crack overlay visible during this pause.
+            renderer.setHandLooping(false);
+            renderer.setMiningCracks(-1, -1, -1, 0, 0, 0, -1);
             return;
         }
         MinecartEntity cart = renderer.minecart();
@@ -1015,10 +1019,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
         if (x != miningX || y != miningY || z != miningZ) {
             miningX = x; miningY = y; miningZ = z; miningDamage = 0.0f;
-            renderer.setHandLooping(true);
             miningFaceX = target[3]; miningFaceY = target[4]; miningFaceZ = target[5];
+            renderer.setHandLooping(true);
             return;
         }
+
+        // The player can keep the same block targeted while moving the
+        // crosshair across its faces. Refresh the face every tick: otherwise
+        // the crack quad can remain on the hidden/back face and seem to vanish
+        // in particular areas or viewing angles.
+        miningFaceX = target[3];
+        miningFaceY = target[4];
+        miningFaceZ = target[5];
         boolean grounded = playerPhysics.isOnGround();
         boolean submerged = playerPhysics.isInWater(world);
         if (world.mode == 1) miningDamage = 1.0f;
