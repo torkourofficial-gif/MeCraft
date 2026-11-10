@@ -51,6 +51,7 @@ final class VoxelWorld {
     static final int SIZE_OLD = 1;
     static final int TYPE_STANDARD = 0;
     static final int TYPE_FLAT = 1;
+    static final int TYPE_ECONOMIC = 2;
     static final int DIFFICULTY_PEACEFUL = 0;
     static final int DIFFICULTY_EASY = 1;
     static final int DIFFICULTY_NORMAL = 2;
@@ -144,7 +145,8 @@ final class VoxelWorld {
         setGenerationDiagnosticStage("VoxelWorld: asignando modo");
         this.mode = mode;
         this.worldSize = worldSize == SIZE_OLD ? SIZE_OLD : SIZE_INFINITE;
-        this.worldType = worldType == TYPE_FLAT ? TYPE_FLAT : TYPE_STANDARD;
+        this.worldType = worldType == TYPE_FLAT ? TYPE_FLAT :
+                (worldType == TYPE_ECONOMIC ? TYPE_ECONOMIC : TYPE_STANDARD);
         setGenerationDiagnosticStage("VoxelWorld: inicializando caché procedural");
         for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
             setGenerationDiagnosticStage("VoxelWorld: inicializando caché [" + i + "]");
@@ -743,8 +745,12 @@ final class VoxelWorld {
         setGenerationDiagnosticStage("VoxelWorld.generate: asignando posición Z del jugador");
         playerZ = spawnCenter + 0.5f;
         setGenerationDiagnosticStage("VoxelWorld.generate: calculando altura inicial del jugador");
-        playerY = (nether ? InfdevTerrain.netherFloorHeight(seed, spawnCenter, spawnCenter) :
-                (worldType == TYPE_FLAT ? 4 : InfdevTerrain.surfaceHeight(seed, spawnCenter, spawnCenter))) + 1.0f;
+        int spawnHeight = nether ? InfdevTerrain.netherFloorHeight(seed, spawnCenter, spawnCenter) :
+                (worldType == TYPE_FLAT ? 4 :
+                 (worldType == TYPE_ECONOMIC ?
+                  InfdevTerrain.economicSurfaceHeight(seed, spawnCenter, spawnCenter) :
+                  InfdevTerrain.surfaceHeight(seed, spawnCenter, spawnCenter)));
+        playerY = spawnHeight + 1.0f;
         setGenerationDiagnosticStage("VoxelWorld.generate: asignando yaw inicial");
         yaw = 0f;
     }
@@ -762,6 +768,9 @@ final class VoxelWorld {
         } else if (nether) {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generateNether; cx=" + cx + ", cz=" + cz);
             InfdevTerrain.generateNether(seed, cx, cz, target, proceduralHeights);
+        } else if (worldType == TYPE_ECONOMIC) {
+            setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generateEconomic; cx=" + cx + ", cz=" + cz);
+            InfdevTerrain.generateEconomic(seed, cx, cz, target, proceduralHeights, proceduralBiomes);
         } else {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generate; cx=" + cx + ", cz=" + cz);
             InfdevTerrain.generate(seed, cx, cz, target, proceduralHeights, proceduralBiomes);
