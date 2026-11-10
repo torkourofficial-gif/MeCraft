@@ -68,6 +68,12 @@ final class DroppedItemSystem {
         texCoordArray = new VertexArray(VERTEX_COUNT, 2, 2);
         colorArray = new VertexArray(VERTEX_COUNT, 4, 1);
         for (int i = 0; i < colors.length; i++) colors[i] = (byte)255;
+        // M3G can retain the mesh bounds calculated from the initial vertex data.
+        // Seed every dynamic mesh with a wide symmetric bound so later item
+        // positions are not culled merely because the arrays began at (0, 0, 0).
+        initializeDynamicBounds(positions);
+        initializeDynamicBounds(spritePositions);
+        initializeDynamicBounds(tntFlashPositions);
         positionArray.set(0, VERTEX_COUNT, positions);
         texCoordArray.set(0, VERTEX_COUNT, texCoords);
         colorArray.set(0, VERTEX_COUNT, colors);
@@ -162,6 +168,7 @@ final class DroppedItemSystem {
         if (itemId[slot] == 0) activeCount++;
 
         itemId[slot] = id;
+        age[slot] = 0;
         tntFuse[slot] = 0;
         pickupDelay[slot] = 10;
         x[slot] = bx + 0.15f + nextRandom() * 0.70f;
@@ -356,6 +363,17 @@ final class DroppedItemSystem {
                 world.isSolidAt(minX, by, maxZ) || world.isSolidAt(maxX, by, maxZ)) return true;
         }
         return false;
+    }
+
+    private void initializeDynamicBounds(short[] vertices) {
+        short bound = (short)(120 * POSITION_SCALE);
+        for (int i = 0; i < VERTEX_COUNT; i++) {
+            int at = i * 3;
+            short value = (i & 1) == 0 ? (short)-bound : bound;
+            vertices[at] = value;
+            vertices[at + 1] = value;
+            vertices[at + 2] = value;
+        }
     }
 
     private void writeItem(int slot) {
