@@ -748,7 +748,9 @@ final class VoxelWorld {
         setGenerationDiagnosticStage("VoxelWorld.generate: asignando posición Z del jugador");
         playerZ = spawnCenter + 0.5f;
         setGenerationDiagnosticStage("VoxelWorld.generate: calculando altura inicial del jugador");
-        int spawnHeight = nether ? InfdevTerrain.netherFloorHeight(seed, spawnCenter, spawnCenter) :
+        int spawnHeight = nether ? (economicMode ?
+                InfdevTerrain.economicNetherFloorHeight(seed, spawnCenter, spawnCenter) :
+                InfdevTerrain.netherFloorHeight(seed, spawnCenter, spawnCenter)) :
                 (worldType == TYPE_FLAT ? 4 :
                  (economicMode ?
                   InfdevTerrain.economicSurfaceHeight(seed, spawnCenter, spawnCenter) :
@@ -770,7 +772,8 @@ final class VoxelWorld {
             }
         } else if (nether) {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generateNether; cx=" + cx + ", cz=" + cz);
-            InfdevTerrain.generateNether(seed, cx, cz, target, proceduralHeights);
+            if (economicMode) InfdevTerrain.generateEconomicNether(seed, cx, cz, target, proceduralHeights);
+            else InfdevTerrain.generateNether(seed, cx, cz, target, proceduralHeights);
         } else if (economicMode) {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generateEconomic; cx=" + cx + ", cz=" + cz);
             InfdevTerrain.generateEconomic(seed, cx, cz, target, proceduralHeights, proceduralBiomes);
@@ -947,7 +950,8 @@ final class VoxelWorld {
     }
 
     int surfaceY(int x, int z) {
-        if (nether) return InfdevTerrain.netherFloorHeight(seed, x, z);
+        if (nether) return economicMode ? InfdevTerrain.economicNetherFloorHeight(seed, x, z) :
+            InfdevTerrain.netherFloorHeight(seed, x, z);
         for (int y = HEIGHT - 1; y >= 0; y--) {
             if (get(x, y, z) != Block.AIR && !Block.isFluid(get(x, y, z))) return y;
         }
