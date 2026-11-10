@@ -201,7 +201,9 @@ final class InfdevTerrain {
         // Alpha's cave generator walks a small number of curved 3D paths and
         // occasionally forks them. This version uses integer deterministic
         // steps and clips every carve to the active 16x16 chunk.
-        final int region = 32;
+        // Smaller regions and more paths create a denser cave network without
+        // allocating a 3D noise volume. Paths remain deterministic per seed.
+        final int region = 24;
         int firstX = floorDiv(originX - 34, region);
         int lastX = floorDiv(originX + CHUNK_SIZE + 34, region);
         int firstZ = floorDiv(originZ - 34, region);
@@ -209,8 +211,8 @@ final class InfdevTerrain {
         for (int rz = firstZ; rz <= lastZ; rz++) {
             for (int rx = firstX; rx <= lastX; rx++) {
                 int regionHash = hash(seed ^ 0x35A76D21, rx, 0, rz);
-                int tunnelCount = (regionHash & 3) == 0 ? 0 : 1;
-                if ((regionHash & 15) == 1) tunnelCount++;
+                // Every region gets at least one tunnel; most get a second.
+                int tunnelCount = (regionHash & 3) == 0 ? 1 : 2;
                 for (int t = 0; t < tunnelCount; t++) {
                     int h = hash(seed ^ (0x6C8E9CF5 + t * 0x1F123BB5), rx, t + 1, rz);
                     int x = rx * region + 8 + ((h >>> 4) & 15);
@@ -222,7 +224,7 @@ final class InfdevTerrain {
                     int dirZ = ((h >>> 9) & 3) - 1;
                     if (dirX == 0 && dirZ == 0) dirX = 1;
                     int pitch = ((h >>> 25) & 3) - 1;
-                    int length = 12 + ((h >>> 27) & 15);
+                    int length = 16 + ((h >>> 27) & 15);
                     int branchAt = 5 + ((h >>> 16) & 7);
                     int branchDir = (h >>> 6) & 1;
                     int branchX = 0, branchY = 0, branchZ = 0;
@@ -249,7 +251,7 @@ final class InfdevTerrain {
                         if ((wobble & 31) == 0) radius++;
                         carveTunnelPocket(originX, originZ, heights, blocks,
                                           x, y, z, radius, Math.max(1, radius - 1));
-                        if (step == branchAt && t == 0 && (h & 7) < 3) {
+                        if (step == branchAt && t == 0 && (h & 7) < 5) {
                             branchX = x; branchY = y; branchZ = z;
                             branchDX = branchDir == 0 ? -dirZ : dirZ;
                             branchDZ = branchDir == 0 ? dirX : -dirX;
@@ -257,7 +259,7 @@ final class InfdevTerrain {
                     }
                     if (branchDX != 0 || branchDZ != 0) {
                         int bx = branchX, by = branchY, bz = branchZ;
-                        for (int step = 0; step < 7; step++) {
+                        for (int step = 0; step < 10; step++) {
                             bx += branchDX;
                             bz += branchDZ;
                             if ((step & 2) == 0) by += ((h >>> (step + 3)) & 1);
@@ -268,7 +270,7 @@ final class InfdevTerrain {
 
                     // Rare sloped entrances: a short descending tunnel, not a
                     // vertical shaft. The low frequency keeps surface carving cheap.
-                    if (t == 0 && (h & 31) == 7) {
+                    if (t == 0 && (h & 15) == 7) {
                         int ex = rx * region + 8 + ((h >>> 14) & 15);
                         int ez = rz * region + 8 + ((h >>> 18) & 15);
                         int ey = surfaceHeight(seed, ex, ez) - 1;
