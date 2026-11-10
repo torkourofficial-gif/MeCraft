@@ -86,14 +86,14 @@ final class ParticleSystem {
         for (int i = 0; i < CAPACITY; i++) setParticleColor(i, 0);
     }
 
-    /** Compact 2x2x2 debris burst; one fixed mesh stores the whole effect. */
+    /** Compact 4x2x2 debris burst (16 fragments); one fixed mesh stores the effect. */
     void spawnBlockDestroy(int bx, int by, int bz, int blockTile) {
         for (int gy = 0; gy < 2; gy++) {
             for (int gz = 0; gz < 2; gz++) {
-                for (int gx = 0; gx < 2; gx++) {
+                for (int gx = 0; gx < 4; gx++) {
                     int i = cursor++;
                     if (cursor == CAPACITY) cursor = 0;
-                    float rx = (gx + 0.5f) * 0.5f;
+                    float rx = (gx + 0.5f) * 0.25f;
                     float ry = (gy + 0.5f) * 0.5f;
                     float rz = (gz + 0.5f) * 0.5f;
                     x[i] = bx + rx;
