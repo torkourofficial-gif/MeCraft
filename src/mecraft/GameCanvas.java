@@ -2697,7 +2697,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private void changeCreateOption(int delta) {
         if (createSelection == 1) newWorldMode = 1 - newWorldMode;
         else if (createSelection == 2) newWorldSize = 1 - newWorldSize;
-        else if (createSelection == 3) newWorldType = (newWorldType + (delta > 0 ? 1 : 1)) % 2;
+        else if (createSelection == 3) newWorldType = newWorldType == VoxelWorld.TYPE_FLAT ?
+                VoxelWorld.TYPE_STANDARD : VoxelWorld.TYPE_FLAT;
         else if (createSelection == 4) newWorldDifficulty = (newWorldDifficulty + (delta > 0 ? 1 : 3)) % 4;
         repaint();
     }
