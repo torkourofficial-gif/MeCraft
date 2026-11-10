@@ -22,9 +22,9 @@ final class VoxelWorld {
     }
 
     static final int WIDTH = 48;
-    static final int HEIGHT = 32;
+    static final int HEIGHT = 64;
     static final int DEPTH = 48;
-    static final int SEA_LEVEL = 13;
+    static final int SEA_LEVEL = 29;
     static final int CHUNK_XZ = 16;
     static final int CHUNK_Y = 8;
     static final int CHUNKS_X = WIDTH / CHUNK_XZ;

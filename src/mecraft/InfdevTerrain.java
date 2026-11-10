@@ -71,6 +71,8 @@ final class InfdevTerrain {
 
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: tallando cuevas");
         carveCaves(seed, originX, originZ, heights, blocks);
+        VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: formando ravines");
+        carveRavines(seed, originX, originZ, heights, blocks);
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: decorando terreno");
         decorate(seed, originX, originZ, heights, biomes, blocks);
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: chunk completado " + chunkX + "," + chunkZ);
@@ -159,7 +161,10 @@ final class InfdevTerrain {
         else if (biome == DESERT) height = 17 + (variation * 3 >> 2);
         else if (biome == DARK_FOREST || biome == JUNGLE) height = 19 + variation;
         else height = 18 + variation;
-        if (height < 9) return 9;
+        // Raise the surface by 16 blocks while keeping the bedrock at y=0.
+        // This adds genuine underground depth instead of merely adding empty sky.
+        height += 16;
+        if (height < 25) return 25;
         if (height > WORLD_HEIGHT - 5) return WORLD_HEIGHT - 5;
         return height;
     }
@@ -221,7 +226,7 @@ final class InfdevTerrain {
                     int x = rx * region + 8 + ((h >>> 4) & 15);
                     int z = rz * region + 8 + ((h >>> 12) & 15);
                     int surface = surfaceHeight(seed, x, z);
-                    int y = 5 + ((h >>> 20) & 15);
+                    int y = 8 + ((h >>> 20) & 31);
                     if (y > surface - 5) y = Math.max(4, surface - 5);
                     int dirX = ((h >>> 2) & 3) - 1;
                     int dirZ = ((h >>> 9) & 3) - 1;
@@ -249,7 +254,7 @@ final class InfdevTerrain {
                         z += dirZ;
                         y += pitch;
                         if (y < 3) { y = 3; pitch = 1; }
-                        if (y > 38) { y = 38; pitch = -1; }
+                        if (y > WORLD_HEIGHT - 12) { y = WORLD_HEIGHT - 12; pitch = -1; }
                         int radius = 2 + ((wobble >>> 17) & 1);
                         if ((wobble & 31) == 0) radius++;
                         carveTunnelPocket(originX, originZ, heights, blocks,
@@ -287,6 +292,118 @@ final class InfdevTerrain {
                             ey--;
                             if (ey < 4) break;
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Alpha 1.8-style ravines: a deterministic, winding surface fissure with
+     * steep walls and a narrow floor. Each region owns its seed, so chunks
+     * independently reproduce the same ravine segments at their borders.
+     */
+    private static void carveRavines(int seed, int originX, int originZ,
+                                     int[] heights, byte[] blocks) {
+        final int region = 48;
+        int firstX = floorDiv(originX - 76, region);
+        int lastX = floorDiv(originX + CHUNK_SIZE + 76, region);
+        int firstZ = floorDiv(originZ - 76, region);
+        int lastZ = floorDiv(originZ + CHUNK_SIZE + 76, region);
+        for (int rz = firstZ; rz <= lastZ; rz++) {
+            for (int rx = firstX; rx <= lastX; rx++) {
+                int h = hash(seed ^ 0x6A09E667, rx, 0, rz);
+                // A little more common than vanilla's 1/50 chunk roll because
+                // MeCraft's playable world is streamed in a much smaller area.
+                if ((h & 7) != 0) continue;
+                int x = rx * region + 4 + ((h >>> 4) & 39);
+                int z = rz * region + 4 + ((h >>> 11) & 39);
+                int surface = surfaceHeight(seed, x, z);
+                int depth = 13 + ((h >>> 19) & 15);
+                int y = surface - (depth >> 1);
+                int dirX = ((h >>> 2) & 3) - 1;
+                int dirZ = ((h >>> 8) & 3) - 1;
+                if (dirX == 0 && dirZ == 0) dirX = 1;
+                int length = 40 + ((h >>> 25) & 31);
+                int pitch = ((h >>> 15) & 3) - 1;
+                for (int step = 0; step < length; step++) {
+                    int wobble = hash(seed ^ h, step, rx, rz);
+                    if ((step & 3) == 0) {
+                        dirX += ((wobble >>> 3) & 1) - ((wobble >>> 5) & 1);
+                        dirZ += ((wobble >>> 7) & 1) - ((wobble >>> 9) & 1);
+                        if (dirX > 1) dirX = 1;
+                        if (dirX < -1) dirX = -1;
+                        if (dirZ > 1) dirZ = 1;
+                        if (dirZ < -1) dirZ = -1;
+                        pitch += ((wobble >>> 12) & 1) - ((wobble >>> 14) & 1);
+                        if (pitch > 1) pitch = 1;
+                        if (pitch < -1) pitch = -1;
+                    }
+                    x += dirX;
+                    z += dirZ;
+                    y += pitch;
+                    if (y < 9) { y = 9; pitch = 1; }
+                    if (y > WORLD_HEIGHT - 18) { y = WORLD_HEIGHT - 18; pitch = -1; }
+
+                    surface = surfaceHeight(seed, x, z);
+                    int profile = step < length / 2 ? step : length - step;
+                    int width = 2 + profile * 2 / (length / 2);
+                    if (width > 4) width = 4;
+                    int verticalRadius = depth;
+                    int centerY = surface - (verticalRadius >> 1);
+                    carveRavineSlice(originX, originZ, heights, blocks,
+                                     x, centerY, z, width, verticalRadius);
+                }
+            }
+        }
+    }
+
+    private static void carveRavineSlice(int originX, int originZ, int[] heights,
+                                         byte[] blocks, int cx, int cy, int cz,
+                                         int radius, int verticalRadius) {
+        int minX = Math.max(originX, cx - radius);
+        int maxX = Math.min(originX + CHUNK_SIZE - 1, cx + radius);
+        int minZ = Math.max(originZ, cz - radius);
+        int maxZ = Math.min(originZ + CHUNK_SIZE - 1, cz + radius);
+        int low = Math.max(2, cy - verticalRadius);
+        int high = Math.min(WORLD_HEIGHT - 2, cy + verticalRadius);
+        int radiusSquared = radius * radius;
+        int verticalSquared = verticalRadius * verticalRadius;
+
+        // Like the original generator, don't open a ravine through an ocean
+        // column; otherwise the fissure would immediately fill with water.
+        for (int z = minZ; z <= maxZ; z++) {
+            for (int x = minX; x <= maxX; x++) {
+                int column = (z - originZ) * CHUNK_SIZE + x - originX;
+                int ceiling = heights[column] - 1;
+                int top = Math.min(high, ceiling);
+                int dx = x - cx, dz = z - cz;
+                int horizontal = dx * dx + dz * dz;
+                if (horizontal > radiusSquared) continue;
+                for (int y = top; y >= low; y--) {
+                    byte block = blocks[column * WORLD_HEIGHT + y];
+                    if (block == Block.WATER) return;
+                }
+            }
+        }
+
+        for (int z = minZ; z <= maxZ; z++) {
+            for (int x = minX; x <= maxX; x++) {
+                int dx = x - cx, dz = z - cz;
+                int horizontal = dx * dx + dz * dz;
+                if (horizontal > radiusSquared) continue;
+                int column = (z - originZ) * CHUNK_SIZE + x - originX;
+                int ceiling = heights[column] - 1;
+                int top = Math.min(high, ceiling);
+                for (int y = low; y <= top; y++) {
+                    int dy = y - cy;
+                    if (horizontal * verticalSquared + dy * dy * radiusSquared >
+                        radiusSquared * verticalSquared) continue;
+                    int at = column * WORLD_HEIGHT + y;
+                    byte block = blocks[at];
+                    if (block == Block.STONE || block == Block.DIRT ||
+                        block == Block.GRASS) {
+                        blocks[at] = y < 5 ? Block.LAVA : Block.AIR;
                     }
                 }
             }
@@ -343,23 +460,23 @@ final class InfdevTerrain {
                     int h = hash(seed ^ 0x2C9277B5, cx, cy, cz);
                     if ((h & 1) == 0)
                         placeOreVein(seed, originX, originZ, blocks, cx, cy, cz,
-                                     Block.COAL, 3, Math.min(30, WORLD_HEIGHT - 3), 5, 9, h);
+                                     Block.COAL, 3, Math.min(46, WORLD_HEIGHT - 3), 5, 9, h);
                     int ironHash = hash(seed ^ 0x165667B1, cx, cy, cz);
                     if ((ironHash & 3) != 0)
                         placeOreVein(seed, originX, originZ, blocks, cx, cy, cz,
-                                     Block.IRON, 3, Math.min(24, WORLD_HEIGHT - 3), 4, 7, ironHash);
+                                     Block.IRON, 3, Math.min(38, WORLD_HEIGHT - 3), 4, 7, ironHash);
                     int goldHash = hash(seed ^ 0x7F4A7C15, cx, cy, cz);
                     if ((goldHash & 7) == 0)
                         placeOreVein(seed, originX, originZ, blocks, cx, cy, cz,
-                                     Block.GOLD_ORE, 3, Math.min(18, WORLD_HEIGHT - 3), 3, 5, goldHash);
+                                     Block.GOLD_ORE, 3, Math.min(30, WORLD_HEIGHT - 3), 3, 5, goldHash);
                     int redHash = hash(seed ^ 0x94D049BB, cx, cy, cz);
                     if ((redHash & 3) == 0)
                         placeOreVein(seed, originX, originZ, blocks, cx, cy, cz,
-                                     Block.REDSTONE_ORE, 2, Math.min(12, WORLD_HEIGHT - 3), 4, 7, redHash);
+                                     Block.REDSTONE_ORE, 2, Math.min(24, WORLD_HEIGHT - 3), 4, 7, redHash);
                     int diamondHash = hash(seed ^ 0x369DEA0F, cx, cy, cz);
                     if ((diamondHash & 15) == 0)
                         placeOreVein(seed, originX, originZ, blocks, cx, cy, cz,
-                                     Block.DIAMOND_ORE, 2, Math.min(10, WORLD_HEIGHT - 3), 2, 4, diamondHash);
+                                     Block.DIAMOND_ORE, 2, Math.min(20, WORLD_HEIGHT - 3), 2, 4, diamondHash);
                 }
             }
         }
