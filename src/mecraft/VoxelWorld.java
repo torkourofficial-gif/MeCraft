@@ -85,7 +85,6 @@ final class VoxelWorld {
     private final int[] proceduralChunkZ = new int[PROCEDURAL_CACHE_SIZE];
     private final int[] proceduralHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     private final byte[] proceduralBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
-    private int proceduralCacheCursor;
     private int[] editX = new int[128];
     private int[] editY = new int[128];
     private int[] editZ = new int[128];
@@ -174,16 +173,18 @@ final class VoxelWorld {
         return value < 0 && value % CHUNK_XZ != 0 ? result - 1 : result;
     }
 
+    /** Power-of-two direct-mapped cache: one hash and two coordinate checks per lookup. */
+    private int proceduralCacheSlot(int cx, int cz) {
+        return (cx * 73428767 ^ cz * 912931) & (PROCEDURAL_CACHE_SIZE - 1);
+    }
+
     private byte proceduralBlock(int x, int y, int z) {
         int cx = floorChunk(x), cz = floorChunk(z);
-        int cache = -1;
-        for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
-            if (proceduralChunkX[i] == cx && proceduralChunkZ[i] == cz) { cache = i; break; }
-        }
-        if (cache < 0) {
-            cache = proceduralCacheCursor++ & (PROCEDURAL_CACHE_SIZE - 1);
+        int cache = proceduralCacheSlot(cx, cz);
+        if (proceduralChunkX[cache] != cx || proceduralChunkZ[cache] != cz) {
             generateChunk(cx, cz, proceduralChunks[cache]);
-            proceduralChunkX[cache] = cx; proceduralChunkZ[cache] = cz;
+            proceduralChunkX[cache] = cx;
+            proceduralChunkZ[cache] = cz;
         }
         int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
         return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
@@ -720,7 +721,7 @@ final class VoxelWorld {
             setGenerationDiagnosticStage("VoxelWorld.generate: comenzando fila de chunks cz=" + cz);
             for (int cx = 0; cx < CHUNKS_X; cx++) {
                 setGenerationDiagnosticStage("VoxelWorld.generate: reservando caché para chunk cx=" + cx + ", cz=" + cz);
-                int cache = proceduralCacheCursor++ & (PROCEDURAL_CACHE_SIZE - 1);
+                int cache = proceduralCacheSlot(cx, cz);
                 setGenerationDiagnosticStage("VoxelWorld.generate: generando chunk cx=" + cx + ", cz=" + cz);
                 generateChunk(cx, cz, proceduralChunks[cache]);
                 setGenerationDiagnosticStage("VoxelWorld.generate: guardando coordenadas del chunk cx=" + cx + ", cz=" + cz);
@@ -793,7 +794,7 @@ final class VoxelWorld {
             proceduralChunkX[i] = Integer.MIN_VALUE;
             proceduralChunkZ[i] = Integer.MIN_VALUE;
         }
-        proceduralCacheCursor = 0;
+
         fluidQueueHead = fluidQueueTail = fluidQueueCount = fluidTickDelay = fluidDirection = 0;
         lavaTickCounter = 0;
         for (int i = 0; i < fluidQueued.length; i++) fluidQueued[i] = 0;
