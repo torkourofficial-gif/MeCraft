@@ -4431,6 +4431,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void drawIcon(Graphics g, int id, int x, int y, boolean muted) {
         if (id <= Block.AIR || id >= ItemCatalog.COUNT) return;
+        if (id == (Block.FURNACE & 255) && terrainTexture != null) {
+            // The furnace recipe/inventory icon uses the front-facing terrain tile,
+            // not the side tile used by its other block faces.
+            int tile = Block.faceTile((byte)id, 3);
+            g.drawRegion(terrainTexture, (tile & 15) * 16, (tile >> 4) * 16, 16, 16,
+                    Sprite.TRANS_NONE, x, y, Graphics.TOP | Graphics.LEFT);
+            return;
+        }
         if (id < Block.COUNT && terrainTexture != null &&
             (Block.isDecorative((byte)id) || id == Block.TNT || id == (Block.CHEST & 255))) {
             // A chest's internal block ID is not its terrain-atlas tile.
