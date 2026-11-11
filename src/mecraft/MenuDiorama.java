@@ -45,26 +45,31 @@ final class MenuDiorama {
         appearance.setPolygonMode(polygon);
 
         byte[][][] blocks = makeLandscape();
-        int faceCount = countFaces(blocks);
-        short[] positions = new short[faceCount * 12];
-        short[] texCoords = new short[faceCount * 8];
-        byte[] colors = new byte[faceCount * 12];
-        int[] strips = new int[faceCount];
-        for (int i = 0; i < faceCount; i++) strips[i] = 4;
-        buildGeometry(blocks, positions, texCoords, colors);
+        // Split into four mesh bands: M3G VertexArray has a 16-bit vertex limit.
+        for (int band = 0; band < 4; band++) {
+            int startX = band * 32;
+            int endX = startX + 32;
+            int faceCount = countFaces(blocks, startX, endX);
+            short[] positions = new short[faceCount * 12];
+            short[] texCoords = new short[faceCount * 8];
+            byte[] colors = new byte[faceCount * 12];
+            int[] strips = new int[faceCount];
+            for (int i = 0; i < faceCount; i++) strips[i] = 4;
+            buildGeometry(blocks, positions, texCoords, colors, startX, endX);
 
-        VertexArray pa = new VertexArray(faceCount * 4, 3, 2);
-        pa.set(0, faceCount * 4, positions);
-        VertexArray ta = new VertexArray(faceCount * 4, 2, 2);
-        ta.set(0, faceCount * 4, texCoords);
-        VertexArray ca = new VertexArray(faceCount * 4, 3, 1);
-        ca.set(0, faceCount * 4, colors);
-        VertexBuffer vb = new VertexBuffer();
-        // Half-unit vertex coordinates keep the 128x128 scene inside signed-short M3G positions.
-        vb.setPositions(pa, 1.0f / 128.0f, null);
-        vb.setTexCoords(0, ta, 1.0f / 256.0f, null);
-        vb.setColors(ca);
-        scene.addChild(new Mesh(vb, new TriangleStripArray(0, strips), appearance));
+            VertexArray pa = new VertexArray(faceCount * 4, 3, 2);
+            pa.set(0, faceCount * 4, positions);
+            VertexArray ta = new VertexArray(faceCount * 4, 2, 2);
+            ta.set(0, faceCount * 4, texCoords);
+            VertexArray ca = new VertexArray(faceCount * 4, 3, 1);
+            ca.set(0, faceCount * 4, colors);
+            VertexBuffer vb = new VertexBuffer();
+            // Half-unit vertex coordinates keep the 128x128 scene inside signed-short M3G positions.
+            vb.setPositions(pa, 1.0f / 128.0f, null);
+            vb.setTexCoords(0, ta, 1.0f / 256.0f, null);
+            vb.setColors(ca);
+            scene.addChild(new Mesh(vb, new TriangleStripArray(0, strips), appearance));
+        }
 
         Background sky = new Background();
         sky.setColor(0xFF83BCEB);
@@ -164,9 +169,9 @@ x <= 19; x++) for (int z = 5; z <= 10; z++)
             blocks[x][y][z] = id;
     }
 
-    private int countFaces(byte[][][] blocks) {
+    private int countFaces(byte[][][] blocks, int startX, int endX) {
         int count = 0;
-        for (int x = 0; x < WIDTH; x++) for (int y = 0; y < HEIGHT; y++)
+        for (int x = startX; x < endX; x++) for (int y = 0; y < HEIGHT; y++)
             for (int z = 0; z < DEPTH; z++) {
                 byte id = blocks[x][y][z];
                 if (id == Block.AIR) continue;
@@ -184,9 +189,9 @@ x <= 19; x++) for (int z = 5; z <= 10; z++)
                 z < 0 || z >= DEPTH || blocks[x][y][z] == Block.AIR;
     }
 
-    private void buildGeometry(byte[][][] blocks, short[] positions, short[] texCoords, byte[] colors) {
+    private void buildGeometry(byte[][][] blocks, short[] positions, short[] texCoords, byte[] colors, int startX, int endX) {
         int faceIndex = 0;
-        for (int x = 0; x < WIDTH; x++) for (int y = 0; y < HEIGHT; y++)
+        for (int x = startX; x < endX; x++) for (int y = 0; y < HEIGHT; y++)
             for (int z = 0; z < DEPTH; z++) {
                 byte id = blocks[x][y][z];
                 if (id == Block.AIR) continue;
