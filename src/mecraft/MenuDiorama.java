@@ -45,7 +45,7 @@ final class MenuDiorama {
         appearance.setPolygonMode(polygon);
 
         byte[][][] blocks = makeLandscape();
-        // Split into four mesh bands: M3G VertexArray has a 16-bit vertex limit.
+        // Four bands keep each M3G VertexArray below its 16-bit vertex limit.
         for (int band = 0; band < 4; band++) {
             int startX = band * 32;
             int endX = startX + 32;
@@ -92,7 +92,16 @@ final class MenuDiorama {
 
     void render(Graphics3D graphics, int width, int height, int tick) {
         if (width <= 0 || height <= 0) return;
-        if (width != builtWidth || height    private byte[][][] makeLandscape() {
+        if (width != builtWidth || height != builtHeight) {
+            camera.setPerspective(65.0f, (float)width / (float)height, 0.1f, 320.0f);
+            builtWidth = width;
+            builtHeight = height;
+        }
+        orbit.setOrientation((tick * 0.75f) % 360.0f, 0.0f, 1.0f, 0.0f);
+        graphics.render(scene);
+    }
+
+    private byte[][][] makeLandscape() {
         byte[][][] blocks = new byte[WIDTH][HEIGHT][DEPTH];
         int[][] heights = new int[WIDTH][DEPTH];
         for (int x = 0; x < WIDTH; x++) {
@@ -111,7 +120,6 @@ final class MenuDiorama {
                 }
             }
         }
-        // Cabin in the central clearing.
         for (int x = 59; x <= 68; x++) for (int z = 59; z <= 68; z++)
             put(blocks, x, 6, z, Block.PLANKS);
         for (int y = 7; y <= 10; y++) {
@@ -130,7 +138,6 @@ final class MenuDiorama {
             put(blocks, x, 11, z, Block.PLANKS);
         put(blocks, 61, 8, 59, Block.GLASS);
         put(blocks, 66, 8, 59, Block.GLASS);
-
         makeTree(blocks, heights, 27, 44);
         makeTree(blocks, heights, 99, 34);
         makeTree(blocks, heights, 91, 91);
@@ -139,15 +146,6 @@ final class MenuDiorama {
         makeTree(blocks, heights, 20, 75);
         return blocks;
     }
-x <= 19; x++) for (int z = 5; z <= 10; z++)
-            put(blocks, x, 9, z, Block.PLANKS);
-        put(blocks, 15, 7, 5, Block.GLASS);
-        put(blocks, 18, 7, 5, Block.GLASS);
-        makeTree(blocks, heights, 7, 10);
-        makeTree(blocks, heights, 26, 4);
-        return blocks;
-    }
-
     private void makeTree(byte[][][] blocks, int[][] heights, int x, int z) {
         int base = heights[x][z];
         for (int y = base + 1; y <= base + 4; y++) put(blocks, x, y, z, Block.LOG);
@@ -194,11 +192,11 @@ x <= 19; x++) for (int z = 5; z <= 10; z++)
             for (int z = 0; z < DEPTH; z++) {
                 byte id = blocks[x][y][z];
                 if (id == Block.AIR) continue;
-                if (empty(blocks, x, y + 1, z)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 0, x, y, z);
-                if (empty(blocks, x - 1, y, z)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 1, x, y, z);
-                if (empty(blocks, x + 1, y, z)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 2, x, y, z);
-                if (empty(blocks, x, y, z - 1)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 3, x, y, z);
-                if (empty(blocks, x, y, z + 1)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 4, x, y, z);
+                if (empty(blocks, x, y + 1, z)) faceIndex = writeFace(faceIndex, positions, texCoords, id, 0, x, y, z);
+                if (empty(blocks, x - 1, y, z)) faceIndex = writeFace(faceIndex, positions, texCoords, id, 1, x, y, z);
+                if (empty(blocks, x + 1, y, z)) faceIndex = writeFace(faceIndex, positions, texCoords, id, 2, x, y, z);
+                if (empty(blocks, x, y, z - 1)) faceIndex = writeFace(faceIndex, positions, texCoords, id, 3, x, y, z);
+                if (empty(blocks, x, y, z + 1)) faceIndex = writeFace(faceIndex, positions, texCoords, id, 4, x, y, z);
             }
     }
 
@@ -232,7 +230,7 @@ x <= 19; x++) for (int z = 5; z <= 10; z++)
             p[vertex++] = (short)((x + 1) * 128); p[vertex++] = (short)((y + 1) * 128); p[vertex++] = (short)((z + 1) * 128);
         }
         int color = 0xFFFFFF;
-        // Biome-style tint on the upper atlas face of grass and leaves.
+        // Green biome tint only on the upper atlas face of grass and leaves.
         if (face == 0 && id == Block.GRASS) color = 0x7FB238;
         else if (face == 0 && id == Block.LEAVES) color = 0x48B518;
         int colorOffset = faceIndex * 12;
