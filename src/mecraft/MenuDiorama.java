@@ -27,7 +27,7 @@ final class MenuDiorama {
     private int builtWidth, builtHeight;
 
     MenuDiorama(int width, int height) throws IOException {
-        Image terrain = makeMenuTerrain(GameAssets.terrain());
+        Image terrain = GameAssets.terrain();
         Texture2D atlas = new Texture2D(new Image2D(Image2D.RGBA, terrain));
         atlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         atlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
@@ -81,45 +81,17 @@ final class MenuDiorama {
         ambient.setIntensity(1.0f);
         scene.addChild(ambient);
 
-        camera.setPerspective(52.0f, (float)width / (float)height, 0.1f, 260.0f);
+        camera.setPerspective(48.0f, (float)width / (float)height, 0.05f, 260.0f);
         camera.setOrientation(-15.0f, 1.0f, 0.0f, 0.0f);
-        // Bring the camera closer so the 128x128 scene fills more of the menu.
-        camera.setTranslation(0.0f, 22.0f, 78.0f);
+        // Third-person-style orbit framing, adapted from Beta 1.8.1's camera setup.
+        // A shorter orbit distance gives a tighter title-screen composition.
+        camera.setTranslation(0.0f, 20.0f, 58.0f);
         orbit.setTranslation(64.0f, 7.0f, 64.0f);
         orbit.addChild(camera);
         scene.addChild(orbit);
         scene.setActiveCamera(camera);
         builtWidth = width;
         builtHeight = height;
-    }
-
-    /**
-     * The bundled leaf atlas cell is already green. Desaturate its menu-scene
-     * copy so the per-vertex green tint is visible only on upward-facing faces.
-     */
-    private Image makeMenuTerrain(Image source) {
-        int width = source.getWidth();
-        int height = source.getHeight();
-        int[] pixels = new int[width * height];
-        source.getRGB(pixels, 0, width, 0, 0, width, height);
-        int tile = 34;
-        int left = (tile & 15) * 16;
-        int top = (tile >> 4) * 16;
-        if (width >= left + 16 && height >= top + 16) {
-            for (int y = top; y < top + 16; y++) {
-                for (int x = left; x < left + 16; x++) {
-                    int index = y * width + x;
-                    int argb = pixels[index];
-                    int alpha = (argb >>> 24) & 255;
-                    int red = (argb >>> 16) & 255;
-                    int green = (argb >>> 8) & 255;
-                    int blue = argb & 255;
-                    int gray = (red * 30 + green * 59 + blue * 11) / 100;
-                    pixels[index] = (alpha << 24) | (gray << 16) | (gray << 8) | gray;
-                }
-            }
-        }
-        return Image.createRGBImage(pixels, width, height, true);
     }
 
     void render(Graphics3D graphics, int width, int height, int tick) {
@@ -129,7 +101,7 @@ final class MenuDiorama {
             builtWidth = width;
             builtHeight = height;
         }
-        orbit.setOrientation((tick * 0.75f) % 360.0f, 0.0f, 1.0f, 0.0f);
+        orbit.setOrientation((tick * 0.25f) % 360.0f, 0.0f, 1.0f, 0.0f);
         graphics.render(scene);
     }
 
