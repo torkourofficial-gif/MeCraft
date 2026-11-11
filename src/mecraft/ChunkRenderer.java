@@ -1095,8 +1095,8 @@ final class ChunkRenderer {
         droppedItems.spawn(itemId, x, y, z);
     }
 
-    void spawnPrimedTnt(int x, int y, int z, int fuse) {
-        droppedItems.spawnPrimedTnt(x, y, z, fuse);
+    boolean spawnPrimedTnt(int x, int y, int z, int fuse) {
+        return droppedItems.spawnPrimedTnt(x, y, z, fuse);
     }
 
     int updateDroppedItems(VoxelWorld world, int[] inventory, PlayerPhysics physics) {
