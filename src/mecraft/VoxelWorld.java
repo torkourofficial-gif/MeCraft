@@ -496,8 +496,9 @@ final class VoxelWorld {
                     byte id = get(bx, by, bz);
                     if (id == Block.AIR) continue;
                     if (id == Block.TNT) {
-                        // The affected TNT block becomes an entity with the original short chain fuse.
-                        drops.spawnPrimedTnt(bx, by, bz, 10 + randomInt(20));
+                        // Keep the block intact if the bounded entity pool is full;
+                        // never erase chain TNT unless its primed entity was created.
+                        if (!drops.spawnPrimedTnt(bx, by, bz, 10 + randomInt(20))) continue;
                     } else if (Block.isDoor(id)) {
                         if (randomFloat() < 0.3f) drops.spawn(Block.dropId(id), bx, by, bz);
                         removeDoor(bx, by, bz);
