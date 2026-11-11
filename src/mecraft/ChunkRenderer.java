@@ -171,6 +171,8 @@ final class ChunkRenderer {
     private float tanHorizontalFov;
     private float cameraPitch;
     private int cameraMode; // 0 first-person, 1 rear third-person, 2 front-facing second-person
+    private boolean playerVisible = true;
+    private float thirdPersonDistance = 3.8f;
     private PlayerModel playerModel;
     private float previousPlayerX, previousPlayerZ;
     private boolean hasPreviousPlayerPosition;
@@ -425,9 +427,9 @@ final class ChunkRenderer {
         previousPlayerZ = world.playerZ;
         hasPreviousPlayerPosition = true;
         if (playerModel != null) {
-            playerModel.root.setRenderingEnable(cameraMode != 0);
+            playerModel.root.setRenderingEnable(cameraMode != 0 && playerVisible);
             playerModel.update(world.playerX, world.playerY, world.playerZ,
-                    world.yaw, moveX, moveZ, cameraPitch, 1.0f, moving, false, cameraMode != 0);
+                    world.yaw, moveX, moveZ, cameraPitch, 1.0f, moving, false, cameraMode != 0 && playerVisible);
         }
 
         if (cameraMode == 0) {
@@ -436,7 +438,7 @@ final class ChunkRenderer {
             camera.setOrientation(pitch, 1.0f, 0.0f, 0.0f);
             scene.setActiveCamera(camera);
         } else {
-            float wanted = 3.8f;
+            float wanted = thirdPersonDistance;
             float yawRadians = world.yaw * 0.0174532925f;
             float side = cameraMode == 1 ? -1.0f : 1.0f;
             float dx = (float)Math.sin(yawRadians) * side;
@@ -469,6 +471,19 @@ final class ChunkRenderer {
     private int floorCamera(float value) {
         int result = (int)value;
         return value < result ? result - 1 : result;
+    }
+
+    /** Toggle avatar rendering independently from the camera, used by the title panorama. */
+    void setPlayerVisible(boolean visible) {
+        playerVisible = visible;
+        if (playerModel != null) playerModel.root.setRenderingEnable(visible && cameraMode != 0);
+    }
+
+    /** Adjust third-person distance without changing gameplay's default camera. */
+    void setThirdPersonDistance(float distance) {
+        if (distance < 2.0f) distance = 2.0f;
+        if (distance > 8.0f) distance = 8.0f;
+        thirdPersonDistance = distance;
     }
 
     void cycleCameraMode() {
