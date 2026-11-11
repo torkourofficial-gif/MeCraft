@@ -84,7 +84,7 @@ final class MenuDiorama {
         camera.setPerspective(52.0f, (float)width / (float)height, 0.1f, 260.0f);
         camera.setOrientation(-15.0f, 1.0f, 0.0f, 0.0f);
         // Bring the camera closer so the 128x128 scene fills more of the menu.
-        camera.setTranslation(0.0f, 18.0f, 38.0f);
+        camera.setTranslation(0.0f, 30.0f, 190.0f);
         orbit.setTranslation(64.0f, 7.0f, 64.0f);
         orbit.addChild(camera);
         scene.addChild(orbit);
@@ -152,24 +152,16 @@ final class MenuDiorama {
                 }
             }
         }
-        for (int x = 59; x <= 68; x++) for (int z = 59; z <= 68; z++)
-            put(blocks, x, 6, z, Block.PLANKS);
-        for (int y = 7; y <= 10; y++) {
-            for (int x = 59; x <= 68; x++) {
-                put(blocks, x, y, 59, Block.PLANKS);
-                put(blocks, x, y, 68, Block.PLANKS);
-            }
-            for (int z = 60; z <= 67; z++) {
-                put(blocks, 59, y, z, Block.PLANKS);
-                put(blocks, 68, y, z, Block.PLANKS);
-            }
-            put(blocks, 63, y, 59, Block.AIR);
-            put(blocks, 64, y, 59, Block.AIR);
+        // Two winding rivers cut through the terrain. Keep a sand bed below
+        // the water surface and clear every block above the river level.
+        for (int x = 0; x < WIDTH; x++) {
+            int centerZ = 36 + (int)(Math.sin(x * 0.075) * 12.0);
+            carveRiver(blocks, x, centerZ, 4);
         }
-        for (int x = 59; x <= 68; x++) for (int z = 59; z <= 68; z++)
-            put(blocks, x, 11, z, Block.PLANKS);
-        put(blocks, 61, 8, 59, Block.GLASS);
-        put(blocks, 66, 8, 59, Block.GLASS);
+        for (int z = 0; z < DEPTH; z++) {
+            int centerX = 91 + (int)(Math.sin(z * 0.065 + 1.2) * 10.0);
+            carveRiver(blocks, centerX, z, 3);
+        }
         makeTree(blocks, heights, 27, 44);
         makeTree(blocks, heights, 99, 34);
         makeTree(blocks, heights, 91, 91);
@@ -204,13 +196,33 @@ final class MenuDiorama {
             for (int z = 0; z < DEPTH; z++) {
                 byte id = blocks[x][y][z];
                 if (id == Block.AIR) continue;
-                if (empty(blocks, x, y + 1, z)) count++;
-                if (empty(blocks, x - 1, y, z)) count++;
-                if (empty(blocks, x + 1, y, z)) count++;
-                if (empty(blocks, x, y, z - 1)) count++;
-                if (empty(blocks, x, y, z + 1)) count++;
+                if (visibleFace(blocks, id, x, y + 1, z)) count++;
+                if (visibleFace(blocks, id, x - 1, y, z)) count++;
+                if (visibleFace(blocks, id, x + 1, y, z)) count++;
+                if (visibleFace(blocks, id, x, y, z - 1)) count++;
+                if (visibleFace(blocks, id, x, y, z + 1)) count++;
             }
         return count;
+    }
+
+    private void carveRiver(byte[][][] blocks, int centerX, int centerZ, int radius) {
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                int x = centerX + dx;
+                int z = centerZ + dz;
+                if (x < 0 || x >= WIDTH || z < 0 || z >= DEPTH) continue;
+                if (dx * dx + dz * dz > radius * radius + 1) continue;
+                for (int y = 4; y < HEIGHT; y++) blocks[x][y][z] = Block.AIR;
+                blocks[x][3][z] = Block.SAND;
+                blocks[x][4][z] = Block.WATER;
+            }
+        }
+    }
+
+    private boolean visibleFace(byte[][][] blocks, byte current, int x, int y, int z) {
+        if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT ||
+            z < 0 || z >= DEPTH) return true;
+        return Block.faceVisible(current, blocks[x][y][z]);
     }
 
     private boolean empty(byte[][][] blocks, int x, int y, int z) {
@@ -224,11 +236,11 @@ final class MenuDiorama {
             for (int z = 0; z < DEPTH; z++) {
                 byte id = blocks[x][y][z];
                 if (id == Block.AIR) continue;
-                if (empty(blocks, x, y + 1, z)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 0, x, y, z);
-                if (empty(blocks, x - 1, y, z)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 1, x, y, z);
-                if (empty(blocks, x + 1, y, z)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 2, x, y, z);
-                if (empty(blocks, x, y, z - 1)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 3, x, y, z);
-                if (empty(blocks, x, y, z + 1)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 4, x, y, z);
+                if (visibleFace(blocks, id, x, y + 1, z)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 0, x, y, z);
+                if (visibleFace(blocks, id, x - 1, y, z)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 1, x, y, z);
+                if (visibleFace(blocks, id, x + 1, y, z)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 2, x, y, z);
+                if (visibleFace(blocks, id, x, y, z - 1)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 3, x, y, z);
+                if (visibleFace(blocks, id, x, y, z + 1)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 4, x, y, z);
             }
     }
 
