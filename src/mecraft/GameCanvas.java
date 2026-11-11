@@ -295,7 +295,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             if (visible && state == PLAYING) updateGame();
             if (visible && state == FURNACE_INVENTORY) { updateFurnace(); repaint(); }
             if (visible && state == GAME_OVER && gameOverTicks < 12) gameOverTicks++;
-            if (visible && state == MENU) panoramaTick++;
+            if (visible && (state == MENU || state == TOUCH_SETUP)) panoramaTick++;
             if (visible && (state != PLAYING || renderFrame++ % (frameSkip + 1) == 0)) repaint();
             long elapsed = System.currentTimeMillis() - start;
             long wait = 50L - elapsed;
@@ -3203,7 +3203,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void drawTouchSetup(Graphics g) {
         int w = getWidth(), h = getHeight();
-        drawPanoramaBackground(g);
+        drawDioramaBackground(g);
         drawInsetPanel(g, 12, h / 2 - 76, w - 24, 152);
         g.setColor(255, 244, 210);
         g.drawString("MeCraft", w / 2, h / 2 - 61, Graphics.TOP | Graphics.HCENTER);
