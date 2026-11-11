@@ -20,8 +20,11 @@ final class RailSystem {
     final Group group = new Group();
     private final Texture2D atlas;
     private final Appearance appearance;
-    private final Mesh[] meshes = new Mesh[VoxelWorld.CHUNKS_X * VoxelWorld.CHUNKS_Y * VoxelWorld.CHUNKS_Z];
+    private static final int WINDOW_RADIUS = 2;
+    private static final int WINDOW_SIZE = WINDOW_RADIUS * 2 + 1;
+    private final Mesh[] meshes = new Mesh[WINDOW_SIZE * WINDOW_SIZE * VoxelWorld.CHUNKS_Y];
     private int builtRevision = Integer.MIN_VALUE;
+    private int builtCenterX = Integer.MIN_VALUE, builtCenterZ = Integer.MIN_VALUE;
 
     RailSystem(Texture2D atlas) {
         this.atlas = atlas;
@@ -45,10 +48,15 @@ final class RailSystem {
     }
 
     void update(VoxelWorld world) {
-        if (builtRevision == world.revision && !world.fullRebuild) return;
-        // Ordinary block edits should not trigger a full rail scan. Only rebuild
-        // when a rail or one of its six adjacent/support cells changed.
-        if (builtRevision != Integer.MIN_VALUE && !world.fullRebuild) {
+        int centerX = floorDiv((int)world.playerX, VoxelWorld.CHUNK_XZ);
+        int centerZ = floorDiv((int)world.playerZ, VoxelWorld.CHUNK_XZ);
+        boolean windowMoved = centerX != builtCenterX || centerZ != builtCenterZ;
+        if (builtRevision == world.revision && !world.fullRebuild && !windowMoved) return;
+
+        // A normal world is procedural and unbounded. The old renderer scanned
+        // only coordinates 0..47, so rails outside the spawn island were never
+        // added to the scene even though they remained editable.
+        if (!windowMoved && builtRevision != Integer.MIN_VALUE && !world.fullRebuild) {
             int x = world.changedX, y = world.changedY, z = world.changedZ;
             boolean railAffected = world.changedOldId == Block.RAIL ||
                     world.get(x, y, z) == Block.RAIL ||
@@ -63,22 +71,33 @@ final class RailSystem {
                 return;
             }
         }
+
         for (int i = 0; i < meshes.length; i++) {
             if (meshes[i] != null) group.removeChild(meshes[i]);
             meshes[i] = null;
         }
         int chunkCount = meshes.length;
         int[] counts = new int[chunkCount];
-        for (int y = 1; y < VoxelWorld.HEIGHT; y++) {
-            for (int z = 0; z < VoxelWorld.DEPTH; z++) {
-                for (int x = 0; x < VoxelWorld.WIDTH; x++) {
-                    if (world.get(x, y, z) != Block.RAIL) continue;
-                    int index = chunkIndex(x / VoxelWorld.CHUNK_XZ, y / VoxelWorld.CHUNK_Y,
-                            z / VoxelWorld.CHUNK_XZ);
-                    if (counts[index] < MAX_RAILS_PER_CHUNK) counts[index]++;
+        int firstChunkX = centerX - WINDOW_RADIUS;
+        int firstChunkZ = centerZ - WINDOW_RADIUS;
+        for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++) {
+            for (int rz = 0; rz < WINDOW_SIZE; rz++) {
+                int cz = firstChunkZ + rz;
+                for (int rx = 0; rx < WINDOW_SIZE; rx++) {
+                    int cx = firstChunkX + rx;
+                    int index = chunkIndex(rx, cy, rz);
+                    int x0 = cx * VoxelWorld.CHUNK_XZ;
+                    int z0 = cz * VoxelWorld.CHUNK_XZ;
+                    int y0 = cy * VoxelWorld.CHUNK_Y;
+                    for (int y = y0; y < y0 + VoxelWorld.CHUNK_Y; y++)
+                        for (int z = z0; z < z0 + VoxelWorld.CHUNK_XZ; z++)
+                            for (int x = x0; x < x0 + VoxelWorld.CHUNK_XZ; x++)
+                                if (world.get(x, y, z) == Block.RAIL &&
+                                        counts[index] < MAX_RAILS_PER_CHUNK) counts[index]++;
                 }
             }
         }
+
         short[][] positions = new short[chunkCount][];
         short[][] uv = new short[chunkCount][];
         int[][] stripCounts = new int[chunkCount][];
@@ -90,62 +109,63 @@ final class RailSystem {
             stripCounts[i] = new int[counts[i]];
             for (int j = 0; j < counts[i]; j++) stripCounts[i][j] = 4;
         }
-        for (int y = 1; y < VoxelWorld.HEIGHT; y++) {
-            for (int z = 0; z < VoxelWorld.DEPTH; z++) {
-                for (int x = 0; x < VoxelWorld.WIDTH; x++) {
-                    if (world.get(x, y, z) != Block.RAIL) continue;
-                    int index = chunkIndex(x / VoxelWorld.CHUNK_XZ, y / VoxelWorld.CHUNK_Y,
-                            z / VoxelWorld.CHUNK_XZ);
-                    int rail = cursors[index]++;
-                    if (rail >= counts[index]) continue;
-                    // M3G short vertex positions are signed 16-bit values. Store
-                    // coordinates relative to this chunk before scaling by 256;
-                    // absolute world X/Z exceed the short range in 240x240 worlds.
-                    int chunkX = (x / VoxelWorld.CHUNK_XZ) * VoxelWorld.CHUNK_XZ;
-                    int chunkY = (y / VoxelWorld.CHUNK_Y) * VoxelWorld.CHUNK_Y;
-                    int chunkZ = (z / VoxelWorld.CHUNK_XZ) * VoxelWorld.CHUNK_XZ;
-                    float left = x - chunkX, right = x - chunkX + 1.0f;
-                    float front = z - chunkZ, back = z - chunkZ + 1.0f;
-                    int localY = y - chunkY;
-                    int orientation = world.railMetadata(x, y, z);
-                    float lowY = localY + 0.075f;
-                    float highY = localY + 1.075f;
-                    float yLeftFront = lowY, yLeftBack = lowY;
-                    float yRightFront = lowY, yRightBack = lowY;
-                    // Alpha metadata 2-5 tilts the track up by one block toward
-                    // its elevated endpoint, rather than rendering a flat tile.
-                    if (orientation == 2) { yRightFront = highY; yRightBack = highY; }
-                    else if (orientation == 3) { yLeftFront = highY; yLeftBack = highY; }
-                    else if (orientation == 4) { yLeftFront = highY; yRightFront = highY; }
-                    else if (orientation == 5) { yLeftBack = highY; yRightBack = highY; }
-                    int p = rail * 12;
-                    short[] v = positions[index];
-                    v[p] = (short)(left * 256); v[p + 1] = (short)(yLeftFront * 256); v[p + 2] = (short)(front * 256);
-                    v[p + 3] = (short)(left * 256); v[p + 4] = (short)(yLeftBack * 256); v[p + 5] = (short)(back * 256);
-                    v[p + 6] = (short)(right * 256); v[p + 7] = (short)(yRightFront * 256); v[p + 8] = (short)(front * 256);
-                    v[p + 9] = (short)(right * 256); v[p + 10] = (short)(yRightBack * 256); v[p + 11] = (short)(back * 256);
-                    // Alpha BlockMinecartTrack uses tile 128 for straight/slope
-                    // rails and tile 112 for curves (metadata 6-9).
-                    int tile = orientation >= 6 ? 112 : 128;
-                    int tileU = (tile & 15) * 16;
-                    int tileV = (tile >> 4) * 16;
-                    int u = rail * 8;
-                    short[] t = uv[index];
-                    if (orientation == 0 || orientation == 4 || orientation == 5 ||
-                            orientation == 8 || orientation == 9) {
-                        t[u] = (short)tileU; t[u + 1] = (short)(tileV + 16);
-                        t[u + 2] = (short)(tileU + 16); t[u + 3] = (short)(tileV + 16);
-                        t[u + 4] = (short)tileU; t[u + 5] = (short)tileV;
-                        t[u + 6] = (short)(tileU + 16); t[u + 7] = (short)tileV;
-                    } else {
-                        t[u] = (short)(tileU + 16); t[u + 1] = (short)(tileV + 16);
-                        t[u + 2] = (short)(tileU + 16); t[u + 3] = (short)tileV;
-                        t[u + 4] = (short)tileU; t[u + 5] = (short)(tileV + 16);
-                        t[u + 6] = (short)tileU; t[u + 7] = (short)tileV;
+
+        for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++) {
+            for (int rz = 0; rz < WINDOW_SIZE; rz++) {
+                int cz = firstChunkZ + rz;
+                for (int rx = 0; rx < WINDOW_SIZE; rx++) {
+                    int cx = firstChunkX + rx;
+                    int index = chunkIndex(rx, cy, rz);
+                    if (counts[index] == 0) continue;
+                    int chunkX = cx * VoxelWorld.CHUNK_XZ;
+                    int chunkY = cy * VoxelWorld.CHUNK_Y;
+                    int chunkZ = cz * VoxelWorld.CHUNK_XZ;
+                    for (int y = chunkY; y < chunkY + VoxelWorld.CHUNK_Y; y++) {
+                        for (int z = chunkZ; z < chunkZ + VoxelWorld.CHUNK_XZ; z++) {
+                            for (int x = chunkX; x < chunkX + VoxelWorld.CHUNK_XZ; x++) {
+                                if (world.get(x, y, z) != Block.RAIL) continue;
+                                int rail = cursors[index]++;
+                                if (rail >= counts[index]) continue;
+                                float left = x - chunkX, right = left + 1.0f;
+                                float front = z - chunkZ, back = front + 1.0f;
+                                int localY = y - chunkY;
+                                int orientation = world.railMetadata(x, y, z);
+                                float lowY = localY + 0.075f, highY = localY + 1.075f;
+                                float yLeftFront = lowY, yLeftBack = lowY;
+                                float yRightFront = lowY, yRightBack = lowY;
+                                if (orientation == 2) { yRightFront = highY; yRightBack = highY; }
+                                else if (orientation == 3) { yLeftFront = highY; yLeftBack = highY; }
+                                else if (orientation == 4) { yLeftFront = highY; yRightFront = highY; }
+                                else if (orientation == 5) { yLeftBack = highY; yRightBack = highY; }
+                                int p = rail * 12;
+                                short[] v = positions[index];
+                                v[p] = (short)(left * 256); v[p + 1] = (short)(yLeftFront * 256); v[p + 2] = (short)(front * 256);
+                                v[p + 3] = (short)(left * 256); v[p + 4] = (short)(yLeftBack * 256); v[p + 5] = (short)(back * 256);
+                                v[p + 6] = (short)(right * 256); v[p + 7] = (short)(yRightFront * 256); v[p + 8] = (short)(front * 256);
+                                v[p + 9] = (short)(right * 256); v[p + 10] = (short)(yRightBack * 256); v[p + 11] = (short)(back * 256);
+                                int tile = orientation >= 6 ? 112 : 128;
+                                int tileU = (tile & 15) * 16, tileV = (tile >> 4) * 16;
+                                int u = rail * 8;
+                                short[] tex = uv[index];
+                                if (orientation == 0 || orientation == 4 || orientation == 5 ||
+                                        orientation == 8 || orientation == 9) {
+                                    tex[u] = (short)tileU; tex[u + 1] = (short)(tileV + 16);
+                                    tex[u + 2] = (short)(tileU + 16); tex[u + 3] = (short)(tileV + 16);
+                                    tex[u + 4] = (short)tileU; tex[u + 5] = (short)tileV;
+                                    tex[u + 6] = (short)(tileU + 16); tex[u + 7] = (short)tileV;
+                                } else {
+                                    tex[u] = (short)(tileU + 16); tex[u + 1] = (short)(tileV + 16);
+                                    tex[u + 2] = (short)(tileU + 16); tex[u + 3] = (short)tileV;
+                                    tex[u + 4] = (short)tileU; tex[u + 5] = (short)(tileV + 16);
+                                    tex[u + 6] = (short)tileU; tex[u + 7] = (short)tileV;
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
+
         for (int i = 0; i < chunkCount; i++) {
             if (counts[i] == 0) continue;
             VertexArray pa = new VertexArray(counts[i] * 4, 3, 2);
@@ -156,18 +176,25 @@ final class RailSystem {
             vb.setPositions(pa, 1.0f / 256.0f, null);
             vb.setTexCoords(0, ta, 1.0f / 256.0f, null);
             Mesh mesh = new Mesh(vb, new TriangleStripArray(0, stripCounts[i]), appearance);
-            int cx = i % VoxelWorld.CHUNKS_X;
-            int cz = (i / VoxelWorld.CHUNKS_X) % VoxelWorld.CHUNKS_Z;
-            int cy = i / (VoxelWorld.CHUNKS_X * VoxelWorld.CHUNKS_Z);
-            mesh.setTranslation(cx * VoxelWorld.CHUNK_XZ,
-                    cy * VoxelWorld.CHUNK_Y, cz * VoxelWorld.CHUNK_XZ);
+            int rx = i % WINDOW_SIZE;
+            int rz = (i / WINDOW_SIZE) % WINDOW_SIZE;
+            int cy = i / (WINDOW_SIZE * WINDOW_SIZE);
+            mesh.setTranslation((firstChunkX + rx) * VoxelWorld.CHUNK_XZ,
+                    cy * VoxelWorld.CHUNK_Y, (firstChunkZ + rz) * VoxelWorld.CHUNK_XZ);
             meshes[i] = mesh;
             group.addChild(mesh);
         }
+        builtCenterX = centerX;
+        builtCenterZ = centerZ;
         builtRevision = world.revision;
     }
 
-    private int chunkIndex(int cx, int cy, int cz) {
-        return (cy * VoxelWorld.CHUNKS_Z + cz) * VoxelWorld.CHUNKS_X + cx;
+    private int floorDiv(int value, int divisor) {
+        int result = value / divisor;
+        return value < 0 && value % divisor != 0 ? result - 1 : result;
+    }
+
+    private int chunkIndex(int rx, int cy, int rz) {
+        return (cy * WINDOW_SIZE + rz) * WINDOW_SIZE + rx;
     }
 }
