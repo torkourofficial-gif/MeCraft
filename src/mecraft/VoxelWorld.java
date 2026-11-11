@@ -78,7 +78,7 @@ final class VoxelWorld {
     private static final int EXPLOSION_MASK_AREA = EXPLOSION_MASK_SIZE * EXPLOSION_MASK_SIZE;
     private final byte[] explosionBits = new byte[(EXPLOSION_MASK_SIZE * EXPLOSION_MASK_AREA + 7) / 8];
     private static final int FLUID_QUEUE_SIZE = 2048;
-    private final short[] fluidQueue = new short[FLUID_QUEUE_SIZE];
+    private final int[] fluidQueue = new int[FLUID_QUEUE_SIZE];
     private final byte[] fluidQueued = new byte[(BLOCK_COUNT + 7) / 8];
     // Power-of-two ring cache; eight chunks reduce regeneration while meshing neighbors.
     private static final int PROCEDURAL_CACHE_SIZE = 8;
@@ -611,7 +611,7 @@ final class VoxelWorld {
         // handled on a later tick, keeping the work bounded on small devices.
         int pending = fluidQueueCount;
         while (pending-- > 0 && fluidQueueCount > 0) {
-            int i = fluidQueue[fluidQueueHead] & 0xFFFF;
+            int i = fluidQueue[fluidQueueHead];
             fluidQueueHead++;
             if (fluidQueueHead == FLUID_QUEUE_SIZE) fluidQueueHead = 0;
             fluidQueueCount--;
@@ -896,22 +896,66 @@ final class VoxelWorld {
     }
 
     int[] createPortalAt(int baseX, int baseY, int baseZ, int axis) {
-        if (baseY <= 0 || baseY + 4 >= HEIGHT || (axis != 0 && axis != 1)) return null;
-        for (int v = 0; v <= 4; v++) {
-            for (int u = 0; u <= 3; u++) {
-                boolean frameBlock = v == 0 || v == 4 || u == 0 || u == 3;
-                int x = axis == 0 ? baseX + u : baseX;
-                int z = axis == 0 ? baseZ : baseZ + u;
-                if (frameBlock) {
-                    if (get(x, baseY + v, z) != Block.WOOL ||
-                            woolColor(x, baseY + v, z) != WoolColors.BLACK) {
-                        if (!setWool(x, baseY + v, z, WoolColors.BLACK)) return null;
+        if (axis != 0 && axis != 1) return null;
+        // The terrain height can differ between the four columns of a portal.
+        // A portal placed one block above only its center column can intersect
+        // a neighboring hill/wall and fail halfway through construction. Try
+        // the requested site first, then nearby sites using the highest ground
+        // under the whole frame.
+        for (int radius = 0; radius <= 4; radius++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                for (int dx = -radius; dx <= radius; dx++) {
+                    if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
+                    int bx = baseX + dx, bz = baseZ + dz;
+                    int candidateY = radius == 0 ? baseY : -1;
+                    if (candidateY <= 0) {
+                        int highest = 0;
+                        for (int u = 0; u < 4; u++) {
+                            int x = axis == 0 ? bx + u : bx;
+                            int z = axis == 0 ? bz : bz + u;
+                            int ground = surfaceY(x, z);
+                            if (ground > highest) highest = ground;
+                        }
+                        candidateY = highest + 1;
                     }
-                } else if (!set(x, baseY + v, z, Block.PORTAL) &&
-                        get(x, baseY + v, z) != Block.PORTAL) return null;
+                    if (candidateY <= 0 || candidateY + 4 >= HEIGHT) continue;
+                    if (!canPlacePortalFrame(bx, candidateY, bz, axis)) continue;
+                    for (int v = 0; v <= 4; v++) {
+                        for (int u = 0; u <= 3; u++) {
+                            boolean frameBlock = v == 0 || v == 4 || u == 0 || u == 3;
+                            int x = axis == 0 ? bx + u : bx;
+                            int z = axis == 0 ? bz : bz + u;
+                            if (frameBlock) {
+                                if (get(x, candidateY + v, z) != Block.WOOL ||
+                                        woolColor(x, candidateY + v, z) != WoolColors.BLACK) {
+                                    if (!setWool(x, candidateY + v, z, WoolColors.BLACK)) return null;
+                                }
+                            } else if (!set(x, candidateY + v, z, Block.PORTAL) &&
+                                    get(x, candidateY + v, z) != Block.PORTAL) return null;
+                        }
+                    }
+                    fullRebuild = true;
+                    return new int[] { bx, candidateY, bz, axis };
+                }
             }
         }
-        return new int[] { baseX, baseY, baseZ, axis };
+        return null;
+    }
+
+    private boolean canPlacePortalFrame(int bx, int by, int bz, int axis) {
+        for (int v = 0; v <= 4; v++) {
+            for (int u = 0; u <= 3; u++) {
+                int x = axis == 0 ? bx + u : bx;
+                int z = axis == 0 ? bz : bz + u;
+                byte id = get(x, by + v, z);
+                boolean frameBlock = v == 0 || v == 4 || u == 0 || u == 3;
+                if (frameBlock) {
+                    if (id == Block.WOOL && woolColor(x, by + v, z) == WoolColors.BLACK) continue;
+                    if (!Block.replaceable(id)) return false;
+                } else if (id != Block.AIR && id != Block.PORTAL) return false;
+            }
+        }
+        return true;
     }
 
     private int[] findPortalFrameForWool(int x, int y, int z) {
