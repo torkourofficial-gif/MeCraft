@@ -696,7 +696,7 @@ final class VoxelWorld {
 
     private void scheduleFluid(int i) {
         if (!Block.isFluid(blocks[i]) || isFluidQueued(i) || fluidQueueCount == FLUID_QUEUE_SIZE) return;
-        fluidQueue[fluidQueueTail] = (short)i;
+        fluidQueue[fluidQueueTail] = i;
         fluidQueueTail++;
         if (fluidQueueTail == FLUID_QUEUE_SIZE) fluidQueueTail = 0;
         fluidQueueCount++;
