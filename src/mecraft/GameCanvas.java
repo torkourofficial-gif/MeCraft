@@ -976,7 +976,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 miningDamage = 0.99f;
                 return;
             }
-            renderer.spawnPrimedTnt(x, y, z, 80);
+            // The entity pool is bounded. If it is full, restore the TNT block
+            // instead of silently deleting it without starting a fuse.
+            if (!renderer.spawnPrimedTnt(x, y, z, 80)) {
+                world.set(x, y, z, Block.TNT);
+                renderer.sync(world);
+                miningDamage = 0.99f;
+                return;
+            }
             renderer.swingHand();
             renderer.sync(world);
             resetMining();
