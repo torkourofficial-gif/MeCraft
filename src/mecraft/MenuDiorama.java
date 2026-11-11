@@ -38,6 +38,8 @@ final class MenuDiorama {
         material.setColor(Material.AMBIENT, 0xFFFFFFFF);
         material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
         material.setColor(Material.EMISSIVE, 0xFFFFFFFF);
+        // Make M3G multiply the atlas texels by the per-vertex biome tint.
+        material.setVertexColorTrackingEnable(true);
         appearance.setMaterial(material);
         PolygonMode polygon = new PolygonMode();
         polygon.setCulling(PolygonMode.CULL_NONE);
@@ -79,9 +81,10 @@ final class MenuDiorama {
         ambient.setIntensity(1.0f);
         scene.addChild(ambient);
 
-        camera.setPerspective(65.0f, (float)width / (float)height, 0.1f, 320.0f);
+        camera.setPerspective(52.0f, (float)width / (float)height, 0.1f, 260.0f);
         camera.setOrientation(-15.0f, 1.0f, 0.0f, 0.0f);
-        camera.setTranslation(0.0f, 48.0f, 205.0f);
+        // Bring the camera closer so the 128x128 scene fills more of the menu.
+        camera.setTranslation(0.0f, 34.0f, 125.0f);
         orbit.setTranslation(64.0f, 7.0f, 64.0f);
         orbit.addChild(camera);
         scene.addChild(orbit);
@@ -93,7 +96,7 @@ final class MenuDiorama {
     void render(Graphics3D graphics, int width, int height, int tick) {
         if (width <= 0 || height <= 0) return;
         if (width != builtWidth || height != builtHeight) {
-            camera.setPerspective(65.0f, (float)width / (float)height, 0.1f, 320.0f);
+            camera.setPerspective(52.0f, (float)width / (float)height, 0.1f, 260.0f);
             builtWidth = width;
             builtHeight = height;
         }
