@@ -84,7 +84,7 @@ final class MenuDiorama {
         camera.setPerspective(52.0f, (float)width / (float)height, 0.1f, 260.0f);
         camera.setOrientation(-15.0f, 1.0f, 0.0f, 0.0f);
         // Bring the camera closer so the 128x128 scene fills more of the menu.
-        camera.setTranslation(0.0f, 30.0f, 190.0f);
+        camera.setTranslation(0.0f, 22.0f, 78.0f);
         orbit.setTranslation(64.0f, 7.0f, 64.0f);
         orbit.addChild(camera);
         scene.addChild(orbit);
@@ -172,14 +172,16 @@ final class MenuDiorama {
     }
     private void makeTree(byte[][][] blocks, int[][] heights, int x, int z) {
         int base = heights[x][z];
-        for (int y = base + 1; y <= base + 4; y++) put(blocks, x, y, z, Block.LOG);
+        // Do not plant a tree where a river has already replaced the ground.
+        if (blocks[x][base][z] != Block.GRASS) return;
+        for (int y = base + 1; y <= base + 4; y++) putIfAir(blocks, x, y, z, Block.LOG);
         for (int y = base + 2; y <= base + 5; y++) {
             int radius = y == base + 5 ? 1 : 2;
             for (int dz = -radius; dz <= radius; dz++) {
                 for (int dx = -radius; dx <= radius; dx++) {
                     if (Math.abs(dx) + Math.abs(dz) > radius + 1) continue;
                     if (dx == 0 && dz == 0 && y <= base + 4) continue;
-                    put(blocks, x + dx, y, z + dz, Block.LEAVES);
+                    putIfAir(blocks, x + dx, y, z + dz, Block.LEAVES);
                 }
             }
         }
@@ -188,6 +190,12 @@ final class MenuDiorama {
     private void put(byte[][][] blocks, int x, int y, int z, byte id) {
         if (x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT && z >= 0 && z < DEPTH)
             blocks[x][y][z] = id;
+    }
+
+    /** Decorations may occupy air only; never overwrite terrain or another block. */
+    private void putIfAir(byte[][][] blocks, int x, int y, int z, byte id) {
+        if (x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT && z >= 0 && z < DEPTH &&
+            blocks[x][y][z] == Block.AIR) blocks[x][y][z] = id;
     }
 
     private int countFaces(byte[][][] blocks, int startX, int endX) {
@@ -220,9 +228,10 @@ final class MenuDiorama {
     }
 
     private boolean visibleFace(byte[][][] blocks, byte current, int x, int y, int z) {
-        if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT ||
-            z < 0 || z >= DEPTH) return true;
-        return Block.faceVisible(current, blocks[x][y][z]);
+        // Emit a face only against air. Drawing both sides of a water/solid
+        // boundary creates coplanar polygons and z-fighting on small GPUs.
+        return x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT ||
+               z < 0 || z >= DEPTH || blocks[x][y][z] == Block.AIR;
     }
 
     private boolean empty(byte[][][] blocks, int x, int y, int z) {
