@@ -186,9 +186,9 @@ final class DroppedItemSystem {
         return slot;
     }
 
-    void spawnPrimedTnt(int bx, int by, int bz, int fuse) {
+    boolean spawnPrimedTnt(int bx, int by, int bz, int fuse) {
         int slot = spawn(Block.TNT, bx, by, bz);
-        if (slot < 0) return;
+        if (slot < 0) return false;
         tntFuse[slot] = fuse;
         pickupDelay[slot] = fuse + 20;
         // Indev replaces the block with an EntityTNTPrimed, not a collectible
@@ -202,6 +202,7 @@ final class DroppedItemSystem {
         vy[slot] = 0.2f;
         vz[slot] = (float)-Math.cos(angle) * 0.02f;
         writeTexture(slot, Block.TNT);
+        return true;
     }
 
     /** Returns one collected block ID, or -1 when nothing was collected. */
@@ -222,7 +223,13 @@ final class DroppedItemSystem {
             }
             age[i]++;
             if (pickupDelay[i] > 0) pickupDelay[i]--;
-            if (y[i] < -2.0f) {
+            if (y[i] < -2.0f && tntFuse[i] > 0) {
+                // A primed TNT entity must never be discarded by the generic
+                // out-of-world cleanup. Keep it at the bottom of the world
+                // and let its fuse finish there.
+                y[i] = 1.5f;
+                vy[i] = 0.0f;
+            } else if (y[i] < -2.0f) {
                 itemId[i] = 0;
                 tntFuse[i] = 0;
                 activeCount--;
