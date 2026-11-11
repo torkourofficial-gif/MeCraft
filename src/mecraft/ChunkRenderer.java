@@ -482,7 +482,7 @@ final class ChunkRenderer {
     /** Adjust third-person distance without changing gameplay's default camera. */
     void setThirdPersonDistance(float distance) {
         if (distance < 2.0f) distance = 2.0f;
-        if (distance > 8.0f) distance = 8.0f;
+        if (distance > 20.0f) distance = 20.0f;
         thirdPersonDistance = distance;
     }
 
