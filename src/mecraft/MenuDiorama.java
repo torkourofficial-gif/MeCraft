@@ -85,7 +85,7 @@ final class MenuDiorama {
         camera.setOrientation(-15.0f, 1.0f, 0.0f, 0.0f);
         // Third-person-style orbit framing, adapted from Beta 1.8.1's camera setup.
         // A shorter orbit distance gives a tighter title-screen composition.
-        camera.setTranslation(0.0f, 20.0f, 58.0f);
+        camera.setTranslation(0.0f, 16.0f, 44.0f);
         orbit.setTranslation(64.0f, 7.0f, 64.0f);
         orbit.addChild(camera);
         scene.addChild(orbit);
@@ -97,7 +97,7 @@ final class MenuDiorama {
     void render(Graphics3D graphics, int width, int height, int tick) {
         if (width <= 0 || height <= 0) return;
         if (width != builtWidth || height != builtHeight) {
-            camera.setPerspective(52.0f, (float)width / (float)height, 0.1f, 260.0f);
+            camera.setPerspective(48.0f, (float)width / (float)height, 0.05f, 260.0f);
             builtWidth = width;
             builtHeight = height;
         }
@@ -255,9 +255,11 @@ final class MenuDiorama {
             p[vertex++] = (short)((x + 1) * 128); p[vertex++] = (short)((y + 1) * 128); p[vertex++] = (short)((z + 1) * 128);
         }
         int color = 0xFFFFFF;
-        // Green biome tint only on the upper atlas face of grass and leaves.
+        // Grass uses its biome tint on the top face. The leaves atlas tile is
+        // grayscale, so apply the foliage tint to every face, as Beta 1.8.1 does
+        // through the block color multiplier rather than tinting only the top.
         if (face == 0 && id == Block.GRASS) color = 0x7FB238;
-        else if (face == 0 && id == Block.LEAVES) color = 0x48B518;
+        else if (id == Block.LEAVES) color = 0x48B518;
         int colorOffset = faceIndex * 12;
         for (int c = 0; c < 4; c++) {
             colors[colorOffset++] = (byte)((color >> 16) & 255);
