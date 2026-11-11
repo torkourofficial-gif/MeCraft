@@ -48,7 +48,6 @@ final class ChunkRenderer {
     private float cameraFov = NORMAL_FOV;
     private int streamRadius = 2;
     private boolean shortestDistance;
-    private boolean menuDioramaMode;
     private float cameraFar = 88.0f;
     private float tanVerticalFov = (float)Math.tan(Math.PI * 34.0 / 180.0);
 
@@ -426,7 +425,7 @@ final class ChunkRenderer {
         previousPlayerZ = world.playerZ;
         hasPreviousPlayerPosition = true;
         if (playerModel != null) {
-            playerModel.root.setRenderingEnable(!menuDioramaMode && cameraMode != 0);
+            playerModel.root.setRenderingEnable(cameraMode != 0);
             playerModel.update(world.playerX, world.playerY, world.playerZ,
                     world.yaw, moveX, moveZ, cameraPitch, 1.0f, moving, false, cameraMode != 0);
         }
@@ -484,12 +483,9 @@ final class ChunkRenderer {
         cameraEffectPivot.setOrientation(degrees, 0.0f, 0.0f, 1.0f);
     }
 
-    /** Menu mode keeps the first-person camera but suppresses the hand/avatar. */
-    void setMenuDioramaMode(boolean enabled) { menuDioramaMode = enabled; }
-
     /** Render the first-person hand and held block in a final overlay pass. */
     void render(Graphics3D graphics) {
-        boolean showHand = cameraMode == 0 && !menuDioramaMode;
+        boolean showHand = cameraMode == 0;
         if (showHand) handPivot.setRenderingEnable(false);
         try {
             graphics.render(scene);
