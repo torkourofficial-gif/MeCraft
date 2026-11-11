@@ -20,7 +20,7 @@ import javax.microedition.m3g.World;
 
 /** Small static two-chunk M3G title scene with a low-cost orbiting camera. */
 final class MenuDiorama {
-    private static final int WIDTH = 32, DEPTH = 16, HEIGHT = 16;
+    private static final int WIDTH = 128, DEPTH = 128, HEIGHT = 32;
     private final World scene = new World();
     private final Group orbit = new Group();
     private final Camera camera = new Camera();
@@ -48,17 +48,22 @@ final class MenuDiorama {
         int faceCount = countFaces(blocks);
         short[] positions = new short[faceCount * 12];
         short[] texCoords = new short[faceCount * 8];
+        byte[] colors = new byte[faceCount * 12];
         int[] strips = new int[faceCount];
         for (int i = 0; i < faceCount; i++) strips[i] = 4;
-        buildGeometry(blocks, positions, texCoords);
+        buildGeometry(blocks, positions, texCoords, colors);
 
         VertexArray pa = new VertexArray(faceCount * 4, 3, 2);
         pa.set(0, faceCount * 4, positions);
         VertexArray ta = new VertexArray(faceCount * 4, 2, 2);
         ta.set(0, faceCount * 4, texCoords);
+        VertexArray ca = new VertexArray(faceCount * 4, 3, 1);
+        ca.set(0, faceCount * 4, colors);
         VertexBuffer vb = new VertexBuffer();
-        vb.setPositions(pa, 1.0f / 256.0f, null);
+        // Half-unit vertex coordinates keep the 128x128 scene inside signed-short M3G positions.
+        vb.setPositions(pa, 1.0f / 128.0f, null);
         vb.setTexCoords(0, ta, 1.0f / 256.0f, null);
+        vb.setColors(ca);
         scene.addChild(new Mesh(vb, new TriangleStripArray(0, strips), appearance));
 
         Background sky = new Background();
@@ -70,10 +75,10 @@ final class MenuDiorama {
         ambient.setIntensity(1.0f);
         scene.addChild(ambient);
 
-        camera.setPerspective(58.0f, (float)width / (float)height, 0.1f, 80.0f);
-        camera.setOrientation(-17.0f, 1.0f, 0.0f, 0.0f);
-        camera.setTranslation(0.0f, 12.0f, 35.0f);
-        orbit.setTranslation(16.0f, 4.0f, 8.0f);
+        camera.setPerspective(65.0f, (float)width / (float)height, 0.1f, 320.0f);
+        camera.setOrientation(-15.0f, 1.0f, 0.0f, 0.0f);
+        camera.setTranslation(0.0f, 48.0f, 205.0f);
+        orbit.setTranslation(64.0f, 7.0f, 64.0f);
         orbit.addChild(camera);
         scene.addChild(orbit);
         scene.setActiveCamera(camera);
@@ -83,24 +88,18 @@ final class MenuDiorama {
 
     void render(Graphics3D graphics, int width, int height, int tick) {
         if (width <= 0 || height <= 0) return;
-        if (width != builtWidth || height != builtHeight) {
-            camera.setPerspective(58.0f, (float)width / (float)height, 0.1f, 80.0f);
-            builtWidth = width;
-            builtHeight = height;
-        }
-        orbit.setOrientation((tick * 0.75f) % 360.0f, 0.0f, 1.0f, 0.0f);
-        graphics.render(scene);
-    }
-
-    private byte[][][] makeLandscape() {
+        if (width != builtWidth || height    private byte[][][] makeLandscape() {
         byte[][][] blocks = new byte[WIDTH][HEIGHT][DEPTH];
         int[][] heights = new int[WIDTH][DEPTH];
         for (int x = 0; x < WIDTH; x++) {
             for (int z = 0; z < DEPTH; z++) {
-                int hillA = 4 + Math.max(0, 4 - (Math.abs(x - 8) + Math.abs(z - 9)) / 3);
-                int hillB = 4 + Math.max(0, 3 - (Math.abs(x - 25) + Math.abs(z - 5)) / 3);
-                int top = hillA > hillB ? hillA : hillB;
-                if (x >= 13 && x <= 20 && z >= 4 && z <= 11) top = 4;
+                int hillA = 5 + Math.max(0, 7 - (Math.abs(x - 34) + Math.abs(z - 42)) / 7);
+                int hillB = 5 + Math.max(0, 6 - (Math.abs(x - 94) + Math.abs(z - 78)) / 8);
+                int hillC = 4 + Math.max(0, 5 - (Math.abs(x - 65) + Math.abs(z - 112)) / 9);
+                int top = hillA;
+                if (hillB > top) top = hillB;
+                if (hillC > top) top = hillC;
+                if (x >= 54 && x <= 74 && z >= 53 && z <= 75) top = 5;
                 heights[x][z] = top;
                 for (int y = 0; y <= top; y++) {
                     blocks[x][y][z] = y == top ? Block.GRASS :
@@ -108,22 +107,35 @@ final class MenuDiorama {
                 }
             }
         }
-        // Wooden cabin at the saddle between the two hills.
-        for (int x = 14; x <= 19; x++) for (int z = 5; z <= 10; z++)
-            put(blocks, x, 5, z, Block.PLANKS);
-        for (int y = 6; y <= 8; y++) {
-            for (int x = 14; x <= 19; x++) {
-                put(blocks, x, y, 5, Block.PLANKS);
-                put(blocks, x, y, 10, Block.PLANKS);
+        // Cabin in the central clearing.
+        for (int x = 59; x <= 68; x++) for (int z = 59; z <= 68; z++)
+            put(blocks, x, 6, z, Block.PLANKS);
+        for (int y = 7; y <= 10; y++) {
+            for (int x = 59; x <= 68; x++) {
+                put(blocks, x, y, 59, Block.PLANKS);
+                put(blocks, x, y, 68, Block.PLANKS);
             }
-            for (int z = 6; z <= 9; z++) {
-                put(blocks, 14, y, z, Block.PLANKS);
-                put(blocks, 19, y, z, Block.PLANKS);
+            for (int z = 60; z <= 67; z++) {
+                put(blocks, 59, y, z, Block.PLANKS);
+                put(blocks, 68, y, z, Block.PLANKS);
             }
-            put(blocks, 16, y, 5, Block.AIR);
-            put(blocks, 17, y, 5, Block.AIR);
+            put(blocks, 63, y, 59, Block.AIR);
+            put(blocks, 64, y, 59, Block.AIR);
         }
-        for (int x = 14; x <= 19; x++) for (int z = 5; z <= 10; z++)
+        for (int x = 59; x <= 68; x++) for (int z = 59; z <= 68; z++)
+            put(blocks, x, 11, z, Block.PLANKS);
+        put(blocks, 61, 8, 59, Block.GLASS);
+        put(blocks, 66, 8, 59, Block.GLASS);
+
+        makeTree(blocks, heights, 27, 44);
+        makeTree(blocks, heights, 99, 34);
+        makeTree(blocks, heights, 91, 91);
+        makeTree(blocks, heights, 35, 101);
+        makeTree(blocks, heights, 76, 23);
+        makeTree(blocks, heights, 20, 75);
+        return blocks;
+    }
+x <= 19; x++) for (int z = 5; z <= 10; z++)
             put(blocks, x, 9, z, Block.PLANKS);
         put(blocks, 15, 7, 5, Block.GLASS);
         put(blocks, 18, 7, 5, Block.GLASS);
@@ -172,48 +184,58 @@ final class MenuDiorama {
                 z < 0 || z >= DEPTH || blocks[x][y][z] == Block.AIR;
     }
 
-    private void buildGeometry(byte[][][] blocks, short[] positions, short[] texCoords) {
+    private void buildGeometry(byte[][][] blocks, short[] positions, short[] texCoords, byte[] colors) {
         int faceIndex = 0;
         for (int x = 0; x < WIDTH; x++) for (int y = 0; y < HEIGHT; y++)
             for (int z = 0; z < DEPTH; z++) {
                 byte id = blocks[x][y][z];
                 if (id == Block.AIR) continue;
-                if (empty(blocks, x, y + 1, z)) faceIndex = writeFace(faceIndex, positions, texCoords, id, 0, x, y, z);
-                if (empty(blocks, x - 1, y, z)) faceIndex = writeFace(faceIndex, positions, texCoords, id, 1, x, y, z);
-                if (empty(blocks, x + 1, y, z)) faceIndex = writeFace(faceIndex, positions, texCoords, id, 2, x, y, z);
-                if (empty(blocks, x, y, z - 1)) faceIndex = writeFace(faceIndex, positions, texCoords, id, 3, x, y, z);
-                if (empty(blocks, x, y, z + 1)) faceIndex = writeFace(faceIndex, positions, texCoords, id, 4, x, y, z);
+                if (empty(blocks, x, y + 1, z)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 0, x, y, z);
+                if (empty(blocks, x - 1, y, z)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 1, x, y, z);
+                if (empty(blocks, x + 1, y, z)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 2, x, y, z);
+                if (empty(blocks, x, y, z - 1)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 3, x, y, z);
+                if (empty(blocks, x, y, z + 1)) faceIndex = writeFace(faceIndex, positions, texCoords, colors, id, 4, x, y, z);
             }
     }
 
-    private int writeFace(int faceIndex, short[] p, short[] uv, byte id,
+    private int writeFace(int faceIndex, short[] p, short[] uv, byte[] colors, byte id,
                           int face, int x, int y, int z) {
         int vertex = faceIndex * 12;
         if (face == 0) {
-            p[vertex++] = (short)(x * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)(z * 256);
-            p[vertex++] = (short)(x * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)((z + 1) * 256);
-            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)(z * 256);
-            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)((z + 1) * 256);
+            p[vertex++] = (short)(x * 128); p[vertex++] = (short)((y + 1) * 128); p[vertex++] = (short)(z * 128);
+            p[vertex++] = (short)(x * 128); p[vertex++] = (short)((y + 1) * 128); p[vertex++] = (short)((z + 1) * 128);
+            p[vertex++] = (short)((x + 1) * 128); p[vertex++] = (short)((y + 1) * 128); p[vertex++] = (short)(z * 128);
+            p[vertex++] = (short)((x + 1) * 128); p[vertex++] = (short)((y + 1) * 128); p[vertex++] = (short)((z + 1) * 128);
         } else if (face == 1) {
-            p[vertex++] = (short)(x * 256); p[vertex++] = (short)(y * 256); p[vertex++] = (short)(z * 256);
-            p[vertex++] = (short)(x * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)(z * 256);
-            p[vertex++] = (short)(x * 256); p[vertex++] = (short)(y * 256); p[vertex++] = (short)((z + 1) * 256);
-            p[vertex++] = (short)(x * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)((z + 1) * 256);
+            p[vertex++] = (short)(x * 128); p[vertex++] = (short)(y * 128); p[vertex++] = (short)(z * 128);
+            p[vertex++] = (short)(x * 128); p[vertex++] = (short)((y + 1) * 128); p[vertex++] = (short)(z * 128);
+            p[vertex++] = (short)(x * 128); p[vertex++] = (short)(y * 128); p[vertex++] = (short)((z + 1) * 128);
+            p[vertex++] = (short)(x * 128); p[vertex++] = (short)((y + 1) * 128); p[vertex++] = (short)((z + 1) * 128);
         } else if (face == 2) {
-            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)(y * 256); p[vertex++] = (short)((z + 1) * 256);
-            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)((z + 1) * 256);
-            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)(y * 256); p[vertex++] = (short)(z * 256);
-            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)(z * 256);
+            p[vertex++] = (short)((x + 1) * 128); p[vertex++] = (short)(y * 128); p[vertex++] = (short)((z + 1) * 128);
+            p[vertex++] = (short)((x + 1) * 128); p[vertex++] = (short)((y + 1) * 128); p[vertex++] = (short)((z + 1) * 128);
+            p[vertex++] = (short)((x + 1) * 128); p[vertex++] = (short)(y * 128); p[vertex++] = (short)(z * 128);
+            p[vertex++] = (short)((x + 1) * 128); p[vertex++] = (short)((y + 1) * 128); p[vertex++] = (short)(z * 128);
         } else if (face == 3) {
-            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)(y * 256); p[vertex++] = (short)(z * 256);
-            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)(z * 256);
-            p[vertex++] = (short)(x * 256); p[vertex++] = (short)(y * 256); p[vertex++] = (short)(z * 256);
-            p[vertex++] = (short)(x * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)(z * 256);
+            p[vertex++] = (short)((x + 1) * 128); p[vertex++] = (short)(y * 128); p[vertex++] = (short)(z * 128);
+            p[vertex++] = (short)((x + 1) * 128); p[vertex++] = (short)((y + 1) * 128); p[vertex++] = (short)(z * 128);
+            p[vertex++] = (short)(x * 128); p[vertex++] = (short)(y * 128); p[vertex++] = (short)(z * 128);
+            p[vertex++] = (short)(x * 128); p[vertex++] = (short)((y + 1) * 128); p[vertex++] = (short)(z * 128);
         } else {
-            p[vertex++] = (short)(x * 256); p[vertex++] = (short)(y * 256); p[vertex++] = (short)((z + 1) * 256);
-            p[vertex++] = (short)(x * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)((z + 1) * 256);
-            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)(y * 256); p[vertex++] = (short)((z + 1) * 256);
-            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)((z + 1) * 256);
+            p[vertex++] = (short)(x * 128); p[vertex++] = (short)(y * 128); p[vertex++] = (short)((z + 1) * 128);
+            p[vertex++] = (short)(x * 128); p[vertex++] = (short)((y + 1) * 128); p[vertex++] = (short)((z + 1) * 128);
+            p[vertex++] = (short)((x + 1) * 128); p[vertex++] = (short)(y * 128); p[vertex++] = (short)((z + 1) * 128);
+            p[vertex++] = (short)((x + 1) * 128); p[vertex++] = (short)((y + 1) * 128); p[vertex++] = (short)((z + 1) * 128);
+        }
+        int color = 0xFFFFFF;
+        // Biome-style tint on the upper atlas face of grass and leaves.
+        if (face == 0 && id == Block.GRASS) color = 0x7FB238;
+        else if (face == 0 && id == Block.LEAVES) color = 0x48B518;
+        int colorOffset = faceIndex * 12;
+        for (int c = 0; c < 4; c++) {
+            colors[colorOffset++] = (byte)((color >> 16) & 255);
+            colors[colorOffset++] = (byte)((color >> 8) & 255);
+            colors[colorOffset++] = (byte)(color & 255);
         }
         int tile = Block.faceTile(id, face);
         int tileU = (tile & 15) * 16, tileV = (tile >> 4) * 16;
