@@ -8,7 +8,7 @@ import javax.microedition.m3g.Graphics3D;
  * The menu uses a creative world that is never saved or modified.
  */
 final class MenuDiorama {
-    private static final int MENU_SEED = 0x43343138; // "C418": semilla fija del paisaje del menú
+    private static final int MENU_SEED = 0x574F4F44; // "WOOD": semilla fija, bioma inicial de pradera
     private final VoxelWorld world;
     private final ChunkRenderer renderer;
 
@@ -22,7 +22,7 @@ final class MenuDiorama {
         renderer = new ChunkRenderer(width, height);
         renderer.setPlayerSkinIndex(0);
         renderer.setPlayerVisible(false); // La cámara conserva el punto de vista, pero no muestra al avatar.
-        renderer.setThirdPersonDistance(5.0f); // Un poco más alejada para enseñar más terreno.
+        renderer.setThirdPersonDistance(15.0f); // Vista panorámica: 15 bloques de distancia.
         renderer.setRenderDistance(4); // shortest: stable 3x3 chunk window
         renderer.cycleCameraMode();   // third-person camera; hide first-person hand
         renderer.updateCamera(world, -10.0f);
