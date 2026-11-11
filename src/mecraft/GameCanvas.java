@@ -158,8 +158,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private boolean lookUp, lookDown, lookLeft, lookRight;
     private VoxelWorld world;
     private ChunkRenderer renderer;
-    private ChunkRenderer menuDioramaRenderer;
-    private VoxelWorld menuDioramaWorld;
+    private MenuDiorama menuDiorama;
     private boolean ridingBoat;
     private boolean ridingMinecart;
     private MusicController music;
@@ -3546,95 +3545,19 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         int w = getWidth(), h = getHeight();
         if (w <= 0 || h <= 0) return;
         try {
-            if (menuDioramaWorld == null) {
-                menuDioramaWorld = new VoxelWorld(0x4D434D45, 1,
-                        VoxelWorld.SIZE_INFINITE, VoxelWorld.TYPE_FLAT);
-                buildMenuDiorama(menuDioramaWorld);
-            }
-            if (menuDioramaRenderer == null) {
-                menuDioramaRenderer = new ChunkRenderer(w, h);
-                menuDioramaRenderer.setMenuDioramaMode(true);
-            }
-            menuDioramaRenderer.resize(w, h);
-            float angle = (panoramaTick * 0.75f) % 360.0f;
-            float radians = angle * 0.0174532925f;
-            float centerX = 24.0f, centerZ = 24.0f;
-            float radius = 27.0f;
-            menuDioramaWorld.playerX = centerX + (float)Math.sin(radians) * radius;
-            menuDioramaWorld.playerZ = centerZ + (float)Math.cos(radians) * radius;
-            menuDioramaWorld.playerY = 14.0f;
-            menuDioramaWorld.yaw = angle + 180.0f;
-            menuDioramaRenderer.sync(menuDioramaWorld);
-            menuDioramaRenderer.updateDayNight(menuDioramaWorld);
-            menuDioramaRenderer.updateCamera(menuDioramaWorld, -17.0f);
+            if (menuDiorama == null) menuDiorama = new MenuDiorama(w, h);
             Graphics3D graphics3D = Graphics3D.getInstance();
             graphics3D.bindTarget(g);
             try {
                 graphics3D.setViewport(0, 0, w, h);
-                menuDioramaRenderer.render(graphics3D);
+                menuDiorama.render(graphics3D, w, h, panoramaTick);
             } finally {
                 graphics3D.releaseTarget();
             }
         } catch (OutOfMemoryError exhausted) {
-            // Keep the menu usable on very small Java ME heaps.
             drawDirtBackground(g);
         } catch (Throwable unavailable) {
             drawDirtBackground(g);
-        }
-    }
-
-    private void buildMenuDiorama(VoxelWorld scene) {
-        // Two adjacent chunk-sized regions with a rolling ridge, a small cabin,
-        // and trees. The base flat world is intentionally kept as a compact,
-        // deterministic foundation; no world generation or fluids run here.
-        for (int z = 9; z < 39; z++) {
-            for (int x = 9; x < 39; x++) {
-                int dx1 = x - 17, dz1 = z - 20;
-                int dx2 = x - 31, dz2 = z - 29;
-                int hillA = 5 + Math.max(0, 5 - (Math.abs(dx1) + Math.abs(dz1)) / 2);
-                int hillB = 5 + Math.max(0, 4 - (Math.abs(dx2) + Math.abs(dz2)) / 2);
-                int top = hillA > hillB ? hillA : hillB;
-                for (int y = 5; y <= top; y++) {
-                    byte block = y == top ? Block.GRASS : (y < top - 2 ? Block.STONE : Block.DIRT);
-                    scene.set(x, y, z, block);
-                }
-            }
-        }
-        // Small wooden cabin on the flatter saddle between the hills.
-        for (int z = 22; z <= 27; z++) for (int x = 21; x <= 27; x++)
-            scene.set(x, 5, z, Block.PLANKS);
-        for (int y = 6; y <= 8; y++) {
-            for (int x = 21; x <= 27; x++) {
-                scene.set(x, y, 22, Block.PLANKS);
-                scene.set(x, y, 27, Block.PLANKS);
-            }
-            for (int z = 23; z <= 26; z++) {
-                scene.set(21, y, z, Block.PLANKS);
-                scene.set(27, y, z, Block.PLANKS);
-            }
-            scene.set(24, y, 22, Block.AIR);
-        }
-        for (int z = 22; z <= 27; z++) for (int x = 21; x <= 27; x++)
-            scene.set(x, 9, z, Block.PLANKS);
-        scene.set(23, 7, 22, Block.GLASS);
-        scene.set(25, 7, 22, Block.GLASS);
-        // A pair of compact trees, with deliberately small canopies.
-        buildMenuTree(scene, 14, 5, 29);
-        buildMenuTree(scene, 34, 5, 17);
-    }
-
-    private void buildMenuTree(VoxelWorld scene, int x, int groundY, int z) {
-        for (int y = 1; y <= 4; y++) scene.set(x, groundY + y, z, Block.LOG);
-        for (int dy = 2; dy <= 5; dy++) {
-            int radius = dy == 5 ? 1 : 2;
-            for (int dz = -radius; dz <= radius; dz++) {
-                for (int dx = -radius; dx <= radius; dx++) {
-                    if (Math.abs(dx) + Math.abs(dz) > radius + 1) continue;
-                    int lx = x + dx, lz = z + dz, ly = groundY + dy;
-                    if (scene.get(lx, ly, lz) == Block.AIR)
-                        scene.set(lx, ly, lz, Block.LEAVES);
-                }
-            }
         }
     }
 
