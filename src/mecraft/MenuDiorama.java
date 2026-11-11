@@ -20,7 +20,7 @@ import javax.microedition.m3g.World;
 
 /** Small static two-chunk M3G title scene with a low-cost orbiting camera. */
 final class MenuDiorama {
-    private static final int WIDTH = 32, DEPTH = 16, HEIGHT = 12;
+    private static final int WIDTH = 32, DEPTH = 16, HEIGHT = 16;
     private final World scene = new World();
     private final Group orbit = new Group();
     private final Camera camera = new Camera();
@@ -72,7 +72,7 @@ final class MenuDiorama {
 
         camera.setPerspective(58.0f, (float)width / (float)height, 0.1f, 80.0f);
         camera.setOrientation(-17.0f, 1.0f, 0.0f, 0.0f);
-        camera.setTranslation(0.0f, 9.0f, 28.0f);
+        camera.setTranslation(0.0f, 12.0f, 35.0f);
         orbit.setTranslation(16.0f, 4.0f, 8.0f);
         orbit.addChild(camera);
         scene.addChild(orbit);
@@ -188,31 +188,36 @@ final class MenuDiorama {
 
     private int writeFace(int faceIndex, short[] p, short[] uv, byte id,
                           int face, int x, int y, int z) {
-        int[][] corners = new int[4][3];
+        int vertex = faceIndex * 12;
         if (face == 0) {
-            corners[0] = new int[] {x,y+1,z}; corners[1] = new int[] {x,y+1,z+1};
-            corners[2] = new int[] {x+1,y+1,z}; corners[3] = new int[] {x+1,y+1,z+1};
+            p[vertex++] = (short)(x * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)(z * 256);
+            p[vertex++] = (short)(x * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)((z + 1) * 256);
+            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)(z * 256);
+            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)((z + 1) * 256);
         } else if (face == 1) {
-            corners[0] = new int[] {x,y,z}; corners[1] = new int[] {x,y+1,z};
-            corners[2] = new int[] {x,y,z+1}; corners[3] = new int[] {x,y+1,z+1};
+            p[vertex++] = (short)(x * 256); p[vertex++] = (short)(y * 256); p[vertex++] = (short)(z * 256);
+            p[vertex++] = (short)(x * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)(z * 256);
+            p[vertex++] = (short)(x * 256); p[vertex++] = (short)(y * 256); p[vertex++] = (short)((z + 1) * 256);
+            p[vertex++] = (short)(x * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)((z + 1) * 256);
         } else if (face == 2) {
-            corners[0] = new int[] {x+1,y,z+1}; corners[1] = new int[] {x+1,y+1,z+1};
-            corners[2] = new int[] {x+1,y,z}; corners[3] = new int[] {x+1,y+1,z};
+            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)(y * 256); p[vertex++] = (short)((z + 1) * 256);
+            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)((z + 1) * 256);
+            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)(y * 256); p[vertex++] = (short)(z * 256);
+            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)(z * 256);
         } else if (face == 3) {
-            corners[0] = new int[] {x+1,y,z}; corners[1] = new int[] {x+1,y+1,z};
-            corners[2] = new int[] {x,y,z}; corners[3] = new int[] {x,y+1,z};
+            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)(y * 256); p[vertex++] = (short)(z * 256);
+            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)(z * 256);
+            p[vertex++] = (short)(x * 256); p[vertex++] = (short)(y * 256); p[vertex++] = (short)(z * 256);
+            p[vertex++] = (short)(x * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)(z * 256);
         } else {
-            corners[0] = new int[] {x,y,z+1}; corners[1] = new int[] {x,y+1,z+1};
-            corners[2] = new int[] {x+1,y,z+1}; corners[3] = new int[] {x+1,y+1,z+1};
+            p[vertex++] = (short)(x * 256); p[vertex++] = (short)(y * 256); p[vertex++] = (short)((z + 1) * 256);
+            p[vertex++] = (short)(x * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)((z + 1) * 256);
+            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)(y * 256); p[vertex++] = (short)((z + 1) * 256);
+            p[vertex++] = (short)((x + 1) * 256); p[vertex++] = (short)((y + 1) * 256); p[vertex++] = (short)((z + 1) * 256);
         }
         int tile = Block.faceTile(id, face);
         int tileU = (tile & 15) * 16, tileV = (tile >> 4) * 16;
-        int vertex = faceIndex * 12, tex = faceIndex * 8;
-        for (int i = 0; i < 4; i++) {
-            p[vertex++] = (short)(corners[i][0] * 256);
-            p[vertex++] = (short)(corners[i][1] * 256);
-            p[vertex++] = (short)(corners[i][2] * 256);
-        }
+        int tex = faceIndex * 8;
         uv[tex] = (short)tileU; uv[tex + 1] = (short)(tileV + 16);
         uv[tex + 2] = (short)tileU; uv[tex + 3] = (short)tileV;
         uv[tex + 4] = (short)(tileU + 16); uv[tex + 5] = (short)(tileV + 16);
