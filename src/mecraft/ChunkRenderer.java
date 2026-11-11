@@ -1157,9 +1157,12 @@ final class ChunkRenderer {
             if (builtRevision < 0 || world.fullRebuild) rebuildWorld(world);
             else rebuildChanged(world);
             builtRevision = world.revision;
-            railSystem.update(world);
-            world.fullRebuild = false;
         }
+        // Rail meshes also have a camera-centered streaming window, so they
+        // must be refreshed when the player crosses chunk boundaries even if
+        // no block in the world changed.
+        railSystem.update(world);
+        world.fullRebuild = false;
         updateVisibleChunks(world);
     }
 
