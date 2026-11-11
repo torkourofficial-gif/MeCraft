@@ -64,7 +64,6 @@ final class MenuDiorama {
             VertexArray ca = new VertexArray(faceCount * 4, 3, 1);
             ca.set(0, faceCount * 4, colors);
             VertexBuffer vb = new VertexBuffer();
-            // Half-unit vertex coordinates keep the 128x128 scene inside signed-short M3G positions.
             vb.setPositions(pa, 1.0f / 128.0f, null);
             vb.setTexCoords(0, ta, 1.0f / 256.0f, null);
             vb.setColors(ca);
