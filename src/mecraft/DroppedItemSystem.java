@@ -313,7 +313,15 @@ final class DroppedItemSystem {
             float dy = y[i] - (world.playerY + 0.9f);
             float dz = z[i] - world.playerZ;
             boolean inPickupRange = dx * dx + dy * dy + dz * dz <= PICKUP_RADIUS_SQUARED;
-            if (pickupDelay[i] == 0 && picked < 0 && inventory[id] < ItemCatalog.maxStack(id) && inPickupRange) {
+            if (world.mode == 1 && !primedTnt && inPickupRange) {
+                // Creative players absorb ordinary drops on contact, but do
+                // not add them to inventory. Primed TNT remains untouched.
+                itemId[i] = 0;
+                tntFuse[i] = 0;
+                activeCount--;
+                writeItem(i);
+            } else if (world.mode != 1 && pickupDelay[i] == 0 && picked < 0 &&
+                       inventory[id] < ItemCatalog.maxStack(id) && inPickupRange) {
                 inventory[id]++;
                 itemId[i] = 0;
                 tntFuse[i] = 0;
