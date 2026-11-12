@@ -188,7 +188,32 @@ final class DroppedItemSystem {
 
     boolean spawnPrimedTnt(int bx, int by, int bz, int fuse) {
         int slot = spawn(Block.TNT, bx, by, bz);
-        if (slot < 0) return false;
+        if (slot < 0) {
+            // Explosion debris shares this bounded pool with primed TNT.
+            // Reclaim the oldest ordinary drop before refusing to ignite a
+            // TNT block; otherwise a few explosions can fill all 32 slots
+            // with debris and make every later TNT impossible to activate.
+            int oldestAge = -1;
+            for (int n = 0; n < CAPACITY; n++) {
+                int candidate = (cursor + n) % CAPACITY;
+                if (itemId[candidate] != 0 && tntFuse[candidate] <= 0 &&
+                    age[candidate] > oldestAge) {
+                    oldestAge = age[candidate];
+                    slot = candidate;
+                }
+            }
+            if (slot < 0) return false;
+            cursor = slot + 1;
+            if (cursor == CAPACITY) cursor = 0;
+            itemId[slot] = Block.TNT;
+            age[slot] = 0;
+            tntFuse[slot] = 0;
+            pickupDelay[slot] = 10;
+            setVertexColor(slot, 0);
+            setAlphaVertexTint(slot, Block.TNT);
+            writeTexture(slot, Block.TNT);
+            // activeCount is unchanged: an ordinary drop was replaced.
+        }
         tntFuse[slot] = fuse;
         pickupDelay[slot] = fuse + 20;
         // Indev replaces the block with an EntityTNTPrimed, not a collectible
