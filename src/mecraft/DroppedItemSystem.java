@@ -260,16 +260,26 @@ final class DroppedItemSystem {
             // tick. Post-decrement left it at 0, where primedTnt became false
             // on the next tick, so the explosion was never reached.
             if (primedTnt && --tntFuse[i] <= 0) {
-                explosionX = floorBlock(x[i]);
-                explosionY = floorBlock(y[i]);
-                explosionZ = floorBlock(z[i]);
+                // Save the blast position before releasing this entity slot.
+                // Chain reactions may immediately reuse the freed slot, so
+                // remove the exploding TNT BEFORE world.explode().
+                float blastX = x[i];
+                float blastY = y[i];
+                float blastZ = z[i];
+                explosionX = floorBlock(blastX);
+                explosionY = floorBlock(blastY);
+                explosionZ = floorBlock(blastZ);
                 explosionPending = true;
-                damagePlayerFromExplosion(world, x[i], y[i], z[i], physics);
-                world.explode(x[i], y[i], z[i], 4.0f, this);
+
+                // Do not touch slot i after the explosion: a chained TNT
+                // may already have claimed it.
                 itemId[i] = 0;
                 tntFuse[i] = 0;
                 activeCount--;
                 writeItem(i);
+
+                damagePlayerFromExplosion(world, blastX, blastY, blastZ, physics);
+                world.explode(blastX, blastY, blastZ, 4.0f, this);
                 continue;
             }
 
