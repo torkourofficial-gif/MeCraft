@@ -976,13 +976,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 miningDamage = 0.99f;
                 return;
             }
-            // The entity pool is bounded. If it is full, restore the TNT block
-            // instead of silently deleting it without starting a fuse.
+            // Prefer priming TNT, as in Indev. If the bounded entity pool is
+            // full (for example during a large chain reaction), let the player
+            // safely recover the block instead of restoring an unremovable TNT.
             if (!renderer.spawnPrimedTnt(x, y, z, 80)) {
-                world.set(x, y, z, Block.TNT);
-                renderer.sync(world);
-                miningDamage = 0.99f;
-                return;
+                if (inventory[Block.TNT] >= ItemCatalog.maxStack(Block.TNT)) {
+                    world.set(x, y, z, Block.TNT);
+                    renderer.sync(world);
+                    miningDamage = 0.99f;
+                    return;
+                }
+                inventory[Block.TNT]++;
+                copyInventoryToWorld();
             }
             renderer.swingHand();
             renderer.sync(world);
