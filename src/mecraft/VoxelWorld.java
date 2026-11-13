@@ -232,7 +232,7 @@ final class VoxelWorld {
         }
         // Never generate terrain on the caller thread. A missing sector is
         // requested from the low-priority worker and remains temporarily empty.
-        requestProceduralChunk(cx, cz);
+        enqueueProceduralChunk(cx, cz, true);
         return Block.AIR;
     }
 
@@ -340,10 +340,6 @@ final class VoxelWorld {
                 });
                 worker.setPriority(Thread.MIN_PRIORITY);
                 worker.start();
-            } else {
-                // Wake the existing low-priority worker instead of creating
-                // another thread for every short burst of streamed chunks.
-                notifyAll();
             }
         }
     }
@@ -362,9 +358,8 @@ final class VoxelWorld {
             boolean dimension;
             int epoch;
             synchronized (this) {
-                // Keep one worker warm briefly between adjacent chunk requests.
-                // A bounded idle wait avoids both per-chunk thread churn and a
-                // permanently sleeping thread when a world is no longer streamed.
+                // Drain the bounded request queue, then let the next request
+                // start a fresh worker. No sleeping worker or polling loop.
                 if (proceduralQueueCount == 0) {
                     proceduralWorkerBusy = false;
                     proceduralWorkerRunning = false;
@@ -598,7 +593,7 @@ final class VoxelWorld {
                 return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
             }
         }
-        requestProceduralChunk(cx, cz);
+        enqueueProceduralChunk(cx, cz, true);
         return Block.AIR;
     }
 
