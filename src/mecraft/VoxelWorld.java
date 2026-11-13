@@ -63,6 +63,7 @@ final class VoxelWorld {
     private static final int INFDEV_EDIT_PAGE_MAGIC = 0x49465047;
     private static final int INFDEV_EDIT_PAGE_MAGIC_V2 = 0x49464432;
     private static final int DIMENSION_STORE_MAGIC = 0x4D43444D; // MCDM
+    private static final int PROCEDURAL_CACHE_SAVE_MAGIC = 0x4D434350; // MCCP
     private static final int DIMENSION_PAGE_MAGIC = 0x4D434450; // MCDP
     private static final int DIMENSION_PAGE_BYTES = 16000;
     private static final int INFDEV_EDITS_PER_PAGE = 128;
@@ -1520,6 +1521,17 @@ final class VoxelWorld {
             out.writeInt(INFDEV_EDIT_POINTER_MAGIC);
             out.writeInt(generation);
             out.writeInt(pageCount);
+            int cachedCount = 0;
+            for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++)
+                if (proceduralChunkX[i] != Integer.MIN_VALUE) cachedCount++;
+            out.writeInt(PROCEDURAL_CACHE_SAVE_MAGIC);
+            out.writeByte(cachedCount);
+            for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
+                if (proceduralChunkX[i] == Integer.MIN_VALUE) continue;
+                out.writeInt(proceduralChunkX[i]);
+                out.writeInt(proceduralChunkZ[i]);
+                out.write(proceduralChunks[i]);
+            }
             out.flush();
             byte[] data = bytes.toByteArray();
             store.setRecord(1, data, 0, data.length);
@@ -1833,6 +1845,20 @@ final class VoxelWorld {
                 if (in.available() >= 12 && in.readInt() == INFDEV_EDIT_POINTER_MAGIC) {
                     editGeneration = in.readInt();
                     editPageCount = in.readInt();
+                }
+            }
+            // Persist the small outer-terrain cache so the first nearby streamed
+            // sectors can be restored directly instead of regenerated on load.
+            if (in.available() >= 5 && in.readInt() == PROCEDURAL_CACHE_SAVE_MAGIC) {
+                int cachedCount = in.readUnsignedByte();
+                if (cachedCount > PROCEDURAL_CACHE_SIZE) throw new IOException("Invalid chunk cache");
+                for (int i = 0; i < cachedCount; i++) {
+                    int cx = in.readInt(), cz = in.readInt();
+                    int slot = i;
+                    in.readFully(world.proceduralChunks[slot]);
+                    world.proceduralChunkX[slot] = cx;
+                    world.proceduralChunkZ[slot] = cz;
+                    world.touchProceduralSlot(slot);
                 }
             }
             if (editPageCount > 0 && editPageCount <= store.getNumRecords())
