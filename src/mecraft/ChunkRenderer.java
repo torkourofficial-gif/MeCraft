@@ -31,6 +31,9 @@ final class ChunkRenderer {
     // meshing to one vertical slice per tick so redraw frequency cannot
     // multiply terrain-build work on fast devices or emulators.
     private long lastChunkBuildTime;
+    // Adapt the gap between main-thread mesh slices to their measured cost.
+    // A slow device gets more breathing room; fast devices can stream sooner.
+    private int chunkBuildIntervalMillis = 50;
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
@@ -1457,7 +1460,8 @@ final class ChunkRenderer {
 
     private void advanceChunkBuild(VoxelWorld world, int slot, int cx, int cy, int cz) {
         long now = System.currentTimeMillis();
-        if (lastChunkBuildTime != 0L && now - lastChunkBuildTime < 50L) return;
+        if (lastChunkBuildTime != 0L &&
+            now - lastChunkBuildTime < chunkBuildIntervalMillis) return;
         lastChunkBuildTime = now;
         // Queue the center and its face-neighbors. Do not mesh yet: treating
         // an unloaded neighbor as air would bake false exposed faces into this
@@ -1478,6 +1482,7 @@ final class ChunkRenderer {
                     (cz + 1) * VoxelWorld.CHUNK_XZ);
         }
         ChunkBuild job = pendingBuild;
+        long buildStarted = System.currentTimeMillis();
         // Keep the chunk's layer references live while the job is in progress.
         // This lets each finished slice enter the scene immediately and also
         // makes partially built chunks safe to evict or resume.
@@ -1515,7 +1520,10 @@ final class ChunkRenderer {
             while (job.nextLayer < VoxelWorld.CHUNK_Y &&
                     (job.dirtyMask & (1 << job.nextLayer)) == 0) job.nextLayer++;
         }
-        if (job.nextLayer < VoxelWorld.CHUNK_Y) return;
+        if (job.nextLayer < VoxelWorld.CHUNK_Y) {
+            recordChunkBuildCost(buildStarted);
+            return;
+        }
 
         int total = 0;
         for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++)
@@ -1538,6 +1546,25 @@ final class ChunkRenderer {
         dirtyLayerMasks[slot] = 0;
         pendingBuild = null;
         pendingBuildSlot = -1;
+        recordChunkBuildCost(buildStarted);
+    }
+
+    /** Tune streaming cadence from the measured cost of the last mesh slice. */
+    private void recordChunkBuildCost(long startedAt) {
+        long elapsed = System.currentTimeMillis() - startedAt;
+        if (elapsed >= 45L) {
+            chunkBuildIntervalMillis += 25;
+            if (chunkBuildIntervalMillis > 125) chunkBuildIntervalMillis = 125;
+        } else if (elapsed >= 25L) {
+            chunkBuildIntervalMillis += 15;
+            if (chunkBuildIntervalMillis > 100) chunkBuildIntervalMillis = 100;
+        } else if (elapsed <= 8L) {
+            chunkBuildIntervalMillis -= 5;
+            if (chunkBuildIntervalMillis < 30) chunkBuildIntervalMillis = 30;
+        } else if (elapsed <= 14L) {
+            chunkBuildIntervalMillis -= 2;
+            if (chunkBuildIntervalMillis < 35) chunkBuildIntervalMillis = 35;
+        }
     }
 
     private Chunk buildChunkLayer(VoxelWorld world, int cx, int cy, int cz,
