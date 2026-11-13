@@ -726,6 +726,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void loadSavedWorldNow(VoxelWorld.SavedWorld savedWorld) {
         title = null;
+        loadingMessage = Language.text("Leyendo datos guardados...");
+        repaint();
         System.gc();
         VoxelWorld saved = VoxelWorld.load(savedWorld.storeName);
         if (saved == null) {
@@ -734,6 +736,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
         String stage = "restaurando partida guardada";
         try {
+            loadingMessage = Language.text("Restaurando terreno y modificaciones...");
+            repaint();
             if (renderer != null) { renderer = null; System.gc(); }
             world = saved;
             world.health = clamp(world.health, 0, 20);
@@ -752,6 +756,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             resetInventory(world.mode);
             for (int i = 0; i < inventory.length; i++) inventory[i] = world.inventory[i];
             world.selectedSlot = clamp(world.selectedSlot, 0, hotbar.length - 1);
+            loadingMessage = Language.text("Preparando escena 3D...");
+            repaint();
             stage = "cargando /mecraft/textures.png y creando escena M3G";
             renderer = new ChunkRenderer(getWidth(), getHeight());
             renderer.setPlayerSkinIndex(selectedPlayerSkin);
@@ -759,6 +765,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             stage = "configurando cámara M3G";
             renderer.updateCamera(world, cameraPitch);
             stage = "construyendo sectores visibles M3G";
+            loadingMessage = Language.text("Preparando chunks cercanos...");
+            repaint();
             renderer.sync(world);
             state = world.mode == 0 && world.health <= 0 ? GAME_OVER : PLAYING;
             if (state == GAME_OVER) {
