@@ -648,7 +648,7 @@ final class VoxelWorld {
             int source = index(x0, y, z0);
             for (int z = 0; z < CHUNK_XZ; z++) {
                 System.arraycopy(blocks, source, target, z * CHUNK_XZ, CHUNK_XZ);
-                source += DEPTH * WIDTH;
+                source += WIDTH;
             }
             return;
         }
