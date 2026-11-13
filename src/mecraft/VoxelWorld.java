@@ -1521,16 +1521,18 @@ final class VoxelWorld {
             out.writeInt(INFDEV_EDIT_POINTER_MAGIC);
             out.writeInt(generation);
             out.writeInt(pageCount);
-            int cachedCount = 0;
-            for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++)
-                if (proceduralChunkX[i] != Integer.MIN_VALUE) cachedCount++;
-            out.writeInt(PROCEDURAL_CACHE_SAVE_MAGIC);
-            out.writeByte(cachedCount);
-            for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
-                if (proceduralChunkX[i] == Integer.MIN_VALUE) continue;
-                out.writeInt(proceduralChunkX[i]);
-                out.writeInt(proceduralChunkZ[i]);
-                out.write(proceduralChunks[i]);
+            synchronized (this) {
+                int cachedCount = 0;
+                for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++)
+                    if (proceduralChunkX[i] != Integer.MIN_VALUE) cachedCount++;
+                out.writeInt(PROCEDURAL_CACHE_SAVE_MAGIC);
+                out.writeByte(cachedCount);
+                for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
+                    if (proceduralChunkX[i] == Integer.MIN_VALUE) continue;
+                    out.writeInt(proceduralChunkX[i]);
+                    out.writeInt(proceduralChunkZ[i]);
+                    out.write(proceduralChunks[i]);
+                }
             }
             out.flush();
             byte[] data = bytes.toByteArray();
