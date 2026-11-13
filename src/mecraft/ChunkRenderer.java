@@ -1825,7 +1825,7 @@ final class ChunkRenderer {
     /** Representative colors for distant block faces; no atlas sampling. */
     private int flatTileColor(int tile, boolean netherWorld) {
         if (tile == 0 || tile == 3 || tile == 52 || tile == 53) return 0x70A84A;
-        if (tile == 1 || tile == 18 || tile == 232) return 0x858585;
+        if (tile == 1 || tile == 232) return 0x858585;
         if (tile == 2 || tile == 20 || tile == 21 || tile == 59 || tile == 60) return 0x956B45;
         if (tile == 4 || tile == 18 || tile == 233) return 0xD8C58A;
         if (tile == 205 || tile == 237 || tile == 234) return netherWorld ? 0xE56A25 : 0x477FC4;
