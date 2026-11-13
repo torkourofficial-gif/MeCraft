@@ -1192,7 +1192,7 @@ final class ChunkRenderer {
         int ly = y % VoxelWorld.CHUNK_Y;
         int lz = z - cz * VoxelWorld.CHUNK_XZ;
         boolean torchChanged = world.changedOldId == Block.TORCH ||
-                world.get(x, y, z) == Block.TORCH;
+                world.getLoaded(x, y, z) == Block.TORCH;
         for (int i = 0; i < CACHE_SIZE; i++) {
             if (!residentChunks[i]) continue;
             if (torchChanged) {
@@ -1377,14 +1377,10 @@ final class ChunkRenderer {
     }
 
     private void advanceChunkBuild(VoxelWorld world, int slot, int cx, int cy, int cz) {
-        // Mesh reads may cross any horizontal chunk edge. Prepare the center and
-        // four cardinal neighbors off-thread so world.get() never generates terrain here.
+        // Queue neighboring terrain, but do not stall this mesh waiting for it.
+        // Missing neighbor cells are treated as air by getLoaded() until they arrive.
         world.requestProceduralChunk(cx, cz);
-        if (!world.isProceduralChunkReady(cx, cz) ||
-            !world.isProceduralChunkReady(cx - 1, cz) ||
-            !world.isProceduralChunkReady(cx + 1, cz) ||
-            !world.isProceduralChunkReady(cx, cz - 1) ||
-            !world.isProceduralChunkReady(cx, cz + 1)) return;
+        if (!world.isProceduralChunkReady(cx, cz)) return;
 
         float wantedDx = cx * VoxelWorld.CHUNK_XZ + 8.0f - world.playerX;
         float wantedDz = cz * VoxelWorld.CHUNK_XZ + 8.0f - world.playerZ;
@@ -1482,7 +1478,7 @@ final class ChunkRenderer {
         for (int y = y0; y < y1; y++) {
             for (int z = z0; z < z1; z++) {
                 for (int x = x0; x < x1; x++) {
-                    byte id = world.get(x, y, z);
+                    byte id = world.getLoaded(x, y, z);
                     if (id != Block.AIR) nonAirBlocks++;
                     int localIndex = (((y - y0) * VoxelWorld.CHUNK_XZ) + (z - z0)) *
                             VoxelWorld.CHUNK_XZ + (x - x0);
@@ -1557,7 +1553,7 @@ final class ChunkRenderer {
                                 neighbor = chunkVoxelScratch[voxelIndex + VoxelWorld.CHUNK_XZ];
                             else if (face == 5 && y > y0)
                                 neighbor = chunkVoxelScratch[voxelIndex - CHUNK_AREA];
-                            else neighbor = world.get(nx, ny, nz);
+                            else neighbor = world.getLoaded(nx, ny, nz);
                             if (Block.faceVisible(id, neighbor)) {
                                 int tile = renderWorldTile(world, id, face, x, y, z,
                                         id == Block.WOOL ? world.woolColor(x, y, z) : 0);
