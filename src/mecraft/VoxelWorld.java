@@ -304,9 +304,22 @@ final class VoxelWorld {
                 proceduralQueueCount--;
                 epoch = proceduralGenerationEpoch;
             }
-            if (dimension != nether) continue;
-            generateChunk(cx, cz, proceduralWorkerBuffer, proceduralWorkerHeights,
-                          proceduralWorkerBiomes, dimension);
+            if (dimension != nether) {
+                synchronized (this) { proceduralWorkerBusy = false; }
+                continue;
+            }
+            try {
+                generateChunk(cx, cz, proceduralWorkerBuffer, proceduralWorkerHeights,
+                              proceduralWorkerBiomes, dimension);
+            } catch (Throwable failure) {
+                synchronized (this) {
+                    proceduralWorkerBusy = false;
+                    proceduralWorkerRunning = false;
+                    proceduralQueueCount = 0;
+                }
+                setGenerationDiagnosticStage("VoxelWorld: falló la generación procedural en segundo plano");
+                return;
+            }
             synchronized (this) {
                 proceduralWorkerBusy = false;
                 if (epoch != proceduralGenerationEpoch || dimension != nether) continue;
