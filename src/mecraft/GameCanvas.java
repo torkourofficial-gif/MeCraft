@@ -158,7 +158,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private boolean lookUp, lookDown, lookLeft, lookRight;
     private VoxelWorld world;
     private ChunkRenderer renderer;
-    private MenuDiorama menuDiorama;
     private boolean ridingBoat;
     private boolean ridingMinecart;
     private MusicController music;
@@ -3215,7 +3214,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void drawTouchSetup(Graphics g) {
         int w = getWidth(), h = getHeight();
-        drawDioramaBackground(g);
+        drawPanoramaBackground(g);
         drawInsetPanel(g, 12, h / 2 - 76, w - 24, 152);
         g.setColor(255, 244, 210);
         g.drawString("MeCraft", w / 2, h / 2 - 61, Graphics.TOP | Graphics.HCENTER);
@@ -3546,31 +3545,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         int pulse = (int)(System.currentTimeMillis() / 80L % Math.max(1, barWidth - 8));
         g.fillRect(bx + 2 + pulse, by + 2, Math.min(8, Math.max(1, barWidth - 4 - pulse)), 2);
         g.setFont(old);
-    }
-
-    /**
-     * Lightweight title scene: a tiny, prebuilt two-chunk landscape rendered
-     * by the same M3G chunk pipeline as gameplay. The camera circles it
-     * continuously instead of rebuilding a software cubemap every repaint.
-     */
-    private void drawDioramaBackground(Graphics g) {
-        int w = getWidth(), h = getHeight();
-        if (w <= 0 || h <= 0) return;
-        try {
-            if (menuDiorama == null) menuDiorama = new MenuDiorama(w, h);
-            Graphics3D graphics3D = Graphics3D.getInstance();
-            graphics3D.bindTarget(g);
-            try {
-                graphics3D.setViewport(0, 0, w, h);
-                menuDiorama.render(graphics3D, w, h, panoramaTick);
-            } finally {
-                graphics3D.releaseTarget();
-            }
-        } catch (OutOfMemoryError exhausted) {
-            drawDirtBackground(g);
-        } catch (Throwable unavailable) {
-            drawDirtBackground(g);
-        }
     }
 
     private void drawMenu(Graphics g) {
