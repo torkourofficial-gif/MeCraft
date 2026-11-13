@@ -350,6 +350,10 @@ final class VoxelWorld {
                 });
                 worker.setPriority(Thread.MIN_PRIORITY);
                 worker.start();
+            } else {
+                // Wake the existing low-priority worker instead of creating
+                // another thread for every short burst of streamed chunks.
+                notifyAll();
             }
         }
     }
@@ -364,9 +368,18 @@ final class VoxelWorld {
             boolean dimension;
             int epoch;
             synchronized (this) {
-                if (proceduralQueueCount == 0) {
-                    proceduralWorkerRunning = false;
-                    return;
+                // Keep one worker warm briefly between adjacent chunk requests.
+                // A bounded idle wait avoids both per-chunk thread churn and a
+                // permanently sleeping thread when a world is no longer streamed.
+                while (proceduralQueueCount == 0) {
+                    try {
+                        wait(500L);
+                    } catch (InterruptedException ignored) {
+                    }
+                    if (proceduralQueueCount == 0) {
+                        proceduralWorkerRunning = false;
+                        return;
+                    }
                 }
                 cx = proceduralQueueX[0]; cz = proceduralQueueZ[0];
                 dimension = proceduralQueueNether[0];
