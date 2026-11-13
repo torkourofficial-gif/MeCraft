@@ -48,7 +48,7 @@ final class InfdevTerrain {
         int originZ = chunkZ * CHUNK_SIZE;
 
         for (int z = 0; z < CHUNK_SIZE; z++) {
-            VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: procesando fila z=" + z + " del chunk " + chunkX + "," + chunkZ);
+            VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: terreno base");
             int worldZ = originZ + z;
             for (int x = 0; x < CHUNK_SIZE; x++) {
                 int worldX = originX + x;
@@ -123,15 +123,14 @@ final class InfdevTerrain {
         /** Returns true only after the complete chunk is ready for publication. */
         boolean step() {
             if (phase == 0 && nether && row < CHUNK_SIZE) {
-                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.GenerationTask: Nether fila " + row);
+                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.GenerationTask: Nether");
                 generateNetherRow(seed, originX, originZ, row, blocks, heights, economic);
                 row++;
                 if (row == CHUNK_SIZE) phase = 5;
                 return false;
             }
             if (phase == 0 && row < CHUNK_SIZE) {
-                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.GenerationTask: fila " + row +
-                        " del chunk " + chunkX + "," + chunkZ);
+                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.GenerationTask: terreno base");
                 int worldZ = originZ + row;
                 for (int x = 0; x < CHUNK_SIZE; x++) {
                     int worldX = originX + x;
@@ -237,7 +236,7 @@ final class InfdevTerrain {
         int originX = chunkX * CHUNK_SIZE;
         int originZ = chunkZ * CHUNK_SIZE;
         for (int z = 0; z < CHUNK_SIZE; z++) {
-            VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generateNether: fila z=" + z);
+            VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generateNether: terreno base");
             generateNetherRow(seed, originX, originZ, z, blocks, floorHeights, economic);
             yieldGenerationSlice();
         }
@@ -812,7 +811,7 @@ final class InfdevTerrain {
         int lastCellZ = floorDiv(originZ + CHUNK_SIZE + 1 - 4, 9);
         for (int rz = firstCellZ; rz <= lastCellZ; rz++) {
             for (int rx = firstCellX; rx <= lastCellX; rx++) {
-                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.decorate: revisando árbol rx=" + rx + ", rz=" + rz);
+                // Keep diagnostics phase-based; per-region strings caused avoidable allocation.
                 int tx = rx * 9 + 4, tz = rz * 9 + 4;
                 int biome = biomeAt(seed, tx, tz);
                 if (biome == OCEAN) continue;
@@ -847,7 +846,7 @@ final class InfdevTerrain {
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.decorate: colocando cactus y flores");
         for (int z = 0; z < CHUNK_SIZE; z++) {
             for (int x = 0; x < CHUNK_SIZE; x++) {
-                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.decorate: columna de flora x=" + x + ", z=" + z);
+                // Per-column diagnostic strings are intentionally omitted.
                 int column = z * CHUNK_SIZE + x;
                 int height = heights[column];
                 int biome = biomes[column] & 255;
