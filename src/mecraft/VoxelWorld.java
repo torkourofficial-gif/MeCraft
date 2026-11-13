@@ -844,11 +844,12 @@ final class VoxelWorld {
             setGenerationDiagnosticStage("VoxelWorld.generate: comenzando fila de chunks cz=" + cz);
             for (int cx = 0; cx < CHUNKS_X; cx++) {
                 setGenerationDiagnosticStage("VoxelWorld.generate: reservando caché para chunk cx=" + cx + ", cz=" + cz);
-                int cache = proceduralCacheSlot(cx, cz);
+                int cache = chooseProceduralSlot();
                 setGenerationDiagnosticStage("VoxelWorld.generate: generando chunk cx=" + cx + ", cz=" + cz);
                 generateChunk(cx, cz, proceduralChunks[cache]);
                 setGenerationDiagnosticStage("VoxelWorld.generate: guardando coordenadas del chunk cx=" + cx + ", cz=" + cz);
                 proceduralChunkX[cache] = cx; proceduralChunkZ[cache] = cz;
+                touchProceduralSlot(cache);
                 for (int z = 0; z < CHUNK_XZ; z++) {
                     setGenerationDiagnosticStage("VoxelWorld.generate: copiando chunk cx=" + cx + ", cz=" + cz + ", z=" + z);
                     for (int x = 0; x < CHUNK_XZ; x++) {
