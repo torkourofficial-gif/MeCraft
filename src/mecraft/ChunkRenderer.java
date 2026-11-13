@@ -1925,10 +1925,10 @@ final class ChunkRenderer {
                                      int x1, int y1, int z1) {
         int scanRadius = LAVA_LIGHT_RADIUS;
         int minY = Math.max(0, y0 - scanRadius);
-        int maxY = Math.min(VoxelWorld.HEIGHT - 1, y1 + scanRadius);
+        int maxY = Math.min(VoxelWorld.HEIGHT - 1, y1 + scanRadius - 1);
         chunkTorchCount = world.collectTorchSources(
                 x0 - scanRadius, minY, z0 - scanRadius,
-                x1 + scanRadius, maxY, z1 + scanRadius,
+                x1 + scanRadius - 1, maxY, z1 + scanRadius - 1,
                 chunkTorchX, chunkTorchY, chunkTorchZ,
                 chunkLavaSource, MAX_CHUNK_TORCHES);
         for (int i = 0; i < chunkTorchCount; i++) {
