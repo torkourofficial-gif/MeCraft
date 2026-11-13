@@ -923,13 +923,9 @@ final class VoxelWorld {
         }
     }
 
-    /** Small scheduling point shared by the synchronous initial-world builder. */
+    /** Cooperative scheduling point; unlike sleep, it does not impose a timer delay. */
     private void yieldInitialGenerationSlice() {
-        try {
-            Thread.sleep(1);
-        } catch (InterruptedException ignored) {
-            // Keep deterministic generation progressing; this pause is advisory.
-        }
+        Thread.yield();
     }
 
     private void generate() {
