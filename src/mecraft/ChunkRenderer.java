@@ -1447,6 +1447,7 @@ final class ChunkRenderer {
             collectChunkTorches(world, cx * VoxelWorld.CHUNK_XZ,
                     cy * VoxelWorld.CHUNK_Y, z0,
                     x1, (cy + 1) * VoxelWorld.CHUNK_Y, z1);
+        fillChunkLightSlice(x0, y0, z0);
 
         // Crossed flowers do not form cube faces, so collect them separately.
         // Empty vertical sections are common above the terrain: detect them during
@@ -1460,7 +1461,7 @@ final class ChunkRenderer {
                     int localIndex = (((y - y0) * VoxelWorld.CHUNK_XZ) + (z - z0)) *
                             VoxelWorld.CHUNK_XZ + (x - x0);
                     chunkVoxelScratch[localIndex] = id;
-                    chunkLightScratch[localIndex] = (byte)(id == Block.LAVA ? 14 : torchLightAt(x, y, z));
+                    chunkLightScratch[localIndex] = (byte)(id == Block.LAVA ? 14 : (chunkLightScratch[localIndex] & 255));
                     if (id == Block.PORTAL) {
                         if (portals == null) portals = reusablePortalBuilder;
                         portals.add(x - x0, y - y0, z - z0,
@@ -1809,6 +1810,37 @@ final class ChunkRenderer {
                     chunkLightRadius[chunkTorchCount] = (byte)(source == Block.LAVA ? LAVA_LIGHT_RADIUS : TORCH_LIGHT_RADIUS);
                     chunkTorchCount++;
                 }
+    }
+
+    /**
+     * Precomputes this one-block-high slice by projecting each nearby source
+     * into its bounded Manhattan-radius footprint. This replaces a scan of
+     * every source for every voxel during meshing.
+     */
+    private void fillChunkLightSlice(int x0, int y, int z0) {
+        for (int i = 0; i < CHUNK_AREA; i++) chunkLightScratch[i] = 0;
+        for (int source = 0; source < chunkTorchCount; source++) {
+            int radius = chunkLightRadius[source] & 255;
+            int dy = Math.abs(y - chunkTorchY[source]);
+            if (dy > radius) continue;
+            int remaining = radius - dy;
+            int minX = Math.max(0, chunkTorchX[source] - x0 - remaining);
+            int maxX = Math.min(VoxelWorld.CHUNK_XZ - 1, chunkTorchX[source] - x0 + remaining);
+            int minZ = Math.max(0, chunkTorchZ[source] - z0 - remaining);
+            int maxZ = Math.min(VoxelWorld.CHUNK_XZ - 1, chunkTorchZ[source] - z0 + remaining);
+            int multiplier = chunkLavaSource[source] ? 2 : 3;
+            for (int z = minZ; z <= maxZ; z++) {
+                int zDistance = Math.abs(z0 + z - chunkTorchZ[source]);
+                for (int x = minX; x <= maxX; x++) {
+                    int distance = dy + zDistance + Math.abs(x0 + x - chunkTorchX[source]);
+                    int level = (radius + 1 - distance) * multiplier;
+                    if (level > 14) level = 14;
+                    int at = z * VoxelWorld.CHUNK_XZ + x;
+                    if (level > (chunkLightScratch[at] & 255))
+                        chunkLightScratch[at] = (byte)level;
+                }
+            }
+        }
     }
 
     /** Block-quantized torch falloff: each Manhattan step loses one brightness level. */
