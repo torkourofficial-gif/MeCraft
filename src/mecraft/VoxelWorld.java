@@ -96,6 +96,8 @@ final class VoxelWorld {
     private final int[] proceduralQueueZ = new int[PROCEDURAL_CACHE_SIZE];
     private final boolean[] proceduralQueueNether = new boolean[PROCEDURAL_CACHE_SIZE];
     private int proceduralQueueCount;
+    private int proceduralQueueFocusX = Integer.MIN_VALUE;
+    private int proceduralQueueFocusZ = Integer.MIN_VALUE;
     private int proceduralGenerationEpoch;
     private boolean proceduralWorkerRunning;
     private boolean proceduralWorkerBusy;
@@ -234,8 +236,17 @@ final class VoxelWorld {
         }
     }
 
-    /** Queue a chunk and its four horizontal neighbors for off-thread generation. */
+    /** Queue the current chunk and neighbors; discard queued work left behind by movement. */
     void requestProceduralChunk(int cx, int cz) {
+        synchronized (this) {
+            if (proceduralQueueFocusX != cx || proceduralQueueFocusZ != cz) {
+                // Let the active chunk finish, but do not spend time generating
+                // queued sectors around a player position that is no longer current.
+                proceduralQueueCount = 0;
+                proceduralQueueFocusX = cx;
+                proceduralQueueFocusZ = cz;
+            }
+        }
         enqueueProceduralChunk(cx, cz, true);
         enqueueProceduralChunk(cx - 1, cz, false);
         enqueueProceduralChunk(cx + 1, cz, false);
@@ -341,11 +352,7 @@ final class VoxelWorld {
                             completed = true;
                             break;
                         }
-                        try {
-                            Thread.sleep(1);
-                        } catch (InterruptedException ignored) {
-                            // Continue the deterministic task; publication is epoch-guarded.
-                        }
+                        Thread.yield();
                     }
                 }
                 if (!completed) {
