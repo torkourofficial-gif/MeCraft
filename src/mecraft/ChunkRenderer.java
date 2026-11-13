@@ -100,7 +100,6 @@ final class ChunkRenderer {
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
-    private final boolean[] chunkFlatTerrain = new boolean[CACHE_SIZE];
     // Bit mask of vertical slices that actually need remeshing for each chunk.
     private final int[] dirtyLayerMasks = new int[CACHE_SIZE];
     private final int[] chunkWorldX = new int[CACHE_SIZE];
@@ -145,7 +144,6 @@ final class ChunkRenderer {
     private int portalAnimationTick;
     private int portalAnimationFrame;
     private final Appearance[] tileAppearances = new Appearance[TILE_COUNT];
-    private final Appearance flatTerrainAppearance;
     private final Appearance flowerAppearance;
     private final Appearance heldItemAppearance;
     private final Appearance itemSpriteAppearance;
@@ -189,7 +187,6 @@ final class ChunkRenderer {
         atlas = new Texture2D(image);
         atlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         atlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
-        flatTerrainAppearance = createFlatTerrainAppearance();
         boatTexture = new Texture2D(new Image2D(Image2D.RGBA, GameAssets.image("boat.png")));
         boatTexture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         boatTexture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
@@ -1356,15 +1353,6 @@ final class ChunkRenderer {
                             pendingBuild.x == cx && pendingBuild.y == cy && pendingBuild.z == cz)
                         pendingVisible = true;
 
-                    float lodDx = cx * VoxelWorld.CHUNK_XZ + 8.0f - world.playerX;
-                    float lodDz = cz * VoxelWorld.CHUNK_XZ + 8.0f - world.playerZ;
-                    boolean wantedFlat = lodDx * lodDx + lodDz * lodDz >
-                            18.0f * 18.0f;
-                    if (sameChunk && residentChunks[i] && chunkFlatTerrain[i] != wantedFlat) {
-                        dirtyLayerMasks[i] = (1 << VoxelWorld.CHUNK_Y) - 1;
-                        dirtyChunks[i] = true;
-                    }
-
                     if (!sameChunk) {
                         chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
                         dirtyChunks[i] = false;
@@ -1397,16 +1385,11 @@ final class ChunkRenderer {
         world.requestProceduralChunk(cx, cz);
         if (!world.isProceduralChunkReady(cx, cz)) return;
 
-        float wantedDx = cx * VoxelWorld.CHUNK_XZ + 8.0f - world.playerX;
-        float wantedDz = cz * VoxelWorld.CHUNK_XZ + 8.0f - world.playerZ;
-        boolean wantedFlat = wantedDx * wantedDx + wantedDz * wantedDz >
-                18.0f * 18.0f;
         if (pendingBuild == null || pendingBuildSlot != slot ||
-            pendingBuild.x != cx || pendingBuild.y != cy || pendingBuild.z != cz ||
-            pendingBuild.flatTerrain != wantedFlat) {
+            pendingBuild.x != cx || pendingBuild.y != cy || pendingBuild.z != cz) {
             int mask = dirtyLayerMasks[slot];
             if (mask == 0) mask = (1 << VoxelWorld.CHUNK_Y) - 1;
-            pendingBuild = new ChunkBuild(slot, cx, cy, cz, mask, chunks[slot], wantedFlat);
+            pendingBuild = new ChunkBuild(slot, cx, cy, cz, mask, chunks[slot]);
             pendingBuildSlot = slot;
             collectChunkTorches(world, cx * VoxelWorld.CHUNK_XZ,
                     cy * VoxelWorld.CHUNK_Y, cz * VoxelWorld.CHUNK_XZ,
@@ -1441,7 +1424,7 @@ final class ChunkRenderer {
                 for (int m = 0; m < oldLayer.length; m++)
                     terrain.removeChild(oldLayer[m]);
             }
-            Chunk slice = buildChunkLayer(world, cx, cy, cz, layer, job.flatTerrain);
+            Chunk slice = buildChunkLayer(world, cx, cy, cz, layer);
             Mesh[] newLayer = slice == null ? new Mesh[0] : slice.meshes;
             job.layerMeshes[layer] = newLayer;
             job.fires[layer] = slice == null || slice.fires == null ||
@@ -1471,7 +1454,6 @@ final class ChunkRenderer {
         chunks[slot] = complete;
         chunkWorldX[slot] = cx; chunkWorldY[slot] = cy; chunkWorldZ[slot] = cz;
         residentChunks[slot] = true;
-        chunkFlatTerrain[slot] = job.flatTerrain;
         dirtyChunks[slot] = false;
         dirtyLayerMasks[slot] = 0;
         pendingBuild = null;
@@ -1479,7 +1461,7 @@ final class ChunkRenderer {
     }
 
     private Chunk buildChunkLayer(VoxelWorld world, int cx, int cy, int cz,
-                                   int layer, boolean flatTerrain) {
+                                   int layer) {
         FaceBuilder[] builders = chunkFaceBuilders;
         FlowerBuilder flowers = null;
         FireBuilder fires = null;
@@ -1651,12 +1633,7 @@ final class ChunkRenderer {
             int tile = i % TILE_COUNT;
             float textureScale = tile == Block.sideTile(Block.GRASS) ? 0.999f / 16.0f : 1.0f / 16.0f;
             FaceBuilder builder = builders[i];
-            if (flatTerrain) {
-                tintFaceBuilder(builder, flatTileColor(tile, world.nether));
-                meshes[at++] = makeMesh(builder, flatTerrainAppearance, textureScale);
-            } else {
-                meshes[at++] = makeMesh(builder, tileAppearance(tile), textureScale);
-            }
+            meshes[at++] = makeMesh(builder, tileAppearance(tile), textureScale);
             builders[i] = null;
             // Retain at most 128 reusable builders. Oversized/extra builders
             // naturally become collectible instead of growing the pool forever.
@@ -1928,48 +1905,6 @@ final class ChunkRenderer {
         return Block.renderTile(id, face, woolColor);
     }
 
-    private void tintFaceBuilder(FaceBuilder data, int tint) {
-        int tr = (tint >> 16) & 255;
-        int tg = (tint >> 8) & 255;
-        int tb = tint & 255;
-        for (int i = 0; i < data.vertexCount; i++) {
-            int at = i * 4;
-            int shade = data.c[at] & 255;
-            data.c[at] = (byte)(shade * tr / 255);
-            data.c[at + 1] = (byte)(shade * tg / 255);
-            data.c[at + 2] = (byte)(shade * tb / 255);
-        }
-    }
-
-    private Appearance createFlatTerrainAppearance() {
-        Appearance appearance = new Appearance();
-        Material material = new Material();
-        material.setColor(Material.AMBIENT, 0xFFFFFFFF);
-        material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
-        material.setVertexColorTrackingEnable(true);
-        appearance.setMaterial(material);
-        PolygonMode polygon = new PolygonMode();
-        polygon.setCulling(PolygonMode.CULL_NONE);
-        polygon.setShading(PolygonMode.SHADE_FLAT);
-        appearance.setPolygonMode(polygon);
-        return appearance;
-    }
-
-    /** Representative colors for distant block faces; no atlas sampling. */
-    private int flatTileColor(int tile, boolean netherWorld) {
-        if (tile == 0 || tile == 3 || tile == 52 || tile == 53) return 0x70A84A;
-        if (tile == 1 || tile == 232) return 0x858585;
-        if (tile == 2 || tile == 20 || tile == 21 || tile == 59 || tile == 60) return 0x956B45;
-        if (tile == 4 || tile == 18 || tile == 233) return 0xD8C58A;
-        if (tile == 205 || tile == 237 || tile == 234) return netherWorld ? 0xE56A25 : 0x477FC4;
-        if (tile == 66) return 0xE8F1F5;
-        if (tile == 103) return 0x87433C;
-        if (tile == 104) return 0x72503F;
-        if (tile == 105 || tile == 235) return 0xD9B86A;
-        if (tile >= Block.WOOL_TINT_TILE_START) return 0xB7B7B7;
-        return 0x999999;
-    }
-
     private Appearance createBlockAppearance(Texture2D texture, boolean translucent) {
         Appearance appearance = new Appearance();
         appearance.setTexture(0, texture);
@@ -2044,15 +1979,12 @@ final class ChunkRenderer {
 
     private static final class ChunkBuild {
         final int slot, x, y, z, dirtyMask;
-        final boolean flatTerrain;
         int nextLayer;
         final Mesh[][] layerMeshes = new Mesh[VoxelWorld.CHUNK_Y][];
         final FireBuilder[] fires = new FireBuilder[VoxelWorld.CHUNK_Y];
-        ChunkBuild(int slot, int x, int y, int z, int dirtyMask, Chunk previous,
-                   boolean flatTerrain) {
+        ChunkBuild(int slot, int x, int y, int z, int dirtyMask, Chunk previous) {
             this.slot = slot; this.x = x; this.y = y; this.z = z;
             this.dirtyMask = dirtyMask;
-            this.flatTerrain = flatTerrain;
             if (previous != null && previous.layerMeshes != null) {
                 for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++) {
                     layerMeshes[layer] = previous.layerMeshes[layer];
