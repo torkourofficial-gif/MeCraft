@@ -642,6 +642,47 @@ final class VoxelWorld {
         return edit >= 0 ? editId[edit] : Block.AIR;
     }
 
+    /** Collect rails in one chunk without querying/generating procedural terrain. */
+    int collectRailsInChunk(int chunkX, int chunkY, int chunkZ,
+                            int[] outX, int[] outY, int[] outZ,
+                            int[] outMetadata, int capacity) {
+        if (capacity <= 0) return 0;
+        int x0 = chunkX * CHUNK_XZ, y0 = chunkY * CHUNK_Y, z0 = chunkZ * CHUNK_XZ;
+        int x1 = x0 + CHUNK_XZ - 1, y1 = Math.min(HEIGHT - 1, y0 + CHUNK_Y - 1);
+        int z1 = z0 + CHUNK_XZ - 1;
+        if (y0 < 0 || y0 >= HEIGHT) return 0;
+        int count = 0;
+        int minX = Math.max(0, x0), maxX = Math.min(WIDTH - 1, x1);
+        int minZ = Math.max(0, z0), maxZ = Math.min(DEPTH - 1, z1);
+        if (minX <= maxX && minZ <= maxZ) {
+            for (int y = y0; y <= y1 && count < capacity; y++) {
+                for (int z = minZ; z <= maxZ && count < capacity; z++) {
+                    int at = index(minX, y, z);
+                    for (int x = minX; x <= maxX && count < capacity; x++, at++) {
+                        if (blocks[at] != Block.RAIL) continue;
+                        outX[count] = x;
+                        outY[count] = y;
+                        outZ[count] = z;
+                        outMetadata[count] = metadataAt(x, y, z) & 15;
+                        count++;
+                    }
+                }
+            }
+        }
+        for (int i = 0; i < editCount && count < capacity; i++) {
+            if (editNether[i] != nether || editId[i] != Block.RAIL ||
+                editX[i] < x0 || editX[i] > x1 ||
+                editY[i] < y0 || editY[i] > y1 ||
+                editZ[i] < z0 || editZ[i] > z1) continue;
+            outX[count] = editX[i];
+            outY[count] = editY[i];
+            outZ[count] = editZ[i];
+            outMetadata[count] = editMeta[i] & 15;
+            count++;
+        }
+        return count;
+    }
+
     /**
      * Enumerates nearby light sources without probing every voxel in the
      * surrounding volume. Procedural terrain cannot contain player torches;
