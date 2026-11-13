@@ -102,8 +102,7 @@ final class VoxelWorld {
     private boolean proceduralWorkerBusy;
     private int proceduralWorkerX, proceduralWorkerZ;
     private boolean proceduralWorkerNether;
-    private final int[] proceduralChunkAge = new int[PROCEDURAL_CACHE_SIZE];
-    private int proceduralCacheClock;
+    private int proceduralNextSlot;
     private int proceduralChunksGenerated;
     private long lastProceduralGenerationMillis;
     private int[] editX = new int[128];
@@ -211,22 +210,13 @@ final class VoxelWorld {
         return -1;
     }
 
+    /** Reuse the eight cache slots in a simple circular order. */
     private int chooseProceduralSlot() {
-        int oldest = 0;
-        for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
+        for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++)
             if (proceduralChunkX[i] == Integer.MIN_VALUE) return i;
-            if (proceduralChunkAge[i] < proceduralChunkAge[oldest]) oldest = i;
-        }
-        return oldest;
-    }
-
-    private void touchProceduralSlot(int slot) {
-        proceduralCacheClock++;
-        if (proceduralCacheClock == Integer.MAX_VALUE) {
-            for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) proceduralChunkAge[i] >>= 1;
-            proceduralCacheClock = 1;
-        }
-        proceduralChunkAge[slot] = proceduralCacheClock;
+        int slot = proceduralNextSlot;
+        proceduralNextSlot = (proceduralNextSlot + 1) % PROCEDURAL_CACHE_SIZE;
+        return slot;
     }
 
     private byte proceduralBlock(int x, int y, int z) {
@@ -234,7 +224,7 @@ final class VoxelWorld {
         synchronized (this) {
             int cache = findProceduralChunk(cx, cz);
             if (cache >= 0) {
-                touchProceduralSlot(cache);
+
                 int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
                 return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
             }
@@ -429,7 +419,7 @@ final class VoxelWorld {
                 proceduralWorkerBuffer = recycled;
                 proceduralChunkX[slot] = cx;
                 proceduralChunkZ[slot] = cz;
-                touchProceduralSlot(slot);
+
                 proceduralChunksGenerated++;
                 lastProceduralGenerationMillis =
                         System.currentTimeMillis() - generationStarted;
@@ -588,7 +578,7 @@ final class VoxelWorld {
         synchronized (this) {
             int cache = findProceduralChunk(cx, cz);
             if (cache >= 0) {
-                touchProceduralSlot(cache);
+
                 int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
                 return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
             }
@@ -610,7 +600,7 @@ final class VoxelWorld {
         synchronized (this) {
             int cache = findProceduralChunk(cx, cz);
             if (cache < 0) return Block.AIR;
-            touchProceduralSlot(cache);
+
             int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
             return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
         }
@@ -643,7 +633,7 @@ final class VoxelWorld {
         int cx = floorChunk(x0), cz = floorChunk(z0);
         synchronized (this) {
             int cache = findProceduralChunk(cx, cz);
-            boolean cacheUsed = false;
+
             for (int z = 0; z < CHUNK_XZ; z++) {
                 for (int x = 0; x < CHUNK_XZ; x++) {
                     int wx = x0 + x, wz = z0 + z;
@@ -659,12 +649,12 @@ final class VoxelWorld {
                             int lx = wx - cx * CHUNK_XZ;
                             int lz = wz - cz * CHUNK_XZ;
                             target[at] = proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
-                            cacheUsed = true;
+
                         } else target[at] = Block.AIR;
                     }
                 }
             }
-            if (cacheUsed) touchProceduralSlot(cache);
+
         }
     }
 
@@ -1215,7 +1205,7 @@ final class VoxelWorld {
                 }
                 setGenerationDiagnosticStage("VoxelWorld.generate: guardando coordenadas del chunk cx=" + cx + ", cz=" + cz);
                 proceduralChunkX[cache] = cx; proceduralChunkZ[cache] = cz;
-                touchProceduralSlot(cache);
+
                 for (int z = 0; z < CHUNK_XZ; z++) {
                     setGenerationDiagnosticStage("VoxelWorld.generate: copiando chunk cx=" + cx + ", cz=" + cz + ", z=" + z);
                     for (int x = 0; x < CHUNK_XZ; x++) {
@@ -1898,7 +1888,7 @@ final class VoxelWorld {
                     in.readFully(world.proceduralChunks[slot]);
                     world.proceduralChunkX[slot] = cx;
                     world.proceduralChunkZ[slot] = cz;
-                    world.touchProceduralSlot(slot);
+
                 }
             }
             if (editPageCount > 0 && editPageCount <= store.getNumRecords())
