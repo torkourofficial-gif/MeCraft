@@ -189,6 +189,9 @@ final class InfdevTerrain {
      * The chunk is still published atomically only after every terrain pass.
      */
     private static void yieldGenerationSlice() {
+        // Only throttle the low-priority streaming worker. Initial world creation
+        // runs synchronously and must not gain artificial loading delays.
+        if (Thread.currentThread().getPriority() != Thread.MIN_PRIORITY) return;
         try {
             Thread.sleep(1);
         } catch (InterruptedException ignored) {
@@ -631,6 +634,10 @@ final class InfdevTerrain {
                                      Block.DIAMOND_ORE, 2, Math.min(14, WORLD_HEIGHT - 3), 2, 2, h);
                 }
             }
+        
+            yieldGenerationSlice();
+        
+            yieldGenerationSlice();
         }
     }
 
