@@ -248,7 +248,7 @@ final class InfdevTerrain {
         return value * value * (768 - 2 * value) >> 16;
     }
 
-    private static int lattice(int seed, int x, int z) {
+    private static synchronized int lattice(int seed, int x, int z) {
         int base = seed ^ x * 73428767 ^ z * 42317861;
         int slot = base & LATTICE_CACHE_MASK;
         if (latticeCacheValid[slot] && latticeSeedCache[slot] == seed &&
