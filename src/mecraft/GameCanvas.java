@@ -3581,11 +3581,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         drawInsetPanel(g, 5, 5, w - 10, h - 10);
         g.setColor(255, 255, 255);
         g.drawString(lanLabel("DEBUG: todos los items", "DEBUG: all items"),
-                w / 2, 9, Graphics.TOP | Graphics.HCENTER);
+                w / 2, 7, Graphics.TOP | Graphics.HCENTER);
+        g.setColor(205, 190, 165);
+        String streamInfo = world == null ? "Streaming: no world" :
+                world.getStreamingDiagnostics();
+        g.drawString(streamInfo, w / 2, 21, Graphics.TOP | Graphics.HCENTER);
 
         int rowHeight = 24;
-        int listTop = 25;
-        int visible = Math.max(1, (h - 34) / rowHeight);
+        int listTop = 37;
+        int visible = Math.max(1, (h - 48) / rowHeight);
         int total = ItemCatalog.COUNT - 1;
         int maxScroll = Math.max(0, total - visible);
         if (debugItemScroll > maxScroll) debugItemScroll = maxScroll;
