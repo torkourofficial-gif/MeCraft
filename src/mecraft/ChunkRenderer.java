@@ -29,6 +29,9 @@ final class ChunkRenderer {
     private static final int CHUNKS_PER_FRAME = 1;
     // Avoid rebuilding the same dirty chunk repeatedly while edits arrive.
     private int lastBuildFrameChunk = -1;
+    // A chunk is assembled as eight one-block-high slices, one slice per frame.
+    private ChunkBuild pendingBuild;
+    private int pendingBuildSlot = -1;
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
@@ -1180,6 +1183,8 @@ final class ChunkRenderer {
     }
 
     private void rebuildChanged(VoxelWorld world) {
+        pendingBuild = null;
+        pendingBuildSlot = -1;
         int x = world.changedX, y = world.changedY, z = world.changedZ;
         int cx = floorDiv(x, VoxelWorld.CHUNK_XZ);
         int cy = y / VoxelWorld.CHUNK_Y;
@@ -1238,10 +1243,13 @@ final class ChunkRenderer {
     }
 
     private void rebuildWorld(VoxelWorld world) {
+        pendingBuild = null;
+        pendingBuildSlot = -1;
         for (int i = 0; i < chunks.length; i++) removeChunk(i);
     }
 
     private void removeChunk(int i) {
+        if (pendingBuildSlot == i) { pendingBuild = null; pendingBuildSlot = -1; }
         if (chunks[i] != null) {
             for (int m = 0; m < chunks[i].meshes.length; m++) terrain.removeChild(chunks[i].meshes[m]);
             chunks[i] = null;
@@ -1348,9 +1356,10 @@ final class ChunkRenderer {
             }
         }
 
-        // Build one nearest sector per frame; no second full-cache scan needed.
-        for (int build = 0; build < CHUNKS_PER_FRAME && best >= 0; build++) {
-            replaceChunk(world, best, chunkWorldX[best], chunkWorldY[best], chunkWorldZ[best]);
+        // Advance only one 1-block-high slice of the nearest sector per frame.
+        // The previous complete chunk remains visible until all eight slices are ready.
+        if (best >= 0) {
+            advanceChunkBuild(world, best, chunkWorldX[best], chunkWorldY[best], chunkWorldZ[best]);
             best = -1;
             bestDistance = Float.MAX_VALUE;
             // A second candidate is only needed if CHUNKS_PER_FRAME is raised.
@@ -1373,7 +1382,46 @@ final class ChunkRenderer {
         }
     }
 
-    private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {
+    private void advanceChunkBuild(VoxelWorld world, int slot, int cx, int cy, int cz) {
+        if (pendingBuild == null || pendingBuildSlot != slot ||
+            pendingBuild.x != cx || pendingBuild.y != cy || pendingBuild.z != cz) {
+            pendingBuild = new ChunkBuild(slot, cx, cy, cz);
+            pendingBuildSlot = slot;
+        }
+        ChunkBuild job = pendingBuild;
+        Chunk slice = buildChunkLayer(world, cx, cy, cz, job.nextLayer);
+        job.layerMeshes[job.nextLayer] = slice == null ? new Mesh[0] : slice.meshes;
+        if (slice != null && slice.fires != null && slice.fires.length > 0)
+            job.fires[job.nextLayer] = slice.fires[0];
+        job.nextLayer++;
+        if (job.nextLayer < VoxelWorld.CHUNK_Y) return;
+
+        int total = 0;
+        for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++)
+            total += job.layerMeshes[layer].length;
+        Mesh[] meshes = new Mesh[total];
+        int at = 0;
+        for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++) {
+            Mesh[] layerMeshes = job.layerMeshes[layer];
+            System.arraycopy(layerMeshes, 0, meshes, at, layerMeshes.length);
+            at += layerMeshes.length;
+        }
+        Chunk complete = new Chunk();
+        complete.meshes = meshes;
+        complete.fires = job.fires;
+        Chunk previous = chunks[slot];
+        if (previous != null)
+            for (int m = 0; m < previous.meshes.length; m++) terrain.removeChild(previous.meshes[m]);
+        chunks[slot] = complete;
+        chunkWorldX[slot] = cx; chunkWorldY[slot] = cy; chunkWorldZ[slot] = cz;
+        residentChunks[slot] = true;
+        dirtyChunks[slot] = false;
+        for (int m = 0; m < complete.meshes.length; m++) terrain.addChild(complete.meshes[m]);
+        pendingBuild = null;
+        pendingBuildSlot = -1;
+    }
+
+    private Chunk buildChunkLayer(VoxelWorld world, int cx, int cy, int cz, int layer) {
         // Distant terrain on a small phone gains little from 16x16 textures.
         // Keep the same silhouettes and block data, but use one flat vertex-
         // colored material beyond the near-detail radius in every preset.
@@ -1387,10 +1435,10 @@ final class ChunkRenderer {
         reusableFlowerBuilder.reset();
         reusablePortalBuilder.reset();
         int x0 = cx * VoxelWorld.CHUNK_XZ;
-        int y0 = cy * VoxelWorld.CHUNK_Y;
+        int y0 = cy * VoxelWorld.CHUNK_Y + layer;
         int z0 = cz * VoxelWorld.CHUNK_XZ;
         int x1 = x0 + VoxelWorld.CHUNK_XZ;
-        int y1 = y0 + VoxelWorld.CHUNK_Y;
+        int y1 = y0 + 1;
         int z1 = z0 + VoxelWorld.CHUNK_XZ;
 
         collectChunkTorches(world, x0, y0, z0, x1, y1, z1);
@@ -1436,9 +1484,9 @@ final class ChunkRenderer {
         // the merged rectangles preserve the original per-block texture scale.
         int[] mask = greedyMaskScratch;
         for (int face = 0; face < 6; face++) {
-            int slices = face == 0 || face == 5 ? VoxelWorld.CHUNK_Y : VoxelWorld.CHUNK_XZ;
+            int slices = face == 0 || face == 5 ? 1 : VoxelWorld.CHUNK_XZ;
             int width = VoxelWorld.CHUNK_XZ;
-            int height = face == 0 || face == 5 ? VoxelWorld.CHUNK_XZ : VoxelWorld.CHUNK_Y;
+            int height = face == 0 || face == 5 ? VoxelWorld.CHUNK_XZ : 1;
             for (int slice = 0; slice < slices; slice++) {
                 for (int b = 0; b < height; b++) {
                     int row = b * width;
@@ -1572,7 +1620,7 @@ final class ChunkRenderer {
         if (portals != null) meshes[at++] = makePortalMesh(portals);
         Chunk chunk = new Chunk();
         chunk.meshes = meshes;
-        chunk.fires = fires;
+        chunk.fires = fires == null ? null : new FireBuilder[] { fires };
         int wx = x0, wy = y0, wz = z0;
         for (int i = 0; i < meshes.length; i++) meshes[i].setTranslation(wx, wy, wz);
         return chunk;
@@ -1901,11 +1949,23 @@ final class ChunkRenderer {
     private void updateFireMeshes() {
         for (int i = 0; i < chunks.length; i++) {
             Chunk chunk = chunks[i];
-            if (chunk != null && chunk.fires != null) chunk.fires.setFrame(fireAnimationFrame);
+            if (chunk == null || chunk.fires == null) continue;
+            for (int f = 0; f < chunk.fires.length; f++)
+                if (chunk.fires[f] != null) chunk.fires[f].setFrame(fireAnimationFrame);
         }
     }
 
-    private static final class Chunk { Mesh[] meshes; FireBuilder fires; }
+    private static final class Chunk { Mesh[] meshes; FireBuilder[] fires; }
+
+    private static final class ChunkBuild {
+        final int slot, x, y, z;
+        int nextLayer;
+        final Mesh[][] layerMeshes = new Mesh[VoxelWorld.CHUNK_Y][];
+        final FireBuilder[] fires = new FireBuilder[VoxelWorld.CHUNK_Y];
+        ChunkBuild(int slot, int x, int y, int z) {
+            this.slot = slot; this.x = x; this.y = y; this.z = z;
+        }
+    }
 
     /** One full-cell portal plane, sharing the eight-frame portal material. */
     private static final class PortalBuilder {
