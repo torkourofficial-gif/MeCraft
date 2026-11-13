@@ -93,6 +93,106 @@ final class InfdevTerrain {
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: chunk completado " + chunkX + "," + chunkZ);
     }
 
+    /**
+     * Resumable streamed-chunk generator. The expensive column fill advances
+     * one Z row per step; later deterministic passes are separate steps.
+     * The worker can yield between steps without exposing a partial chunk.
+     */
+    static final class GenerationTask {
+        private final int seed, chunkX, chunkZ, originX, originZ;
+        private final byte[] blocks, biomes;
+        private final int[] heights;
+        private final boolean economic, nether;
+        private int row;
+        private int phase;
+
+        GenerationTask(int seed, int chunkX, int chunkZ, byte[] blocks,
+                       int[] heights, byte[] biomes, boolean economic, boolean nether) {
+            this.seed = seed;
+            this.chunkX = chunkX;
+            this.chunkZ = chunkZ;
+            this.originX = chunkX * CHUNK_SIZE;
+            this.originZ = chunkZ * CHUNK_SIZE;
+            this.blocks = blocks;
+            this.heights = heights;
+            this.biomes = biomes;
+            this.economic = economic;
+            this.nether = nether;
+        }
+
+        /** Returns true only after the complete chunk is ready for publication. */
+        boolean step() {
+            if (phase == 0 && nether) {
+                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.GenerationTask: Nether " + chunkX + "," + chunkZ);
+                if (economic) generateEconomicNether(seed, chunkX, chunkZ, blocks, heights);
+                else generateNether(seed, chunkX, chunkZ, blocks, heights);
+                phase = 5;
+                return false;
+            }
+            if (phase == 0 && row < CHUNK_SIZE) {
+                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.GenerationTask: fila " + row +
+                        " del chunk " + chunkX + "," + chunkZ);
+                int worldZ = originZ + row;
+                for (int x = 0; x < CHUNK_SIZE; x++) {
+                    int worldX = originX + x;
+                    int column = row * CHUNK_SIZE + x;
+                    int biome = biomeAt(seed, worldX, worldZ);
+                    int height = economic ? economicSurfaceHeight(seed, worldX, worldZ, biome) :
+                        surfaceHeight(seed, worldX, worldZ, biome);
+                    heights[column] = height;
+                    biomes[column] = (byte)biome;
+                    int top = biome == DESERT || biome == OCEAN ? Block.SAND :
+                        biome == SNOWY ? Block.SNOW : Block.GRASS;
+                    int fill = biome == DESERT || biome == OCEAN ? Block.SAND : Block.DIRT;
+                    int at = column * WORLD_HEIGHT;
+                    for (int y = 0; y < WORLD_HEIGHT; y++) {
+                        byte id;
+                        if (y == 0) id = Block.BEDROCK;
+                        else if (y > height) id = biome == OCEAN && y <= SEA_LEVEL ?
+                            Block.WATER : Block.AIR;
+                        else if (y == height) id = (byte)top;
+                        else if (y >= height - 3) id = (byte)fill;
+                        else if (y < 8 && (hash(seed ^ 0x5F356495, worldX, y, worldZ) & 31) == 0) id = Block.COAL;
+                        else if (y < 5 && (hash(seed ^ 0x4B1D2A37, worldX, y, worldZ) & 95) == 0) id = Block.IRON;
+                        else id = Block.STONE;
+                        blocks[at + y] = id;
+                    }
+                }
+                row++;
+                if (row == CHUNK_SIZE) phase = 1;
+                return false;
+            }
+            if (phase == 1) {
+                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.GenerationTask: vetas minerales");
+                if (economic) generateEconomicOreVeins(seed, originX, originZ, blocks);
+                else generateOreVeins(seed, originX, originZ, blocks);
+                phase = 2;
+                return false;
+            }
+            if (phase == 2) {
+                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.GenerationTask: cuevas");
+                if (economic) carveEconomicCaves(seed, originX, originZ, heights, blocks);
+                else carveCaves(seed, originX, originZ, heights, blocks);
+                phase = 3;
+                return false;
+            }
+            if (phase == 3) {
+                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.GenerationTask: ravines");
+                if (economic) carveEconomicRavines(seed, originX, originZ, heights, blocks);
+                else carveRavines(seed, originX, originZ, heights, blocks);
+                phase = 4;
+                return false;
+            }
+            if (phase == 4) {
+                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.GenerationTask: decoración");
+                decorate(seed, originX, originZ, heights, biomes, blocks, economic);
+                phase = 5;
+                return false;
+            }
+            return phase == 5;
+        }
+    }
+
     static int surfaceHeight(int seed, int x, int z) {
         return surfaceHeight(seed, x, z, biomeAt(seed, x, z));
     }
