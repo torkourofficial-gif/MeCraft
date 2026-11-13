@@ -459,10 +459,10 @@ final class VoxelWorld {
         long total = runtime.totalMemory();
         long used = total - runtime.freeMemory();
         return "Heap " + (used / 1024L) + "/" + (total / 1024L) +
-                " KB | cache " + resident + "/" + PROCEDURAL_CACHE_SIZE +
-                " | queue " + proceduralQueueCount +
-                " | gen " + proceduralChunksGenerated +
-                " (" + lastProceduralGenerationMillis + " ms)";
+                "K C" + resident + "/" + PROCEDURAL_CACHE_SIZE +
+                " Q" + proceduralQueueCount +
+                " G" + proceduralChunksGenerated +
+                " " + lastProceduralGenerationMillis + "ms";
     }
 
     private int findEdit(int x, int y, int z) {
