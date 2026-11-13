@@ -1534,7 +1534,8 @@ final class ChunkRenderer {
                                 neighbor = chunkVoxelScratch[voxelIndex - CHUNK_AREA];
                             else neighbor = world.get(nx, ny, nz);
                             if (Block.faceVisible(id, neighbor)) {
-                                int tile = renderWorldTile(world, id, face, x, y, z,\n                                        id == Block.WOOL ? world.woolColor(x, y, z) : 0);
+                                int tile = renderWorldTile(world, id, face, x, y, z,
+                                        id == Block.WOOL ? world.woolColor(x, y, z) : 0);
                                 int light = chunkLightScratch[voxelIndex] & 255;
                                 key = light * TILE_COUNT + tile + 1;
                             }
