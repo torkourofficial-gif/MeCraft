@@ -294,6 +294,10 @@ final class VoxelWorld {
         }
     }
 
+    private synchronized boolean isProceduralGenerationCurrent(int epoch, boolean dimension) {
+        return epoch == proceduralGenerationEpoch && dimension == nether;
+    }
+
     private void runProceduralWorker() {
         while (true) {
             int cx, cz;
@@ -322,8 +326,32 @@ final class VoxelWorld {
                 continue;
             }
             try {
-                generateChunk(cx, cz, proceduralWorkerBuffer, proceduralWorkerHeights,
-                              proceduralWorkerBiomes, dimension);
+                boolean completed;
+                if (worldType == TYPE_FLAT && !dimension) {
+                    generateChunk(cx, cz, proceduralWorkerBuffer, proceduralWorkerHeights,
+                                  proceduralWorkerBiomes, dimension);
+                    completed = true;
+                } else {
+                    InfdevTerrain.GenerationTask task = new InfdevTerrain.GenerationTask(
+                            seed, cx, cz, proceduralWorkerBuffer, proceduralWorkerHeights,
+                            proceduralWorkerBiomes, economicMode, dimension);
+                    completed = false;
+                    while (isProceduralGenerationCurrent(epoch, dimension)) {
+                        if (task.step()) {
+                            completed = true;
+                            break;
+                        }
+                        try {
+                            Thread.sleep(1);
+                        } catch (InterruptedException ignored) {
+                            // Continue the deterministic task; publication is epoch-guarded.
+                        }
+                    }
+                }
+                if (!completed) {
+                    synchronized (this) { proceduralWorkerBusy = false; }
+                    continue;
+                }
             } catch (Throwable failure) {
                 synchronized (this) {
                     proceduralWorkerBusy = false;
