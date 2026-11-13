@@ -81,7 +81,7 @@ final class VoxelWorld {
     private static final int FLUID_QUEUE_SIZE = 2048;
     private final int[] fluidQueue = new int[FLUID_QUEUE_SIZE];
     private final byte[] fluidQueued = new byte[(BLOCK_COUNT + 7) / 8];
-    // Power-of-two ring cache; eight chunks reduce regeneration while meshing neighbors.
+    // Small eight-chunk LRU cache; nearby sectors stay resident while meshing.
     private static final int PROCEDURAL_CACHE_SIZE = 8;
     private final byte[][] proceduralChunks =
             new byte[PROCEDURAL_CACHE_SIZE][InfdevTerrain.CHUNK_VOLUME];
