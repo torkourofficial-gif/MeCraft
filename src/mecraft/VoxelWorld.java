@@ -236,11 +236,11 @@ final class VoxelWorld {
 
     /** Queue a chunk and its four horizontal neighbors for off-thread generation. */
     void requestProceduralChunk(int cx, int cz) {
-        enqueueProceduralChunk(cx, cz);
-        enqueueProceduralChunk(cx - 1, cz);
-        enqueueProceduralChunk(cx + 1, cz);
-        enqueueProceduralChunk(cx, cz - 1);
-        enqueueProceduralChunk(cx, cz + 1);
+        enqueueProceduralChunk(cx, cz, true);
+        enqueueProceduralChunk(cx - 1, cz, false);
+        enqueueProceduralChunk(cx + 1, cz, false);
+        enqueueProceduralChunk(cx, cz - 1, false);
+        enqueueProceduralChunk(cx, cz + 1, false);
     }
 
     boolean isProceduralChunkReady(int cx, int cz) {
@@ -253,7 +253,7 @@ final class VoxelWorld {
         synchronized (this) { return findProceduralChunk(cx, cz) >= 0; }
     }
 
-    private void enqueueProceduralChunk(final int cx, final int cz) {
+    private void enqueueProceduralChunk(final int cx, final int cz, boolean priority) {
         int x0 = cx * CHUNK_XZ, z0 = cz * CHUNK_XZ;
         if (worldSize == SIZE_OLD &&
             (outsideWorld(x0, z0) || outsideWorld(x0 + CHUNK_XZ - 1, z0 + CHUNK_XZ - 1))) return;
@@ -265,11 +265,24 @@ final class VoxelWorld {
             for (int i = 0; i < proceduralQueueCount; i++)
                 if (proceduralQueueX[i] == cx && proceduralQueueZ[i] == cz &&
                     proceduralQueueNether[i] == nether) return;
-            if (proceduralQueueCount == proceduralQueueX.length) return;
-            proceduralQueueX[proceduralQueueCount] = cx;
-            proceduralQueueZ[proceduralQueueCount] = cz;
-            proceduralQueueNether[proceduralQueueCount] = nether;
-            proceduralQueueCount++;
+            if (priority) {
+                if (proceduralQueueCount == proceduralQueueX.length) proceduralQueueCount--;
+                for (int i = proceduralQueueCount; i > 0; i--) {
+                    proceduralQueueX[i] = proceduralQueueX[i - 1];
+                    proceduralQueueZ[i] = proceduralQueueZ[i - 1];
+                    proceduralQueueNether[i] = proceduralQueueNether[i - 1];
+                }
+                proceduralQueueX[0] = cx;
+                proceduralQueueZ[0] = cz;
+                proceduralQueueNether[0] = nether;
+                proceduralQueueCount++;
+            } else {
+                if (proceduralQueueCount == proceduralQueueX.length) return;
+                proceduralQueueX[proceduralQueueCount] = cx;
+                proceduralQueueZ[proceduralQueueCount] = cz;
+                proceduralQueueNether[proceduralQueueCount] = nether;
+                proceduralQueueCount++;
+            }
             if (!proceduralWorkerRunning) {
                 proceduralWorkerRunning = true;
                 Thread worker = new Thread(new Runnable() {
