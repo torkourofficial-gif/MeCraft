@@ -638,7 +638,6 @@ final class VoxelWorld {
         int metadata = orientation & 7;
         setMetadata(x, y, z, metadata);
         setMetadata(x, y + 1, z, metadata | 8);
-        fullRebuild = true;
         revision++;
         changedX = x; changedY = y; changedZ = z;
         return true;
@@ -652,7 +651,6 @@ final class VoxelWorld {
         metadata ^= 4;
         setMetadata(x, y, z, metadata);
         setMetadata(x, y + 1, z, metadata | 8);
-        fullRebuild = true;
         revision++;
         changedX = x; changedY = y; changedZ = z;
         return true;
@@ -666,7 +664,6 @@ final class VoxelWorld {
         boolean hasUpper = y + 1 < HEIGHT && get(x, y + 1, z) == doorBlock;
         if (!setBlock(x, y, z, Block.AIR, 0)) return false;
         if (hasUpper && !setBlock(x, y + 1, z, Block.AIR, 0)) return false;
-        fullRebuild = true;
         return true;
     }
 
