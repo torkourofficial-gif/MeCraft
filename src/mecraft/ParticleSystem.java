@@ -30,6 +30,10 @@ final class ParticleSystem {
     private final int[] tileOffsetX = new int[CAPACITY];
     private final int[] tileOffsetY = new int[CAPACITY];
     private final boolean[] deathDust = new boolean[CAPACITY];
+    private final int[] activeSlots = new int[CAPACITY];
+    private final int[] activePosition = new int[CAPACITY];
+    private int activeCount;
+    private boolean textureCoordinatesDirty;
     private final short[] positions = new short[VERTICES * 3];
     private final short[] texCoords = new short[VERTICES * 2];
     private final byte[] colors = new byte[VERTICES * 4];
@@ -56,6 +60,7 @@ final class ParticleSystem {
             positions[at + 9] = bound; positions[at + 10] = bound; positions[at + 11] = bound;
         }
         positionArray.set(0, VERTICES, positions);
+        for (int i = 0; i < CAPACITY; i++) activePosition[i] = -1;
         texCoordArray = new VertexArray(VERTICES, 2, 2);
         texCoordArray.set(0, VERTICES, texCoords);
         colorArray = new VertexArray(VERTICES, 4, 1);
@@ -110,6 +115,9 @@ final class ParticleSystem {
                     vz[i] = mz / length * speed;
                     size[i] = 0.075f + nextRandom() * 0.055f;
                     age[i] = 0;
+                    activate(i);
+                    writeTextureQuad(i);
+                    textureCoordinatesDirty = true;
                     // About two seconds at the game's 20 updates per second.
                     lifetime[i] = 40;
                     tile[i] = blockTile;
@@ -119,6 +127,10 @@ final class ParticleSystem {
                     setParticleColor(i, 255);
                 }
             }
+        }
+        if (textureCoordinatesDirty) {
+            texCoordArray.set(0, VERTICES, texCoords);
+            textureCoordinatesDirty = false;
         }
     }
 
@@ -135,12 +147,19 @@ final class ParticleSystem {
             vz[i] = (nextRandom() - 0.5f) * 0.025f;
             size[i] = 0.045f + nextRandom() * 0.035f;
             age[i] = 0;
+            activate(i);
+            writeTextureQuad(i);
+            textureCoordinatesDirty = true;
             lifetime[i] = 14 + (int)(nextRandom() * 9.0f);
             tile[i] = Block.sideTile(Block.DIRT);
             tileOffsetX[i] = (int)(nextRandom() * 12.0f);
             tileOffsetY[i] = (int)(nextRandom() * 12.0f);
             deathDust[i] = true;
             setParticleColor(i, 165, 132, 91, 230);
+        }
+        if (textureCoordinatesDirty) {
+            texCoordArray.set(0, VERTICES, texCoords);
+            textureCoordinatesDirty = false;
         }
     }
 
@@ -159,7 +178,9 @@ final class ParticleSystem {
         float upX = -(float)(Math.sin(yaw) * Math.sin(pitch));
         float upY = (float)Math.cos(pitch);
         float upZ = -(float)(Math.cos(yaw) * Math.sin(pitch));
-        for (int i = 0; i < CAPACITY; i++) {
+        int activeIndex = 0;
+        while (activeIndex < activeCount) {
+            int i = activeSlots[activeIndex];
             if (age[i] < lifetime[i]) {
                 age[i]++;
                 if (deathDust[i]) vy[i] += 0.001f;
@@ -187,15 +208,18 @@ final class ParticleSystem {
                     int alpha = 255 - age[i] * 255 / lifetime[i];
                     setParticleColor(i, alpha);
                 }
+                writeQuad(i, rightX, rightZ, upX, upY, upZ,
+                        originX, originY, originZ);
+                activeIndex++;
             } else {
                 setParticleColor(i, 0);
+                deactivateAt(activeIndex);
             }
-            writeQuad(i, rightX, rightZ, upX, upY, upZ,
-                    originX, originY, originZ);
         }
-        positionArray.set(0, VERTICES, positions);
-        texCoordArray.set(0, VERTICES, texCoords);
-        colorArray.set(0, VERTICES, colors);
+        if (activeCount > 0) {
+            positionArray.set(0, VERTICES, positions);
+            colorArray.set(0, VERTICES, colors);
+        }
     }
 
     private void writeQuad(int particle, float rx, float rz, float ux, float uy, float uz,
@@ -216,6 +240,9 @@ final class ParticleSystem {
         int v = particle * 12;
         putPosition(v, x0, y0, z0); putPosition(v + 3, x1, y1, z1);
         putPosition(v + 6, x2, y2, z2); putPosition(v + 9, x3, y3, z3);
+    }
+
+    private void writeTextureQuad(int particle) {
         int tileX = (tile[particle] & 15) * 16 + tileOffsetX[particle];
         int tileY = (tile[particle] >> 4) * 16 + tileOffsetY[particle];
         int t = particle * 8;
@@ -223,6 +250,20 @@ final class ParticleSystem {
         texCoords[t + 2] = (short)(tileX + 4); texCoords[t + 3] = (short)(tileY + 4);
         texCoords[t + 4] = (short)tileX; texCoords[t + 5] = (short)tileY;
         texCoords[t + 6] = (short)(tileX + 4); texCoords[t + 7] = (short)tileY;
+    }
+
+    private void activate(int slot) {
+        if (activePosition[slot] >= 0) return;
+        activePosition[slot] = activeCount;
+        activeSlots[activeCount++] = slot;
+    }
+
+    private void deactivateAt(int index) {
+        int slot = activeSlots[index];
+        int last = activeSlots[--activeCount];
+        activeSlots[index] = last;
+        activePosition[last] = index;
+        activePosition[slot] = -1;
     }
 
     private void putPosition(int at, float px, float py, float pz) {
