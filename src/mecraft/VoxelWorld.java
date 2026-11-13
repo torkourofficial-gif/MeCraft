@@ -98,6 +98,7 @@ final class VoxelWorld {
     private int proceduralQueueCount;
     private int proceduralQueueFocusX = Integer.MIN_VALUE;
     private int proceduralQueueFocusZ = Integer.MIN_VALUE;
+    private boolean proceduralQueueFocusNether;
     private int proceduralGenerationEpoch;
     private boolean proceduralWorkerRunning;
     private boolean proceduralWorkerBusy;
@@ -244,17 +245,33 @@ final class VoxelWorld {
         return Block.AIR;
     }
 
-    /** Queue the current chunk and neighbors; discard queued work left behind by movement. */
+    /**
+     * Queue the current chunk and its four face-neighbors. Keep nearby queued
+     * work when the focus advances by one chunk: most of the previous
+     * neighborhood is still useful, so throwing it away only wastes CPU.
+     */
     void requestProceduralChunk(int cx, int cz) {
         synchronized (this) {
-            if (proceduralQueueFocusX != cx || proceduralQueueFocusZ != cz) {
-                // Let the active chunk finish, but do not spend time generating
-                // queued sectors around a player position that is no longer current.
-                proceduralQueueCount = 0;
+            if (proceduralQueueFocusX != cx || proceduralQueueFocusZ != cz ||
+                proceduralQueueFocusNether != nether) {
+                int kept = 0;
+                for (int i = 0; i < proceduralQueueCount; i++) {
+                    if (proceduralQueueNether[i] == nether &&
+                        Math.abs(proceduralQueueX[i] - cx) <= 1 &&
+                        Math.abs(proceduralQueueZ[i] - cz) <= 1) {
+                        proceduralQueueX[kept] = proceduralQueueX[i];
+                        proceduralQueueZ[kept] = proceduralQueueZ[i];
+                        proceduralQueueNether[kept] = proceduralQueueNether[i];
+                        kept++;
+                    }
+                }
+                proceduralQueueCount = kept;
                 proceduralQueueFocusX = cx;
                 proceduralQueueFocusZ = cz;
+                proceduralQueueFocusNether = nether;
             }
         }
+        // Put the chunk currently blocking visible geometry at the head.
         enqueueProceduralChunk(cx, cz, true);
         enqueueProceduralChunk(cx - 1, cz, false);
         enqueueProceduralChunk(cx + 1, cz, false);
@@ -272,6 +289,15 @@ final class VoxelWorld {
         synchronized (this) { return findProceduralChunk(cx, cz) >= 0; }
     }
 
+    /** A mesh is safe to finalize only after every horizontal face-neighbor exists. */
+    boolean areProceduralChunkNeighborsReady(int cx, int cz) {
+        return isProceduralChunkReady(cx, cz) &&
+                isProceduralChunkReady(cx - 1, cz) &&
+                isProceduralChunkReady(cx + 1, cz) &&
+                isProceduralChunkReady(cx, cz - 1) &&
+                isProceduralChunkReady(cx, cz + 1);
+    }
+
     private void enqueueProceduralChunk(final int cx, final int cz, boolean priority) {
         int x0 = cx * CHUNK_XZ, z0 = cz * CHUNK_XZ;
         if (worldSize == SIZE_OLD &&
@@ -281,9 +307,24 @@ final class VoxelWorld {
             if (findProceduralChunk(cx, cz) >= 0) return;
             if (proceduralWorkerBusy && proceduralWorkerX == cx &&
                 proceduralWorkerZ == cz && proceduralWorkerNether == nether) return;
-            for (int i = 0; i < proceduralQueueCount; i++)
+            for (int i = 0; i < proceduralQueueCount; i++) {
                 if (proceduralQueueX[i] == cx && proceduralQueueZ[i] == cz &&
-                    proceduralQueueNether[i] == nether) return;
+                    proceduralQueueNether[i] == nether) {
+                    // A queued neighbor may become the new focus. Promote it
+                    // instead of leaving urgent work behind older prefetches.
+                    if (priority && i > 0) {
+                        for (int j = i; j > 0; j--) {
+                            proceduralQueueX[j] = proceduralQueueX[j - 1];
+                            proceduralQueueZ[j] = proceduralQueueZ[j - 1];
+                            proceduralQueueNether[j] = proceduralQueueNether[j - 1];
+                        }
+                        proceduralQueueX[0] = cx;
+                        proceduralQueueZ[0] = cz;
+                        proceduralQueueNether[0] = nether;
+                    }
+                    return;
+                }
+            }
             if (priority) {
                 if (proceduralQueueCount == proceduralQueueX.length) proceduralQueueCount--;
                 for (int i = proceduralQueueCount; i > 0; i--) {
