@@ -51,8 +51,13 @@ final class PlayerPhysics {
     }
 
     boolean isInWater(VoxelWorld world) {
-        return intersectsWater(world, world.playerX, world.playerY + 0.4f,
-                world.playerZ, world.playerY + HEIGHT - 0.4f);
+        return intersectsFluid(world, world.playerX, world.playerY + 0.4f,
+                world.playerZ, world.playerY + HEIGHT - 0.4f, Block.WATER);
+    }
+
+    boolean isInLava(VoxelWorld world) {
+        return intersectsFluid(world, world.playerX, world.playerY + 0.4f,
+                world.playerZ, world.playerY + HEIGHT - 0.4f, Block.LAVA);
     }
 
     /** Returns Indev fall damage, if a landing occurred this tick. */
@@ -86,17 +91,17 @@ final class PlayerPhysics {
             return 0;
         }
 
-        boolean inWater = isInWater(world);
+        boolean inLiquid = isInWater(world) || isInLava(world);
         if (jumping) {
-            if (inWater) motionY += 0.04f;
+            if (inLiquid) motionY += 0.04f;
             else if (onGround) motionY = 0.42f;
         }
 
         float radians = world.yaw * (float)Math.PI / 180.0f;
         float sin = (float)Math.sin(radians);
         float cos = (float)Math.cos(radians);
-        float acceleration = inWater ? 0.02f : (onGround ? 0.10f : 0.02f);
-        if (sprinting && !inWater) acceleration *= 1.6f;
+        float acceleration = inLiquid ? 0.02f : (onGround ? 0.10f : 0.02f);
+        if (sprinting && !inLiquid) acceleration *= 1.6f;
         // The view uses yaw zero facing +Z, so its screen-right basis is -X.
         motionX += (forward * sin - strafe * cos) * acceleration;
         motionZ += (forward * cos + strafe * sin) * acceleration;
@@ -107,20 +112,20 @@ final class PlayerPhysics {
         onGround = requestedY < 0.0f && movedY != requestedY;
         if (movedY != requestedY) motionY = 0.0f;
         if (onGround) {
-            boolean landedInWater = isInWater(world);
+            boolean landedInLiquid = isInWater(world) || isInLava(world);
             int damage = fallDistance > 3.0f ? (int)Math.ceil(fallDistance - 3.0f) : 0;
             fallDistance = 0.0f;
-            if (inWater || landedInWater) damage = 0;
+            if (inLiquid || landedInLiquid) damage = 0;
             moveHorizontally(world);
-            applyDrag(inWater || landedInWater);
+            applyDrag(inLiquid || landedInLiquid);
             return damage;
         }
         if (movedY < 0.0f) fallDistance -= movedY;
 
         moveHorizontally(world);
-        boolean nowInWater = isInWater(world);
-        if (nowInWater) fallDistance = 0.0f;
-        applyDrag(nowInWater);
+        boolean nowInLiquid = isInWater(world) || isInLava(world);
+        if (nowInLiquid) fallDistance = 0.0f;
+        applyDrag(nowInLiquid);
         if (world.playerY < 1.0f) {
             world.playerX = VoxelWorld.WIDTH / 2 + 0.5f;
             world.playerZ = VoxelWorld.DEPTH / 2 + 0.5f;
@@ -178,8 +183,9 @@ final class PlayerPhysics {
         horizontalCollision = hitX || hitZ;
         if (hitX) motionX = 0.0f;
         if (hitZ) motionZ = 0.0f;
-        if (horizontalCollision && isInWater(world) && !intersectsSolid(world,
-                world.playerX, world.playerY + 0.6f, world.playerZ)) motionY = 0.3f;
+        if (horizontalCollision && (isInWater(world) || isInLava(world)) &&
+                !intersectsSolid(world, world.playerX, world.playerY + 0.6f, world.playerZ))
+            motionY = 0.3f;
     }
 
     private void applyDrag(boolean inWater) {
@@ -314,7 +320,8 @@ final class PlayerPhysics {
         return dz;
     }
 
-    private boolean intersectsWater(VoxelWorld world, float x, float minY, float z, float maxY) {
+    private boolean intersectsFluid(VoxelWorld world, float x, float minY, float z,
+                                    float maxY, byte fluid) {
         int minX = floor(x - RADIUS + EPSILON), maxX = floor(x + RADIUS - EPSILON);
         int minZ = floor(z - RADIUS + EPSILON), maxZ = floor(z + RADIUS - EPSILON);
         int fromY = floor(minY), toY = floor(maxY);
@@ -322,7 +329,7 @@ final class PlayerPhysics {
             for (int bx = minX; bx <= maxX; bx++) {
                 for (int bz = minZ; bz <= maxZ; bz++) {
                     byte id = world.get(bx, by, bz);
-                    if (id == Block.WATER && minY < by + 0.91f && maxY > by) return true;
+                    if (id == fluid && minY < by + 0.91f && maxY > by) return true;
                 }
             }
         }
