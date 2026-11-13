@@ -643,20 +643,8 @@ final class VoxelWorld {
         }
         int cx = floorChunk(x0), cz = floorChunk(z0);
         synchronized (this) {
-            boolean needsProcedural = false;
-            for (int z = 0; z < CHUNK_XZ && !needsProcedural; z++) {
-                for (int x = 0; x < CHUNK_XZ; x++) {
-                    int wx = x0 + x, wz = z0 + z;
-                    if (!outsideWorld(wx, wz) && !inside(wx, wz) &&
-                        findEdit(wx, y, wz) < 0) {
-                        needsProcedural = true;
-                        break;
-                    }
-                }
-            }
-            int cache = needsProcedural ? findProceduralChunk(cx, cz) : -1;
-            if (cache >= 0) touchProceduralSlot(cache);
-            int cacheBase = 0;
+            int cache = findProceduralChunk(cx, cz);
+            boolean cacheUsed = false;
             for (int z = 0; z < CHUNK_XZ; z++) {
                 for (int x = 0; x < CHUNK_XZ; x++) {
                     int wx = x0 + x, wz = z0 + z;
@@ -672,10 +660,12 @@ final class VoxelWorld {
                             int lx = wx - cx * CHUNK_XZ;
                             int lz = wz - cz * CHUNK_XZ;
                             target[at] = proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
+                            cacheUsed = true;
                         } else target[at] = Block.AIR;
                     }
                 }
             }
+            if (cacheUsed) touchProceduralSlot(cache);
         }
     }
 
