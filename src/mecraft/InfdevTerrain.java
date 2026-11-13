@@ -315,7 +315,8 @@ final class InfdevTerrain {
                                       x, y, z, 1, 1);
                 }
             }
-        }
+        
+            yieldGenerationSlice();}
     }
 
     private static void carveCaves(int seed, int originX, int originZ, int[] heights, byte[] blocks) {
@@ -409,7 +410,8 @@ final class InfdevTerrain {
                     }
                 }
             }
-        }
+        
+            yieldGenerationSlice();}
     }
 
     /** Very occasional narrow fissures; avoids the wide ravine pass in Economic. */
@@ -443,7 +445,8 @@ final class InfdevTerrain {
                                      x, y, z, 1, 4);
                 }
             }
-        }
+        
+            yieldGenerationSlice();}
     }
 
     /**
@@ -504,7 +507,8 @@ final class InfdevTerrain {
                                      x, y, z, width, verticalRadius);
                 }
             }
-        }
+        
+            yieldGenerationSlice();}
     }
 
     private static void carveRavineSlice(int originX, int originZ, int[] heights,
@@ -733,7 +737,8 @@ final class InfdevTerrain {
                     }
                 }
             }
-        }
+        
+            yieldGenerationSlice();}
 
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.decorate: colocando cactus y flores");
         for (int z = 0; z < CHUNK_SIZE; z++) {
