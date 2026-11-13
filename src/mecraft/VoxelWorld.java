@@ -81,15 +81,16 @@ final class VoxelWorld {
     private static final int FLUID_QUEUE_SIZE = 2048;
     private final int[] fluidQueue = new int[FLUID_QUEUE_SIZE];
     private final byte[] fluidQueued = new byte[(BLOCK_COUNT + 7) / 8];
-    // Small eight-chunk LRU cache; nearby sectors stay resident while meshing.
-    private static final int PROCEDURAL_CACHE_SIZE = 8;
+    // Fixed 3x3 ring: the active chunk and its four face-neighbors always fit.
+    private static final int PROCEDURAL_CACHE_SPAN = 3;
+    private static final int PROCEDURAL_CACHE_SIZE = PROCEDURAL_CACHE_SPAN * PROCEDURAL_CACHE_SPAN;
     private final byte[][] proceduralChunks =
             new byte[PROCEDURAL_CACHE_SIZE][InfdevTerrain.CHUNK_VOLUME];
     private final int[] proceduralChunkX = new int[PROCEDURAL_CACHE_SIZE];
     private final int[] proceduralChunkZ = new int[PROCEDURAL_CACHE_SIZE];
     private final int[] proceduralHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     private final byte[] proceduralBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
-    // Background terrain generation uses private scratch buffers, never scene objects.
+    // One background worker owns these scratch arrays.
     private byte[] proceduralWorkerBuffer = new byte[InfdevTerrain.CHUNK_VOLUME];
     private final int[] proceduralWorkerHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     private final byte[] proceduralWorkerBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
@@ -105,8 +106,6 @@ final class VoxelWorld {
     private boolean proceduralWorkerBusy;
     private int proceduralWorkerX, proceduralWorkerZ;
     private boolean proceduralWorkerNether;
-    private final int[] proceduralChunkAge = new int[PROCEDURAL_CACHE_SIZE];
-    private int proceduralCacheClock;
     private int proceduralChunksGenerated;
     private long lastProceduralGenerationMillis;
     private int[] editX = new int[128];
@@ -207,30 +206,18 @@ final class VoxelWorld {
         return value < 0 && value % CHUNK_XZ != 0 ? result - 1 : result;
     }
 
-    /** Locate a resident procedural chunk in the eight-slot cache. */
+    /** Stable ring address: a 3x3 active window maps to nine unique slots. */
+    private int proceduralSlot(int cx, int cz) {
+        int x = cx % PROCEDURAL_CACHE_SPAN;
+        int z = cz % PROCEDURAL_CACHE_SPAN;
+        if (x < 0) x += PROCEDURAL_CACHE_SPAN;
+        if (z < 0) z += PROCEDURAL_CACHE_SPAN;
+        return z * PROCEDURAL_CACHE_SPAN + x;
+    }
+
     private int findProceduralChunk(int cx, int cz) {
-        for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++)
-            if (proceduralChunkX[i] == cx && proceduralChunkZ[i] == cz) return i;
-        return -1;
-    }
-
-    /** Choose an empty slot or the least recently used resident chunk. */
-    private int chooseProceduralSlot() {
-        int oldest = 0;
-        for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
-            if (proceduralChunkX[i] == Integer.MIN_VALUE) return i;
-            if (proceduralChunkAge[i] < proceduralChunkAge[oldest]) oldest = i;
-        }
-        return oldest;
-    }
-
-    private void touchProceduralSlot(int slot) {
-        proceduralCacheClock++;
-        if (proceduralCacheClock == Integer.MAX_VALUE) {
-            for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) proceduralChunkAge[i] >>= 1;
-            proceduralCacheClock = 1;
-        }
-        proceduralChunkAge[slot] = proceduralCacheClock;
+        int slot = proceduralSlot(cx, cz);
+        return proceduralChunkX[slot] == cx && proceduralChunkZ[slot] == cz ? slot : -1;
     }
 
     private byte proceduralBlock(int x, int y, int z) {
@@ -238,20 +225,20 @@ final class VoxelWorld {
         synchronized (this) {
             int cache = findProceduralChunk(cx, cz);
             if (cache >= 0) {
-                touchProceduralSlot(cache);
+
                 int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
                 return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
             }
         }
         // Never generate terrain on the caller thread. A missing sector is
         // requested from the low-priority worker and remains temporarily empty.
-        enqueueProceduralChunk(cx, cz, true);
+        requestProceduralChunk(cx, cz);
         return Block.AIR;
     }
 
     /**
-     * Queue the current chunk and its four face-neighbors. Retain nearby work
-     * when the focus moves by one chunk so already-useful requests can finish.
+     * Keep only the current 3x3 neighborhood. The center is queued first,
+     * followed by its four face-neighbors.
      */
     void requestProceduralChunk(int cx, int cz) {
         synchronized (this) {
@@ -374,15 +361,10 @@ final class VoxelWorld {
                 // Keep one worker warm briefly between adjacent chunk requests.
                 // A bounded idle wait avoids both per-chunk thread churn and a
                 // permanently sleeping thread when a world is no longer streamed.
-                while (proceduralQueueCount == 0) {
-                    try {
-                        wait(500L);
-                    } catch (InterruptedException ignored) {
-                    }
-                    if (proceduralQueueCount == 0) {
-                        proceduralWorkerRunning = false;
-                        return;
-                    }
+                if (proceduralQueueCount == 0) {
+                    proceduralWorkerBusy = false;
+                    proceduralWorkerRunning = false;
+                    return;
                 }
                 cx = proceduralQueueX[0]; cz = proceduralQueueZ[0];
                 dimension = proceduralQueueNether[0];
@@ -437,17 +419,17 @@ final class VoxelWorld {
             synchronized (this) {
                 proceduralWorkerBusy = false;
                 if (epoch != proceduralGenerationEpoch || dimension != nether) continue;
-                int slot = findProceduralChunk(cx, cz);
-                if (slot < 0) slot = chooseProceduralSlot();
-                // Hand the completed array to the cache and recycle the
-                // evicted slot's array as the next worker buffer. No 16 KiB
-                // copy is needed for every generated chunk.
+                // Drop stale work instead of overwriting a chunk in the new
+                // active window. Each coordinate has one deterministic slot.
+                if (Math.abs(cx - proceduralQueueFocusX) > 1 ||
+                    Math.abs(cz - proceduralQueueFocusZ) > 1 ||
+                    proceduralQueueFocusNether != dimension) continue;
+                int slot = proceduralSlot(cx, cz);
                 byte[] recycled = proceduralChunks[slot];
                 proceduralChunks[slot] = proceduralWorkerBuffer;
                 proceduralWorkerBuffer = recycled;
                 proceduralChunkX[slot] = cx;
                 proceduralChunkZ[slot] = cz;
-                touchProceduralSlot(slot);
 
                 proceduralChunksGenerated++;
                 lastProceduralGenerationMillis =
@@ -607,12 +589,12 @@ final class VoxelWorld {
         synchronized (this) {
             int cache = findProceduralChunk(cx, cz);
             if (cache >= 0) {
-                touchProceduralSlot(cache);
+
                 int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
                 return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
             }
         }
-        enqueueProceduralChunk(cx, cz, true);
+        requestProceduralChunk(cx, cz);
         return Block.AIR;
     }
 
@@ -629,7 +611,7 @@ final class VoxelWorld {
         synchronized (this) {
             int cache = findProceduralChunk(cx, cz);
             if (cache < 0) return Block.AIR;
-            touchProceduralSlot(cache);
+
             int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
             return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
         }
@@ -681,7 +663,7 @@ final class VoxelWorld {
                     }
                 }
             }
-            if (cache >= 0) touchProceduralSlot(cache);
+
         }
     }
 
@@ -1208,7 +1190,7 @@ final class VoxelWorld {
             setGenerationDiagnosticStage("VoxelWorld.generate: comenzando fila de chunks cz=" + cz);
             for (int cx = 0; cx < CHUNKS_X; cx++) {
                 setGenerationDiagnosticStage("VoxelWorld.generate: reservando caché para chunk cx=" + cx + ", cz=" + cz);
-                int cache = chooseProceduralSlot();
+                int cache = proceduralSlot(cx, cz);
                 setGenerationDiagnosticStage("VoxelWorld.generate: generando chunk por tareas cx=" + cx + ", cz=" + cz);
                 if (worldType == TYPE_FLAT && !nether) {
                     // Flat terrain is also filled in bounded Z rows.
@@ -1231,7 +1213,6 @@ final class VoxelWorld {
                 }
                 setGenerationDiagnosticStage("VoxelWorld.generate: guardando coordenadas del chunk cx=" + cx + ", cz=" + cz);
                 proceduralChunkX[cache] = cx; proceduralChunkZ[cache] = cz;
-                touchProceduralSlot(cache);
 
                 for (int z = 0; z < CHUNK_XZ; z++) {
                     setGenerationDiagnosticStage("VoxelWorld.generate: copiando chunk cx=" + cx + ", cz=" + cz + ", z=" + z);
@@ -1318,6 +1299,8 @@ final class VoxelWorld {
             proceduralChunkX[i] = Integer.MIN_VALUE;
             proceduralChunkZ[i] = Integer.MIN_VALUE;
         }
+        proceduralQueueFocusX = Integer.MIN_VALUE;
+        proceduralQueueFocusZ = Integer.MIN_VALUE;
 
         fluidQueueHead = fluidQueueTail = fluidQueueCount = fluidTickDelay = fluidDirection = 0;
         lavaTickCounter = 0;
@@ -1915,7 +1898,6 @@ final class VoxelWorld {
                     in.readFully(world.proceduralChunks[slot]);
                     world.proceduralChunkX[slot] = cx;
                     world.proceduralChunkZ[slot] = cz;
-                    world.touchProceduralSlot(slot);
                 }
             }
             if (editPageCount > 0 && editPageCount <= store.getNumRecords())
