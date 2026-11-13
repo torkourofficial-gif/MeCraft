@@ -901,6 +901,15 @@ final class VoxelWorld {
         }
     }
 
+    /** Small scheduling point shared by the synchronous initial-world builder. */
+    private void yieldInitialGenerationSlice() {
+        try {
+            Thread.sleep(1);
+        } catch (InterruptedException ignored) {
+            // Keep deterministic generation progressing; this pause is advisory.
+        }
+    }
+
     private void generate() {
         setGenerationDiagnosticStage("VoxelWorld.generate: preparando bucle de chunks");
         for (int cz = 0; cz < CHUNKS_Z; cz++) {
@@ -908,8 +917,26 @@ final class VoxelWorld {
             for (int cx = 0; cx < CHUNKS_X; cx++) {
                 setGenerationDiagnosticStage("VoxelWorld.generate: reservando caché para chunk cx=" + cx + ", cz=" + cz);
                 int cache = chooseProceduralSlot();
-                setGenerationDiagnosticStage("VoxelWorld.generate: generando chunk cx=" + cx + ", cz=" + cz);
-                generateChunk(cx, cz, proceduralChunks[cache]);
+                setGenerationDiagnosticStage("VoxelWorld.generate: generando chunk por tareas cx=" + cx + ", cz=" + cz);
+                if (worldType == TYPE_FLAT && !nether) {
+                    // Flat terrain is also filled in bounded Z rows.
+                    for (int z = 0; z < CHUNK_XZ; z++) {
+                        for (int x = 0; x < CHUNK_XZ; x++) {
+                            int base = (z * CHUNK_XZ + x) * HEIGHT;
+                            for (int y = 0; y < HEIGHT; y++)
+                                proceduralChunks[cache][base + y] = y == 0 ? Block.BEDROCK :
+                                    (y <= 3 ? Block.DIRT : (y == 4 ? Block.GRASS : Block.AIR));
+                            proceduralHeights[z * CHUNK_XZ + x] = 4;
+                            proceduralBiomes[z * CHUNK_XZ + x] = 0;
+                        }
+                        yieldInitialGenerationSlice();
+                    }
+                } else {
+                    InfdevTerrain.GenerationTask initialTask = new InfdevTerrain.GenerationTask(
+                            seed, cx, cz, proceduralChunks[cache], proceduralHeights,
+                            proceduralBiomes, economicMode, nether);
+                    while (!initialTask.step()) yieldInitialGenerationSlice();
+                }
                 setGenerationDiagnosticStage("VoxelWorld.generate: guardando coordenadas del chunk cx=" + cx + ", cz=" + cz);
                 proceduralChunkX[cache] = cx; proceduralChunkZ[cache] = cz;
                 touchProceduralSlot(cache);
