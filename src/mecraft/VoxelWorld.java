@@ -97,9 +97,6 @@ final class VoxelWorld {
     private final int[] proceduralQueueZ = new int[PROCEDURAL_CACHE_SIZE];
     private final boolean[] proceduralQueueNether = new boolean[PROCEDURAL_CACHE_SIZE];
     private int proceduralQueueCount;
-    private int proceduralQueueFocusX = Integer.MIN_VALUE;
-    private int proceduralQueueFocusZ = Integer.MIN_VALUE;
-    private boolean proceduralQueueFocusNether;
     private int proceduralGenerationEpoch;
     private boolean proceduralWorkerRunning;
     private boolean proceduralWorkerBusy;
@@ -254,25 +251,10 @@ final class VoxelWorld {
      * neighborhood is still useful, so throwing it away only wastes CPU.
      */
     void requestProceduralChunk(int cx, int cz) {
+        // A new focus replaces stale prefetch requests. The active worker
+        // finishes its current chunk; the five useful requests are queued below.
         synchronized (this) {
-            if (proceduralQueueFocusX != cx || proceduralQueueFocusZ != cz ||
-                proceduralQueueFocusNether != nether) {
-                int kept = 0;
-                for (int i = 0; i < proceduralQueueCount; i++) {
-                    if (proceduralQueueNether[i] == nether &&
-                        Math.abs(proceduralQueueX[i] - cx) <= 1 &&
-                        Math.abs(proceduralQueueZ[i] - cz) <= 1) {
-                        proceduralQueueX[kept] = proceduralQueueX[i];
-                        proceduralQueueZ[kept] = proceduralQueueZ[i];
-                        proceduralQueueNether[kept] = proceduralQueueNether[i];
-                        kept++;
-                    }
-                }
-                proceduralQueueCount = kept;
-                proceduralQueueFocusX = cx;
-                proceduralQueueFocusZ = cz;
-                proceduralQueueFocusNether = nether;
-            }
+            proceduralQueueCount = 0;
         }
         // Put the chunk currently blocking visible geometry at the head.
         enqueueProceduralChunk(cx, cz, true);
