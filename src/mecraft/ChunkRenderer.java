@@ -1394,16 +1394,17 @@ final class ChunkRenderer {
         ChunkBuild job = pendingBuild;
         while (job.nextLayer < VoxelWorld.CHUNK_Y &&
                 (job.dirtyMask & (1 << job.nextLayer)) == 0) job.nextLayer++;
-        // Build up to two non-empty vertical slices per frame. Empty slices are
-        // skipped immediately, so the air above the terrain costs almost no frames.
-        int builtSlices = 0;
-        while (job.nextLayer < VoxelWorld.CHUNK_Y && builtSlices < 2) {
+        // Limit each frame to one non-empty vertical slice. A second slice can
+        // nearly double the geometry work in a single frame on slower Java ME
+        // devices; empty slices are still skipped without consuming a build.
+        boolean builtSlice = false;
+        while (job.nextLayer < VoxelWorld.CHUNK_Y && !builtSlice) {
             int layer = job.nextLayer++;
             Chunk slice = buildChunkLayer(world, cx, cy, cz, layer, job.flatTerrain);
             job.layerMeshes[layer] = slice == null ? new Mesh[0] : slice.meshes;
             job.fires[layer] = slice == null || slice.fires == null ||
                     slice.fires.length == 0 ? null : slice.fires[0];
-            if (slice != null) builtSlices++;
+            if (slice != null) builtSlice = true;
             while (job.nextLayer < VoxelWorld.CHUNK_Y &&
                     (job.dirtyMask & (1 << job.nextLayer)) == 0) job.nextLayer++;
         }
