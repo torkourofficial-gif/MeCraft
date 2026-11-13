@@ -216,10 +216,10 @@ final class ParticleSystem {
                 deactivateAt(activeIndex);
             }
         }
-        if (activeCount > 0) {
-            positionArray.set(0, VERTICES, positions);
-            colorArray.set(0, VERTICES, colors);
-        }
+        if (activeCount > 0) positionArray.set(0, VERTICES, positions);
+        // Upload alpha changes even when the last particle expires so its
+        // previous frame cannot remain visible in the persistent M3G mesh.
+        colorArray.set(0, VERTICES, colors);
     }
 
     private void writeQuad(int particle, float rx, float rz, float ux, float uy, float uz,
