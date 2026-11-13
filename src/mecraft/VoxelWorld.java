@@ -328,8 +328,8 @@ final class VoxelWorld {
             try {
                 boolean completed;
                 if (worldType == TYPE_FLAT && !dimension) {
-                    generateChunk(cx, cz, proceduralWorkerBuffer, proceduralWorkerHeights,
-                                  proceduralWorkerBiomes, dimension);
+                    generateFlatChunkInSlices(proceduralWorkerBuffer, proceduralWorkerHeights,
+                                              proceduralWorkerBiomes);
                     completed = true;
                 } else {
                     InfdevTerrain.GenerationTask task = new InfdevTerrain.GenerationTask(
@@ -901,6 +901,21 @@ final class VoxelWorld {
         }
     }
 
+    /** Flat chunks use the same bounded row scheduling as procedural terrain. */
+    private void generateFlatChunkInSlices(byte[] target, int[] heights, byte[] biomes) {
+        for (int z = 0; z < CHUNK_XZ; z++) {
+            for (int x = 0; x < CHUNK_XZ; x++) {
+                int base = (z * CHUNK_XZ + x) * HEIGHT;
+                for (int y = 0; y < HEIGHT; y++)
+                    target[base + y] = y == 0 ? Block.BEDROCK :
+                        (y <= 3 ? Block.DIRT : (y == 4 ? Block.GRASS : Block.AIR));
+                heights[z * CHUNK_XZ + x] = 4;
+                biomes[z * CHUNK_XZ + x] = 0;
+            }
+            yieldInitialGenerationSlice();
+        }
+    }
+
     /** Small scheduling point shared by the synchronous initial-world builder. */
     private void yieldInitialGenerationSlice() {
         try {
@@ -948,6 +963,7 @@ final class VoxelWorld {
                             blocks[index(wx, y, wz)] = proceduralChunks[cache][(z * CHUNK_XZ + x) * HEIGHT + y];
                         }
                     }
+                    yieldInitialGenerationSlice();
                 }
             }
         }
