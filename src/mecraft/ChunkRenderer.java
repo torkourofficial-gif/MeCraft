@@ -1225,23 +1225,6 @@ final class ChunkRenderer {
         return result < 0 ? result + divisor : result;
     }
 
-    private void replaceChunk(VoxelWorld world, int i, int cx, int cy, int cz) {
-        // Build the replacement before removing the old mesh. If meshing fails,
-        // the previous terrain remains visible instead of leaving a hole.
-        Chunk replacement = buildChunk(world, cx, cy, cz);
-        Chunk previous = chunks[i];
-        if (previous != null) {
-            for (int m = 0; m < previous.meshes.length; m++) terrain.removeChild(previous.meshes[m]);
-        }
-        chunks[i] = replacement;
-        chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
-        residentChunks[i] = true;
-        dirtyChunks[i] = false;
-        if (replacement != null) {
-            for (int m = 0; m < replacement.meshes.length; m++) terrain.addChild(replacement.meshes[m]);
-        }
-    }
-
     private void rebuildWorld(VoxelWorld world) {
         pendingBuild = null;
         pendingBuildSlot = -1;
@@ -1360,25 +1343,6 @@ final class ChunkRenderer {
         // The previous complete chunk remains visible until all eight slices are ready.
         if (best >= 0) {
             advanceChunkBuild(world, best, chunkWorldX[best], chunkWorldY[best], chunkWorldZ[best]);
-            best = -1;
-            bestDistance = Float.MAX_VALUE;
-            // A second candidate is only needed if CHUNKS_PER_FRAME is raised.
-            if (build + 1 < CHUNKS_PER_FRAME) {
-                for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++)
-                    for (int rz = firstRz; rz <= lastRz; rz++)
-                        for (int rx = firstRx; rx <= lastRx; rx++) {
-                            int cx = centerX + rx - MAX_STREAM_RADIUS;
-                            int cz = centerZ + rz - MAX_STREAM_RADIUS;
-                            int i = (cy * span + floorMod(cz, span)) * span + floorMod(cx, span);
-                            if (!residentChunks[i] || dirtyChunks[i]) {
-                                float dx = cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeX;
-                                float dy = cy * VoxelWorld.CHUNK_Y + VoxelWorld.CHUNK_Y * 0.5f - eyeY;
-                                float dz = cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
-                                float distance = dx * dx + dz * dz + dy * dy * 2.0f;
-                                if (distance < bestDistance) { bestDistance = distance; best = i; }
-                            }
-                        }
-            }
         }
     }
 
