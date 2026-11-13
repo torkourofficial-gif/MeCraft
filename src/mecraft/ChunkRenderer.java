@@ -101,6 +101,8 @@ final class ChunkRenderer {
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
+    // Bit mask of vertical slices that actually need remeshing for each chunk.
+    private final int[] dirtyLayerMasks = new int[CACHE_SIZE];
     private final int[] chunkWorldX = new int[CACHE_SIZE];
     private final int[] chunkWorldY = new int[CACHE_SIZE];
     private final int[] chunkWorldZ = new int[CACHE_SIZE];
@@ -1200,12 +1202,23 @@ final class ChunkRenderer {
                     y < by0 - TORCH_LIGHT_RADIUS || y >= by0 + VoxelWorld.CHUNK_Y + TORCH_LIGHT_RADIUS ||
                     z < bz0 - TORCH_LIGHT_RADIUS || z >= bz0 + VoxelWorld.CHUNK_XZ + TORCH_LIGHT_RADIUS)
                     continue;
-                dirtyChunks[i] = true;
+                int baseY = chunkWorldY[i] * VoxelWorld.CHUNK_Y;
+                for (int layer = 0; layer < VoxelWorld.CHUNKS_Y; layer++) {
+                    int layerMin = baseY + layer * VoxelWorld.CHUNK_Y;
+                    int layerMax = layerMin + VoxelWorld.CHUNK_Y;
+                    if (y >= layerMin - TORCH_LIGHT_RADIUS && y < layerMax + TORCH_LIGHT_RADIUS)
+                        dirtyLayerMasks[i] |= 1 << layer;
+                }
+                dirtyChunks[i] = dirtyLayerMasks[i] != 0;
                 continue;
             }
             if (Math.abs(chunkWorldX[i] - cx) > (lx == 0 || lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0) ||
                 Math.abs(chunkWorldY[i] - cy) > (ly == 0 || ly == VoxelWorld.CHUNK_Y - 1 ? 1 : 0) ||
                 Math.abs(chunkWorldZ[i] - cz) > (lz == 0 || lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0)) continue;
+            int targetLayer = cy - chunkWorldY[i];
+            if (targetLayer < 0) targetLayer = 0;
+            if (targetLayer >= VoxelWorld.CHUNKS_Y) targetLayer = VoxelWorld.CHUNKS_Y - 1;
+            dirtyLayerMasks[i] |= 1 << targetLayer;
             dirtyChunks[i] = true;
         }
     }
@@ -1235,6 +1248,7 @@ final class ChunkRenderer {
         }
         residentChunks[i] = false;
         dirtyChunks[i] = false;
+        dirtyLayerMasks[i] = 0;
     }
 
     /** Keep M3G buffers only for chunks intersecting the camera frustum. */
@@ -1354,16 +1368,24 @@ final class ChunkRenderer {
 
         if (pendingBuild == null || pendingBuildSlot != slot ||
             pendingBuild.x != cx || pendingBuild.y != cy || pendingBuild.z != cz) {
-            pendingBuild = new ChunkBuild(slot, cx, cy, cz);
+            int mask = dirtyLayerMasks[slot];
+            if (mask == 0) mask = (1 << VoxelWorld.CHUNK_Y) - 1;
+            pendingBuild = new ChunkBuild(slot, cx, cy, cz, mask, chunks[slot]);
             pendingBuildSlot = slot;
         }
         ChunkBuild job = pendingBuild;
-        Chunk slice = buildChunkLayer(world, cx, cy, cz, job.nextLayer);
-        job.layerMeshes[job.nextLayer] = slice == null ? new Mesh[0] : slice.meshes;
-        if (slice != null && slice.fires != null && slice.fires.length > 0)
-            job.fires[job.nextLayer] = slice.fires[0];
-        job.nextLayer++;
-        if (job.nextLayer < VoxelWorld.CHUNK_Y) return;
+        while (job.nextLayer < VoxelWorld.CHUNK_Y &&
+                (job.dirtyMask & (1 << job.nextLayer)) == 0) job.nextLayer++;
+        if (job.nextLayer < VoxelWorld.CHUNK_Y) {
+            Chunk slice = buildChunkLayer(world, cx, cy, cz, job.nextLayer);
+            job.layerMeshes[job.nextLayer] = slice == null ? new Mesh[0] : slice.meshes;
+            job.fires[job.nextLayer] = slice == null || slice.fires == null ||
+                    slice.fires.length == 0 ? null : slice.fires[0];
+            job.nextLayer++;
+            while (job.nextLayer < VoxelWorld.CHUNK_Y &&
+                    (job.dirtyMask & (1 << job.nextLayer)) == 0) job.nextLayer++;
+            if (job.nextLayer < VoxelWorld.CHUNK_Y) return;
+        }
 
         int total = 0;
         for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++)
@@ -1377,15 +1399,25 @@ final class ChunkRenderer {
         }
         Chunk complete = new Chunk();
         complete.meshes = meshes;
+        complete.layerMeshes = job.layerMeshes;
         complete.fires = job.fires;
         Chunk previous = chunks[slot];
-        if (previous != null)
-            for (int m = 0; m < previous.meshes.length; m++) terrain.removeChild(previous.meshes[m]);
+        for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++) {
+            if ((job.dirtyMask & (1 << layer)) == 0) continue;
+            if (previous != null && previous.layerMeshes != null) {
+                Mesh[] oldLayer = previous.layerMeshes[layer];
+                if (oldLayer != null)
+                    for (int m = 0; m < oldLayer.length; m++) terrain.removeChild(oldLayer[m]);
+            }
+            Mesh[] newLayer = complete.layerMeshes[layer];
+            if (newLayer != null)
+                for (int m = 0; m < newLayer.length; m++) terrain.addChild(newLayer[m]);
+        }
         chunks[slot] = complete;
         chunkWorldX[slot] = cx; chunkWorldY[slot] = cy; chunkWorldZ[slot] = cz;
         residentChunks[slot] = true;
         dirtyChunks[slot] = false;
-        for (int m = 0; m < complete.meshes.length; m++) terrain.addChild(complete.meshes[m]);
+        dirtyLayerMasks[slot] = 0;
         pendingBuild = null;
         pendingBuildSlot = -1;
     }
@@ -1928,15 +1960,24 @@ final class ChunkRenderer {
         }
     }
 
-    private static final class Chunk { Mesh[] meshes; FireBuilder[] fires; }
+    private static final class Chunk { Mesh[] meshes; Mesh[][] layerMeshes; FireBuilder[] fires; }
 
     private static final class ChunkBuild {
-        final int slot, x, y, z;
+        final int slot, x, y, z, dirtyMask;
         int nextLayer;
         final Mesh[][] layerMeshes = new Mesh[VoxelWorld.CHUNK_Y][];
         final FireBuilder[] fires = new FireBuilder[VoxelWorld.CHUNK_Y];
-        ChunkBuild(int slot, int x, int y, int z) {
+        ChunkBuild(int slot, int x, int y, int z, int dirtyMask, Chunk previous) {
             this.slot = slot; this.x = x; this.y = y; this.z = z;
+            this.dirtyMask = dirtyMask;
+            if (previous != null && previous.layerMeshes != null) {
+                for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++) {
+                    if ((dirtyMask & (1 << layer)) != 0) continue;
+                    layerMeshes[layer] = previous.layerMeshes[layer];
+                    if (previous.fires != null && layer < previous.fires.length)
+                        fires[layer] = previous.fires[layer];
+                }
+            }
         }
     }
 
