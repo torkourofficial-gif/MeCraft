@@ -1401,7 +1401,11 @@ final class ChunkRenderer {
         int y1 = y0 + 1;
         int z1 = z0 + VoxelWorld.CHUNK_XZ;
 
-        collectChunkTorches(world, x0, y0, z0, x1, y1, z1);
+        // Torch sources are chunk-wide; scan them once, not once per vertical slice.
+        if (layer == 0)
+            collectChunkTorches(world, cx * VoxelWorld.CHUNK_XZ,
+                    cy * VoxelWorld.CHUNK_Y, z0,
+                    x1, (cy + 1) * VoxelWorld.CHUNK_Y, z1);
 
         // Crossed flowers do not form cube faces, so collect them separately.
         // Empty vertical sections are common above the terrain: detect them during
