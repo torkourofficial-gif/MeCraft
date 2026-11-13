@@ -558,8 +558,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     /** Lava leaves a longer, more dangerous burn than ordinary fire. */
     private void tickPlayerLavaBurn() {
-        boolean touchingLava = playerTouchesLava() ||
-                (world.nether && playerPhysics.isInWater(world));
+        boolean touchingLava = playerTouchesLava() || playerPhysics.isInLava(world);
         if (touchingLava) {
             if (playerLavaBurnTicks <= 0) playerLavaDamageTicks = 20;
             playerLavaBurnTicks = 300;
