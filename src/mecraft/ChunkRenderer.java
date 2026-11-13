@@ -1372,6 +1372,11 @@ final class ChunkRenderer {
             if (mask == 0) mask = (1 << VoxelWorld.CHUNK_Y) - 1;
             pendingBuild = new ChunkBuild(slot, cx, cy, cz, mask, chunks[slot]);
             pendingBuildSlot = slot;
+            collectChunkTorches(world, cx * VoxelWorld.CHUNK_XZ,
+                    cy * VoxelWorld.CHUNK_Y, cz * VoxelWorld.CHUNK_XZ,
+                    (cx + 1) * VoxelWorld.CHUNK_XZ,
+                    (cy + 1) * VoxelWorld.CHUNK_Y,
+                    (cz + 1) * VoxelWorld.CHUNK_XZ);
         }
         ChunkBuild job = pendingBuild;
         while (job.nextLayer < VoxelWorld.CHUNK_Y &&
@@ -1442,11 +1447,7 @@ final class ChunkRenderer {
         int y1 = y0 + 1;
         int z1 = z0 + VoxelWorld.CHUNK_XZ;
 
-        // Torch sources are chunk-wide; scan them once, not once per vertical slice.
-        if (layer == 0)
-            collectChunkTorches(world, cx * VoxelWorld.CHUNK_XZ,
-                    cy * VoxelWorld.CHUNK_Y, z0,
-                    x1, (cy + 1) * VoxelWorld.CHUNK_Y, z1);
+        // Torch sources are gathered once when this resumable chunk build starts.
         fillChunkLightSlice(x0, y0, z0);
 
         // Crossed flowers do not form cube faces, so collect them separately.
