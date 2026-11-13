@@ -1294,6 +1294,10 @@ final class ChunkRenderer {
         int lastRz = lastChunkZ - centerZ + MAX_STREAM_RADIUS;
         int best = -1;
         float bestDistance = Float.MAX_VALUE;
+        // Keep progressing the current mesh job while its chunk remains visible.
+        // Re-selecting the nearest dirty chunk every frame can otherwise abandon
+        // a partially meshed chunk whenever the player/camera moves slightly.
+        boolean pendingVisible = false;
 
         // Search and rank candidates only in the active window, not all 648
         // cache slots. In shortest mode this is 72 sectors (3x3x8).
@@ -1334,6 +1338,9 @@ final class ChunkRenderer {
                         chunkWorldY[i] == cy && chunkWorldZ[i] == cz;
                     if (residentChunks[i] && !sameChunk) removeChunk(i);
                     if (!visible) continue;
+                    if (pendingBuild != null && pendingBuildSlot == i &&
+                            pendingBuild.x == cx && pendingBuild.y == cy && pendingBuild.z == cz)
+                        pendingVisible = true;
 
                     float lodDx = cx * VoxelWorld.CHUNK_XZ + 8.0f - world.playerX;
                     float lodDz = cz * VoxelWorld.CHUNK_XZ + 8.0f - world.playerZ;
@@ -1358,9 +1365,13 @@ final class ChunkRenderer {
             }
         }
 
-        // Advance only one 1-block-high slice of the nearest sector per frame.
-        // The previous complete chunk remains visible until all eight slices are ready.
-        if (best >= 0) {
+        // Finish a visible in-progress job before switching to another chunk.
+        // This is the streaming equivalent of Minicraft 3D's load-shedding:
+        // avoid throwing away expensive partial work when frame priorities change.
+        if (pendingVisible && pendingBuild != null) {
+            int slot = pendingBuildSlot;
+            advanceChunkBuild(world, slot, pendingBuild.x, pendingBuild.y, pendingBuild.z);
+        } else if (best >= 0) {
             advanceChunkBuild(world, best, chunkWorldX[best], chunkWorldY[best], chunkWorldZ[best]);
         }
     }
