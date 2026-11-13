@@ -23,9 +23,8 @@ import javax.microedition.m3g.World;
 /** Builds shared-texture chunk meshes on demand for the visible part of the world. */
 final class ChunkRenderer {
     private static final int MAX_STREAM_RADIUS = 4;
-    // A full chunk build is split into eight one-block-high slices. Only one
-    // slice is meshed per sync, keeping the game loop responsive on MIDP devices.
-    // A chunk is assembled as eight one-block-high slices, one slice per frame.
+    // A full chunk build is split into eight one-block-high slices. Each finished
+    // slice is attached to the scene immediately instead of being batched at the end.
     private ChunkBuild pendingBuild;
     private int pendingBuildSlot = -1;
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
@@ -1244,7 +1243,18 @@ final class ChunkRenderer {
     private void removeChunk(int i) {
         if (pendingBuildSlot == i) { pendingBuild = null; pendingBuildSlot = -1; }
         if (chunks[i] != null) {
-            for (int m = 0; m < chunks[i].meshes.length; m++) terrain.removeChild(chunks[i].meshes[m]);
+            Mesh[][] layers = chunks[i].layerMeshes;
+            if (layers != null) {
+                for (int layer = 0; layer < layers.length; layer++) {
+                    Mesh[] layerMeshes = layers[layer];
+                    if (layerMeshes == null) continue;
+                    for (int m = 0; m < layerMeshes.length; m++)
+                        terrain.removeChild(layerMeshes[m]);
+                }
+            } else if (chunks[i].meshes != null) {
+                for (int m = 0; m < chunks[i].meshes.length; m++)
+                    terrain.removeChild(chunks[i].meshes[m]);
+            }
             chunks[i] = null;
         }
         residentChunks[i] = false;
@@ -1399,18 +1409,39 @@ final class ChunkRenderer {
                     (cz + 1) * VoxelWorld.CHUNK_XZ);
         }
         ChunkBuild job = pendingBuild;
+        // Keep the chunk's layer references live while the job is in progress.
+        // This lets each finished slice enter the scene immediately and also
+        // makes partially built chunks safe to evict or resume.
+        Chunk staging = chunks[slot];
+        if (staging == null) {
+            staging = new Chunk();
+            staging.layerMeshes = job.layerMeshes;
+            staging.fires = job.fires;
+            staging.meshes = new Mesh[0];
+            chunks[slot] = staging;
+        } else {
+            staging.layerMeshes = job.layerMeshes;
+            staging.fires = job.fires;
+        }
         while (job.nextLayer < VoxelWorld.CHUNK_Y &&
                 (job.dirtyMask & (1 << job.nextLayer)) == 0) job.nextLayer++;
-        // Limit each frame to one non-empty vertical slice. A second slice can
-        // nearly double the geometry work in a single frame on slower Java ME
-        // devices; empty slices are still skipped without consuming a build.
+        // Build and attach one vertical slice per frame, instead of waiting
+        // for all eight slices and adding their meshes in one large burst.
         boolean builtSlice = false;
         while (job.nextLayer < VoxelWorld.CHUNK_Y && !builtSlice) {
             int layer = job.nextLayer++;
+            Mesh[] oldLayer = job.layerMeshes[layer];
+            if (oldLayer != null) {
+                for (int m = 0; m < oldLayer.length; m++)
+                    terrain.removeChild(oldLayer[m]);
+            }
             Chunk slice = buildChunkLayer(world, cx, cy, cz, layer, job.flatTerrain);
-            job.layerMeshes[layer] = slice == null ? new Mesh[0] : slice.meshes;
+            Mesh[] newLayer = slice == null ? new Mesh[0] : slice.meshes;
+            job.layerMeshes[layer] = newLayer;
             job.fires[layer] = slice == null || slice.fires == null ||
                     slice.fires.length == 0 ? null : slice.fires[0];
+            for (int m = 0; m < newLayer.length; m++)
+                terrain.addChild(newLayer[m]);
             if (slice != null) builtSlice = true;
             while (job.nextLayer < VoxelWorld.CHUNK_Y &&
                     (job.dirtyMask & (1 << job.nextLayer)) == 0) job.nextLayer++;
@@ -1431,18 +1462,6 @@ final class ChunkRenderer {
         complete.meshes = meshes;
         complete.layerMeshes = job.layerMeshes;
         complete.fires = job.fires;
-        Chunk previous = chunks[slot];
-        for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++) {
-            if ((job.dirtyMask & (1 << layer)) == 0) continue;
-            if (previous != null && previous.layerMeshes != null) {
-                Mesh[] oldLayer = previous.layerMeshes[layer];
-                if (oldLayer != null)
-                    for (int m = 0; m < oldLayer.length; m++) terrain.removeChild(oldLayer[m]);
-            }
-            Mesh[] newLayer = complete.layerMeshes[layer];
-            if (newLayer != null)
-                for (int m = 0; m < newLayer.length; m++) terrain.addChild(newLayer[m]);
-        }
         chunks[slot] = complete;
         chunkWorldX[slot] = cx; chunkWorldY[slot] = cy; chunkWorldZ[slot] = cz;
         residentChunks[slot] = true;
@@ -2030,7 +2049,6 @@ final class ChunkRenderer {
             this.flatTerrain = flatTerrain;
             if (previous != null && previous.layerMeshes != null) {
                 for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++) {
-                    if ((dirtyMask & (1 << layer)) != 0) continue;
                     layerMeshes[layer] = previous.layerMeshes[layer];
                     if (previous.fires != null && layer < previous.fires.length)
                         fires[layer] = previous.fires[layer];
