@@ -1358,9 +1358,8 @@ final class ChunkRenderer {
 
                     float lodDx = cx * VoxelWorld.CHUNK_XZ + 8.0f - world.playerX;
                     float lodDz = cz * VoxelWorld.CHUNK_XZ + 8.0f - world.playerZ;
-                    float flatDistance = shortestDistance ? 8.0f : 18.0f;
                     boolean wantedFlat = lodDx * lodDx + lodDz * lodDz >
-                            flatDistance * flatDistance;
+                            18.0f * 18.0f;
                     if (sameChunk && residentChunks[i] && chunkFlatTerrain[i] != wantedFlat) {
                         dirtyLayerMasks[i] = (1 << VoxelWorld.CHUNK_Y) - 1;
                         dirtyChunks[i] = true;
@@ -1400,9 +1399,8 @@ final class ChunkRenderer {
 
         float wantedDx = cx * VoxelWorld.CHUNK_XZ + 8.0f - world.playerX;
         float wantedDz = cz * VoxelWorld.CHUNK_XZ + 8.0f - world.playerZ;
-        float flatDistance = shortestDistance ? 8.0f : 18.0f;
         boolean wantedFlat = wantedDx * wantedDx + wantedDz * wantedDz >
-                flatDistance * flatDistance;
+                18.0f * 18.0f;
         if (pendingBuild == null || pendingBuildSlot != slot ||
             pendingBuild.x != cx || pendingBuild.y != cy || pendingBuild.z != cz ||
             pendingBuild.flatTerrain != wantedFlat) {
