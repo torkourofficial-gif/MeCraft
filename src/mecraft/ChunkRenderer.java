@@ -107,7 +107,6 @@ final class ChunkRenderer {
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     // Assigned slots include chunks whose first mesh is still being built.
     private final boolean[] assignedChunks = new boolean[CACHE_SIZE];
-    private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
     // Bit mask of vertical slices that actually need remeshing for each chunk.
     private final int[] dirtyLayerMasks = new int[CACHE_SIZE];
@@ -1230,7 +1229,7 @@ final class ChunkRenderer {
                 // Preserve the work already completed, and explicitly include
                 // the edited vertical slice. The pending chunk is not marked
                 // resident until its first complete build, so relying only on
-                // residentChunks below can otherwise lose this invalidation.
+                // assignedChunks below can otherwise lose this invalidation.
                 // pendingBuild.y is a CHUNK coordinate, not a block-layer
                 // coordinate. Use the edited local Y slice; edits immediately
                 // across a vertical chunk seam belong to the edge slice.
@@ -1336,7 +1335,6 @@ final class ChunkRenderer {
             chunks[i] = null;
         }
         assignedChunks[i] = false;
-        residentChunks[i] = false;
         dirtyChunks[i] = false;
         dirtyLayerMasks[i] = 0;
         chunkWorldX[i] = Integer.MIN_VALUE;
@@ -1443,7 +1441,6 @@ final class ChunkRenderer {
                     if (!sameChunk) {
                         chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
                         assignedChunks[i] = true;
-                        residentChunks[i] = false;
                         dirtyChunks[i] = true;
                         dirtyLayerMasks[i] = (1 << VoxelWorld.CHUNK_Y) - 1;
                     }
@@ -1552,7 +1549,6 @@ final class ChunkRenderer {
         complete.fires = job.fires;
         chunks[slot] = complete;
         chunkWorldX[slot] = cx; chunkWorldY[slot] = cy; chunkWorldZ[slot] = cz;
-        residentChunks[slot] = true;
         dirtyChunks[slot] = false;
         dirtyLayerMasks[slot] = 0;
         pendingBuild = null;
