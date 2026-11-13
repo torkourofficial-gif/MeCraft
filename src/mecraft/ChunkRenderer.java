@@ -1222,16 +1222,27 @@ final class ChunkRenderer {
                                 (lz == 0 || lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0);
             }
             if (affectsPending) {
-                // Preserve all slices that were part of the interrupted job;
-                // only the affected layers would otherwise be rebuilt.
-                dirtyLayerMasks[pendingBuildSlot] |= pendingBuild.dirtyMask;
+                // Preserve the work already completed, and explicitly include
+                // the edited vertical slice. The pending chunk is not marked
+                // resident until its first complete build, so relying only on
+                // residentChunks below can otherwise lose this invalidation.
+                int pendingLayer = cy - pendingBuild.y;
+                if (pendingLayer < 0) pendingLayer = 0;
+                if (pendingLayer >= VoxelWorld.CHUNKS_Y)
+                    pendingLayer = VoxelWorld.CHUNKS_Y - 1;
+                dirtyLayerMasks[pendingBuildSlot] |= pendingBuild.dirtyMask |
+                        (1 << pendingLayer);
+                dirtyChunks[pendingBuildSlot] = true;
                 pendingBuild = null;
                 pendingBuildSlot = -1;
             }
         }
 
         for (int i = 0; i < CACHE_SIZE; i++) {
-            if (!residentChunks[i]) continue;
+            // Include a chunk whose first mesh is still being built. Such a
+            // slot already has world coordinates but is not resident yet.
+            if (!residentChunks[i] && chunks[i] == null &&
+                !(pendingBuildSlot == i && pendingBuild != null)) continue;
             if (torchChanged) {
                 int bx0 = chunkWorldX[i] * VoxelWorld.CHUNK_XZ;
                 int by0 = chunkWorldY[i] * VoxelWorld.CHUNK_Y;
