@@ -122,11 +122,11 @@ final class InfdevTerrain {
 
         /** Returns true only after the complete chunk is ready for publication. */
         boolean step() {
-            if (phase == 0 && nether) {
-                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.GenerationTask: Nether " + chunkX + "," + chunkZ);
-                if (economic) generateEconomicNether(seed, chunkX, chunkZ, blocks, heights);
-                else generateNether(seed, chunkX, chunkZ, blocks, heights);
-                phase = 5;
+            if (phase == 0 && nether && row < CHUNK_SIZE) {
+                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.GenerationTask: Nether fila " + row);
+                generateNetherRow(seed, originX, originZ, row, blocks, heights, economic);
+                row++;
+                if (row == CHUNK_SIZE) phase = 5;
                 return false;
             }
             if (phase == 0 && row < CHUNK_SIZE) {
@@ -238,48 +238,50 @@ final class InfdevTerrain {
         int originZ = chunkZ * CHUNK_SIZE;
         for (int z = 0; z < CHUNK_SIZE; z++) {
             VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generateNether: fila z=" + z);
-            for (int x = 0; x < CHUNK_SIZE; x++) {
-                int wx = originX + x, wz = originZ + z;
-                int column = z * CHUNK_SIZE + x;
-                int floor = economic ? economicNetherFloorHeight(seed, wx, wz) : netherFloorHeight(seed, wx, wz);
-                int roof = economic ? 18 + (valueNoise(seed ^ 0x3B91, wx, wz, 64) >> 5) :
-                    16 + (valueNoise(seed ^ 0x3B91, wx, wz, 40) >> 5);
-                if (roof > WORLD_HEIGHT - 2) roof = WORLD_HEIGHT - 2;
-                floorHeights[column] = floor;
-                int base = column * WORLD_HEIGHT;
-                for (int y = 0; y < WORLD_HEIGHT; y++) {
-                    byte block;
-                    if (y == 0 || y == WORLD_HEIGHT - 1) block = Block.BEDROCK;
-                    else if (y <= floor || y >= roof) block = Block.STONE;
-                    else if (y <= 5) block = Block.LAVA;
-                    else block = Block.AIR;
-                    blocks[base + y] = block;
-                }
-
-                int surface = base + floor;
-                int surfaceHash = hash(seed ^ 0x5A17, wx, floor, wz);
-                if ((surfaceHash & 15) == 0) blocks[surface] = Block.SAND;
-                if ((surfaceHash & 63) == 1 && floor + 2 < roof) {
-                    blocks[surface + 1] = Block.STONE;
-                    if ((surfaceHash & 128) != 0 && floor + 3 < roof)
-                        blocks[surface + 2] = Block.STONE;
-                }
-                // A low-frequency contour creates continuous, winding lava rivers
-                // across chunk borders. World-coordinate sampling prevents seams.
-                int riverField = valueNoise(seed ^ 0x4C415641, wx, wz, economic ? 72 : 56);
-                if (floor > 2 && Math.abs(riverField - 128) <= (economic ? 5 : 7)) {
-                    blocks[base + floor] = Block.LAVA;
-                    blocks[base + floor - 1] = Block.LAVA;
-                }
-
-                int roofHash = hash(seed ^ 0x1057, wx, roof, wz);
-                if ((roofHash & 31) == 0 && roof > floor + 2) {
-                    blocks[base + (roof - 1)] = Block.COAL;
-                    if (x > 0) blocks[(column - 1) * WORLD_HEIGHT + roof - 1] = Block.COAL;
-                    if (z > 0) blocks[(column - CHUNK_SIZE) * WORLD_HEIGHT + roof - 1] = Block.COAL;
-                }
-            }
+            generateNetherRow(seed, originX, originZ, z, blocks, floorHeights, economic);
             yieldGenerationSlice();
+        }
+    }
+
+    /** Generates one Nether row so streamed tasks can resume between rows. */
+    private static void generateNetherRow(int seed, int originX, int originZ, int z,
+                                          byte[] blocks, int[] floorHeights, boolean economic) {
+        for (int x = 0; x < CHUNK_SIZE; x++) {
+            int wx = originX + x, wz = originZ + z;
+            int column = z * CHUNK_SIZE + x;
+            int floor = economic ? economicNetherFloorHeight(seed, wx, wz) : netherFloorHeight(seed, wx, wz);
+            int roof = economic ? 18 + (valueNoise(seed ^ 0x3B91, wx, wz, 64) >> 5) :
+                16 + (valueNoise(seed ^ 0x3B91, wx, wz, 40) >> 5);
+            if (roof > WORLD_HEIGHT - 2) roof = WORLD_HEIGHT - 2;
+            floorHeights[column] = floor;
+            int base = column * WORLD_HEIGHT;
+            for (int y = 0; y < WORLD_HEIGHT; y++) {
+                byte block;
+                if (y == 0 || y == WORLD_HEIGHT - 1) block = Block.BEDROCK;
+                else if (y <= floor || y >= roof) block = Block.STONE;
+                else if (y <= 5) block = Block.LAVA;
+                else block = Block.AIR;
+                blocks[base + y] = block;
+            }
+            int surface = base + floor;
+            int surfaceHash = hash(seed ^ 0x5A17, wx, floor, wz);
+            if ((surfaceHash & 15) == 0) blocks[surface] = Block.SAND;
+            if ((surfaceHash & 63) == 1 && floor + 2 < roof) {
+                blocks[surface + 1] = Block.STONE;
+                if ((surfaceHash & 128) != 0 && floor + 3 < roof)
+                    blocks[surface + 2] = Block.STONE;
+            }
+            int riverField = valueNoise(seed ^ 0x4C415641, wx, wz, economic ? 72 : 56);
+            if (floor > 2 && Math.abs(riverField - 128) <= (economic ? 5 : 7)) {
+                blocks[base + floor] = Block.LAVA;
+                blocks[base + floor - 1] = Block.LAVA;
+            }
+            int roofHash = hash(seed ^ 0x1057, wx, roof, wz);
+            if ((roofHash & 31) == 0 && roof > floor + 2) {
+                blocks[base + (roof - 1)] = Block.COAL;
+                if (x > 0) blocks[(column - 1) * WORLD_HEIGHT + roof - 1] = Block.COAL;
+                if (z > 0) blocks[(column - CHUNK_SIZE) * WORLD_HEIGHT + roof - 1] = Block.COAL;
+            }
         }
     }
 
