@@ -642,6 +642,59 @@ final class VoxelWorld {
         return edit >= 0 ? editId[edit] : Block.AIR;
     }
 
+    /**
+     * Enumerates nearby light sources without probing every voxel in the
+     * surrounding volume. Procedural terrain cannot contain player torches;
+     * those are sparse edits. Only the finite starter area needs a voxel scan
+     * because it can contain naturally generated lava.
+     */
+    int collectTorchSources(int minX, int minY, int minZ,
+                            int maxX, int maxY, int maxZ,
+                            int[] outX, int[] outY, int[] outZ,
+                            boolean[] outLava, int capacity) {
+        int count = 0;
+        int lowY = Math.max(0, minY);
+        int highY = Math.min(HEIGHT - 1, maxY);
+        if (lowY > highY || capacity <= 0) return 0;
+
+        int localMinX = Math.max(0, minX);
+        int localMaxX = Math.min(WIDTH - 1, maxX);
+        int localMinZ = Math.max(0, minZ);
+        int localMaxZ = Math.min(DEPTH - 1, maxZ);
+        if (localMinX <= localMaxX && localMinZ <= localMaxZ) {
+            for (int y = lowY; y <= highY && count < capacity; y++) {
+                for (int z = localMinZ; z <= localMaxZ && count < capacity; z++) {
+                    int at = index(localMinX, y, z);
+                    for (int x = localMinX; x <= localMaxX && count < capacity; x++, at++) {
+                        byte id = blocks[at];
+                        if (id != Block.TORCH && id != Block.LAVA) continue;
+                        outX[count] = x;
+                        outY[count] = y;
+                        outZ[count] = z;
+                        outLava[count] = id == Block.LAVA;
+                        count++;
+                    }
+                }
+            }
+        }
+
+        // The edit table is sparse and already contains every placed torch
+        // in the infinite world. Ignore edits belonging to the other dimension.
+        for (int i = 0; i < editCount && count < capacity; i++) {
+            if (editNether[i] != nether || editY[i] < lowY || editY[i] > highY ||
+                editX[i] < minX || editX[i] > maxX ||
+                editZ[i] < minZ || editZ[i] > maxZ) continue;
+            byte id = editId[i];
+            if (id != Block.TORCH && id != Block.LAVA) continue;
+            outX[count] = editX[i];
+            outY[count] = editY[i];
+            outZ[count] = editZ[i];
+            outLava[count] = id == Block.LAVA;
+            count++;
+        }
+        return count;
+    }
+
     boolean set(int x, int y, int z, byte id) {
         return setBlock(x, y, z, id, 0);
     }
