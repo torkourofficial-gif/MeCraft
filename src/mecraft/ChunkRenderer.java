@@ -1179,8 +1179,6 @@ final class ChunkRenderer {
     }
 
     private void rebuildChanged(VoxelWorld world) {
-        pendingBuild = null;
-        pendingBuildSlot = -1;
         int x = world.changedX, y = world.changedY, z = world.changedZ;
         int cx = floorDiv(x, VoxelWorld.CHUNK_XZ);
         int cy = y / VoxelWorld.CHUNK_Y;
@@ -1190,6 +1188,40 @@ final class ChunkRenderer {
         int lz = z - cz * VoxelWorld.CHUNK_XZ;
         boolean torchChanged = world.changedOldId == Block.TORCH ||
                 world.getLoaded(x, y, z) == Block.TORCH;
+
+        // Keep an in-progress mesh job when this edit is elsewhere. Throwing
+        // away a partially meshed visible chunk on every world revision caused
+        // the renderer to repeat expensive M3G work while the player was moving.
+        if (pendingBuild != null && pendingBuildSlot >= 0) {
+            boolean affectsPending;
+            if (torchChanged) {
+                int bx0 = pendingBuild.x * VoxelWorld.CHUNK_XZ;
+                int by0 = pendingBuild.y * VoxelWorld.CHUNK_Y;
+                int bz0 = pendingBuild.z * VoxelWorld.CHUNK_XZ;
+                affectsPending = x >= bx0 - TORCH_LIGHT_RADIUS &&
+                        x < bx0 + VoxelWorld.CHUNK_XZ + TORCH_LIGHT_RADIUS &&
+                        y >= by0 - TORCH_LIGHT_RADIUS &&
+                        y < by0 + VoxelWorld.CHUNK_Y + TORCH_LIGHT_RADIUS &&
+                        z >= bz0 - TORCH_LIGHT_RADIUS &&
+                        z < bz0 + VoxelWorld.CHUNK_XZ + TORCH_LIGHT_RADIUS;
+            } else {
+                affectsPending =
+                        Math.abs(pendingBuild.x - cx) <=
+                                (lx == 0 || lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0) &&
+                        Math.abs(pendingBuild.y - cy) <=
+                                (ly == 0 || ly == VoxelWorld.CHUNK_Y - 1 ? 1 : 0) &&
+                        Math.abs(pendingBuild.z - cz) <=
+                                (lz == 0 || lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0);
+            }
+            if (affectsPending) {
+                // Preserve all slices that were part of the interrupted job;
+                // only the affected layers would otherwise be rebuilt.
+                dirtyLayerMasks[pendingBuildSlot] |= pendingBuild.dirtyMask;
+                pendingBuild = null;
+                pendingBuildSlot = -1;
+            }
+        }
+
         for (int i = 0; i < CACHE_SIZE; i++) {
             if (!residentChunks[i]) continue;
             if (torchChanged) {
