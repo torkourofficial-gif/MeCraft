@@ -159,6 +159,12 @@ final class VoxelWorld {
     VoxelWorld(int seed, int mode) { this(seed, mode, SIZE_INFINITE, TYPE_STANDARD); }
 
     VoxelWorld(int seed, int mode, int worldSize, int worldType) {
+        this(seed, mode, worldSize, worldType, true);
+    }
+
+    /** Loading a save restores its voxel arrays; do not generate terrain first. */
+    private VoxelWorld(int seed, int mode, int worldSize, int worldType,
+                       boolean generateInitialTerrain) {
         setGenerationDiagnosticStage("VoxelWorld: asignando semilla");
         this.seed = seed;
         setGenerationDiagnosticStage("VoxelWorld: asignando modo");
@@ -173,9 +179,11 @@ final class VoxelWorld {
             proceduralChunkX[i] = Integer.MIN_VALUE;
             proceduralChunkZ[i] = Integer.MIN_VALUE;
         }
-        setGenerationDiagnosticStage("VoxelWorld: entrando en generate()");
-        generate();
-        setGenerationDiagnosticStage("VoxelWorld: generate() terminó; posicionando jugador");
+        if (generateInitialTerrain) {
+            setGenerationDiagnosticStage("VoxelWorld: entrando en generate()");
+            generate();
+            setGenerationDiagnosticStage("VoxelWorld: generate() terminó; posicionando jugador");
+        }
     }
 
     private int index(int x, int y, int z) {
@@ -1542,14 +1550,20 @@ final class VoxelWorld {
             int mode = in.readByte();
             boolean namedFormat = format == 0x4D434642 || format == 0x4D434643 ||
                                   format == 0x4D434644 || format == ALPHA_ITEM_SAVE_MAGIC || deepWorldFormat;
-            VoxelWorld world = new VoxelWorld(seed, mode, savedWorldSize, savedWorldType);
+            // Saved voxel data is read below. Generating a fresh 3x3 area here
+            // would waste nine complete chunk generations (and another nine
+            // when the save belongs to the Nether).
+            VoxelWorld world = new VoxelWorld(seed, mode, savedWorldSize, savedWorldType, false);
             world.worldName = namedFormat ? in.readUTF() : "Mundo guardado";
             world.difficulty = savedDifficulty < DIFFICULTY_PEACEFUL || savedDifficulty > DIFFICULTY_HARD ? DIFFICULTY_NORMAL : savedDifficulty;
             boolean alphaItemFormat = format == ALPHA_ITEM_SAVE_MAGIC || deepWorldFormat;
             boolean explicitDimensionFormat = format == 0x4D434644 || alphaItemFormat;
             boolean savedNether = explicitDimensionFormat ? in.readBoolean() :
                                   "NETHER".equalsIgnoreCase(world.worldName);
-            world.setNetherDimension(savedNether);
+            // The primary block arrays will be restored from this save record.
+            // Set the dimension flag directly instead of generating a throwaway
+            // dimension before loading the saved blocks.
+            world.nether = savedNether;
             world.saveStoreName = storeName;
             world.selectedSlot = in.readByte();
             boolean currentFormat = format == 0x4D434641 || format == 0x4D434642 ||
