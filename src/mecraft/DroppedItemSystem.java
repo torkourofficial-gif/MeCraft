@@ -59,6 +59,8 @@ final class DroppedItemSystem {
     private final VertexArray tntFlashPositionArray;
     private int cursor;
     private int activeCount;
+    private final int[] activeSlots = new int[CAPACITY];
+    private final int[] activePosition = new int[CAPACITY];
     private int random = 0x2468ACE1;
     private boolean explosionPending;
     private int explosionX, explosionY, explosionZ;
@@ -74,6 +76,7 @@ final class DroppedItemSystem {
         initializeDynamicBounds(positions);
         initializeDynamicBounds(spritePositions);
         initializeDynamicBounds(tntFlashPositions);
+        for (int i = 0; i < CAPACITY; i++) activePosition[i] = -1;
         positionArray.set(0, VERTEX_COUNT, positions);
         texCoordArray.set(0, VERTEX_COUNT, texCoords);
         colorArray.set(0, VERTEX_COUNT, colors);
@@ -165,7 +168,7 @@ final class DroppedItemSystem {
         if (slot < 0) return -1;
         cursor = slot + 1;
         if (cursor == CAPACITY) cursor = 0;
-        if (itemId[slot] == 0) activeCount++;
+        if (itemId[slot] == 0) addActiveSlot(slot);
 
         itemId[slot] = id;
         age[slot] = 0;
@@ -242,10 +245,9 @@ final class DroppedItemSystem {
         boolean hasBlocks = false;
         boolean hasSprites = false;
         boolean hasTntFlash = false;
-        for (int i = 0; i < CAPACITY; i++) {
-            if (itemId[i] == 0) {
-                continue;
-            }
+        int activeIndex = 0;
+        while (activeIndex < activeCount) {
+            int i = activeSlots[activeIndex];
             age[i]++;
             if (pickupDelay[i] > 0) pickupDelay[i]--;
             if (y[i] < -2.0f && tntFuse[i] > 0) {
@@ -257,8 +259,8 @@ final class DroppedItemSystem {
             } else if (y[i] < -2.0f) {
                 itemId[i] = 0;
                 tntFuse[i] = 0;
-                activeCount--;
                 writeItem(i);
+                removeActiveAt(activeIndex);
                 continue;
             }
 
@@ -300,8 +302,8 @@ final class DroppedItemSystem {
                 // may already have claimed it.
                 itemId[i] = 0;
                 tntFuse[i] = 0;
-                activeCount--;
                 writeItem(i);
+                removeActiveAt(activeIndex);
 
                 damagePlayerFromExplosion(world, blastX, blastY, blastZ, physics);
                 world.explode(blastX, blastY, blastZ, 4.0f, this);
@@ -318,16 +320,18 @@ final class DroppedItemSystem {
                 // not add them to inventory. Primed TNT remains untouched.
                 itemId[i] = 0;
                 tntFuse[i] = 0;
-                activeCount--;
                 writeItem(i);
+                removeActiveAt(activeIndex);
+                continue;
             } else if (world.mode != 1 && pickupDelay[i] == 0 && picked < 0 &&
                        inventory[id] < ItemCatalog.maxStack(id) && inPickupRange) {
                 inventory[id]++;
                 itemId[i] = 0;
                 tntFuse[i] = 0;
-                activeCount--;
                 picked = id;
                 writeItem(i);
+                removeActiveAt(activeIndex);
+                continue;
             } else {
                 writeItem(i);
             }
@@ -335,6 +339,7 @@ final class DroppedItemSystem {
                 if (itemId[i] < Block.COUNT || ItemCatalog.isColoredWool(itemId[i])) hasBlocks = true;
                 else hasSprites = true;
             }
+            activeIndex++;
         }
         if (activeCount == 0) {
             mesh.setRenderingEnable(false);
@@ -413,6 +418,20 @@ final class DroppedItemSystem {
                 world.isSolidAt(minX, by, maxZ) || world.isSolidAt(maxX, by, maxZ)) return true;
         }
         return false;
+    }
+
+    private void addActiveSlot(int slot) {
+        if (activePosition[slot] >= 0) return;
+        activePosition[slot] = activeCount;
+        activeSlots[activeCount++] = slot;
+    }
+
+    private void removeActiveAt(int index) {
+        int removed = activeSlots[index];
+        int last = activeSlots[--activeCount];
+        activeSlots[index] = last;
+        activePosition[last] = index;
+        activePosition[removed] = -1;
     }
 
     private void initializeDynamicBounds(short[] vertices) {
