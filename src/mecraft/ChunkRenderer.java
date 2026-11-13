@@ -101,6 +101,7 @@ final class ChunkRenderer {
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
+    private final boolean[] chunkFlatTerrain = new boolean[CACHE_SIZE];
     // Bit mask of vertical slices that actually need remeshing for each chunk.
     private final int[] dirtyLayerMasks = new int[CACHE_SIZE];
     private final int[] chunkWorldX = new int[CACHE_SIZE];
@@ -1334,6 +1335,14 @@ final class ChunkRenderer {
                     if (residentChunks[i] && !sameChunk) removeChunk(i);
                     if (!visible) continue;
 
+                    float lodDx = cx * VoxelWorld.CHUNK_XZ + 8.0f - world.playerX;
+                    float lodDz = cz * VoxelWorld.CHUNK_XZ + 8.0f - world.playerZ;
+                    boolean wantedFlat = lodDx * lodDx + lodDz * lodDz > 18.0f * 18.0f;
+                    if (sameChunk && residentChunks[i] && chunkFlatTerrain[i] != wantedFlat) {
+                        dirtyLayerMasks[i] = (1 << VoxelWorld.CHUNK_Y) - 1;
+                        dirtyChunks[i] = true;
+                    }
+
                     if (!sameChunk) {
                         chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
                         dirtyChunks[i] = false;
@@ -1370,7 +1379,10 @@ final class ChunkRenderer {
             pendingBuild.x != cx || pendingBuild.y != cy || pendingBuild.z != cz) {
             int mask = dirtyLayerMasks[slot];
             if (mask == 0) mask = (1 << VoxelWorld.CHUNK_Y) - 1;
-            pendingBuild = new ChunkBuild(slot, cx, cy, cz, mask, chunks[slot]);
+            float lodDx = cx * VoxelWorld.CHUNK_XZ + 8.0f - world.playerX;
+            float lodDz = cz * VoxelWorld.CHUNK_XZ + 8.0f - world.playerZ;
+            boolean wantedFlat = lodDx * lodDx + lodDz * lodDz > 18.0f * 18.0f;
+            pendingBuild = new ChunkBuild(slot, cx, cy, cz, mask, chunks[slot], wantedFlat);
             pendingBuildSlot = slot;
             collectChunkTorches(world, cx * VoxelWorld.CHUNK_XZ,
                     cy * VoxelWorld.CHUNK_Y, cz * VoxelWorld.CHUNK_XZ,
@@ -1382,7 +1394,7 @@ final class ChunkRenderer {
         while (job.nextLayer < VoxelWorld.CHUNK_Y &&
                 (job.dirtyMask & (1 << job.nextLayer)) == 0) job.nextLayer++;
         if (job.nextLayer < VoxelWorld.CHUNK_Y) {
-            Chunk slice = buildChunkLayer(world, cx, cy, cz, job.nextLayer);
+            Chunk slice = buildChunkLayer(world, cx, cy, cz, job.nextLayer, job.flatTerrain);
             job.layerMeshes[job.nextLayer] = slice == null ? new Mesh[0] : slice.meshes;
             job.fires[job.nextLayer] = slice == null || slice.fires == null ||
                     slice.fires.length == 0 ? null : slice.fires[0];
@@ -1421,19 +1433,15 @@ final class ChunkRenderer {
         chunks[slot] = complete;
         chunkWorldX[slot] = cx; chunkWorldY[slot] = cy; chunkWorldZ[slot] = cz;
         residentChunks[slot] = true;
+        chunkFlatTerrain[slot] = job.flatTerrain;
         dirtyChunks[slot] = false;
         dirtyLayerMasks[slot] = 0;
         pendingBuild = null;
         pendingBuildSlot = -1;
     }
 
-    private Chunk buildChunkLayer(VoxelWorld world, int cx, int cy, int cz, int layer) {
-        // Distant terrain on a small phone gains little from 16x16 textures.
-        // Keep the same silhouettes and block data, but use one flat vertex-
-        // colored material beyond the near-detail radius in every preset.
-        float chunkDx = cx * VoxelWorld.CHUNK_XZ + 8.0f - world.playerX;
-        float chunkDz = cz * VoxelWorld.CHUNK_XZ + 8.0f - world.playerZ;
-        boolean flatTerrain = chunkDx * chunkDx + chunkDz * chunkDz > 18.0f * 18.0f;
+    private Chunk buildChunkLayer(VoxelWorld world, int cx, int cy, int cz,
+                                   int layer, boolean flatTerrain) {
         FaceBuilder[] builders = chunkFaceBuilders;
         FlowerBuilder flowers = null;
         FireBuilder fires = null;
@@ -1998,12 +2006,15 @@ final class ChunkRenderer {
 
     private static final class ChunkBuild {
         final int slot, x, y, z, dirtyMask;
+        final boolean flatTerrain;
         int nextLayer;
         final Mesh[][] layerMeshes = new Mesh[VoxelWorld.CHUNK_Y][];
         final FireBuilder[] fires = new FireBuilder[VoxelWorld.CHUNK_Y];
-        ChunkBuild(int slot, int x, int y, int z, int dirtyMask, Chunk previous) {
+        ChunkBuild(int slot, int x, int y, int z, int dirtyMask, Chunk previous,
+                   boolean flatTerrain) {
             this.slot = slot; this.x = x; this.y = y; this.z = z;
             this.dirtyMask = dirtyMask;
+            this.flatTerrain = flatTerrain;
             if (previous != null && previous.layerMeshes != null) {
                 for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++) {
                     if ((dirtyMask & (1 << layer)) != 0) continue;
