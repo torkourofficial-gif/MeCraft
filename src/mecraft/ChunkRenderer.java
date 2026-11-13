@@ -105,6 +105,8 @@ final class ChunkRenderer {
     private int torchScanZ = Integer.MIN_VALUE;
     private int torchScanRevision = Integer.MIN_VALUE;
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
+    // Assigned slots include chunks whose first mesh is still being built.
+    private final boolean[] assignedChunks = new boolean[CACHE_SIZE];
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
     // Bit mask of vertical slices that actually need remeshing for each chunk.
@@ -1243,8 +1245,7 @@ final class ChunkRenderer {
         for (int i = 0; i < CACHE_SIZE; i++) {
             // Include a chunk whose first mesh is still being built. Such a
             // slot already has world coordinates but is not resident yet.
-            if (!residentChunks[i] && chunks[i] == null &&
-                !(pendingBuildSlot == i && pendingBuild != null)) continue;
+            if (!assignedChunks[i]) continue;
             if (torchChanged) {
                 int bx0 = chunkWorldX[i] * VoxelWorld.CHUNK_XZ;
                 int by0 = chunkWorldY[i] * VoxelWorld.CHUNK_Y;
@@ -1311,7 +1312,7 @@ final class ChunkRenderer {
         pendingBuildSlot = -1;
         int allLayers = (1 << VoxelWorld.CHUNK_Y) - 1;
         for (int i = 0; i < chunks.length; i++) {
-            if (!residentChunks[i] && chunks[i] == null) continue;
+            if (!assignedChunks[i]) continue;
             dirtyLayerMasks[i] = allLayers;
             dirtyChunks[i] = true;
         }
@@ -1334,9 +1335,13 @@ final class ChunkRenderer {
             }
             chunks[i] = null;
         }
+        assignedChunks[i] = false;
         residentChunks[i] = false;
         dirtyChunks[i] = false;
         dirtyLayerMasks[i] = 0;
+        chunkWorldX[i] = Integer.MIN_VALUE;
+        chunkWorldY[i] = Integer.MIN_VALUE;
+        chunkWorldZ[i] = Integer.MIN_VALUE;
     }
 
     /** Keep M3G buffers only for chunks intersecting the camera frustum. */
@@ -1373,7 +1378,7 @@ final class ChunkRenderer {
 
         // Evict only chunks that have actually left the horizontal stream window.
         for (int i = 0; i < CACHE_SIZE; i++) {
-            if (residentChunks[i] &&
+            if (assignedChunks[i] &&
                     (chunkWorldX[i] < firstChunkX || chunkWorldX[i] > lastChunkX ||
                      chunkWorldZ[i] < firstChunkZ || chunkWorldZ[i] > lastChunkZ)) removeChunk(i);
         }
@@ -1424,9 +1429,12 @@ final class ChunkRenderer {
                             Math.abs(vertical) <= Math.max(0.0f, depth) * tanVerticalFov + CHUNK_RADIUS;
                     }
 
-                    boolean sameChunk = residentChunks[i] && chunkWorldX[i] == cx &&
+                    boolean sameChunk = assignedChunks[i] && chunkWorldX[i] == cx &&
                         chunkWorldY[i] == cy && chunkWorldZ[i] == cz;
-                    if (residentChunks[i] && !sameChunk) removeChunk(i);
+                    // A slot can own a partially meshed chunk before it becomes
+                    // resident. Always detach that partial mesh before reusing
+                    // the ring slot for a different world coordinate.
+                    if (assignedChunks[i] && !sameChunk) removeChunk(i);
                     if (!visible) continue;
                     if (pendingBuild != null && pendingBuildSlot == i &&
                             pendingBuild.x == cx && pendingBuild.y == cy && pendingBuild.z == cz)
@@ -1434,7 +1442,10 @@ final class ChunkRenderer {
 
                     if (!sameChunk) {
                         chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
-                        dirtyChunks[i] = false;
+                        assignedChunks[i] = true;
+                        residentChunks[i] = false;
+                        dirtyChunks[i] = true;
+                        dirtyLayerMasks[i] = (1 << VoxelWorld.CHUNK_Y) - 1;
                     }
                     if (!sameChunk || dirtyChunks[i]) {
                         float distance = dx * dx + dz * dz + dy * dy * 2.0f;
