@@ -1229,13 +1229,8 @@ final class ChunkRenderer {
                 // pendingBuild.y is a CHUNK coordinate, not a block-layer
                 // coordinate. Use the edited local Y slice; edits immediately
                 // across a vertical chunk seam belong to the edge slice.
-                int pendingLayer = pendingBuild.y < cy ? VoxelWorld.CHUNK_Y - 1 :
-                        (pendingBuild.y > cy ? 0 : ly);
-                if (pendingLayer < 0) pendingLayer = 0;
-                if (pendingLayer >= VoxelWorld.CHUNK_Y)
-                    pendingLayer = VoxelWorld.CHUNK_Y - 1;
-                dirtyLayerMasks[pendingBuildSlot] |= pendingBuild.dirtyMask |
-                        (1 << pendingLayer);
+                int pendingMask = changedVerticalLayerMask(pendingBuild.y, cy, ly);
+                dirtyLayerMasks[pendingBuildSlot] |= pendingBuild.dirtyMask | pendingMask;
                 dirtyChunks[pendingBuildSlot] = true;
                 pendingBuild = null;
                 pendingBuildSlot = -1;
@@ -1268,16 +1263,22 @@ final class ChunkRenderer {
             if (Math.abs(chunkWorldX[i] - cx) > (lx == 0 || lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0) ||
                 Math.abs(chunkWorldY[i] - cy) > (ly == 0 || ly == VoxelWorld.CHUNK_Y - 1 ? 1 : 0) ||
                 Math.abs(chunkWorldZ[i] - cz) > (lz == 0 || lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0)) continue;
-            // chunkWorldY stores the vertical CHUNK index. The mesh
-            // slices are block layers inside that chunk, so subtracting the
-            // two chunk indices always produced zero and rebuilt only layer 0.
-            int targetLayer = chunkWorldY[i] < cy ? VoxelWorld.CHUNK_Y - 1 :
-                    (chunkWorldY[i] > cy ? 0 : ly);
-            if (targetLayer < 0) targetLayer = 0;
-            if (targetLayer >= VoxelWorld.CHUNK_Y) targetLayer = VoxelWorld.CHUNK_Y - 1;
-            dirtyLayerMasks[i] |= 1 << targetLayer;
-            dirtyChunks[i] = true;
+            // A changed voxel affects its own slice and the slices directly
+            // above and below: their bottom/top faces may become visible or hidden.
+            // At a vertical chunk seam, only the touching edge slice is affected.
+            dirtyLayerMasks[i] |= changedVerticalLayerMask(chunkWorldY[i], cy, ly);
+            dirtyChunks[i] = dirtyLayerMasks[i] != 0;
         }
+    }
+
+    /** Returns the mesh slices whose exposed faces can change after editing Y. */
+    private int changedVerticalLayerMask(int chunkY, int changedChunkY, int localY) {
+        if (chunkY < changedChunkY) return 1 << (VoxelWorld.CHUNK_Y - 1);
+        if (chunkY > changedChunkY) return 1;
+        int mask = 1 << localY;
+        if (localY > 0) mask |= 1 << (localY - 1);
+        if (localY + 1 < VoxelWorld.CHUNK_Y) mask |= 1 << (localY + 1);
+        return mask;
     }
 
     private int floorDiv(int value, int divisor) {
