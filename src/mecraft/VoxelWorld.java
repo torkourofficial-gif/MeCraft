@@ -1013,8 +1013,11 @@ final class VoxelWorld {
 
         // Process only the queue snapshot so newly scheduled neighbors are
         // handled on a later tick, keeping the work bounded on small devices.
+        // Bound each fluid update to avoid a large saved queue monopolizing
+        // a game tick on low-clock Java ME devices.
         int pending = fluidQueueCount;
-        while (pending-- > 0 && fluidQueueCount > 0) {
+        int budget = pending > 96 ? 96 : pending;
+        while (budget-- > 0 && fluidQueueCount > 0) {
             int i = fluidQueue[fluidQueueHead];
             fluidQueueHead++;
             if (fluidQueueHead == FLUID_QUEUE_SIZE) fluidQueueHead = 0;
