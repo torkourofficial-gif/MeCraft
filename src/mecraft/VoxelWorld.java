@@ -97,12 +97,16 @@ final class VoxelWorld {
     private final int[] proceduralQueueZ = new int[PROCEDURAL_CACHE_SIZE];
     private final boolean[] proceduralQueueNether = new boolean[PROCEDURAL_CACHE_SIZE];
     private int proceduralQueueCount;
+    private int proceduralQueueFocusX = Integer.MIN_VALUE;
+    private int proceduralQueueFocusZ = Integer.MIN_VALUE;
+    private boolean proceduralQueueFocusNether;
     private int proceduralGenerationEpoch;
     private boolean proceduralWorkerRunning;
     private boolean proceduralWorkerBusy;
     private int proceduralWorkerX, proceduralWorkerZ;
     private boolean proceduralWorkerNether;
-    private int proceduralNextSlot;
+    private final int[] proceduralChunkAge = new int[PROCEDURAL_CACHE_SIZE];
+    private int proceduralCacheClock;
     private int proceduralChunksGenerated;
     private long lastProceduralGenerationMillis;
     private int[] editX = new int[128];
@@ -210,13 +214,23 @@ final class VoxelWorld {
         return -1;
     }
 
-    /** Reuse the eight cache slots in a simple circular order. */
+    /** Choose an empty slot or the least recently used resident chunk. */
     private int chooseProceduralSlot() {
-        for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++)
+        int oldest = 0;
+        for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
             if (proceduralChunkX[i] == Integer.MIN_VALUE) return i;
-        int slot = proceduralNextSlot;
-        proceduralNextSlot = (proceduralNextSlot + 1) % PROCEDURAL_CACHE_SIZE;
-        return slot;
+            if (proceduralChunkAge[i] < proceduralChunkAge[oldest]) oldest = i;
+        }
+        return oldest;
+    }
+
+    private void touchProceduralSlot(int slot) {
+        proceduralCacheClock++;
+        if (proceduralCacheClock == Integer.MAX_VALUE) {
+            for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) proceduralChunkAge[i] >>= 1;
+            proceduralCacheClock = 1;
+        }
+        proceduralChunkAge[slot] = proceduralCacheClock;
     }
 
     private byte proceduralBlock(int x, int y, int z) {
@@ -224,6 +238,7 @@ final class VoxelWorld {
         synchronized (this) {
             int cache = findProceduralChunk(cx, cz);
             if (cache >= 0) {
+                touchProceduralSlot(cache);
                 int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
                 return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
             }
@@ -235,13 +250,29 @@ final class VoxelWorld {
     }
 
     /**
-     * Queue the current chunk and its four face-neighbors, dropping stale requests.
+     * Queue the current chunk and its four face-neighbors. Retain nearby work
+     * when the focus moves by one chunk so already-useful requests can finish.
      */
     void requestProceduralChunk(int cx, int cz) {
-        // A new focus replaces stale prefetch requests. The active worker
-        // finishes its current chunk; the five useful requests are queued below.
         synchronized (this) {
-            proceduralQueueCount = 0;
+            if (proceduralQueueFocusX != cx || proceduralQueueFocusZ != cz ||
+                proceduralQueueFocusNether != nether) {
+                int kept = 0;
+                for (int i = 0; i < proceduralQueueCount; i++) {
+                    if (proceduralQueueNether[i] == nether &&
+                        Math.abs(proceduralQueueX[i] - cx) <= 1 &&
+                        Math.abs(proceduralQueueZ[i] - cz) <= 1) {
+                        proceduralQueueX[kept] = proceduralQueueX[i];
+                        proceduralQueueZ[kept] = proceduralQueueZ[i];
+                        proceduralQueueNether[kept] = proceduralQueueNether[i];
+                        kept++;
+                    }
+                }
+                proceduralQueueCount = kept;
+                proceduralQueueFocusX = cx;
+                proceduralQueueFocusZ = cz;
+                proceduralQueueFocusNether = nether;
+            }
         }
         // Generate the visible chunk first, then its four neighbors.
         enqueueProceduralChunk(cx, cz, true);
@@ -416,6 +447,7 @@ final class VoxelWorld {
                 proceduralWorkerBuffer = recycled;
                 proceduralChunkX[slot] = cx;
                 proceduralChunkZ[slot] = cz;
+                touchProceduralSlot(slot);
 
                 proceduralChunksGenerated++;
                 lastProceduralGenerationMillis =
@@ -575,7 +607,7 @@ final class VoxelWorld {
         synchronized (this) {
             int cache = findProceduralChunk(cx, cz);
             if (cache >= 0) {
-
+                touchProceduralSlot(cache);
                 int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
                 return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
             }
@@ -597,7 +629,7 @@ final class VoxelWorld {
         synchronized (this) {
             int cache = findProceduralChunk(cx, cz);
             if (cache < 0) return Block.AIR;
-
+            touchProceduralSlot(cache);
             int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
             return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
         }
@@ -649,6 +681,7 @@ final class VoxelWorld {
                     }
                 }
             }
+            if (cache >= 0) touchProceduralSlot(cache);
         }
     }
 
@@ -1198,6 +1231,7 @@ final class VoxelWorld {
                 }
                 setGenerationDiagnosticStage("VoxelWorld.generate: guardando coordenadas del chunk cx=" + cx + ", cz=" + cz);
                 proceduralChunkX[cache] = cx; proceduralChunkZ[cache] = cz;
+                touchProceduralSlot(cache);
 
                 for (int z = 0; z < CHUNK_XZ; z++) {
                     setGenerationDiagnosticStage("VoxelWorld.generate: copiando chunk cx=" + cx + ", cz=" + cz + ", z=" + z);
@@ -1881,6 +1915,7 @@ final class VoxelWorld {
                     in.readFully(world.proceduralChunks[slot]);
                     world.proceduralChunkX[slot] = cx;
                     world.proceduralChunkZ[slot] = cz;
+                    world.touchProceduralSlot(slot);
                 }
             }
             if (editPageCount > 0 && editPageCount <= store.getNumRecords())
