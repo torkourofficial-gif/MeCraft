@@ -34,7 +34,7 @@ final class ChunkRenderer {
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
-    private static final int TORCH_LIGHT_RADIUS = 4;
+    private static final int TORCH_LIGHT_RADIUS = 6;
     private static final int LAVA_LIGHT_RADIUS = 6;
     private static final int MAX_CHUNK_TORCHES = 128;
     private final int[] chunkTorchX = new int[MAX_CHUNK_TORCHES];
