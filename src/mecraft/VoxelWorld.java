@@ -90,7 +90,7 @@ final class VoxelWorld {
     private final int[] proceduralHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     private final byte[] proceduralBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     // Background terrain generation uses private scratch buffers, never scene objects.
-    private final byte[] proceduralWorkerBuffer = new byte[InfdevTerrain.CHUNK_VOLUME];
+    private byte[] proceduralWorkerBuffer = new byte[InfdevTerrain.CHUNK_VOLUME];
     private final int[] proceduralWorkerHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     private final byte[] proceduralWorkerBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     private final int[] proceduralQueueX = new int[PROCEDURAL_CACHE_SIZE];
@@ -439,8 +439,12 @@ final class VoxelWorld {
                 if (epoch != proceduralGenerationEpoch || dimension != nether) continue;
                 int slot = findProceduralChunk(cx, cz);
                 if (slot < 0) slot = chooseProceduralSlot();
-                System.arraycopy(proceduralWorkerBuffer, 0, proceduralChunks[slot], 0,
-                                 InfdevTerrain.CHUNK_VOLUME);
+                // Hand the completed array to the cache and recycle the
+                // evicted slot's array as the next worker buffer. No 16 KiB
+                // copy is needed for every generated chunk.
+                byte[] recycled = proceduralChunks[slot];
+                proceduralChunks[slot] = proceduralWorkerBuffer;
+                proceduralWorkerBuffer = recycled;
                 proceduralChunkX[slot] = cx;
                 proceduralChunkZ[slot] = cz;
                 touchProceduralSlot(slot);
