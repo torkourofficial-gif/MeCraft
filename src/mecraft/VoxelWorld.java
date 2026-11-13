@@ -353,12 +353,16 @@ final class VoxelWorld {
         }
     }
 
+    /**
+     * Once a chunk has started generating, let its bounded task finish.
+     * The streaming focus may move while the worker is yielding between rows;
+     * cancelling on every focus shift leaves repeated partial generations and
+     * starves chunks at the edge of the active window. The completed result is
+     * still checked against the current 3x3 focus before it can enter the cache.
+     */
     private synchronized boolean isProceduralGenerationCurrent(int epoch, boolean dimension,
                                                                  int cx, int cz) {
-        return epoch == proceduralGenerationEpoch && dimension == nether &&
-                proceduralQueueFocusNether == dimension &&
-                Math.abs(cx - proceduralQueueFocusX) <= 1 &&
-                Math.abs(cz - proceduralQueueFocusZ) <= 1;
+        return epoch == proceduralGenerationEpoch && dimension == nether;
     }
 
     private void runProceduralWorker() {
