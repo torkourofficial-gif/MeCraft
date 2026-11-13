@@ -116,13 +116,13 @@ final class ParticleSystem {
                     size[i] = 0.075f + nextRandom() * 0.055f;
                     age[i] = 0;
                     activate(i);
-                    writeTextureQuad(i);
-                    textureCoordinatesDirty = true;
                     // About two seconds at the game's 20 updates per second.
                     lifetime[i] = 40;
                     tile[i] = blockTile;
                     tileOffsetX[i] = (int)(nextRandom() * 4.0f);
                     tileOffsetY[i] = (int)(nextRandom() * 4.0f);
+                    writeTextureQuad(i);
+                    textureCoordinatesDirty = true;
                     deathDust[i] = false;
                     setParticleColor(i, 255);
                 }
@@ -148,12 +148,12 @@ final class ParticleSystem {
             size[i] = 0.045f + nextRandom() * 0.035f;
             age[i] = 0;
             activate(i);
-            writeTextureQuad(i);
-            textureCoordinatesDirty = true;
             lifetime[i] = 14 + (int)(nextRandom() * 9.0f);
             tile[i] = Block.sideTile(Block.DIRT);
             tileOffsetX[i] = (int)(nextRandom() * 12.0f);
             tileOffsetY[i] = (int)(nextRandom() * 12.0f);
+            writeTextureQuad(i);
+            textureCoordinatesDirty = true;
             deathDust[i] = true;
             setParticleColor(i, 165, 132, 91, 230);
         }
