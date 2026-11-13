@@ -75,6 +75,7 @@ final class InfdevTerrain {
                     blocks[at + y] = id;
                 }
             }
+            yieldGenerationSlice();
         }
 
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: generando vetas minerales");
@@ -178,6 +179,20 @@ final class InfdevTerrain {
                     if (z > 0) blocks[(column - CHUNK_SIZE) * WORLD_HEIGHT + roof - 1] = Block.COAL;
                 }
             }
+            yieldGenerationSlice();
+        }
+    }
+
+    /**
+     * Cooperative pause between terrain rows. The worker stays low-priority,
+     * and this gives the game/render threads regular CPU time on slow devices.
+     * The chunk is still published atomically only after every terrain pass.
+     */
+    private static void yieldGenerationSlice() {
+        try {
+            Thread.sleep(1);
+        } catch (InterruptedException ignored) {
+            // A short pause is advisory; keep deterministic generation intact.
         }
     }
 
