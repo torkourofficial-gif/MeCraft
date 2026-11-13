@@ -636,8 +636,6 @@ final class InfdevTerrain {
             }
         
             yieldGenerationSlice();
-        
-            yieldGenerationSlice();
         }
     }
 
@@ -676,6 +674,7 @@ final class InfdevTerrain {
                                      Block.DIAMOND_ORE, 2, Math.min(20, WORLD_HEIGHT - 3), 2, 4, diamondHash);
                 }
             }
+            yieldGenerationSlice();
         }
     }
 
