@@ -106,7 +106,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private int touchSetupSelection;
     private int language = Language.ENGLISH;
     private int cameraSensitivity = 2;
-    private int renderDistance = 1;
+    private int renderDistance = 4;
     private boolean economicMode;
     private boolean controlsReturnSettings;
     private final int[] controlCodes = new int[CONTROL_COUNT];
@@ -3575,7 +3575,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void drawMenu(Graphics g) {
         int w = getWidth(), h = getHeight();
-        drawDioramaBackground(g);
+        drawPanoramaBackground(g);
         int logoY = Math.max(8, h / 12);
         if (title != null) g.drawImage(title, w / 2, logoY, Graphics.TOP | Graphics.HCENTER);
         else {
