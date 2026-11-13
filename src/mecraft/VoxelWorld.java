@@ -203,7 +203,7 @@ final class VoxelWorld {
         return value < 0 && value % CHUNK_XZ != 0 ? result - 1 : result;
     }
 
-    /** Locate a resident procedural chunk; the small cache uses an LRU policy. */
+    /** Locate a resident procedural chunk in the eight-slot cache. */
     private int findProceduralChunk(int cx, int cz) {
         for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++)
             if (proceduralChunkX[i] == cx && proceduralChunkZ[i] == cz) return i;
@@ -224,7 +224,6 @@ final class VoxelWorld {
         synchronized (this) {
             int cache = findProceduralChunk(cx, cz);
             if (cache >= 0) {
-
                 int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
                 return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
             }
@@ -236,9 +235,7 @@ final class VoxelWorld {
     }
 
     /**
-     * Queue the current chunk and its four face-neighbors. Keep nearby queued
-     * work when the focus advances by one chunk: most of the previous
-     * neighborhood is still useful, so throwing it away only wastes CPU.
+     * Queue the current chunk and its four face-neighbors, dropping stale requests.
      */
     void requestProceduralChunk(int cx, int cz) {
         // A new focus replaces stale prefetch requests. The active worker
@@ -246,7 +243,7 @@ final class VoxelWorld {
         synchronized (this) {
             proceduralQueueCount = 0;
         }
-        // Put the chunk currently blocking visible geometry at the head.
+        // Generate the visible chunk first, then its four neighbors.
         enqueueProceduralChunk(cx, cz, true);
         enqueueProceduralChunk(cx - 1, cz, false);
         enqueueProceduralChunk(cx + 1, cz, false);
@@ -633,7 +630,6 @@ final class VoxelWorld {
         int cx = floorChunk(x0), cz = floorChunk(z0);
         synchronized (this) {
             int cache = findProceduralChunk(cx, cz);
-
             for (int z = 0; z < CHUNK_XZ; z++) {
                 for (int x = 0; x < CHUNK_XZ; x++) {
                     int wx = x0 + x, wz = z0 + z;
@@ -649,15 +645,12 @@ final class VoxelWorld {
                             int lx = wx - cx * CHUNK_XZ;
                             int lz = wz - cz * CHUNK_XZ;
                             target[at] = proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
-
                         } else target[at] = Block.AIR;
                     }
                 }
             }
-
         }
     }
-
 
     /**
      * Fast lookup for light-source discovery. Torches can only be placed as
@@ -1888,7 +1881,6 @@ final class VoxelWorld {
                     in.readFully(world.proceduralChunks[slot]);
                     world.proceduralChunkX[slot] = cx;
                     world.proceduralChunkZ[slot] = cz;
-
                 }
             }
             if (editPageCount > 0 && editPageCount <= store.getNumRecords())
