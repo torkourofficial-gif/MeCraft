@@ -294,6 +294,15 @@ final class VoxelWorld {
             (outsideWorld(x0, z0) || outsideWorld(x0 + CHUNK_XZ - 1, z0 + CHUNK_XZ - 1))) return;
         if (x0 >= 0 && x0 + CHUNK_XZ <= WIDTH && z0 >= 0 && z0 + CHUNK_XZ <= DEPTH) return;
         synchronized (this) {
+            // A gameplay lookup can be the first request after loading or a
+            // dimension change. Establish a focus only when none exists;
+            // later lookups must not steal the renderer's streaming focus.
+            if (proceduralQueueFocusX == Integer.MIN_VALUE ||
+                proceduralQueueFocusNether != nether) {
+                proceduralQueueFocusX = cx;
+                proceduralQueueFocusZ = cz;
+                proceduralQueueFocusNether = nether;
+            }
             if (findProceduralChunk(cx, cz) >= 0) return;
             if (proceduralWorkerBusy && proceduralWorkerX == cx &&
                 proceduralWorkerZ == cz && proceduralWorkerNether == nether) return;
