@@ -27,6 +27,10 @@ final class ChunkRenderer {
     // slice is attached to the scene immediately instead of being batched at the end.
     private ChunkBuild pendingBuild;
     private int pendingBuildSlot = -1;
+    // Paint can run several times during one 50 ms game tick. Keep chunk
+    // meshing to one vertical slice per tick so redraw frequency cannot
+    // multiply terrain-build work on fast devices or emulators.
+    private long lastChunkBuildTime;
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
@@ -1265,9 +1269,19 @@ final class ChunkRenderer {
     }
 
     private void rebuildWorld(VoxelWorld world) {
+        // A full invalidation does not mean the world data or every resident
+        // mesh must be discarded at once. Keep the old meshes visible and mark
+        // their slices dirty; updateVisibleChunks() will replace them gradually.
+        if (pendingBuild != null && pendingBuildSlot >= 0)
+            dirtyLayerMasks[pendingBuildSlot] |= pendingBuild.dirtyMask;
         pendingBuild = null;
         pendingBuildSlot = -1;
-        for (int i = 0; i < chunks.length; i++) removeChunk(i);
+        int allLayers = (1 << VoxelWorld.CHUNK_Y) - 1;
+        for (int i = 0; i < chunks.length; i++) {
+            if (!residentChunks[i] && chunks[i] == null) continue;
+            dirtyLayerMasks[i] = allLayers;
+            dirtyChunks[i] = true;
+        }
     }
 
     private void removeChunk(int i) {
@@ -1412,6 +1426,9 @@ final class ChunkRenderer {
     }
 
     private void advanceChunkBuild(VoxelWorld world, int slot, int cx, int cy, int cz) {
+        long now = System.currentTimeMillis();
+        if (lastChunkBuildTime != 0L && now - lastChunkBuildTime < 50L) return;
+        lastChunkBuildTime = now;
         // Queue neighboring terrain, but do not stall this mesh waiting for it.
         // Missing neighbor cells are treated as air by getLoaded() until they arrive.
         world.requestProceduralChunk(cx, cz);
