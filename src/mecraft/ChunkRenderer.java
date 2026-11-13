@@ -1462,7 +1462,7 @@ final class ChunkRenderer {
         // Queue neighboring terrain, but do not stall this mesh waiting for it.
         // Missing neighbor cells are treated as air by getLoaded() until they arrive.
         world.requestProceduralChunk(cx, cz);
-        if (!world.isProceduralChunkReady(cx, cz)) return;
+        if (!world.areProceduralChunkNeighborsReady(cx, cz)) return;
 
         if (pendingBuild == null || pendingBuildSlot != slot ||
             pendingBuild.x != cx || pendingBuild.y != cy || pendingBuild.z != cz) {
