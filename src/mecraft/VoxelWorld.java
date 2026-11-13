@@ -190,21 +190,126 @@ final class VoxelWorld {
         return value < 0 && value % CHUNK_XZ != 0 ? result - 1 : result;
     }
 
-    /** Power-of-two direct-mapped cache: one hash and two coordinate checks per lookup. */
-    private int proceduralCacheSlot(int cx, int cz) {
-        return (cx * 73428767 ^ cz * 912931) & (PROCEDURAL_CACHE_SIZE - 1);
+    /** Locate a resident procedural chunk; the small cache uses an LRU policy. */
+    private int findProceduralChunk(int cx, int cz) {
+        for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++)
+            if (proceduralChunkX[i] == cx && proceduralChunkZ[i] == cz) return i;
+        return -1;
+    }
+
+    private int chooseProceduralSlot() {
+        int oldest = 0;
+        for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
+            if (proceduralChunkX[i] == Integer.MIN_VALUE) return i;
+            if (proceduralChunkAge[i] < proceduralChunkAge[oldest]) oldest = i;
+        }
+        return oldest;
+    }
+
+    private void touchProceduralSlot(int slot) {
+        proceduralCacheClock++;
+        if (proceduralCacheClock == Integer.MAX_VALUE) {
+            for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) proceduralChunkAge[i] >>= 1;
+            proceduralCacheClock = 1;
+        }
+        proceduralChunkAge[slot] = proceduralCacheClock;
     }
 
     private byte proceduralBlock(int x, int y, int z) {
         int cx = floorChunk(x), cz = floorChunk(z);
-        int cache = proceduralCacheSlot(cx, cz);
-        if (proceduralChunkX[cache] != cx || proceduralChunkZ[cache] != cz) {
-            generateChunk(cx, cz, proceduralChunks[cache]);
-            proceduralChunkX[cache] = cx;
-            proceduralChunkZ[cache] = cz;
+        synchronized (this) {
+            int cache = findProceduralChunk(cx, cz);
+            if (cache < 0) {
+                cache = chooseProceduralSlot();
+                generateChunk(cx, cz, proceduralChunks[cache]);
+                proceduralChunkX[cache] = cx;
+                proceduralChunkZ[cache] = cz;
+            }
+            touchProceduralSlot(cache);
+            int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
+            return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
         }
-        int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
-        return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
+    }
+
+    /** Queue a chunk and its four horizontal neighbors for off-thread generation. */
+    void requestProceduralChunk(int cx, int cz) {
+        enqueueProceduralChunk(cx, cz);
+        enqueueProceduralChunk(cx - 1, cz);
+        enqueueProceduralChunk(cx + 1, cz);
+        enqueueProceduralChunk(cx, cz - 1);
+        enqueueProceduralChunk(cx, cz + 1);
+    }
+
+    boolean isProceduralChunkReady(int cx, int cz) {
+        int x0 = cx * CHUNK_XZ, z0 = cz * CHUNK_XZ;
+        if (worldSize == SIZE_OLD &&
+            (outsideWorld(x0, z0) || outsideWorld(x0 + CHUNK_XZ - 1, z0 + CHUNK_XZ - 1)))
+            return true;
+        if (x0 >= 0 && x0 + CHUNK_XZ <= WIDTH && z0 >= 0 && z0 + CHUNK_XZ <= DEPTH)
+            return true;
+        synchronized (this) { return findProceduralChunk(cx, cz) >= 0; }
+    }
+
+    private void enqueueProceduralChunk(final int cx, final int cz) {
+        int x0 = cx * CHUNK_XZ, z0 = cz * CHUNK_XZ;
+        if (worldSize == SIZE_OLD &&
+            (outsideWorld(x0, z0) || outsideWorld(x0 + CHUNK_XZ - 1, z0 + CHUNK_XZ - 1))) return;
+        if (x0 >= 0 && x0 + CHUNK_XZ <= WIDTH && z0 >= 0 && z0 + CHUNK_XZ <= DEPTH) return;
+        synchronized (this) {
+            if (findProceduralChunk(cx, cz) >= 0) return;
+            for (int i = 0; i < proceduralQueueCount; i++)
+                if (proceduralQueueX[i] == cx && proceduralQueueZ[i] == cz &&
+                    proceduralQueueNether[i] == nether) return;
+            if (proceduralQueueCount == proceduralQueueX.length) return;
+            proceduralQueueX[proceduralQueueCount] = cx;
+            proceduralQueueZ[proceduralQueueCount] = cz;
+            proceduralQueueNether[proceduralQueueCount] = nether;
+            proceduralQueueCount++;
+            if (!proceduralWorkerRunning) {
+                proceduralWorkerRunning = true;
+                Thread worker = new Thread(new Runnable() {
+                    public void run() { runProceduralWorker(); }
+                });
+                worker.setPriority(Thread.MIN_PRIORITY);
+                worker.start();
+            }
+        }
+    }
+
+    private void runProceduralWorker() {
+        while (true) {
+            int cx, cz;
+            boolean dimension;
+            int epoch;
+            synchronized (this) {
+                if (proceduralQueueCount == 0) {
+                    proceduralWorkerRunning = false;
+                    return;
+                }
+                cx = proceduralQueueX[0]; cz = proceduralQueueZ[0];
+                dimension = proceduralQueueNether[0];
+                for (int i = 1; i < proceduralQueueCount; i++) {
+                    proceduralQueueX[i - 1] = proceduralQueueX[i];
+                    proceduralQueueZ[i - 1] = proceduralQueueZ[i];
+                    proceduralQueueNether[i - 1] = proceduralQueueNether[i];
+                }
+                proceduralQueueCount--;
+                epoch = proceduralGenerationEpoch;
+            }
+            if (dimension != nether) continue;
+            generateChunk(cx, cz, proceduralWorkerBuffer, proceduralWorkerHeights,
+                          proceduralWorkerBiomes, dimension);
+            synchronized (this) {
+                if (epoch != proceduralGenerationEpoch || dimension != nether) continue;
+                int slot = findProceduralChunk(cx, cz);
+                if (slot < 0) slot = chooseProceduralSlot();
+                System.arraycopy(proceduralWorkerBuffer, 0, proceduralChunks[slot], 0,
+                                 InfdevTerrain.CHUNK_VOLUME);
+                proceduralChunkX[slot] = cx;
+                proceduralChunkZ[slot] = cz;
+                touchProceduralSlot(slot);
+            }
+        }
     }
 
     private int findEdit(int x, int y, int z) {
