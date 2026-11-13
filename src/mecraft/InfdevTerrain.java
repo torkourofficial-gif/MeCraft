@@ -291,9 +291,9 @@ final class InfdevTerrain {
      * The chunk is still published atomically only after every terrain pass.
      */
     private static void yieldGenerationSlice() {
-        // Only throttle the low-priority streaming worker. Initial world creation
-        // runs synchronously and must not gain artificial loading delays.
-        if (Thread.currentThread().getPriority() != Thread.MIN_PRIORITY) return;
+        // Yield between bounded terrain slices on both the streaming worker and
+        // initial-world generation. This prevents a long pass from monopolizing
+        // the CPU on single-core Java ME devices.
         try {
             Thread.sleep(1);
         } catch (InterruptedException ignored) {
