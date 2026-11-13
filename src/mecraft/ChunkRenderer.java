@@ -355,13 +355,13 @@ final class ChunkRenderer {
     void setRenderDistance(int setting) {
         if (setting < 0) setting = 0;
         if (setting > 4) setting = 4;
-        // Shortest keeps a stable 3x3 neighborhood around the player.
-        // The grid is biased toward the player's half of the current chunk,
-        // keeping the player near its centre without allocating distant meshes.
+        // Shortest is deliberately a tiny playable bubble: keep only the
+        // immediate 3x3 chunk neighborhood and clip it to a 24-block radius.
+        // Other presets retain their normal streaming radii.
         shortestDistance = setting == 4;
         streamRadius = setting == 0 ? 1 : setting + 1;
         if (streamRadius > MAX_STREAM_RADIUS) streamRadius = MAX_STREAM_RADIUS;
-        cameraFar = shortestDistance ? 40.0f :
+        cameraFar = shortestDistance ? 24.0f :
                 ((streamRadius * 2 + 1) * (float)VoxelWorld.CHUNK_XZ) + 8.0f;
         camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
                 0.1f, cameraFar);
@@ -1304,7 +1304,19 @@ final class ChunkRenderer {
                     float dz = cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
 
                     boolean visible = shortestDistance;
-                    if (!shortestDistance) {
+                    if (shortestDistance) {
+                        // Distance to the nearest point of this 16x8x16 sector,
+                        // not its centre: avoids loading corner chunks that
+                        // cannot contribute anything inside the tiny view range.
+                        float nearX = Math.abs(dx) - VoxelWorld.CHUNK_XZ * 0.5f;
+                        float nearY = Math.abs(dy) - VoxelWorld.CHUNK_Y * 0.5f;
+                        float nearZ = Math.abs(dz) - VoxelWorld.CHUNK_XZ * 0.5f;
+                        if (nearX < 0.0f) nearX = 0.0f;
+                        if (nearY < 0.0f) nearY = 0.0f;
+                        if (nearZ < 0.0f) nearZ = 0.0f;
+                        visible = nearX * nearX + nearY * nearY + nearZ * nearZ <=
+                                cameraFar * cameraFar;
+                    } else {
                         float depth = dx * forwardX + dy * forwardY + dz * forwardZ;
                         float horizontal = dx * rightX + dz * rightZ;
                         float vertical = dx * upX + dy * upY + dz * upZ;
