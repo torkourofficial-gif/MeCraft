@@ -879,30 +879,36 @@ final class VoxelWorld {
     }
 
     private void generateChunk(int cx, int cz, byte[] target) {
+        generateChunk(cx, cz, target, proceduralHeights, proceduralBiomes, nether);
+    }
+
+    private void generateChunk(int cx, int cz, byte[] target, int[] heights,
+                               byte[] biomes, boolean dimensionNether) {
         setGenerationDiagnosticStage("VoxelWorld.generateChunk: validando dimensión; chunk cx=" + cx + ", cz=" + cz);
-        if (!nether && worldType == TYPE_FLAT) {
+        if (!dimensionNether && worldType == TYPE_FLAT) {
             for (int z = 0; z < CHUNK_XZ; z++) for (int x = 0; x < CHUNK_XZ; x++) {
                 int base = (z * CHUNK_XZ + x) * HEIGHT;
                 for (int y = 0; y < HEIGHT; y++)
                     target[base + y] = y == 0 ? Block.BEDROCK : (y <= 3 ? Block.DIRT : (y == 4 ? Block.GRASS : Block.AIR));
-                proceduralHeights[z * CHUNK_XZ + x] = 4;
-                proceduralBiomes[z * CHUNK_XZ + x] = 0;
+                heights[z * CHUNK_XZ + x] = 4;
+                biomes[z * CHUNK_XZ + x] = 0;
             }
-        } else if (nether) {
+        } else if (dimensionNether) {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generateNether; cx=" + cx + ", cz=" + cz);
-            if (economicMode) InfdevTerrain.generateEconomicNether(seed, cx, cz, target, proceduralHeights);
-            else InfdevTerrain.generateNether(seed, cx, cz, target, proceduralHeights);
+            if (economicMode) InfdevTerrain.generateEconomicNether(seed, cx, cz, target, heights);
+            else InfdevTerrain.generateNether(seed, cx, cz, target, heights);
         } else if (economicMode) {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generateEconomic; cx=" + cx + ", cz=" + cz);
-            InfdevTerrain.generateEconomic(seed, cx, cz, target, proceduralHeights, proceduralBiomes);
+            InfdevTerrain.generateEconomic(seed, cx, cz, target, heights, biomes);
         } else {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generate; cx=" + cx + ", cz=" + cz);
-            InfdevTerrain.generate(seed, cx, cz, target, proceduralHeights, proceduralBiomes);
+            InfdevTerrain.generate(seed, cx, cz, target, heights, biomes);
         }
     }
 
     void setNetherDimension(boolean enabled) {
         if (nether == enabled) return;
+        synchronized (this) { proceduralGenerationEpoch++; proceduralQueueCount = 0; }
         if (otherDimensionBlocks != null && otherDimensionIsNether == enabled) {
             byte[] oldBlocks = blocks;
             byte[] oldWater = waterLevels;
