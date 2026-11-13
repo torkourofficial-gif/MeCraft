@@ -23,12 +23,8 @@ import javax.microedition.m3g.World;
 /** Builds shared-texture chunk meshes on demand for the visible part of the world. */
 final class ChunkRenderer {
     private static final int MAX_STREAM_RADIUS = 4;
-    // A full chunk build is still a costly operation on constrained MIDP/M3G
-    // devices. Keep streaming strictly single-chunk-per-sync; never catch up by
-    // building multiple chunks after a slow frame.
-    private static final int CHUNKS_PER_FRAME = 1;
-    // Avoid rebuilding the same dirty chunk repeatedly while edits arrive.
-    private int lastBuildFrameChunk = -1;
+    // A full chunk build is split into eight one-block-high slices. Only one
+    // slice is meshed per sync, keeping the game loop responsive on MIDP devices.
     // A chunk is assembled as eight one-block-high slices, one slice per frame.
     private ChunkBuild pendingBuild;
     private int pendingBuildSlot = -1;
@@ -1439,8 +1435,8 @@ final class ChunkRenderer {
             }
         }
 
-        // An all-air section has no geometry at all. Returning null still marks
-        // the slot resident in replaceChunk(), so it will not be retried every frame.
+        // An all-air slice has no geometry. The build job records the empty
+        // slice and continues to the next layer on the following frame.
         if (nonAirBlocks == 0) return null;
 
         // Mine64-style greedy meshing: combine adjacent visible faces on each
