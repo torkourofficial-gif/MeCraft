@@ -209,7 +209,7 @@ final class PlayerPhysics {
         for (int by = fromY; by <= toY; by++) {
             for (int bx = minX; bx <= maxX; bx++) {
                 for (int bz = minZ; bz <= maxZ; bz++) {
-                    byte block = world.get(bx, by, bz);
+                    byte block = world.getCollision(bx, by, bz);
                     if (block == Block.DOOR) {
                         int state = world.doorState(bx, by, bz);
                         float doorMinX = bx + (state == 1 ? 13.0f / 16.0f : 0.0f);
@@ -241,7 +241,7 @@ final class PlayerPhysics {
         for (int bx = fromX; bx <= toX; bx++) {
             for (int by = minY; by <= maxY; by++) {
                 for (int bz = minZ; bz <= maxZ; bz++) {
-                    byte block = world.get(bx, by, bz);
+                    byte block = world.getCollision(bx, by, bz);
                     if (block == Block.DOOR) {
                         int state = world.doorState(bx, by, bz);
                         float doorMinX = bx + (state == 1 ? 13.0f / 16.0f : 0.0f);
@@ -282,7 +282,7 @@ final class PlayerPhysics {
         for (int bz = fromZ; bz <= toZ; bz++) {
             for (int by = minY; by <= maxY; by++) {
                 for (int bx = minX; bx <= maxX; bx++) {
-                    byte block = world.get(bx, by, bz);
+                    byte block = world.getCollision(bx, by, bz);
                     if (block == Block.DOOR) {
                         int state = world.doorState(bx, by, bz);
                         float doorMinX = bx + (state == 1 ? 13.0f / 16.0f : 0.0f);
