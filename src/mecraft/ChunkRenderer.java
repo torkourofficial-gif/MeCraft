@@ -170,6 +170,8 @@ final class ChunkRenderer {
     private boolean handLooping;
     private float handHorizontalScale = 1.0f;
     private int builtRevision = -1;
+    private boolean builtNether;
+    private boolean hasBuiltDimension;
     private int builtWidth;
     private int builtHeight;
     private float tanHorizontalFov;
@@ -1174,6 +1176,8 @@ final class ChunkRenderer {
             else rebuildChanged(world);
             builtRevision = world.revision;
         }
+        builtNether = world.nether;
+        hasBuiltDimension = true;
         // Rail meshes also have a camera-centered streaming window, so they
         // must be refreshed when the player crosses chunk boundaries even if
         // no block in the world changed.
@@ -1269,9 +1273,15 @@ final class ChunkRenderer {
     }
 
     private void rebuildWorld(VoxelWorld world) {
-        // A full invalidation does not mean the world data or every resident
-        // mesh must be discarded at once. Keep the old meshes visible and mark
-        // their slices dirty; updateVisibleChunks() will replace them gradually.
+        // A dimension swap changes every voxel. Old-dimension meshes must be
+        // removed immediately; ordinary full invalidations can be rebuilt in
+        // slices while keeping their previous meshes visible.
+        if (hasBuiltDimension && builtNether != world.nether) {
+            pendingBuild = null;
+            pendingBuildSlot = -1;
+            for (int i = 0; i < chunks.length; i++) removeChunk(i);
+            return;
+        }
         if (pendingBuild != null && pendingBuildSlot >= 0)
             dirtyLayerMasks[pendingBuildSlot] |= pendingBuild.dirtyMask;
         pendingBuild = null;
