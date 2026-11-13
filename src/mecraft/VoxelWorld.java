@@ -630,6 +630,55 @@ final class VoxelWorld {
         }
     }
 
+    /**
+     * Copy one 16x16 horizontal layer for the chunk mesher. Resolve the
+     * procedural cache slot once per layer instead of performing a synchronized
+     * LRU lookup for every voxel. The destination uses z*CHUNK_XZ+x ordering.
+     */
+    void copyLoadedChunkLayer(int x0, int y, int z0, byte[] target) {
+        if (target == null || target.length < CHUNK_XZ * CHUNK_XZ) return;
+        if (y < 0 || y >= HEIGHT) {
+            for (int i = 0; i < CHUNK_XZ * CHUNK_XZ; i++) target[i] = Block.AIR;
+            return;
+        }
+        int cx = floorChunk(x0), cz = floorChunk(z0);
+        synchronized (this) {
+            boolean needsProcedural = false;
+            for (int z = 0; z < CHUNK_XZ && !needsProcedural; z++) {
+                for (int x = 0; x < CHUNK_XZ; x++) {
+                    int wx = x0 + x, wz = z0 + z;
+                    if (!outsideWorld(wx, wz) && !inside(wx, wz) &&
+                        findEdit(wx, y, wz) < 0) {
+                        needsProcedural = true;
+                        break;
+                    }
+                }
+            }
+            int cache = needsProcedural ? findProceduralChunk(cx, cz) : -1;
+            if (cache >= 0) touchProceduralSlot(cache);
+            int cacheBase = 0;
+            for (int z = 0; z < CHUNK_XZ; z++) {
+                for (int x = 0; x < CHUNK_XZ; x++) {
+                    int wx = x0 + x, wz = z0 + z;
+                    int at = z * CHUNK_XZ + x;
+                    if (outsideWorld(wx, wz)) {
+                        target[at] = Block.AIR;
+                    } else if (inside(wx, wz)) {
+                        target[at] = blocks[index(wx, y, wz)];
+                    } else {
+                        int edit = findEdit(wx, y, wz);
+                        if (edit >= 0) target[at] = editId[edit];
+                        else if (cache >= 0) {
+                            int lx = wx - cx * CHUNK_XZ;
+                            int lz = wz - cz * CHUNK_XZ;
+                            target[at] = proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
+                        } else target[at] = Block.AIR;
+                    }
+                }
+            }
+        }
+    }
+
 
     /**
      * Fast lookup for light-source discovery. Torches can only be placed as
