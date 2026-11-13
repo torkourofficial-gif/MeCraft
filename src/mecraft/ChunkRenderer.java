@@ -22,7 +22,10 @@ import javax.microedition.m3g.World;
 
 /** Builds shared-texture chunk meshes on demand for the visible part of the world. */
 final class ChunkRenderer {
-    private static final int MAX_STREAM_RADIUS = 4;
+    // Shortest-distance mode can require seven chunks of radius (cameraFar / 16).
+    // The slot ring must cover that full window or modulo collisions overwrite
+    // visible chunks with unrelated coordinates during the same visibility scan.
+    private static final int MAX_STREAM_RADIUS = 7;
     // A full chunk build is split into eight one-block-high slices. Each finished
     // slice is attached to the scene immediately instead of being batched at the end.
     private ChunkBuild pendingBuild;
