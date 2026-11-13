@@ -506,8 +506,8 @@ final class VoxelWorld {
 
     /**
      * Collision lookup that never generates terrain on the physics thread.
-     * An unloaded procedural sector behaves as a temporary solid boundary:
-     * the worker is requested, and the player can enter once it is ready.
+     * An unloaded procedural sector is treated as empty for this tick: movement
+     * continues while the background worker prepares the real terrain.
      */
     byte getCollision(int x, int y, int z) {
         if (y < 0 || y >= HEIGHT || outsideWorld(x, z)) return Block.AIR;
@@ -524,7 +524,7 @@ final class VoxelWorld {
             }
         }
         enqueueProceduralChunk(cx, cz, true);
-        return Block.STONE;
+        return Block.AIR;
     }
 
     /**
