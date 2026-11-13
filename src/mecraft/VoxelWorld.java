@@ -224,16 +224,16 @@ final class VoxelWorld {
         int cx = floorChunk(x), cz = floorChunk(z);
         synchronized (this) {
             int cache = findProceduralChunk(cx, cz);
-            if (cache < 0) {
-                cache = chooseProceduralSlot();
-                generateChunk(cx, cz, proceduralChunks[cache]);
-                proceduralChunkX[cache] = cx;
-                proceduralChunkZ[cache] = cz;
+            if (cache >= 0) {
+                touchProceduralSlot(cache);
+                int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
+                return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
             }
-            touchProceduralSlot(cache);
-            int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
-            return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
         }
+        // Never generate terrain on the caller thread. A missing sector is
+        // requested from the low-priority worker and remains temporarily empty.
+        enqueueProceduralChunk(cx, cz, true);
+        return Block.AIR;
     }
 
     /** Queue the current chunk and neighbors; discard queued work left behind by movement. */
@@ -502,6 +502,29 @@ final class VoxelWorld {
         if (inside(x, z)) return blocks[index(x, y, z)];
         int edit = findEdit(x, y, z);
         return edit >= 0 ? editId[edit] : proceduralBlock(x, y, z);
+    }
+
+    /**
+     * Collision lookup that never generates terrain on the physics thread.
+     * An unloaded procedural sector behaves as a temporary solid boundary:
+     * the worker is requested, and the player can enter once it is ready.
+     */
+    byte getCollision(int x, int y, int z) {
+        if (y < 0 || y >= HEIGHT || outsideWorld(x, z)) return Block.AIR;
+        if (inside(x, z)) return blocks[index(x, y, z)];
+        int edit = findEdit(x, y, z);
+        if (edit >= 0) return editId[edit];
+        int cx = floorChunk(x), cz = floorChunk(z);
+        synchronized (this) {
+            int cache = findProceduralChunk(cx, cz);
+            if (cache >= 0) {
+                touchProceduralSlot(cache);
+                int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
+                return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
+            }
+        }
+        enqueueProceduralChunk(cx, cz, true);
+        return Block.STONE;
     }
 
     /**
