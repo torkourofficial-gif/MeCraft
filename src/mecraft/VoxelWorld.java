@@ -348,8 +348,12 @@ final class VoxelWorld {
         }
     }
 
-    private synchronized boolean isProceduralGenerationCurrent(int epoch, boolean dimension) {
-        return epoch == proceduralGenerationEpoch && dimension == nether;
+    private synchronized boolean isProceduralGenerationCurrent(int epoch, boolean dimension,
+                                                                 int cx, int cz) {
+        return epoch == proceduralGenerationEpoch && dimension == nether &&
+                proceduralQueueFocusNether == dimension &&
+                Math.abs(cx - proceduralQueueFocusX) <= 1 &&
+                Math.abs(cz - proceduralQueueFocusZ) <= 1;
     }
 
     private void runProceduralWorker() {
@@ -395,7 +399,7 @@ final class VoxelWorld {
                             seed, cx, cz, proceduralWorkerBuffer, proceduralWorkerHeights,
                             proceduralWorkerBiomes, economicMode, dimension);
                     completed = false;
-                    while (isProceduralGenerationCurrent(epoch, dimension)) {
+                    while (isProceduralGenerationCurrent(epoch, dimension, cx, cz)) {
                         if (task.step()) {
                             completed = true;
                             break;
@@ -1894,7 +1898,7 @@ final class VoxelWorld {
                 if (cachedCount > PROCEDURAL_CACHE_SIZE) throw new IOException("Invalid chunk cache");
                 for (int i = 0; i < cachedCount; i++) {
                     int cx = in.readInt(), cz = in.readInt();
-                    int slot = i;
+                    int slot = world.proceduralSlot(cx, cz);
                     in.readFully(world.proceduralChunks[slot]);
                     world.proceduralChunkX[slot] = cx;
                     world.proceduralChunkZ[slot] = cz;
