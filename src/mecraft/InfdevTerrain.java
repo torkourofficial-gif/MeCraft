@@ -291,14 +291,10 @@ final class InfdevTerrain {
      * The chunk is still published atomically only after every terrain pass.
      */
     private static void yieldGenerationSlice() {
-        // Yield between bounded terrain slices on both the streaming worker and
-        // initial-world generation. This prevents a long pass from monopolizing
-        // the CPU on single-core Java ME devices.
-        try {
-            Thread.sleep(1);
-        } catch (InterruptedException ignored) {
-            // A short pause is advisory; keep deterministic generation intact.
-        }
+        // Cooperative yield without forcing a 1 ms timer tick for every row.
+        // The low-priority worker naturally yields to the game thread; synchronous
+        // initial generation avoids accumulating hundreds of milliseconds of sleeps.
+        Thread.yield();
     }
 
     static int economicNetherFloorHeight(int seed, int x, int z) {
