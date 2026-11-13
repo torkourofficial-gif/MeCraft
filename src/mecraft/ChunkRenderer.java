@@ -144,6 +144,7 @@ final class ChunkRenderer {
     private int portalAnimationTick;
     private int portalAnimationFrame;
     private final Appearance[] tileAppearances = new Appearance[TILE_COUNT];
+    private final Appearance flatTerrainAppearance;
     private final Appearance flowerAppearance;
     private final Appearance heldItemAppearance;
     private final Appearance itemSpriteAppearance;
@@ -187,6 +188,7 @@ final class ChunkRenderer {
         atlas = new Texture2D(image);
         atlas.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         atlas.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
+        flatTerrainAppearance = createFlatTerrainAppearance();
         boatTexture = new Texture2D(new Image2D(Image2D.RGBA, GameAssets.image("boat.png")));
         boatTexture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         boatTexture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
@@ -1372,6 +1374,12 @@ final class ChunkRenderer {
     }
 
     private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {
+        // Distant terrain on a small phone gains little from 16x16 textures.
+        // Keep the same silhouettes and block data, but use one flat vertex-
+        // colored material beyond the near-detail radius in every preset.
+        float chunkDx = cx * VoxelWorld.CHUNK_XZ + 8.0f - world.playerX;
+        float chunkDz = cz * VoxelWorld.CHUNK_XZ + 8.0f - world.playerZ;
+        boolean flatTerrain = chunkDx * chunkDx + chunkDz * chunkDz > 18.0f * 18.0f;
         FaceBuilder[] builders = chunkFaceBuilders;
         FlowerBuilder flowers = null;
         FireBuilder fires = null;
@@ -1541,7 +1549,12 @@ final class ChunkRenderer {
             int tile = i % TILE_COUNT;
             float textureScale = tile == Block.sideTile(Block.GRASS) ? 0.999f / 16.0f : 1.0f / 16.0f;
             FaceBuilder builder = builders[i];
-            meshes[at++] = makeMesh(builder, tileAppearance(tile), textureScale);
+            if (flatTerrain) {
+                tintFaceBuilder(builder, flatTileColor(tile, world.nether));
+                meshes[at++] = makeMesh(builder, flatTerrainAppearance, textureScale);
+            } else {
+                meshes[at++] = makeMesh(builder, tileAppearance(tile), textureScale);
+            }
             builders[i] = null;
             // Retain at most 128 reusable builders. Oversized/extra builders
             // naturally become collectible instead of growing the pool forever.
@@ -1793,6 +1806,35 @@ final class ChunkRenderer {
             data.c[at + 1] = (byte)(shade * tg / 255);
             data.c[at + 2] = (byte)(shade * tb / 255);
         }
+    }
+
+    private Appearance createFlatTerrainAppearance() {
+        Appearance appearance = new Appearance();
+        Material material = new Material();
+        material.setColor(Material.AMBIENT, 0xFFFFFFFF);
+        material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
+        material.setVertexColorTrackingEnable(true);
+        appearance.setMaterial(material);
+        PolygonMode polygon = new PolygonMode();
+        polygon.setCulling(PolygonMode.CULL_NONE);
+        polygon.setShading(PolygonMode.SHADE_FLAT);
+        appearance.setPolygonMode(polygon);
+        return appearance;
+    }
+
+    /** Representative colors for distant block faces; no atlas sampling. */
+    private int flatTileColor(int tile, boolean netherWorld) {
+        if (tile == 0 || tile == 3 || tile == 52 || tile == 53) return 0x70A84A;
+        if (tile == 1 || tile == 18 || tile == 232) return 0x858585;
+        if (tile == 2 || tile == 20 || tile == 21 || tile == 59 || tile == 60) return 0x956B45;
+        if (tile == 4 || tile == 18 || tile == 233) return 0xD8C58A;
+        if (tile == 205 || tile == 237 || tile == 234) return netherWorld ? 0xE56A25 : 0x477FC4;
+        if (tile == 66) return 0xE8F1F5;
+        if (tile == 103) return 0x87433C;
+        if (tile == 104) return 0x72503F;
+        if (tile == 105 || tile == 235) return 0xD9B86A;
+        if (tile >= Block.WOOL_TINT_TILE_START) return 0xB7B7B7;
+        return 0x999999;
     }
 
     private Appearance createBlockAppearance(Texture2D texture, boolean translucent) {
