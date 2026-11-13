@@ -106,6 +106,8 @@ final class VoxelWorld {
     private boolean proceduralWorkerNether;
     private final int[] proceduralChunkAge = new int[PROCEDURAL_CACHE_SIZE];
     private int proceduralCacheClock;
+    private int proceduralChunksGenerated;
+    private long lastProceduralGenerationMillis;
     private int[] editX = new int[128];
     private int[] editY = new int[128];
     private int[] editZ = new int[128];
@@ -398,6 +400,7 @@ final class VoxelWorld {
                 synchronized (this) { proceduralWorkerBusy = false; }
                 continue;
             }
+            long generationStarted = System.currentTimeMillis();
             try {
                 boolean completed;
                 if (worldType == TYPE_FLAT && !dimension) {
@@ -440,8 +443,26 @@ final class VoxelWorld {
                 proceduralChunkX[slot] = cx;
                 proceduralChunkZ[slot] = cz;
                 touchProceduralSlot(slot);
+                proceduralChunksGenerated++;
+                lastProceduralGenerationMillis =
+                        System.currentTimeMillis() - generationStarted;
             }
         }
+    }
+
+    /** Debug-only snapshot; never called from the gameplay or rendering hot path. */
+    synchronized String getStreamingDiagnostics() {
+        int resident = 0;
+        for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++)
+            if (proceduralChunkX[i] != Integer.MIN_VALUE) resident++;
+        Runtime runtime = Runtime.getRuntime();
+        long total = runtime.totalMemory();
+        long used = total - runtime.freeMemory();
+        return "Heap " + (used / 1024L) + "/" + (total / 1024L) +
+                " KB | cache " + resident + "/" + PROCEDURAL_CACHE_SIZE +
+                " | queue " + proceduralQueueCount +
+                " | gen " + proceduralChunksGenerated +
+                " (" + lastProceduralGenerationMillis + " ms)";
     }
 
     private int findEdit(int x, int y, int z) {
