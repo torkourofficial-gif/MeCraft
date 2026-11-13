@@ -1375,13 +1375,14 @@ final class ChunkRenderer {
             !world.isProceduralChunkReady(cx, cz - 1) ||
             !world.isProceduralChunkReady(cx, cz + 1)) return;
 
+        float wantedDx = cx * VoxelWorld.CHUNK_XZ + 8.0f - world.playerX;
+        float wantedDz = cz * VoxelWorld.CHUNK_XZ + 8.0f - world.playerZ;
+        boolean wantedFlat = wantedDx * wantedDx + wantedDz * wantedDz > 18.0f * 18.0f;
         if (pendingBuild == null || pendingBuildSlot != slot ||
-            pendingBuild.x != cx || pendingBuild.y != cy || pendingBuild.z != cz) {
+            pendingBuild.x != cx || pendingBuild.y != cy || pendingBuild.z != cz ||
+            pendingBuild.flatTerrain != wantedFlat) {
             int mask = dirtyLayerMasks[slot];
             if (mask == 0) mask = (1 << VoxelWorld.CHUNK_Y) - 1;
-            float lodDx = cx * VoxelWorld.CHUNK_XZ + 8.0f - world.playerX;
-            float lodDz = cz * VoxelWorld.CHUNK_XZ + 8.0f - world.playerZ;
-            boolean wantedFlat = lodDx * lodDx + lodDz * lodDz > 18.0f * 18.0f;
             pendingBuild = new ChunkBuild(slot, cx, cy, cz, mask, chunks[slot], wantedFlat);
             pendingBuildSlot = slot;
             collectChunkTorches(world, cx * VoxelWorld.CHUNK_XZ,
@@ -1393,16 +1394,20 @@ final class ChunkRenderer {
         ChunkBuild job = pendingBuild;
         while (job.nextLayer < VoxelWorld.CHUNK_Y &&
                 (job.dirtyMask & (1 << job.nextLayer)) == 0) job.nextLayer++;
-        if (job.nextLayer < VoxelWorld.CHUNK_Y) {
-            Chunk slice = buildChunkLayer(world, cx, cy, cz, job.nextLayer, job.flatTerrain);
-            job.layerMeshes[job.nextLayer] = slice == null ? new Mesh[0] : slice.meshes;
-            job.fires[job.nextLayer] = slice == null || slice.fires == null ||
+        // Build up to two non-empty vertical slices per frame. Empty slices are
+        // skipped immediately, so the air above the terrain costs almost no frames.
+        int builtSlices = 0;
+        while (job.nextLayer < VoxelWorld.CHUNK_Y && builtSlices < 2) {
+            int layer = job.nextLayer++;
+            Chunk slice = buildChunkLayer(world, cx, cy, cz, layer, job.flatTerrain);
+            job.layerMeshes[layer] = slice == null ? new Mesh[0] : slice.meshes;
+            job.fires[layer] = slice == null || slice.fires == null ||
                     slice.fires.length == 0 ? null : slice.fires[0];
-            job.nextLayer++;
+            if (slice != null) builtSlices++;
             while (job.nextLayer < VoxelWorld.CHUNK_Y &&
                     (job.dirtyMask & (1 << job.nextLayer)) == 0) job.nextLayer++;
-            if (job.nextLayer < VoxelWorld.CHUNK_Y) return;
         }
+        if (job.nextLayer < VoxelWorld.CHUNK_Y) return;
 
         int total = 0;
         for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++)
