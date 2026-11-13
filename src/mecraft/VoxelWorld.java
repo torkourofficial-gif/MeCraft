@@ -504,6 +504,25 @@ final class VoxelWorld {
         return edit >= 0 ? editId[edit] : proceduralBlock(x, y, z);
     }
 
+    /**
+     * Non-blocking terrain lookup for rendering. Unlike get(), this never
+     * generates a missing procedural chunk on the caller thread.
+     */
+    byte getLoaded(int x, int y, int z) {
+        if (y < 0 || y >= HEIGHT || outsideWorld(x, z)) return Block.AIR;
+        if (inside(x, z)) return blocks[index(x, y, z)];
+        int edit = findEdit(x, y, z);
+        if (edit >= 0) return editId[edit];
+        int cx = floorChunk(x), cz = floorChunk(z);
+        synchronized (this) {
+            int cache = findProceduralChunk(cx, cz);
+            if (cache < 0) return Block.AIR;
+            touchProceduralSlot(cache);
+            int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
+            return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
+        }
+    }
+
 
     /**
      * Fast lookup for light-source discovery. Torches can only be placed as
