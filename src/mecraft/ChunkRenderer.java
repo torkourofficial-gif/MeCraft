@@ -1589,30 +1589,28 @@ final class ChunkRenderer {
         // Empty vertical sections are common above the terrain: detect them during
         // the voxel copy and avoid allocating face builders/M3G meshes for them.
         int nonAirBlocks = 0;
-        for (int y = y0; y < y1; y++) {
-            for (int z = z0; z < z1; z++) {
-                for (int x = x0; x < x1; x++) {
-                    byte id = world.getLoaded(x, y, z);
-                    if (id != Block.AIR) nonAirBlocks++;
-                    int localIndex = (((y - y0) * VoxelWorld.CHUNK_XZ) + (z - z0)) *
-                            VoxelWorld.CHUNK_XZ + (x - x0);
-                    chunkVoxelScratch[localIndex] = id;
-                    chunkLightScratch[localIndex] = (byte)(id == Block.LAVA ? 14 : (chunkLightScratch[localIndex] & 255));
-                    if (id == Block.PORTAL) {
-                        if (portals == null) portals = reusablePortalBuilder;
-                        portals.add(x - x0, y - y0, z - z0,
-                                world.portalAxisAt(x, y, z), portalFrameSize);
-                    } else if (id == Block.FIRE) {
-                        if (fires == null) fires = new FireBuilder();
-                        fires.add(x - x0, y - y0, z - z0);
-                    } else if (Block.isFlower(id)) {
-                        if (flowers == null) flowers = reusableFlowerBuilder;
-                        flowers.add(x - x0, y - y0, z - z0, Block.sideTile(id));
-                    } else if (Block.isDoor(id)) {
-                        if (flowers == null) flowers = new FlowerBuilder();
-                        flowers.addDoor(x - x0, y - y0, z - z0, id,
-                                world.doorMetadata(x, y, z));
-                    }
+        world.copyLoadedChunkLayer(x0, y0, z0, chunkVoxelScratch);
+        for (int z = 0; z < VoxelWorld.CHUNK_XZ; z++) {
+            for (int x = 0; x < VoxelWorld.CHUNK_XZ; x++) {
+                int localIndex = z * VoxelWorld.CHUNK_XZ + x;
+                byte id = chunkVoxelScratch[localIndex];
+                if (id != Block.AIR) nonAirBlocks++;
+                chunkLightScratch[localIndex] = (byte)(id == Block.LAVA ? 14 :
+                        (chunkLightScratch[localIndex] & 255));
+                if (id == Block.PORTAL) {
+                    if (portals == null) portals = reusablePortalBuilder;
+                    portals.add(x, 0, z,
+                            world.portalAxisAt(x0 + x, y0, z0 + z), portalFrameSize);
+                } else if (id == Block.FIRE) {
+                    if (fires == null) fires = new FireBuilder();
+                    fires.add(x, 0, z);
+                } else if (Block.isFlower(id)) {
+                    if (flowers == null) flowers = reusableFlowerBuilder;
+                    flowers.add(x, 0, z, Block.sideTile(id));
+                } else if (Block.isDoor(id)) {
+                    if (flowers == null) flowers = new FlowerBuilder();
+                    flowers.addDoor(x, 0, z, id,
+                            world.doorMetadata(x0 + x, y0, z0 + z));
                 }
             }
         }
