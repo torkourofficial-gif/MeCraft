@@ -88,6 +88,18 @@ final class VoxelWorld {
     private final int[] proceduralChunkZ = new int[PROCEDURAL_CACHE_SIZE];
     private final int[] proceduralHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     private final byte[] proceduralBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
+    // Background terrain generation uses private scratch buffers, never scene objects.
+    private final byte[] proceduralWorkerBuffer = new byte[InfdevTerrain.CHUNK_VOLUME];
+    private final int[] proceduralWorkerHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
+    private final byte[] proceduralWorkerBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
+    private final int[] proceduralQueueX = new int[PROCEDURAL_CACHE_SIZE];
+    private final int[] proceduralQueueZ = new int[PROCEDURAL_CACHE_SIZE];
+    private final boolean[] proceduralQueueNether = new boolean[PROCEDURAL_CACHE_SIZE];
+    private int proceduralQueueCount;
+    private int proceduralGenerationEpoch;
+    private boolean proceduralWorkerRunning;
+    private final int[] proceduralChunkAge = new int[PROCEDURAL_CACHE_SIZE];
+    private int proceduralCacheClock;
     private int[] editX = new int[128];
     private int[] editY = new int[128];
     private int[] editZ = new int[128];
