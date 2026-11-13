@@ -1226,10 +1226,14 @@ final class ChunkRenderer {
                 // the edited vertical slice. The pending chunk is not marked
                 // resident until its first complete build, so relying only on
                 // residentChunks below can otherwise lose this invalidation.
-                int pendingLayer = cy - pendingBuild.y;
+                // pendingBuild.y is a CHUNK coordinate, not a block-layer
+                // coordinate. Use the edited local Y slice; edits immediately
+                // across a vertical chunk seam belong to the edge slice.
+                int pendingLayer = pendingBuild.y < cy ? VoxelWorld.CHUNK_Y - 1 :
+                        (pendingBuild.y > cy ? 0 : ly);
                 if (pendingLayer < 0) pendingLayer = 0;
-                if (pendingLayer >= VoxelWorld.CHUNKS_Y)
-                    pendingLayer = VoxelWorld.CHUNKS_Y - 1;
+                if (pendingLayer >= VoxelWorld.CHUNK_Y)
+                    pendingLayer = VoxelWorld.CHUNK_Y - 1;
                 dirtyLayerMasks[pendingBuildSlot] |= pendingBuild.dirtyMask |
                         (1 << pendingLayer);
                 dirtyChunks[pendingBuildSlot] = true;
@@ -1264,9 +1268,13 @@ final class ChunkRenderer {
             if (Math.abs(chunkWorldX[i] - cx) > (lx == 0 || lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0) ||
                 Math.abs(chunkWorldY[i] - cy) > (ly == 0 || ly == VoxelWorld.CHUNK_Y - 1 ? 1 : 0) ||
                 Math.abs(chunkWorldZ[i] - cz) > (lz == 0 || lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0)) continue;
-            int targetLayer = cy - chunkWorldY[i];
+            // chunkWorldY stores the vertical CHUNK index. The mesh
+            // slices are block layers inside that chunk, so subtracting the
+            // two chunk indices always produced zero and rebuilt only layer 0.
+            int targetLayer = chunkWorldY[i] < cy ? VoxelWorld.CHUNK_Y - 1 :
+                    (chunkWorldY[i] > cy ? 0 : ly);
             if (targetLayer < 0) targetLayer = 0;
-            if (targetLayer >= VoxelWorld.CHUNKS_Y) targetLayer = VoxelWorld.CHUNKS_Y - 1;
+            if (targetLayer >= VoxelWorld.CHUNK_Y) targetLayer = VoxelWorld.CHUNK_Y - 1;
             dirtyLayerMasks[i] |= 1 << targetLayer;
             dirtyChunks[i] = true;
         }
