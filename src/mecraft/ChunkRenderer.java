@@ -358,13 +358,14 @@ final class ChunkRenderer {
     void setRenderDistance(int setting) {
         if (setting < 0) setting = 0;
         if (setting > 4) setting = 4;
-        // Shortest is deliberately a tiny playable bubble: keep only the
-        // immediate 3x3 chunk neighborhood and clip it to a 24-block radius.
-        // Other presets retain their normal streaming radii.
+        // Shortest is a compact playable bubble. The cache still uses the
+        // world's 16x16 generation chunks, but only sectors intersecting this
+        // 12-block sphere are admitted; corner sectors are rejected below.
+        // This is intentionally much smaller than the normal 3x3 window.
         shortestDistance = setting == 4;
         streamRadius = setting == 0 ? 1 : setting + 1;
         if (streamRadius > MAX_STREAM_RADIUS) streamRadius = MAX_STREAM_RADIUS;
-        cameraFar = shortestDistance ? 24.0f :
+        cameraFar = shortestDistance ? 12.0f :
                 ((streamRadius * 2 + 1) * (float)VoxelWorld.CHUNK_XZ) + 8.0f;
         camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
                 0.1f, cameraFar);
@@ -1269,8 +1270,9 @@ final class ChunkRenderer {
         int centerZ = floorDiv((int)eyeZ, VoxelWorld.CHUNK_XZ);
         int span = MAX_STREAM_SPAN;
 
-        // The shortest preset always keeps a complete 3x3 window. Do not
-        // calculate a camera frustum for sectors that will be selected anyway.
+        // Shortest uses a small spherical bubble inside the candidate window.
+        // The 16x16 cache slots are only an addressing mechanism; sectors whose
+        // nearest point lies outside cameraFar are not streamed or retained.
         float sinYaw = 0.0f, cosYaw = 1.0f;
         float sinPitch = 0.0f, cosPitch = 1.0f;
         float forwardX = 0.0f, forwardY = 0.0f, forwardZ = 1.0f;
@@ -1286,10 +1288,12 @@ final class ChunkRenderer {
             upX = -sinYaw * sinPitch; upY = cosPitch; upZ = -cosYaw * sinPitch;
         }
 
-        int firstChunkX = shortestDistance ? centerX - 1 : centerX - streamRadius;
-        int lastChunkX = shortestDistance ? centerX + 1 : centerX + streamRadius;
-        int firstChunkZ = shortestDistance ? centerZ - 1 : centerZ - streamRadius;
-        int lastChunkZ = shortestDistance ? centerZ + 1 : centerZ + streamRadius;
+        int shortestChunkRadius = shortestDistance ?
+                (int)Math.ceil(cameraFar / (float)VoxelWorld.CHUNK_XZ) + 1 : streamRadius;
+        int firstChunkX = centerX - shortestChunkRadius;
+        int lastChunkX = centerX + shortestChunkRadius;
+        int firstChunkZ = centerZ - shortestChunkRadius;
+        int lastChunkZ = centerZ + shortestChunkRadius;
 
         // Evict only chunks that have actually left the horizontal stream window.
         for (int i = 0; i < CACHE_SIZE; i++) {
@@ -1309,8 +1313,8 @@ final class ChunkRenderer {
         // a partially meshed chunk whenever the player/camera moves slightly.
         boolean pendingVisible = false;
 
-        // Search and rank candidates only in the active window, not all 648
-        // cache slots. In shortest mode this is 72 sectors (3x3x8).
+        // Search only the active window, then use the sphere/AABB test below
+        // to reject mini-neighborhood corner sectors before they are meshed.
         for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++) {
             for (int rz = firstRz; rz <= lastRz; rz++) {
                 for (int rx = firstRx; rx <= lastRx; rx++) {
