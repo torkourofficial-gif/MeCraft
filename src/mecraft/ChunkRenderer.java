@@ -1923,25 +1923,18 @@ final class ChunkRenderer {
     /** Gather nearby torch blocks once per chunk build; lighting stays block-quantized. */
     private void collectChunkTorches(VoxelWorld world, int x0, int y0, int z0,
                                      int x1, int y1, int z1) {
-        chunkTorchCount = 0;
         int scanRadius = LAVA_LIGHT_RADIUS;
-        int minX = x0 - scanRadius, maxX = x1 + scanRadius;
-        int minY = y0 - scanRadius, maxY = y1 + scanRadius;
-        int minZ = z0 - scanRadius, maxZ = z1 + scanRadius;
-        if (minY < 0) minY = 0;
-        if (maxY > VoxelWorld.HEIGHT) maxY = VoxelWorld.HEIGHT;
-        for (int y = minY; y < maxY && chunkTorchCount < MAX_CHUNK_TORCHES; y++)
-            for (int z = minZ; z < maxZ && chunkTorchCount < MAX_CHUNK_TORCHES; z++)
-                for (int x = minX; x < maxX && chunkTorchCount < MAX_CHUNK_TORCHES; x++) {
-                    byte source = world.getTorchCandidate(x, y, z);
-                    if (source != Block.TORCH && source != Block.LAVA) continue;
-                    chunkTorchX[chunkTorchCount] = x;
-                    chunkTorchY[chunkTorchCount] = y;
-                    chunkTorchZ[chunkTorchCount] = z;
-                    chunkLavaSource[chunkTorchCount] = source == Block.LAVA;
-                    chunkLightRadius[chunkTorchCount] = (byte)(source == Block.LAVA ? LAVA_LIGHT_RADIUS : TORCH_LIGHT_RADIUS);
-                    chunkTorchCount++;
-                }
+        int minY = Math.max(0, y0 - scanRadius);
+        int maxY = Math.min(VoxelWorld.HEIGHT - 1, y1 + scanRadius);
+        chunkTorchCount = world.collectTorchSources(
+                x0 - scanRadius, minY, z0 - scanRadius,
+                x1 + scanRadius, maxY, z1 + scanRadius,
+                chunkTorchX, chunkTorchY, chunkTorchZ,
+                chunkLavaSource, MAX_CHUNK_TORCHES);
+        for (int i = 0; i < chunkTorchCount; i++) {
+            chunkLightRadius[i] = (byte)(chunkLavaSource[i] ?
+                    LAVA_LIGHT_RADIUS : TORCH_LIGHT_RADIUS);
+        }
     }
 
     /**
