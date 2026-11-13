@@ -1343,6 +1343,15 @@ final class ChunkRenderer {
     }
 
     private void advanceChunkBuild(VoxelWorld world, int slot, int cx, int cy, int cz) {
+        // Mesh reads may cross any horizontal chunk edge. Prepare the center and
+        // four cardinal neighbors off-thread so world.get() never generates terrain here.
+        world.requestProceduralChunk(cx, cz);
+        if (!world.isProceduralChunkReady(cx, cz) ||
+            !world.isProceduralChunkReady(cx - 1, cz) ||
+            !world.isProceduralChunkReady(cx + 1, cz) ||
+            !world.isProceduralChunkReady(cx, cz - 1) ||
+            !world.isProceduralChunkReady(cx, cz + 1)) return;
+
         if (pendingBuild == null || pendingBuildSlot != slot ||
             pendingBuild.x != cx || pendingBuild.y != cy || pendingBuild.z != cz) {
             pendingBuild = new ChunkBuild(slot, cx, cy, cz);
