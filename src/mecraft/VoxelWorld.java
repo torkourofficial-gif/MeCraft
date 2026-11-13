@@ -98,6 +98,9 @@ final class VoxelWorld {
     private int proceduralQueueCount;
     private int proceduralGenerationEpoch;
     private boolean proceduralWorkerRunning;
+    private boolean proceduralWorkerBusy;
+    private int proceduralWorkerX, proceduralWorkerZ;
+    private boolean proceduralWorkerNether;
     private final int[] proceduralChunkAge = new int[PROCEDURAL_CACHE_SIZE];
     private int proceduralCacheClock;
     private int[] editX = new int[128];
@@ -257,6 +260,8 @@ final class VoxelWorld {
         if (x0 >= 0 && x0 + CHUNK_XZ <= WIDTH && z0 >= 0 && z0 + CHUNK_XZ <= DEPTH) return;
         synchronized (this) {
             if (findProceduralChunk(cx, cz) >= 0) return;
+            if (proceduralWorkerBusy && proceduralWorkerX == cx &&
+                proceduralWorkerZ == cz && proceduralWorkerNether == nether) return;
             for (int i = 0; i < proceduralQueueCount; i++)
                 if (proceduralQueueX[i] == cx && proceduralQueueZ[i] == cz &&
                     proceduralQueueNether[i] == nether) return;
@@ -288,6 +293,9 @@ final class VoxelWorld {
                 }
                 cx = proceduralQueueX[0]; cz = proceduralQueueZ[0];
                 dimension = proceduralQueueNether[0];
+                proceduralWorkerBusy = true;
+                proceduralWorkerX = cx; proceduralWorkerZ = cz;
+                proceduralWorkerNether = dimension;
                 for (int i = 1; i < proceduralQueueCount; i++) {
                     proceduralQueueX[i - 1] = proceduralQueueX[i];
                     proceduralQueueZ[i - 1] = proceduralQueueZ[i];
@@ -300,6 +308,7 @@ final class VoxelWorld {
             generateChunk(cx, cz, proceduralWorkerBuffer, proceduralWorkerHeights,
                           proceduralWorkerBiomes, dimension);
             synchronized (this) {
+                proceduralWorkerBusy = false;
                 if (epoch != proceduralGenerationEpoch || dimension != nether) continue;
                 int slot = findProceduralChunk(cx, cz);
                 if (slot < 0) slot = chooseProceduralSlot();
