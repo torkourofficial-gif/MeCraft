@@ -641,6 +641,19 @@ final class VoxelWorld {
             for (int i = 0; i < CHUNK_XZ * CHUNK_XZ; i++) target[i] = Block.AIR;
             return;
         }
+        // The saved starting area is already one contiguous voxel array.
+        // A complete 16x16 layer inside it needs no cache lookup, edit lookup,
+        // bounds checks per voxel, or monitor: copy each row directly.
+        if (x0 >= 0 && x0 + CHUNK_XZ <= WIDTH &&
+            z0 >= 0 && z0 + CHUNK_XZ <= DEPTH) {
+            int source = index(x0, y, z0);
+            for (int z = 0; z < CHUNK_XZ; z++) {
+                System.arraycopy(blocks, source, target, z * CHUNK_XZ, CHUNK_XZ);
+                source += DEPTH * WIDTH;
+            }
+            return;
+        }
+
         int cx = floorChunk(x0), cz = floorChunk(z0);
         synchronized (this) {
             int cache = findProceduralChunk(cx, cz);
