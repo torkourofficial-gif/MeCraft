@@ -1459,8 +1459,9 @@ final class ChunkRenderer {
         long now = System.currentTimeMillis();
         if (lastChunkBuildTime != 0L && now - lastChunkBuildTime < 50L) return;
         lastChunkBuildTime = now;
-        // Queue neighboring terrain, but do not stall this mesh waiting for it.
-        // Missing neighbor cells are treated as air by getLoaded() until they arrive.
+        // Queue the center and its face-neighbors. Do not mesh yet: treating
+        // an unloaded neighbor as air would bake false exposed faces into this
+        // section, and those faces would remain until another rebuild.
         world.requestProceduralChunk(cx, cz);
         if (!world.areProceduralChunkNeighborsReady(cx, cz)) return;
 
