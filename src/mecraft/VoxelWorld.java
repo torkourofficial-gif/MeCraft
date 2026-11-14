@@ -148,6 +148,8 @@ final class VoxelWorld {
     private int fluidTickDelay;
     private int lavaTickCounter;
     private int fluidDirection;
+    // Shared portal coordinates; callers consume them immediately and never retain them.
+    private final int[] portalFrameScratch = new int[4];
 
     void tickTime() {
         dayTime += DAY_TICKS_PER_UPDATE;
@@ -1335,8 +1337,8 @@ final class VoxelWorld {
     /** Activates a black-wool 4x5 frame when the player uses a diamond sword. */
     boolean activatePortalAtWool(int x, int y, int z) {
         if (get(x, y, z) != Block.WOOL) return false;
-        int[] frame = findPortalFrameForWool(x, y, z);
-        if (frame == null) return false;
+        int[] frame = portalFrameScratch;
+        if (!findPortalFrameForWool(x, y, z, frame)) return false;
         for (int v = 1; v <= 3; v++) {
             for (int u = 1; u <= 2; u++) {
                 int px = frame[3] == 0 ? frame[0] + u : frame[0];
@@ -1368,39 +1370,40 @@ final class VoxelWorld {
         return false;
     }
 
-    int[] portalFrameAt(int x, int y, int z) {
-        if (get(x, y, z) != Block.PORTAL) return null;
+    boolean portalFrameAt(int x, int y, int z, int[] out) {
+        if (out == null || out.length < 4 || get(x, y, z) != Block.PORTAL) return false;
         for (int axis = 0; axis < 2; axis++) {
             for (int u = 1; u <= 2; u++) {
                 int bx = axis == 0 ? x - u : x;
                 int bz = axis == 0 ? z : z - u;
                 for (int v = 1; v <= 3; v++) {
                     int by = y - v;
-                    if (matchesPortalFrame(bx, by, bz, axis))
-                        return new int[] { bx, by, bz, axis };
+                    if (matchesPortalFrame(bx, by, bz, axis)) {
+                        out[0] = bx; out[1] = by; out[2] = bz; out[3] = axis;
+                        return true;
+                    }
                 }
             }
         }
-        return null;
+        return false;
     }
 
-    int[] findPortalNear(int x, int z) {
+    boolean findPortalNear(int x, int z, int[] out) {
         for (int radius = 0; radius <= 8; radius++) {
             for (int dz = -radius; dz <= radius; dz++) {
                 for (int dx = -radius; dx <= radius; dx++) {
                     if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
                     for (int y = 1; y < HEIGHT - 1; y++) {
-                        int[] frame = portalFrameAt(x + dx, y, z + dz);
-                        if (frame != null) return frame;
+                        if (portalFrameAt(x + dx, y, z + dz, out)) return true;
                     }
                 }
             }
         }
-        return null;
+        return false;
     }
 
-    int[] createPortalAt(int baseX, int baseY, int baseZ, int axis) {
-        if (axis != 0 && axis != 1) return null;
+    boolean createPortalAt(int baseX, int baseY, int baseZ, int axis, int[] out) {
+        if (out == null || out.length < 4 || (axis != 0 && axis != 1)) return false;
         // The terrain height can differ between the four columns of a portal.
         // A portal placed one block above only its center column can intersect
         // a neighboring hill/wall and fail halfway through construction. Try
@@ -1432,18 +1435,19 @@ final class VoxelWorld {
                             if (frameBlock) {
                                 if (get(x, candidateY + v, z) != Block.WOOL ||
                                         woolColor(x, candidateY + v, z) != WoolColors.BLACK) {
-                                    if (!setWool(x, candidateY + v, z, WoolColors.BLACK)) return null;
+                                    if (!setWool(x, candidateY + v, z, WoolColors.BLACK)) return false;
                                 }
                             } else if (!set(x, candidateY + v, z, Block.PORTAL) &&
-                                    get(x, candidateY + v, z) != Block.PORTAL) return null;
+                                    get(x, candidateY + v, z) != Block.PORTAL) return false;
                         }
                     }
                     fullRebuild = true;
-                    return new int[] { bx, candidateY, bz, axis };
+                    out[0] = bx; out[1] = candidateY; out[2] = bz; out[3] = axis;
+                    return true;
                 }
             }
         }
-        return null;
+        return false;
     }
 
     private boolean canPlacePortalFrame(int bx, int by, int bz, int axis) {
@@ -1462,7 +1466,7 @@ final class VoxelWorld {
         return true;
     }
 
-    private int[] findPortalFrameForWool(int x, int y, int z) {
+    private boolean findPortalFrameForWool(int x, int y, int z, int[] out) {
         for (int axis = 0; axis < 2; axis++) {
             int firstU = axis == 0 ? x - 3 : z - 3;
             int lastU = axis == 0 ? x : z;
@@ -1471,12 +1475,14 @@ final class VoxelWorld {
                     int bx = axis == 0 ? baseU : x;
                     int bz = axis == 0 ? z : baseU;
                     if (baseY <= 0 || baseY + 4 >= HEIGHT) continue;
-                    if (matchesPortalFrame(bx, baseY, bz, axis))
-                        return new int[] { bx, baseY, bz, axis };
+                    if (matchesPortalFrame(bx, baseY, bz, axis)) {
+                        out[0] = bx; out[1] = baseY; out[2] = bz; out[3] = axis;
+                        return true;
+                    }
                 }
             }
         }
-        return null;
+        return false;
     }
 
     private boolean matchesPortalFrame(int bx, int by, int bz, int axis) {
