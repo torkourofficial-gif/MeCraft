@@ -1613,8 +1613,10 @@ final class ChunkRenderer {
 
         if (pendingBuild == null || pendingBuildSlot != slot ||
             pendingBuild.x != cx || pendingBuild.y != cy || pendingBuild.z != cz) {
-            int mask = dirtyLayerMasks[slot];
-            if (mask == 0) mask = (1 << VoxelWorld.CHUNK_Y) - 1;
+            // Cave visibility is a 3D connectivity result: changing one layer
+            // can expose or seal cave air in every other layer of this section.
+            // Rebuild the complete vertical section so no stale hidden faces remain.
+            int mask = (1 << VoxelWorld.CHUNK_Y) - 1;
             pendingBuild = new ChunkBuild(slot, cx, cy, cz, mask, chunks[slot]);
             pendingBuildSlot = slot;
             buildChunkAirVisibility(world, cx, cy, cz);
