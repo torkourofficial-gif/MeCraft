@@ -287,19 +287,46 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         visible = true;
     }
 
+    private static final long FRAME_MILLIS = 33L;
+    private static final long TICK_MILLIS = 50L;
+
     public void run() {
+        long previousTime = System.currentTimeMillis();
+        long nextFrameTime = previousTime;
+        long tickAccumulator = 0L;
         while (running) {
-            long start = System.currentTimeMillis();
+            long now = System.currentTimeMillis();
+            long elapsed = now - previousTime;
+            previousTime = now;
+            // Avoid a huge catch-up after pause, debugger stops or a slow frame.
+            if (elapsed < 0L) elapsed = 0L;
+            if (elapsed > 100L) elapsed = 100L;
+            if (visible) tickAccumulator += elapsed;
+            else tickAccumulator = 0L;
+
+            while (visible && tickAccumulator >= TICK_MILLIS) {
+                if (state == PLAYING) updateGame();
+                if (state == FURNACE_INVENTORY) updateFurnace();
+                if (state == GAME_OVER && gameOverTicks < 12) gameOverTicks++;
+                if (state == MENU || state == TOUCH_SETUP) panoramaTick++;
+                tickAccumulator -= TICK_MILLIS;
+            }
+
             if (music != null) music.update(visible ? musicModeForState() : MusicController.OFF);
-            if (visible && state == PLAYING) updateGame();
-            if (visible && state == FURNACE_INVENTORY) { updateFurnace(); repaint(); }
-            if (visible && state == GAME_OVER && gameOverTicks < 12) gameOverTicks++;
-            if (visible && (state == MENU || state == TOUCH_SETUP)) panoramaTick++;
-            if (visible && (state != PLAYING || renderFrame++ % (frameSkip + 1) == 0)) repaint();
-            long elapsed = System.currentTimeMillis() - start;
-            long wait = 50L - elapsed;
-            if (wait < 8L) wait = 8L;
-            try { Thread.sleep(wait); } catch (InterruptedException ignored) { }
+            if (visible && (state != PLAYING || renderFrame++ % (frameSkip + 1) == 0))
+                repaint();
+
+            // Render at a maximum of 30 FPS while gameplay remains fixed at 20 ticks/s.
+            nextFrameTime += FRAME_MILLIS;
+            now = System.currentTimeMillis();
+            long wait = nextFrameTime - now;
+            if (wait > 0L) {
+                try { Thread.sleep(wait); } catch (InterruptedException ignored) { }
+            } else {
+                // Do not accumulate missed frames: resume from now instead of
+                // running a burst of back-to-back paints on a slow device.
+                nextFrameTime = now;
+            }
         }
     }
 
