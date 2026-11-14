@@ -1361,18 +1361,25 @@ final class ChunkRenderer {
         float eyeX = world.playerX, eyeY = world.playerY + 1.62f, eyeZ = world.playerZ;
         int centerX = floorDiv((int)eyeX, VoxelWorld.CHUNK_XZ);
         int centerZ = floorDiv((int)eyeZ, VoxelWorld.CHUNK_XZ);
-        boolean samePendingView = pendingViewKeyValid && pendingBuild != null &&
+        boolean samePendingView = pendingViewKeyValid &&
                 centerX == pendingViewCenterX && centerZ == pendingViewCenterZ &&
                 eyeX == pendingViewX && eyeY == pendingViewY && eyeZ == pendingViewZ &&
                 world.yaw == pendingViewYaw && cameraPitch == pendingViewPitch &&
                 cameraFar == pendingViewFar && shortestDistance == pendingViewShortest &&
-                streamRadius == pendingViewRadius && pendingBuildSlot >= 0 &&
-                assignedChunks[pendingBuildSlot] &&
-                chunkWorldX[pendingBuildSlot] == pendingBuild.x &&
-                chunkWorldY[pendingBuildSlot] == pendingBuild.y &&
-                chunkWorldZ[pendingBuildSlot] == pendingBuild.z;
+                streamRadius == pendingViewRadius;
         if (samePendingView) {
-            advanceChunkBuild(world, pendingBuildSlot, pendingBuild.x, pendingBuild.y, pendingBuild.z);
+            // A completed view with no dirty chunks needs no second cache scan.
+            // If a build is waiting on procedural neighbors, keep polling it.
+            if (pendingBuild != null && pendingBuildSlot >= 0 &&
+                    assignedChunks[pendingBuildSlot] &&
+                    chunkWorldX[pendingBuildSlot] == pendingBuild.x &&
+                    chunkWorldY[pendingBuildSlot] == pendingBuild.y &&
+                    chunkWorldZ[pendingBuildSlot] == pendingBuild.z) {
+                advanceChunkBuild(world, pendingBuildSlot,
+                        pendingBuild.x, pendingBuild.y, pendingBuild.z);
+            } else if (pendingBuild == null) {
+                return;
+            }
             return;
         }
         int span = MAX_STREAM_SPAN;
@@ -1497,7 +1504,9 @@ final class ChunkRenderer {
         pendingViewYaw = world.yaw; pendingViewPitch = cameraPitch;
         pendingViewFar = cameraFar; pendingViewShortest = shortestDistance;
         pendingViewRadius = streamRadius;
-        pendingViewKeyValid = pendingBuild != null && pendingBuildSlot >= 0;
+        // Cache even an idle/clean view. If a dirty chunk is waiting for
+        // procedural neighbors, keep the key invalid so the next paint retries.
+        pendingViewKeyValid = pendingBuild != null && pendingBuildSlot >= 0 || best < 0;
     }
 
     private void advanceChunkBuild(VoxelWorld world, int slot, int cx, int cy, int cz) {
