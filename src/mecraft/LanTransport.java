@@ -33,6 +33,7 @@ final class LanTransport implements Runnable {
     private volatile boolean running = true;
     private volatile boolean discoveryFound;
     private volatile boolean discoveryTimedOut;
+    private volatile String networkStage = "LAN";
     private ServerSocketConnection server;
     private DatagramConnection discovery;
     private SocketConnection clientSocket;
@@ -74,7 +75,7 @@ final class LanTransport implements Runnable {
             if (running) {
                 String message = discoveryTimedOut ?
                         "No se encontro esa sala. Comprueba el codigo y la red Wi-Fi." :
-                        messageOf(problem);
+                        networkStage + ": " + messageOf(problem);
                 stop();
                 notifyError(message);
             }
@@ -82,6 +83,8 @@ final class LanTransport implements Runnable {
     }
 
     private void runHost() throws IOException {
+        networkStage = "TCP servidor (puerto " + LanProtocol.GAME_PORT + ")";
+        notifyStatus("Abriendo socket del servidor...");
         ServerSocketConnection openedServer =
                 (ServerSocketConnection)Connector.open(
                         "socket://:" + LanProtocol.GAME_PORT);
@@ -94,6 +97,8 @@ final class LanTransport implements Runnable {
         }
 
         if (!running) return;
+        networkStage = "UDP descubrimiento (puerto " + LanProtocol.DISCOVERY_PORT + ")";
+        notifyStatus("Preparando descubrimiento LAN...");
         final DatagramConnection openedDiscovery =
                 (DatagramConnection)Connector.open(
                         "datagram://:" + LanProtocol.DISCOVERY_PORT);
@@ -183,6 +188,7 @@ final class LanTransport implements Runnable {
     }
 
     private void runJoin() throws IOException {
+        networkStage = "UDP descubrimiento";
         notifyStatus("Buscando la partida en esta red Wi-Fi...");
         DatagramConnection openedDiscovery =
                 (DatagramConnection)Connector.open("datagram://");
@@ -251,7 +257,8 @@ final class LanTransport implements Runnable {
         if (hostAddress == null) throw new IOException(
                 "No se encontro esa sala. Comprueba el codigo y la red Wi-Fi.");
 
-        notifyStatus("Encontrada. Conectando...");
+        networkStage = "TCP cliente (puerto " + LanProtocol.GAME_PORT + ")";
+        notifyStatus("Encontrada. Abriendo socket...");
         clientSocket = (SocketConnection)Connector.open(
                 "socket://" + hostAddress + ":" + LanProtocol.GAME_PORT);
         DataOutputStream output = clientSocket.openDataOutputStream();
