@@ -1737,8 +1737,19 @@ final class ChunkRenderer {
             int x = index & (width - 1);
             int z = (index / width) & (width - 1);
             int y = index / area;
-            if (x == 0 || x == width - 1 || z == 0 || z == width - 1 ||
-                    y == 0 || y == VoxelWorld.CHUNK_Y - 1) {
+            int worldX = x0 + x, worldY = y0 + y, worldZ = z0 + z;
+            // Only connect to air that actually continues outside this section.
+            // This keeps sealed caves hidden without breaking tunnels crossing
+            // horizontal or vertical chunk boundaries.
+            boolean connectedOutside =
+                    (x == 0 && world.getLoaded(worldX - 1, worldY, worldZ) == Block.AIR) ||
+                    (x == width - 1 && world.getLoaded(worldX + 1, worldY, worldZ) == Block.AIR) ||
+                    (z == 0 && world.getLoaded(worldX, worldY, worldZ - 1) == Block.AIR) ||
+                    (z == width - 1 && world.getLoaded(worldX, worldY, worldZ + 1) == Block.AIR) ||
+                    (y == 0 && world.getLoaded(worldX, worldY - 1, worldZ) == Block.AIR) ||
+                    (y == VoxelWorld.CHUNK_Y - 1 &&
+                            world.getLoaded(worldX, worldY + 1, worldZ) == Block.AIR);
+            if (connectedOutside) {
                 chunkAirVisibilityScratch[index] = 2;
                 chunkAirQueueScratch[tail++] = (short)index;
             }
