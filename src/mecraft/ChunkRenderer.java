@@ -39,7 +39,7 @@ final class ChunkRenderer {
     // on every paint while that same chunk is being built.
     private boolean pendingViewKeyValid;
     private float pendingViewX, pendingViewY, pendingViewZ;
-    private int pendingViewYawInt;
+    private float pendingViewYaw;
     private float pendingViewPitch, pendingViewFar;
     private int pendingViewCenterX, pendingViewCenterZ, pendingViewRadius;
     private boolean pendingViewShortest;
@@ -1395,8 +1395,8 @@ final class ChunkRenderer {
         // Camera/player motion is continuous, but the stream window only needs
         // refreshing after a meaningful change. The old exact-float key forced
         // a full multi-hundred-slot scan on virtually every paint while walking.
-        int yawDelta = Math.abs(world.yaw - pendingViewYawInt);
-        if (yawDelta > 180) yawDelta = 360 - yawDelta;
+        float yawDelta = Math.abs(world.yaw - pendingViewYaw);
+        if (yawDelta > 180) yawDelta = 360.0f - yawDelta;
         boolean samePendingView = pendingViewKeyValid &&
                 centerX == pendingViewCenterX && centerZ == pendingViewCenterZ &&
                 // The stream window is chunk-based, not block-based. Re-scan
@@ -1573,7 +1573,7 @@ final class ChunkRenderer {
         }
         pendingViewCenterX = centerX; pendingViewCenterZ = centerZ;
         pendingViewX = eyeX; pendingViewY = eyeY; pendingViewZ = eyeZ;
-        pendingViewYawInt = world.yaw; pendingViewPitch = cameraPitch;
+        pendingViewYaw = world.yaw; pendingViewPitch = cameraPitch;
         pendingViewFar = cameraFar; pendingViewShortest = shortestDistance;
         pendingViewRadius = streamRadius;
         if (best >= 0 && dirtyChunks[best]) {
