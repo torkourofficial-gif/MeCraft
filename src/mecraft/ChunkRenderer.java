@@ -34,6 +34,13 @@ final class ChunkRenderer {
     // meshing to one vertical slice per tick so redraw frequency cannot
     // multiply terrain-build work on fast devices or emulators.
     private long lastChunkBuildTime;
+    // Cache the active mesh job's camera key to skip a full stream-window scan
+    // on every paint while that same chunk is being built.
+    private boolean pendingViewKeyValid;
+    private float pendingViewX, pendingViewY, pendingViewZ;
+    private float pendingViewYaw, pendingViewPitch, pendingViewFar;
+    private int pendingViewCenterX, pendingViewCenterZ, pendingViewRadius;
+    private boolean pendingViewShortest;
     // Adapt the gap between main-thread mesh slices to their measured cost.
     // A slow device gets more breathing room; fast devices can stream sooner.
     private int chunkBuildIntervalMillis = 50;
@@ -1185,6 +1192,7 @@ final class ChunkRenderer {
             if (builtRevision < 0 || world.fullRebuild) rebuildWorld(world);
             else rebuildChanged(world);
             builtRevision = world.revision;
+            pendingViewKeyValid = false;
         }
         builtNether = world.nether;
         hasBuiltDimension = true;
@@ -1353,6 +1361,20 @@ final class ChunkRenderer {
         float eyeX = world.playerX, eyeY = world.playerY + 1.62f, eyeZ = world.playerZ;
         int centerX = floorDiv((int)eyeX, VoxelWorld.CHUNK_XZ);
         int centerZ = floorDiv((int)eyeZ, VoxelWorld.CHUNK_XZ);
+        boolean samePendingView = pendingViewKeyValid && pendingBuild != null &&
+                centerX == pendingViewCenterX && centerZ == pendingViewCenterZ &&
+                eyeX == pendingViewX && eyeY == pendingViewY && eyeZ == pendingViewZ &&
+                world.yaw == pendingViewYaw && cameraPitch == pendingViewPitch &&
+                cameraFar == pendingViewFar && shortestDistance == pendingViewShortest &&
+                streamRadius == pendingViewRadius && pendingBuildSlot >= 0 &&
+                assignedChunks[pendingBuildSlot] &&
+                chunkWorldX[pendingBuildSlot] == pendingBuild.x &&
+                chunkWorldY[pendingBuildSlot] == pendingBuild.y &&
+                chunkWorldZ[pendingBuildSlot] == pendingBuild.z;
+        if (samePendingView) {
+            advanceChunkBuild(world, pendingBuildSlot, pendingBuild.x, pendingBuild.y, pendingBuild.z);
+            return;
+        }
         int span = MAX_STREAM_SPAN;
 
         // Shortest uses a small spherical bubble inside the candidate window.
@@ -1470,6 +1492,12 @@ final class ChunkRenderer {
         } else if (best >= 0) {
             advanceChunkBuild(world, best, chunkWorldX[best], chunkWorldY[best], chunkWorldZ[best]);
         }
+        pendingViewCenterX = centerX; pendingViewCenterZ = centerZ;
+        pendingViewX = eyeX; pendingViewY = eyeY; pendingViewZ = eyeZ;
+        pendingViewYaw = world.yaw; pendingViewPitch = cameraPitch;
+        pendingViewFar = cameraFar; pendingViewShortest = shortestDistance;
+        pendingViewRadius = streamRadius;
+        pendingViewKeyValid = pendingBuild != null && pendingBuildSlot >= 0;
     }
 
     private void advanceChunkBuild(VoxelWorld world, int slot, int cx, int cy, int cz) {
