@@ -23,9 +23,9 @@ import javax.microedition.m3g.World;
 
 /** Builds shared-texture chunk meshes on demand for the visible part of the world. */
 final class ChunkRenderer {
-    // Shortest-distance mode can require seven chunks of radius (cameraFar / 16).
-    // The slot ring must cover that full window or modulo collisions overwrite
-    // visible chunks with unrelated coordinates during the same visibility scan.
+    // The fixed slot ring supports the largest normal stream window. Shortest
+    // distance scans only the chunk columns whose bounds can intersect its
+    // 24-block (1.5-chunk) radius; it does not need an extra candidate ring.
     private static final int MAX_STREAM_RADIUS = 7;
     // A full chunk build is split into eight one-block-high slices. Each finished
     // slice is attached to the scene immediately instead of being batched at the end.
@@ -1469,8 +1469,12 @@ final class ChunkRenderer {
             upX = basisUpX; upY = basisUpY; upZ = basisUpZ;
         }
 
+        // A chunk column can intersect the 24-block circle only when its
+        // coordinate differs by at most ceil(radius / chunkSize) from the
+        // player's chunk. The AABB/circle test below then rejects corner chunks.
+        // Do not add another ring: it needlessly scans and retains extra chunks.
         int shortestChunkRadius = shortestDistance ?
-                (int)Math.ceil(cameraFar / (float)VoxelWorld.CHUNK_XZ) + 1 : streamRadius;
+                (int)Math.ceil(cameraFar / (float)VoxelWorld.CHUNK_XZ) : streamRadius;
         int firstChunkX = centerX - shortestChunkRadius;
         int lastChunkX = centerX + shortestChunkRadius;
         int firstChunkZ = centerZ - shortestChunkRadius;
