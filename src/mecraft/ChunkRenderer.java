@@ -142,6 +142,12 @@ final class ChunkRenderer {
             VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
     private final byte[] chunkLightScratch = new byte[VoxelWorld.CHUNK_XZ *
             VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
+    // 3D air-connectivity mask for one 16x16xCHUNK_Y section. State 2 means
+    // reachable from a chunk boundary; enclosed cave air remains state 1.
+    private final byte[] chunkAirVisibilityScratch = new byte[VoxelWorld.CHUNK_XZ *
+            VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
+    private final short[] chunkAirQueueScratch = new short[VoxelWorld.CHUNK_XZ *
+            VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
     private final int[] greedyMaskScratch = new int[CHUNK_AREA];
     // One chunk is meshed at a time; reuse the large material lookup table to
     // avoid allocating thousands of references every time the player moves.
@@ -1611,6 +1617,7 @@ final class ChunkRenderer {
             if (mask == 0) mask = (1 << VoxelWorld.CHUNK_Y) - 1;
             pendingBuild = new ChunkBuild(slot, cx, cy, cz, mask, chunks[slot]);
             pendingBuildSlot = slot;
+            buildChunkAirVisibility(world, cx, cy, cz);
             collectChunkTorches(world, cx * VoxelWorld.CHUNK_XZ,
                     cy * VoxelWorld.CHUNK_Y, cz * VoxelWorld.CHUNK_XZ,
                     (cx + 1) * VoxelWorld.CHUNK_XZ,
@@ -1699,6 +1706,63 @@ final class ChunkRenderer {
             chunkBuildIntervalMillis -= 2;
             if (chunkBuildIntervalMillis < 35) chunkBuildIntervalMillis = 35;
         }
+    }
+
+    /**
+     * Flood-fill air through this chunk's complete vertical section. Faces
+     * bordering sealed cave pockets are omitted; caves connected to a chunk
+     * boundary remain renderable, including tunnels crossing into neighbors.
+     */
+    private void buildChunkAirVisibility(VoxelWorld world, int cx, int cy, int cz) {
+        final int width = VoxelWorld.CHUNK_XZ;
+        final int area = width * width;
+        final int volume = area * VoxelWorld.CHUNK_Y;
+        final int x0 = cx * width;
+        final int y0 = cy * VoxelWorld.CHUNK_Y;
+        final int z0 = cz * width;
+
+        for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++) {
+            world.copyLoadedChunkLayer(x0, y0 + layer, z0, chunkVoxelScratch);
+            int offset = layer * area;
+            for (int i = 0; i < area; i++)
+                chunkAirVisibilityScratch[offset + i] =
+                        chunkVoxelScratch[i] == Block.AIR ? (byte)1 : (byte)0;
+        }
+
+        int head = 0, tail = 0;
+        for (int index = 0; index < volume; index++) {
+            if (chunkAirVisibilityScratch[index] != 1) continue;
+            int x = index & (width - 1);
+            int z = (index / width) & (width - 1);
+            int y = index / area;
+            if (x == 0 || x == width - 1 || z == 0 || z == width - 1 ||
+                    y == 0 || y == VoxelWorld.CHUNK_Y - 1) {
+                chunkAirVisibilityScratch[index] = 2;
+                chunkAirQueueScratch[tail++] = (short)index;
+            }
+        }
+
+        while (head < tail) {
+            int index = chunkAirQueueScratch[head++] & 0xFFFF;
+            int x = index & (width - 1);
+            int z = (index / width) & (width - 1);
+            int y = index / area;
+            if (x > 0) tail = queueVisibleChunkAir(index - 1, tail);
+            if (x + 1 < width) tail = queueVisibleChunkAir(index + 1, tail);
+            if (z > 0) tail = queueVisibleChunkAir(index - width, tail);
+            if (z + 1 < width) tail = queueVisibleChunkAir(index + width, tail);
+            if (y > 0) tail = queueVisibleChunkAir(index - area, tail);
+            if (y + 1 < VoxelWorld.CHUNK_Y)
+                tail = queueVisibleChunkAir(index + area, tail);
+        }
+    }
+
+    private int queueVisibleChunkAir(int index, int tail) {
+        if (chunkAirVisibilityScratch[index] == 1) {
+            chunkAirVisibilityScratch[index] = 2;
+            chunkAirQueueScratch[tail++] = (short)index;
+        }
+        return tail;
     }
 
     private Chunk buildChunkLayer(VoxelWorld world, int cx, int cy, int cz,
@@ -1801,7 +1865,16 @@ final class ChunkRenderer {
                             else if (face == 5 && y > y0)
                                 neighbor = chunkVoxelScratch[voxelIndex - CHUNK_AREA];
                             else neighbor = world.getLoaded(nx, ny, nz);
-                            if (Block.faceVisible(id, neighbor)) {
+                            boolean faceVisible = Block.faceVisible(id, neighbor);
+                            if (faceVisible && neighbor == Block.AIR &&
+                                    nx >= x0 && nx < x1 && nz >= z0 && nz < z1 &&
+                                    ny >= cy * VoxelWorld.CHUNK_Y &&
+                                    ny < (cy + 1) * VoxelWorld.CHUNK_Y) {
+                                int airIndex = ((ny - cy * VoxelWorld.CHUNK_Y) * VoxelWorld.CHUNK_XZ +
+                                        (nz - z0)) * VoxelWorld.CHUNK_XZ + (nx - x0);
+                                faceVisible = chunkAirVisibilityScratch[airIndex] == 2;
+                            }
+                            if (faceVisible) {
                                 int tile = renderWorldTile(world, id, face, x, y, z,
                                         id == Block.WOOL ? world.woolColor(x, y, z) : 0);
                                 int light = chunkLightScratch[voxelIndex] & 255;
