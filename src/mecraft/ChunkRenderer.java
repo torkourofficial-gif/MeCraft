@@ -39,9 +39,14 @@ final class ChunkRenderer {
     // on every paint while that same chunk is being built.
     private boolean pendingViewKeyValid;
     private float pendingViewX, pendingViewY, pendingViewZ;
-    private float pendingViewYaw, pendingViewPitch, pendingViewFar;
+    private int pendingViewYawInt;
+    private float pendingViewPitch, pendingViewFar;
     private int pendingViewCenterX, pendingViewCenterZ, pendingViewRadius;
     private boolean pendingViewShortest;
+    // Remember the next dirty chunk so paint calls do not rescan the full
+    // streaming window while the mesh-build cadence timer is waiting.
+    private int pendingTargetSlot = -1;
+    private int pendingTargetX, pendingTargetY, pendingTargetZ;
     // Reuse the camera basis while the player moves: PS1-style precomputed
     // transform data avoids repeating expensive trigonometry for every scan.
     private float basisYaw = Float.NaN, basisPitch = Float.NaN;
@@ -1387,15 +1392,22 @@ final class ChunkRenderer {
         float eyeX = world.playerX, eyeY = world.playerY + 1.62f, eyeZ = world.playerZ;
         int centerX = floorDiv((int)eyeX, VoxelWorld.CHUNK_XZ);
         int centerZ = floorDiv((int)eyeZ, VoxelWorld.CHUNK_XZ);
+        // Camera/player motion is continuous, but the stream window only needs
+        // refreshing after a meaningful change. The old exact-float key forced
+        // a full multi-hundred-slot scan on virtually every paint while walking.
+        int yawDelta = Math.abs(world.yaw - pendingViewYawInt);
+        if (yawDelta > 180) yawDelta = 360 - yawDelta;
         boolean samePendingView = pendingViewKeyValid &&
                 centerX == pendingViewCenterX && centerZ == pendingViewCenterZ &&
-                eyeX == pendingViewX && eyeY == pendingViewY && eyeZ == pendingViewZ &&
-                world.yaw == pendingViewYaw && cameraPitch == pendingViewPitch &&
+                Math.abs(eyeX - pendingViewX) < 2.0f &&
+                Math.abs(eyeY - pendingViewY) < 2.0f &&
+                Math.abs(eyeZ - pendingViewZ) < 2.0f &&
+                yawDelta < 4 && Math.abs(cameraPitch - pendingViewPitch) < 4.0f &&
                 cameraFar == pendingViewFar && shortestDistance == pendingViewShortest &&
                 streamRadius == pendingViewRadius;
         if (samePendingView) {
-            // A completed view with no dirty chunks needs no second cache scan.
-            // If a build is waiting on procedural neighbors, keep polling it.
+            // Resume the current build, or retry the selected dirty chunk when
+            // its build interval/procedural neighbors were not ready last paint.
             if (pendingBuild != null && pendingBuildSlot >= 0 &&
                     assignedChunks[pendingBuildSlot] &&
                     chunkWorldX[pendingBuildSlot] == pendingBuild.x &&
@@ -1403,7 +1415,15 @@ final class ChunkRenderer {
                     chunkWorldZ[pendingBuildSlot] == pendingBuild.z) {
                 advanceChunkBuild(world, pendingBuildSlot,
                         pendingBuild.x, pendingBuild.y, pendingBuild.z);
-            } else if (pendingBuild == null) {
+            } else if (pendingTargetSlot >= 0 &&
+                    assignedChunks[pendingTargetSlot] &&
+                    dirtyChunks[pendingTargetSlot] &&
+                    chunkWorldX[pendingTargetSlot] == pendingTargetX &&
+                    chunkWorldY[pendingTargetSlot] == pendingTargetY &&
+                    chunkWorldZ[pendingTargetSlot] == pendingTargetZ) {
+                advanceChunkBuild(world, pendingTargetSlot,
+                        pendingTargetX, pendingTargetY, pendingTargetZ);
+            } else {
                 return;
             }
             return;
@@ -1544,12 +1564,20 @@ final class ChunkRenderer {
         }
         pendingViewCenterX = centerX; pendingViewCenterZ = centerZ;
         pendingViewX = eyeX; pendingViewY = eyeY; pendingViewZ = eyeZ;
-        pendingViewYaw = world.yaw; pendingViewPitch = cameraPitch;
+        pendingViewYawInt = world.yaw; pendingViewPitch = cameraPitch;
         pendingViewFar = cameraFar; pendingViewShortest = shortestDistance;
         pendingViewRadius = streamRadius;
-        // Cache even an idle/clean view. If a dirty chunk is waiting for
-        // procedural neighbors, keep the key invalid so the next paint retries.
-        pendingViewKeyValid = pendingBuild != null && pendingBuildSlot >= 0 || best < 0;
+        if (best >= 0 && dirtyChunks[best]) {
+            pendingTargetSlot = best;
+            pendingTargetX = chunkWorldX[best];
+            pendingTargetY = chunkWorldY[best];
+            pendingTargetZ = chunkWorldZ[best];
+        } else if (pendingBuild == null) {
+            pendingTargetSlot = -1;
+        }
+        // Keep the view cached even while a dirty chunk waits for its cadence
+        // slot or procedural neighbors; the target is retried without rescanning.
+        pendingViewKeyValid = true;
     }
 
     private void advanceChunkBuild(VoxelWorld world, int slot, int cx, int cy, int cz) {
