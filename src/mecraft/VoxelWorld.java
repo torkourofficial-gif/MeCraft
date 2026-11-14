@@ -591,8 +591,8 @@ final class VoxelWorld {
 
     /**
      * Collision lookup that never generates terrain on the physics thread.
-     * An unloaded procedural sector is treated as empty for this tick: movement
-     * continues while the background worker prepares the real terrain.
+     * An unloaded procedural sector is a temporary solid barrier until the
+     * background worker publishes its real voxels, preventing falls through gaps.
      */
     byte getCollision(int x, int y, int z) {
         if (y < 0 || y >= HEIGHT || outsideWorld(x, z)) return Block.AIR;
