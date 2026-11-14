@@ -400,6 +400,7 @@ final class ChunkRenderer {
         cameraFar = shortestDistance ? 1.5f * (float)VoxelWorld.CHUNK_XZ :
                 ((streamRadius * 2 + 1) * (float)VoxelWorld.CHUNK_XZ) + 8.0f;
         shortestFog.setColor(currentSkyColor);
+        shortestFog.setMode(Fog.LINEAR);
         shortestFog.setLinear(cameraFar * 0.75f, cameraFar);
         camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
                 0.1f, cameraFar);
@@ -1417,7 +1418,7 @@ final class ChunkRenderer {
         float forwardX = 0.0f, forwardY = 0.0f, forwardZ = 1.0f;
         float rightX = 1.0f, rightZ = 0.0f;
         float upX = 0.0f, upY = 1.0f, upZ = 0.0f;
-        if (!shortestDistance) {
+        {
             if (world.yaw != basisYaw || cameraPitch != basisPitch) {
                 float yaw = (float)(world.yaw * Math.PI / 180.0);
                 float pitch = (float)(cameraPitch * Math.PI / 180.0);
@@ -1480,17 +1481,23 @@ final class ChunkRenderer {
 
                     boolean visible = shortestDistance;
                     if (shortestDistance) {
-                        // Distance to the nearest point of this 16x8x16 sector,
-                        // not its centre: avoids loading corner chunks that
-                        // cannot contribute anything inside the tiny view range.
+                        // A horizontal cylinder gives the old circular render
+                        // boundary. Keep 16x16 columns intact, then use the
+                        // camera frustum to avoid building vertical slices that
+                        // cannot contribute to the current view.
                         float nearX = Math.abs(dx) - VoxelWorld.CHUNK_XZ * 0.5f;
-                        float nearY = Math.abs(dy) - VoxelWorld.CHUNK_Y * 0.5f;
                         float nearZ = Math.abs(dz) - VoxelWorld.CHUNK_XZ * 0.5f;
                         if (nearX < 0.0f) nearX = 0.0f;
-                        if (nearY < 0.0f) nearY = 0.0f;
                         if (nearZ < 0.0f) nearZ = 0.0f;
-                        visible = nearX * nearX + nearY * nearY + nearZ * nearZ <=
+                        boolean insideCircle = nearX * nearX + nearZ * nearZ <=
                                 cameraFar * cameraFar;
+                        float depth = dx * forwardX + dy * forwardY + dz * forwardZ;
+                        float horizontal = dx * rightX + dz * rightZ;
+                        float vertical = dx * upX + dy * upY + dz * upZ;
+                        visible = insideCircle && depth + CHUNK_RADIUS >= 0.1f &&
+                            depth - CHUNK_RADIUS <= cameraFar &&
+                            Math.abs(horizontal) <= Math.max(0.0f, depth) * tanHorizontalFov + CHUNK_RADIUS &&
+                            Math.abs(vertical) <= Math.max(0.0f, depth) * tanVerticalFov + CHUNK_RADIUS;
                     } else {
                         float depth = dx * forwardX + dy * forwardY + dz * forwardZ;
                         float horizontal = dx * rightX + dz * rightZ;
