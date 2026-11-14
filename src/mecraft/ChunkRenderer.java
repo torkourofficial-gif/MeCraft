@@ -131,9 +131,10 @@ final class ChunkRenderer {
     private final int[] greedyMaskScratch = new int[CHUNK_AREA];
     // One chunk is meshed at a time; reuse the large material lookup table to
     // avoid allocating thousands of references every time the player moves.
-    private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[TILE_COUNT * 15];
-    // Track only populated face builders; avoid scanning all 3,840 entries twice per slice.
-    private final int[] activeFaceBuilderIndices = new int[TILE_COUNT * 15];
+    // One material batch per atlas tile. Light levels remain separate greedy
+    // rectangles, but their vertex colors share the same M3G mesh.
+    private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[TILE_COUNT];
+    private final int[] activeFaceBuilderIndices = new int[TILE_COUNT];
     private int activeFaceBuilderCount;
     // A bounded pool avoids allocating FaceBuilder arrays for every streamed
     // chunk without retaining one builder for every possible tile/light pair.
@@ -1761,7 +1762,9 @@ final class ChunkRenderer {
                         int encoded = key - 1;
                         int tile = encoded % TILE_COUNT;
                         int light = encoded / TILE_COUNT;
-                        int builderIndex = light * TILE_COUNT + tile;
+                        // Batch every light level of this atlas tile into one mesh;
+                        // addRect stores the correct brightness in its own vertices.
+                        int builderIndex = tile;
                         if (builders[builderIndex] == null) {
                             FaceBuilder builder = freeFaceBuilderCount > 0 ?
                                     freeFaceBuilders[--freeFaceBuilderCount] : null;
@@ -1770,7 +1773,7 @@ final class ChunkRenderer {
                             builders[builderIndex] = builder;
                             activeFaceBuilderIndices[activeFaceBuilderCount++] = builderIndex;
                         }
-                        builders[builderIndex].addRect(x, y, z, faceWidth, faceHeight, face);
+                        builders[builderIndex].addRect(x, y, z, faceWidth, faceHeight, face, light);
                         a += rectWidth;
                     }
                 }
@@ -2338,7 +2341,7 @@ final class ChunkRenderer {
         }
 
         /** Add one tiled rectangle produced by the chunk's greedy face scan. */
-        void addRect(int x, int y, int z, int width, int height, int face) {
+        void addRect(int x, int y, int z, int width, int height, int face, int light) {
             ensure(vertexCount + 4);
             int u0 = 1, v0 = 1;
             int u1 = 1 + width * 16, v1 = 1 + height * 16;
@@ -2349,7 +2352,7 @@ final class ChunkRenderer {
                 u0 = 0; v0 = 0;
                 u1 = width * 16; v1 = height * 16;
             }
-            int shade = litShade(face);
+            int shade = litShade(face, light);
             if (face == 0) {
                 vertex(x,y+1,z, u0,v1,shade); vertex(x,y+1,z+height, u0,v0,shade);
                 vertex(x+width,y+1,z, u1,v1,shade); vertex(x+width,y+1,z+height, u1,v0,shade);
@@ -2402,8 +2405,12 @@ final class ChunkRenderer {
         }
 
         private int litShade(int face) {
+            return litShade(face, lightLevel);
+        }
+
+        private int litShade(int face, int light) {
             int shade = face == 0 ? 255 : (face == 5 ? 135 : (face <= 2 ? 205 : 180));
-            return shade + (255 - shade) * lightLevel / 14;
+            return shade + (255 - shade) * light / 14;
         }
 
         private void vertex(int x, int y, int z, int u, int v, int shade) {
