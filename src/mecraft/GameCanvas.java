@@ -157,6 +157,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private float cameraPitch = -5.0f;
     private boolean lookUp, lookDown, lookLeft, lookRight;
     private VoxelWorld world;
+    private final int[] portalSourceScratch = new int[4];
+    private final int[] portalDestinationScratch = new int[4];
     private ChunkRenderer renderer;
     private boolean ridingBoat;
     private boolean ridingMinecart;
@@ -1619,12 +1621,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         boolean leavingNether = world.nether;
         float sourceX = world.playerX, sourceY = world.playerY, sourceZ = world.playerZ;
         int sx = (int)sourceX, sy = (int)sourceY, sz = (int)sourceZ;
-        int[] source = null;
-        for (int y = sy - 1; y <= sy + 2 && source == null; y++)
-            for (int z = sz - 1; z <= sz + 1 && source == null; z++)
-                for (int x = sx - 1; x <= sx + 1 && source == null; x++)
-                    source = world.portalFrameAt(x, y, z);
-        int axis = source == null ? 0 : source[3];
+        int[] source = portalSourceScratch;
+        boolean hasSource = false;
+        for (int y = sy - 1; y <= sy + 2 && !hasSource; y++)
+            for (int z = sz - 1; z <= sz + 1 && !hasSource; z++)
+                for (int x = sx - 1; x <= sx + 1 && !hasSource; x++)
+                    hasSource = world.portalFrameAt(x, y, z, source);
+        int axis = hasSource ? source[3] : 0;
 
         // Remember the exact position in the dimension being left, so the
         // return trip goes back to the same portal instead of relying on 8:1 rounding.
@@ -1652,8 +1655,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             world.playerY = world.nether ? netherPortalReturnY : overworldPortalReturnY;
             world.playerZ = world.nether ? netherPortalReturnZ : overworldPortalReturnZ;
         } else {
-            int[] destination = world.findPortalNear((int)tx, (int)tz);
-            if (destination == null) {
+            int[] destination = portalDestinationScratch;
+            boolean hasDestination = world.findPortalNear((int)tx, (int)tz, destination);
+            if (!hasDestination) {
                 int bx = (int)tx, bz = (int)tz;
                 if (bx < 2) bx = 2;
                 if (bz < 2) bz = 2;
@@ -1662,17 +1666,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 int by = world.surfaceY(bx + 1, bz + 1) + 1;
                 if (by < 1) by = 1;
                 if (by > VoxelWorld.HEIGHT - 6) by = VoxelWorld.HEIGHT - 6;
-                destination = world.createPortalAt(bx, by, bz, axis);
+                hasDestination = world.createPortalAt(bx, by, bz, axis, destination);
             }
-            if (destination == null) {
+            if (!hasDestination) {
                 world.switchDimension();
                 portalChargeTicks = 0;
                 return;
             }
-            int[] d = destination;
-            world.playerX = d[3] == 0 ? d[0] + 2.5f : d[0] + 0.5f;
-            world.playerZ = d[3] == 0 ? d[2] + 0.5f : d[2] + 2.5f;
-            world.playerY = d[1] + 1.05f;
+            world.playerX = destination[3] == 0 ? destination[0] + 2.5f : destination[0] + 0.5f;
+            world.playerZ = destination[3] == 0 ? destination[2] + 0.5f : destination[2] + 2.5f;
+            world.playerY = destination[1] + 1.05f;
         }
 
         // Keep the player above the destination floor if the saved Y is no
