@@ -609,7 +609,10 @@ final class VoxelWorld {
             }
         }
         enqueueProceduralChunk(cx, cz, true);
-        return Block.AIR;
+        // Never let physics interpret an unfinished procedural chunk as empty
+        // space. The temporary solid barrier keeps the player supported until
+        // the worker publishes the real chunk on a later tick.
+        return Block.STONE;
     }
 
     /**
