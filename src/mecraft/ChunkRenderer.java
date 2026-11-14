@@ -1630,10 +1630,10 @@ final class ChunkRenderer {
         }
         while (job.nextLayer < VoxelWorld.CHUNK_Y &&
                 (job.dirtyMask & (1 << job.nextLayer)) == 0) job.nextLayer++;
-        // Build and attach one vertical slice per frame, instead of waiting
-        // for all eight slices and adding their meshes in one large burst.
-        boolean builtSlice = false;
-        while (job.nextLayer < VoxelWorld.CHUNK_Y && !builtSlice) {
+        // Build every dirty vertical slice in this chunk during the same
+        // operation. This avoids spreading one chunk's mesh construction over
+        // multiple frames and leaving it partially present in the scene.
+        while (job.nextLayer < VoxelWorld.CHUNK_Y) {
             int layer = job.nextLayer++;
             Mesh[] oldLayer = job.layerMeshes[layer];
             if (oldLayer != null) {
@@ -1647,7 +1647,6 @@ final class ChunkRenderer {
                     slice.fires.length == 0 ? null : slice.fires[0];
             for (int m = 0; m < newLayer.length; m++)
                 terrain.addChild(newLayer[m]);
-            if (slice != null) builtSlice = true;
             while (job.nextLayer < VoxelWorld.CHUNK_Y &&
                     (job.dirtyMask & (1 << job.nextLayer)) == 0) job.nextLayer++;
         }
