@@ -239,7 +239,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         int[] settings = new int[] { GameSettings.loadFrameSkip(), cameraSensitivity,
                                      selectedPlayerSkin, language, renderDistance, -1, 0 };
         GameSettings.load(settings, controlCodes, customControls);
-        frameSkip = clamp(settings[0], 0, 2);
+        frameSkip = 0; // Rendering frameskip is intentionally disabled.
         cameraSensitivity = clamp(settings[1], 0, 4);
         selectedPlayerSkin = clamp(settings[2], 0, 4);
         language = clamp(settings[3], Language.ENGLISH, Language.SPANISH);
@@ -313,8 +313,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             }
 
             if (music != null) music.update(visible ? musicModeForState() : MusicController.OFF);
-            if (visible && (state != PLAYING || renderFrame++ % (frameSkip + 1) == 0))
-                repaint();
+            if (visible) repaint();
 
             // Render at a maximum of 30 FPS while gameplay remains fixed at 20 ticks/s.
             nextFrameTime += FRAME_MILLIS;
@@ -2525,9 +2524,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     private void changeFrameSkip(int delta) {
-        frameSkip += delta;
-        if (frameSkip < 0) frameSkip = 2;
-        if (frameSkip > 2) frameSkip = 0;
+        // Keep the legacy settings slot compatible, but never skip gameplay renders.
+        frameSkip = 0;
         saveSettings();
         repaint();
     }
