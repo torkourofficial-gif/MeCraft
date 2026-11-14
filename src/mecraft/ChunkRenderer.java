@@ -1415,18 +1415,24 @@ final class ChunkRenderer {
                     chunkWorldZ[pendingBuildSlot] == pendingBuild.z) {
                 advanceChunkBuild(world, pendingBuildSlot,
                         pendingBuild.x, pendingBuild.y, pendingBuild.z);
-            } else if (pendingTargetSlot >= 0 &&
-                    assignedChunks[pendingTargetSlot] &&
-                    dirtyChunks[pendingTargetSlot] &&
-                    chunkWorldX[pendingTargetSlot] == pendingTargetX &&
-                    chunkWorldY[pendingTargetSlot] == pendingTargetY &&
-                    chunkWorldZ[pendingTargetSlot] == pendingTargetZ) {
-                advanceChunkBuild(world, pendingTargetSlot,
-                        pendingTargetX, pendingTargetY, pendingTargetZ);
+            } else if (pendingTargetSlot >= 0) {
+                if (assignedChunks[pendingTargetSlot] &&
+                        dirtyChunks[pendingTargetSlot] &&
+                        chunkWorldX[pendingTargetSlot] == pendingTargetX &&
+                        chunkWorldY[pendingTargetSlot] == pendingTargetY &&
+                        chunkWorldZ[pendingTargetSlot] == pendingTargetZ) {
+                    advanceChunkBuild(world, pendingTargetSlot,
+                            pendingTargetX, pendingTargetY, pendingTargetZ);
+                    return;
+                }
+                // The previous target finished or left the window. Select the
+                // next dirty chunk with one fresh scan instead of stalling.
+                pendingTargetSlot = -1;
+                pendingViewKeyValid = false;
             } else {
                 return;
             }
-            return;
+            if (pendingViewKeyValid) return;
         }
         int span = MAX_STREAM_SPAN;
 
