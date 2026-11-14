@@ -388,10 +388,8 @@ final class ChunkRenderer {
     void setRenderDistance(int setting) {
         if (setting < 0) setting = 0;
         if (setting > 4) setting = 4;
-        // Shortest is a compact playable bubble. The cache still uses the
-        // world's 16x16 generation chunks, but only sectors intersecting this
-        // 12-block sphere are admitted; corner sectors are rejected below.
-        // This is intentionally much smaller than the normal 3x3 window.
+        // Shortest keeps the world's 16x16 generation chunks and admits
+        // only chunk columns intersecting the 1.5-chunk circular view radius.
         shortestDistance = setting == 4;
         streamRadius = setting == 0 ? 1 : setting + 1;
         if (streamRadius > MAX_STREAM_RADIUS) streamRadius = MAX_STREAM_RADIUS;
@@ -1467,8 +1465,8 @@ final class ChunkRenderer {
         // a partially meshed chunk whenever the player/camera moves slightly.
         boolean pendingVisible = false;
 
-        // Search only the active window, then use the sphere/AABB test below
-        // to reject mini-neighborhood corner sectors before they are meshed.
+        // Search only the active window, then use the circle/AABB and
+        // camera-frustum tests below to reject corner sectors before meshing.
         for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++) {
             for (int rz = firstRz; rz <= lastRz; rz++) {
                 for (int rx = firstRx; rx <= lastRx; rx++) {
