@@ -1410,9 +1410,8 @@ final class ChunkRenderer {
         }
         int span = MAX_STREAM_SPAN;
 
-        // Shortest uses a small spherical bubble inside the candidate window.
-        // The 16x16 cache slots are only an addressing mechanism; sectors whose
-        // nearest point lies outside cameraFar are not streamed or retained.
+        // Shortest uses a circular horizontal radius inside the candidate
+        // window. The cache ring remains a slot-addressing mechanism only.
         float forwardX = 0.0f, forwardY = 0.0f, forwardZ = 1.0f;
         float rightX = 1.0f, rightZ = 0.0f;
         float upX = 0.0f, upY = 1.0f, upZ = 0.0f;
