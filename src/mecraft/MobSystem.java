@@ -544,16 +544,39 @@ final class MobSystem {
         if (mob == null) return;
         // Keep the bounded model in its slot. Respawns of the same species
         // reuse every Group, Mesh, VertexArray and VertexBuffer it owns.
+        // Clear all transient state here so no previous life leaks into a respawn.
         mob.fireMesh.setRenderingEnable(false);
         mob.root.setRenderingEnable(false);
         mob.alive = false;
         mob.dying = false;
         mob.eggSpawned = false;
-        mob.hurtTicks = 0;
+        mob.chasing = false;
+        mob.sheared = false;
+        mob.health = 0;
+        mob.slimeSize = 1;
+        mob.age = 0;
+        mob.deathTicks = 0;
         mob.fireTicks = 0;
+        mob.burnDamageTicks = 0;
+        mob.attackDelay = 0;
+        mob.fuseTicks = 0;
+        mob.fleeTicks = 0;
+        mob.doorBreakTicks = 0;
+        mob.doorBreakX = mob.doorBreakY = mob.doorBreakZ = 0;
+        mob.nextWander = 0;
+        mob.walkTicks = 0;
+        mob.hurtTicks = 0;
+        mob.verticalVelocity = 0.0f;
+        mob.motionX = mob.motionZ = 0.0f;
+        mob.walkPhase = mob.walkAmount = 0.0f;
+        mob.x = mob.y = mob.z = mob.yaw = mob.targetYaw = 0.0f;
         mob.setHurt(false);
         mob.setFlashWhite(false);
+        mob.setSheared(false);
         mob.pose.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
+        mob.root.setTranslation(0.0f, 0.0f, 0.0f);
+        mob.root.setScale(1.0f, 1.0f, 1.0f);
+        mob.root.setOrientation(0.0f, 0.0f, 1.0f, 0.0f);
     }
 
     /** Remove distant actors from the active world and clear their transient state. */
