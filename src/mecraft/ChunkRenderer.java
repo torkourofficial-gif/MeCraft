@@ -7,6 +7,7 @@ import javax.microedition.m3g.Background;
 import javax.microedition.m3g.Camera;
 import javax.microedition.m3g.CompositingMode;
 import javax.microedition.m3g.Graphics3D;
+import javax.microedition.m3g.Fog;
 import javax.microedition.m3g.Group;
 import javax.microedition.m3g.Image2D;
 import javax.microedition.m3g.Light;
@@ -109,6 +110,8 @@ final class ChunkRenderer {
     private final Group handModelOffset = new Group();
     private final Group terrain = new Group();
     private final Background sky = new Background();
+    // Shared linear fog softens the edge of the compact radial view.
+    private final Fog shortestFog = new Fog();
     private final SkySystem skyObjects;
     private final Light sunlight = new Light();
     private final Light[] torchLights = new Light[3];
@@ -392,12 +395,27 @@ final class ChunkRenderer {
         shortestDistance = setting == 4;
         streamRadius = setting == 0 ? 1 : setting + 1;
         if (streamRadius > MAX_STREAM_RADIUS) streamRadius = MAX_STREAM_RADIUS;
-        cameraFar = shortestDistance ? 12.0f :
+        // Keep world chunks at 16x16. Shortest is a true 1.5-chunk (24-block)
+        // radial admission distance, not a smaller chunk size or a 1-chunk grid.
+        cameraFar = shortestDistance ? 1.5f * (float)VoxelWorld.CHUNK_XZ :
                 ((streamRadius * 2 + 1) * (float)VoxelWorld.CHUNK_XZ) + 8.0f;
+        shortestFog.setColor(currentSkyColor);
+        shortestFog.setLinear(cameraFar * 0.75f, cameraFar);
         camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
                 0.1f, cameraFar);
         externalCamera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
                 0.1f, cameraFar);
+        updateTerrainFog();
+    }
+
+    private void updateTerrainFog() {
+        Fog fog = shortestDistance ? shortestFog : null;
+        for (int i = 0; i < tileAppearances.length; i++) {
+            if (tileAppearances[i] != null) tileAppearances[i].setFog(fog);
+        }
+        flowerAppearance.setFog(fog);
+        worldFireAppearance.setFog(fog);
+        portalAppearance.setFog(fog);
     }
 
     float fieldOfView() { return cameraFov; }
@@ -1154,6 +1172,7 @@ final class ChunkRenderer {
         if (world.nether) {
             currentDaylight = 0.32f;
             currentSkyColor = 0xFF4A1717;
+            shortestFog.setColor(currentSkyColor);
             sunlight.setIntensity(0.45f);
             updateTorchLights(world);
             return;
@@ -1167,6 +1186,7 @@ final class ChunkRenderer {
         // Keep moonlight visible on small, low-brightness phone displays.
         sunlight.setIntensity(0.28f + sun * 0.72f);
         currentSkyColor = blendColor(0xFF26354A, 0xFF82B8E8, sun);
+        shortestFog.setColor(currentSkyColor);
         updateTorchLights(world);
     }
 
@@ -1984,6 +2004,7 @@ final class ChunkRenderer {
         texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         texture.setWrapping(Texture2D.WRAP_REPEAT, Texture2D.WRAP_REPEAT);
         appearance = createBlockAppearance(texture, tile == Block.atlasTile(Block.WATER));
+        if (shortestDistance) appearance.setFog(shortestFog);
         if (tile == 234 && appearance.getMaterial() != null)
             appearance.getMaterial().setColor(Material.EMISSIVE, 0xFFFF6A18);
         tileAppearances[tile] = appearance;
