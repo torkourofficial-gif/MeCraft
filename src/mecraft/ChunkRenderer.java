@@ -1399,10 +1399,13 @@ final class ChunkRenderer {
         if (yawDelta > 180) yawDelta = 360 - yawDelta;
         boolean samePendingView = pendingViewKeyValid &&
                 centerX == pendingViewCenterX && centerZ == pendingViewCenterZ &&
-                Math.abs(eyeX - pendingViewX) < 2.0f &&
-                Math.abs(eyeY - pendingViewY) < 2.0f &&
-                Math.abs(eyeZ - pendingViewZ) < 2.0f &&
-                yawDelta < 4 && Math.abs(cameraPitch - pendingViewPitch) < 4.0f &&
+                // The stream window is chunk-based, not block-based. Re-scan
+                // only after a meaningful camera movement; the 12-block frustum
+                // padding keeps edge chunks resident during this hysteresis.
+                Math.abs(eyeX - pendingViewX) < 4.0f &&
+                Math.abs(eyeY - pendingViewY) < 4.0f &&
+                Math.abs(eyeZ - pendingViewZ) < 4.0f &&
+                yawDelta < 6 && Math.abs(cameraPitch - pendingViewPitch) < 6.0f &&
                 cameraFar == pendingViewFar && shortestDistance == pendingViewShortest &&
                 streamRadius == pendingViewRadius;
         if (samePendingView) {
