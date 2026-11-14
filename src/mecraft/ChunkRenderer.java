@@ -1858,6 +1858,20 @@ final class ChunkRenderer {
         return chunk;
     }
 
+    /** Apply an Alpha-era biome tint to the vertex colors of a held block mesh. */
+    private void tintFaceBuilder(FaceBuilder builder, int tint) {
+        int red = (tint >> 16) & 255;
+        int green = (tint >> 8) & 255;
+        int blue = tint & 255;
+        for (int vertex = 0; vertex < builder.vertexCount; vertex++) {
+            int color = vertex * 4;
+            builder.c[color] = (byte)((builder.c[color] & 255) * red / 255);
+            builder.c[color + 1] = (byte)((builder.c[color + 1] & 255) * green / 255);
+            builder.c[color + 2] = (byte)((builder.c[color + 2] & 255) * blue / 255);
+            // Keep the original vertex alpha (including water/transparency).
+        }
+    }
+
     private void add(FaceBuilder[] builders, int tile, int x, int y, int z, int face) {
         if (builders[tile] == null) builders[tile] = new FaceBuilder(tile, 0);
         builders[tile].add(x, y, z, face);
