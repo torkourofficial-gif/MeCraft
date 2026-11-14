@@ -125,6 +125,9 @@ final class ChunkRenderer {
     // One chunk is meshed at a time; reuse the large material lookup table to
     // avoid allocating thousands of references every time the player moves.
     private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[TILE_COUNT * 15];
+    // Track only populated face builders; avoid scanning all 3,840 entries twice per slice.
+    private final int[] activeFaceBuilderIndices = new int[TILE_COUNT * 15];
+    private int activeFaceBuilderCount;
     // A bounded pool avoids allocating FaceBuilder arrays for every streamed
     // chunk without retaining one builder for every possible tile/light pair.
     private final FaceBuilder[] freeFaceBuilders = new FaceBuilder[32];
@@ -1580,6 +1583,7 @@ final class ChunkRenderer {
     private Chunk buildChunkLayer(VoxelWorld world, int cx, int cy, int cz,
                                    int layer) {
         FaceBuilder[] builders = chunkFaceBuilders;
+        activeFaceBuilderCount = 0;
         FlowerBuilder flowers = null;
         FireBuilder fires = null;
         PortalBuilder portals = null;
@@ -1618,7 +1622,7 @@ final class ChunkRenderer {
                     if (flowers == null) flowers = reusableFlowerBuilder;
                     flowers.add(x, 0, z, Block.sideTile(id));
                 } else if (Block.isDoor(id)) {
-                    if (flowers == null) flowers = new FlowerBuilder();
+                    if (flowers == null) flowers = reusableFlowerBuilder;
                     flowers.addDoor(x, 0, z, id,
                             world.doorMetadata(x0 + x, y0, z0 + z));
                 }
@@ -1727,6 +1731,7 @@ final class ChunkRenderer {
                             if (builder == null) builder = new FaceBuilder(tile, light);
                             else builder.reset(tile, light);
                             builders[builderIndex] = builder;
+                            activeFaceBuilderIndices[activeFaceBuilderCount++] = builderIndex;
                         }
                         builders[builderIndex].addRect(x, y, z, faceWidth, faceHeight, face);
                         a += rectWidth;
@@ -1735,16 +1740,15 @@ final class ChunkRenderer {
             }
         }
 
-        int count = 0;
-        for (int i = 0; i < builders.length; i++) if (builders[i] != null) count++;
+        int count = activeFaceBuilderCount;
         int flowerCount = flowers == null ? 0 : 1;
         int fireCount = fires == null ? 0 : 1;
         int portalCount = portals == null ? 0 : 1;
         if (count + flowerCount + fireCount + portalCount == 0) return null;
         Mesh[] meshes = new Mesh[count + flowerCount + fireCount + portalCount];
         int at = 0;
-        for (int i = 0; i < builders.length; i++) {
-            if (builders[i] == null) continue;
+        for (int active = 0; active < activeFaceBuilderCount; active++) {
+            int i = activeFaceBuilderIndices[active];
             int tile = i % TILE_COUNT;
             float textureScale = tile == Block.sideTile(Block.GRASS) ? 0.999f / 16.0f : 1.0f / 16.0f;
             FaceBuilder builder = builders[i];
