@@ -41,6 +41,12 @@ final class ChunkRenderer {
     private float pendingViewYaw, pendingViewPitch, pendingViewFar;
     private int pendingViewCenterX, pendingViewCenterZ, pendingViewRadius;
     private boolean pendingViewShortest;
+    // Reuse the camera basis while the player moves: PS1-style precomputed
+    // transform data avoids repeating expensive trigonometry for every scan.
+    private float basisYaw = Float.NaN, basisPitch = Float.NaN;
+    private float basisForwardX, basisForwardY, basisForwardZ;
+    private float basisRightX, basisRightZ;
+    private float basisUpX, basisUpY, basisUpZ;
     // Adapt the gap between main-thread mesh slices to their measured cost.
     // A slow device gets more breathing room; fast devices can stream sooner.
     private int chunkBuildIntervalMillis = 50;
@@ -1388,19 +1394,31 @@ final class ChunkRenderer {
         // Shortest uses a small spherical bubble inside the candidate window.
         // The 16x16 cache slots are only an addressing mechanism; sectors whose
         // nearest point lies outside cameraFar are not streamed or retained.
-        float sinYaw = 0.0f, cosYaw = 1.0f;
-        float sinPitch = 0.0f, cosPitch = 1.0f;
         float forwardX = 0.0f, forwardY = 0.0f, forwardZ = 1.0f;
         float rightX = 1.0f, rightZ = 0.0f;
         float upX = 0.0f, upY = 1.0f, upZ = 0.0f;
         if (!shortestDistance) {
-            float yaw = (float)(world.yaw * Math.PI / 180.0);
-            float pitch = (float)(cameraPitch * Math.PI / 180.0);
-            sinYaw = (float)Math.sin(yaw); cosYaw = (float)Math.cos(yaw);
-            sinPitch = (float)Math.sin(pitch); cosPitch = (float)Math.cos(pitch);
-            forwardX = sinYaw * cosPitch; forwardY = sinPitch; forwardZ = cosYaw * cosPitch;
-            rightX = cosYaw; rightZ = -sinYaw;
-            upX = -sinYaw * sinPitch; upY = cosPitch; upZ = -cosYaw * sinPitch;
+            if (world.yaw != basisYaw || cameraPitch != basisPitch) {
+                float yaw = (float)(world.yaw * Math.PI / 180.0);
+                float pitch = (float)(cameraPitch * Math.PI / 180.0);
+                float sinYaw = (float)Math.sin(yaw);
+                float cosYaw = (float)Math.cos(yaw);
+                float sinPitch = (float)Math.sin(pitch);
+                float cosPitch = (float)Math.cos(pitch);
+                basisForwardX = sinYaw * cosPitch;
+                basisForwardY = sinPitch;
+                basisForwardZ = cosYaw * cosPitch;
+                basisRightX = cosYaw;
+                basisRightZ = -sinYaw;
+                basisUpX = -sinYaw * sinPitch;
+                basisUpY = cosPitch;
+                basisUpZ = -cosYaw * sinPitch;
+                basisYaw = world.yaw;
+                basisPitch = cameraPitch;
+            }
+            forwardX = basisForwardX; forwardY = basisForwardY; forwardZ = basisForwardZ;
+            rightX = basisRightX; rightZ = basisRightZ;
+            upX = basisUpX; upY = basisUpY; upZ = basisUpZ;
         }
 
         int shortestChunkRadius = shortestDistance ?
