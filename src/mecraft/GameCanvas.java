@@ -2550,6 +2550,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         renderDistance += delta;
         if (renderDistance < 0) renderDistance = 4;
         if (renderDistance > 4) renderDistance = 0;
+        if (renderer != null) renderer.setRenderDistance(renderDistance);
         saveSettings();
         repaint();
     }
@@ -3876,8 +3877,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         String value = Language.text(frameSkip == 0 ? "Desactivado" : (frameSkip == 1 ? "1 de cada 2" : "2 de cada 3"));
         String[] sensitivityNames = new String[] { "Muy baja", "Baja", "Normal", "Alta", "Muy alta" };
         String[] distanceNames = language == Language.ENGLISH ?
-                new String[] { "Short", "Normal", "Far", "Maximum", "Shortest" } :
-                new String[] { "Corta", "Normal", "Lejana", "Máxima", "Mínima" };
+                new String[] { "Short", "Normal", "Far", "Maximum", "Shortest (1.5)" } :
+                new String[] { "Corta", "Normal", "Lejana", "Máxima", "Mínima (1.5)" };
         drawMenuItem(g, "Frameskip: " + value, firstRowY, settingsSelection == 0);
         drawMenuItem(g, "Sensibilidad: " + sensitivityNames[cameraSensitivity], firstRowY + rowStep,
                 settingsSelection == 1);
