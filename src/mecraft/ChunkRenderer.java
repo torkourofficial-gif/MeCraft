@@ -116,7 +116,7 @@ final class ChunkRenderer {
     private final Group terrain = new Group();
     private final Background sky = new Background();
     // Shared linear fog softens the edge of the compact radial view.
-    private final Fog shortestFog = new Fog();
+    private final Fog terrainFog = new Fog();
     private final SkySystem skyObjects;
     private final Light sunlight = new Light();
     private final Light[] torchLights = new Light[3];
@@ -402,9 +402,10 @@ final class ChunkRenderer {
         // radial admission distance, not a smaller chunk size or a 1-chunk grid.
         cameraFar = shortestDistance ? 1.5f * (float)VoxelWorld.CHUNK_XZ :
                 ((streamRadius * 2 + 1) * (float)VoxelWorld.CHUNK_XZ) + 8.0f;
-        shortestFog.setColor(currentSkyColor);
-        shortestFog.setMode(Fog.LINEAR);
-        shortestFog.setLinear(cameraFar * 0.75f, cameraFar);
+        terrainFog.setColor(currentSkyColor);
+        terrainFog.setMode(Fog.LINEAR);
+        // Match Alpha's linear fog: fade begins at one quarter of view distance.
+        terrainFog.setLinear(cameraFar * 0.25f, cameraFar);
         camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
                 0.1f, cameraFar);
         externalCamera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
@@ -413,7 +414,7 @@ final class ChunkRenderer {
     }
 
     private void updateTerrainFog() {
-        Fog fog = shortestDistance ? shortestFog : null;
+        Fog fog = terrainFog;
         for (int i = 0; i < tileAppearances.length; i++) {
             if (tileAppearances[i] != null) tileAppearances[i].setFog(fog);
         }
@@ -1176,7 +1177,7 @@ final class ChunkRenderer {
         if (world.nether) {
             currentDaylight = 0.32f;
             currentSkyColor = 0xFF4A1717;
-            shortestFog.setColor(currentSkyColor);
+            terrainFog.setColor(currentSkyColor);
             sunlight.setIntensity(0.45f);
             updateTorchLights(world);
             return;
@@ -1190,7 +1191,7 @@ final class ChunkRenderer {
         // Keep moonlight visible on small, low-brightness phone displays.
         sunlight.setIntensity(0.28f + sun * 0.72f);
         currentSkyColor = blendColor(0xFF26354A, 0xFF82B8E8, sun);
-        shortestFog.setColor(currentSkyColor);
+        terrainFog.setColor(currentSkyColor);
         updateTorchLights(world);
     }
 
@@ -2058,7 +2059,7 @@ final class ChunkRenderer {
         texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         texture.setWrapping(Texture2D.WRAP_REPEAT, Texture2D.WRAP_REPEAT);
         appearance = createBlockAppearance(texture, tile == Block.atlasTile(Block.WATER));
-        if (shortestDistance) appearance.setFog(shortestFog);
+        appearance.setFog(terrainFog);
         if (tile == 234 && appearance.getMaterial() != null)
             appearance.getMaterial().setColor(Material.EMISSIVE, 0xFFFF6A18);
         tileAppearances[tile] = appearance;
