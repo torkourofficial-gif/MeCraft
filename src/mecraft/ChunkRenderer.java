@@ -1395,13 +1395,8 @@ final class ChunkRenderer {
                                 (lz == 0 || lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0);
             }
             if (affectsPending) {
-                // Preserve the work already completed, and explicitly include
-                // the edited vertical slice. The pending chunk is not marked
-                // resident until its first complete build, so relying only on
-                // assignedChunks below can otherwise lose this invalidation.
-                // pendingBuild.y is a CHUNK coordinate, not a block-layer
-                // coordinate. Use the edited local Y slice; edits immediately
-                // across a vertical chunk seam belong to the edge slice.
+                // Discard the stale in-progress build and rebuild this chunk
+                // once from the current world state.
                 dirtyChunks[pendingBuildSlot] = true;
                 pendingBuild = null;
                 pendingBuildSlot = -1;
@@ -1420,12 +1415,8 @@ final class ChunkRenderer {
                     y < by0 - TORCH_LIGHT_RADIUS || y >= by0 + VoxelWorld.CHUNK_Y + TORCH_LIGHT_RADIUS ||
                     z < bz0 - TORCH_LIGHT_RADIUS || z >= bz0 + VoxelWorld.CHUNK_XZ + TORCH_LIGHT_RADIUS)
                     continue;
-                int baseY = chunkWorldY[i] * VoxelWorld.CHUNK_Y;
-                for (int layer = 0; layer < VoxelWorld.CHUNKS_Y; layer++) {
-                    int layerMin = baseY + layer * VoxelWorld.CHUNK_Y;
-                    int layerMax = layerMin + VoxelWorld.CHUNK_Y;
-                    if (y >= layerMin - TORCH_LIGHT_RADIUS && y < layerMax + TORCH_LIGHT_RADIUS)
-                }
+                // The chunk is rebuilt as a whole, so one light-source edit
+                // invalidates this chunk without tracking individual slices.
                 dirtyChunks[i] = true;
                 if (chunkWorldX[i] == cx && chunkWorldY[i] == cy &&
                         chunkWorldZ[i] == cz) pendingTargetSlot = i;
@@ -1434,9 +1425,8 @@ final class ChunkRenderer {
             if (Math.abs(chunkWorldX[i] - cx) > (lx == 0 || lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0) ||
                 Math.abs(chunkWorldY[i] - cy) > (ly == 0 || ly == VoxelWorld.CHUNK_Y - 1 ? 1 : 0) ||
                 Math.abs(chunkWorldZ[i] - cz) > (lz == 0 || lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0)) continue;
-            // A changed voxel affects its own slice and the slices directly
-            // above and below: their bottom/top faces may become visible or hidden.
-            // At a vertical chunk seam, only the touching edge slice is affected.
+            // Rebuild the full chunk; horizontal boundary edits also invalidate
+            // the adjacent chunk whose shared face may have changed.
             dirtyChunks[i] = true;
             // Prioritize the exact edited chunk. Otherwise a nearby dirty
             // neighbor can win the distance scan and delay the visible edit.
