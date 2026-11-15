@@ -4621,6 +4621,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         g.drawLine(panelX + 9, panelY + 35, panelX + panelWidth - 10, panelY + 35);
         for (int i = 0; i < PAUSE_ROWS.length; i++)
             drawMenuItem(g, PAUSE_ROWS[i], panelY + 40 + i * 27, i == pauseSelection);
+        if (renderer != null) {
+            g.setColor(70, 55, 40);
+            g.drawString(renderer.performanceStats(), w / 2, panelY + panelHeight - 15,
+                    Graphics.HCENTER | Graphics.TOP);
+        }
     }
 
     private void drawGameOver(Graphics g) {
