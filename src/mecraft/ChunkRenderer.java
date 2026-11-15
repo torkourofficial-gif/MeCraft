@@ -139,9 +139,6 @@ final class ChunkRenderer {
     private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[FACE_TILE_COUNT];
     private final int[] activeFaceBuilderIndices = new int[FACE_TILE_COUNT];
     private int activeFaceBuilderCount;
-    private int lastFaceCullCenterX = Integer.MIN_VALUE;
-    private int lastFaceCullCenterY = Integer.MIN_VALUE;
-    private int lastFaceCullCenterZ = Integer.MIN_VALUE;
     private float currentBuildEyeX, currentBuildEyeY, currentBuildEyeZ;
     private int chunkNonAirBlocks;
     private int completedChunkBuilds;
@@ -1479,27 +1476,21 @@ final class ChunkRenderer {
         float y0 = cy * VoxelWorld.CHUNK_Y;
         float z0 = cz * VoxelWorld.CHUNK_XZ;
         final float margin = cameraMode == 0 ? 0.5f : 4.0f;
-        setFaceEnabled(chunk.faceMeshes, 0, eyeY >= y0 - margin);
-        setFaceEnabled(chunk.faceMeshes, 1, eyeX <= x0 + VoxelWorld.CHUNK_XZ + margin);
-        setFaceEnabled(chunk.faceMeshes, 2, eyeX >= x0 - margin);
-        setFaceEnabled(chunk.faceMeshes, 3, eyeZ <= z0 + VoxelWorld.CHUNK_XZ + margin);
-        setFaceEnabled(chunk.faceMeshes, 4, eyeZ >= z0 - margin);
-        setFaceEnabled(chunk.faceMeshes, 5, eyeY <= y0 + VoxelWorld.CHUNK_Y + margin);
-    }
-
-    private void setFaceEnabled(Mesh[] meshes, int face, boolean enabled) {
-        if (meshes[face] != null) meshes[face].setRenderingEnable(enabled);
+        int mask = 0;
+        if (eyeY >= y0 - margin) mask |= 1;
+        if (eyeX <= x0 + VoxelWorld.CHUNK_XZ + margin) mask |= 1 << 1;
+        if (eyeX >= x0 - margin) mask |= 1 << 2;
+        if (eyeZ <= z0 + VoxelWorld.CHUNK_XZ + margin) mask |= 1 << 3;
+        if (eyeZ >= z0 - margin) mask |= 1 << 4;
+        if (eyeY <= y0 + VoxelWorld.CHUNK_Y + margin) mask |= 1 << 5;
+        if (mask == chunk.faceCullMask) return;
+        chunk.faceCullMask = mask;
+        for (int face = 0; face < FACE_COUNT; face++)
+            if (chunk.faceMeshes[face] != null)
+                chunk.faceMeshes[face].setRenderingEnable((mask & (1 << face)) != 0);
     }
 
     private void updateChunkFaceCulling(VoxelWorld world) {
-        int centerX = floorDiv((int)world.playerX, VoxelWorld.CHUNK_XZ);
-        int centerY = (int)world.playerY / VoxelWorld.CHUNK_Y;
-        int centerZ = floorDiv((int)world.playerZ, VoxelWorld.CHUNK_XZ);
-        if (centerX == lastFaceCullCenterX && centerY == lastFaceCullCenterY &&
-                centerZ == lastFaceCullCenterZ) return;
-        lastFaceCullCenterX = centerX;
-        lastFaceCullCenterY = centerY;
-        lastFaceCullCenterZ = centerZ;
         float eyeX = world.playerX;
         float eyeY = world.playerY + 1.62f;
         float eyeZ = world.playerZ;
@@ -1885,6 +1876,7 @@ final class ChunkRenderer {
         int portalCount = buildingPortals == null ? 0 : 1;
         Mesh[] faceMeshes = count > 0 ? makeChunkBlockMeshes() : new Mesh[FACE_COUNT];
         targetChunk.faceMeshes = faceMeshes;
+        targetChunk.faceCullMask = -1;
         int blockMeshCount = 0;
         for (int face = 0; face < FACE_COUNT; face++)
             if (faceMeshes[face] != null) blockMeshCount++;
@@ -2511,6 +2503,7 @@ final class ChunkRenderer {
     private static final class Chunk {
         Mesh[] meshes;
         Mesh[] faceMeshes;
+        int faceCullMask = -1;
         boolean attached;
         FireBuilder[] fires;
         Mesh crackMesh;
