@@ -1754,9 +1754,9 @@ final class ChunkRenderer {
 
     /** Last completed chunk timings, shown only while the pause menu is open. */
     String performanceStats() {
-        return "Chunks " + completedChunkBuilds + " (remesh " + completedDirtyRebuilds +
-                ")  ms: " + lastChunkBuildMillis + " / cuevas " + lastCaveBuildMillis +
-                " / M3G " + lastMeshAssemblyMillis;
+        return "B" + completedChunkBuilds + " R" + completedDirtyRebuilds +
+                " T" + lastChunkBuildMillis + " C" + lastCaveBuildMillis +
+                " M" + lastMeshAssemblyMillis + "ms";
     }
 
     /** Start clean per-chunk geometry accumulators before reading its first layer. */
