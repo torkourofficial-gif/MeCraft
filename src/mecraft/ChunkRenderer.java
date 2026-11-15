@@ -1470,6 +1470,8 @@ final class ChunkRenderer {
         int children = terrain.getChildCount();
         for (int i = 0; i < children; i++) {
             Mesh mesh = (Mesh)terrain.getChild(i);
+            // Directional face buckets disabled by camera culling are excluded.
+            if (!mesh.isRenderingEnabled()) continue;
             vertices += mesh.getVertexBuffer().getVertexCount();
             int submeshes = mesh.getSubmeshCount();
             for (int sub = 0; sub < submeshes; sub++) {
