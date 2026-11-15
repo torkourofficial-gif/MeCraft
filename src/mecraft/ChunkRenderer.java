@@ -1842,9 +1842,6 @@ final class ChunkRenderer {
             }
         }
         buildingFlowers = null;
-         chunkAirQueueScratch[tail++] = (short)index;
-        }
-        return tail;
     }
 
     private void buildChunkLayer(VoxelWorld world, int cx, int cy, int cz,
