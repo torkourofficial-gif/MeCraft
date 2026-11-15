@@ -1810,7 +1810,7 @@ final class ChunkRenderer {
             chunkFaceBuilders[index] = null;
             if (freeFaceBuilderCount < freeFaceBuilders.length &&
                     builder.p.length <= 1536) {
-                builder.reset(0, 0);
+                builder.reset(0);
                 freeFaceBuilders[freeFaceBuilderCount++] = builder;
             }
         }
@@ -2003,8 +2003,8 @@ final class ChunkRenderer {
                         if (builders[tile] == null) {
                             FaceBuilder builder = freeFaceBuilderCount > 0 ?
                                     freeFaceBuilders[--freeFaceBuilderCount] : null;
-                            if (builder == null) builder = new FaceBuilder(tile, light);
-                            else builder.reset(tile, light);
+                            if (builder == null) builder = new FaceBuilder(tile);
+                            else builder.reset(tile);
                             builders[tile] = builder;
                             activeFaceBuilderIndices[activeFaceBuilderCount++] = tile;
                         }
@@ -2032,7 +2032,7 @@ final class ChunkRenderer {
     }
 
     private void add(FaceBuilder[] builders, int tile, int x, int y, int z, int face) {
-        if (builders[tile] == null) builders[tile] = new FaceBuilder(tile, 0);
+        if (builders[tile] == null) builders[tile] = new FaceBuilder(tile);
         builders[tile].add(x, y, z, face);
     }
 
@@ -2563,19 +2563,16 @@ final class ChunkRenderer {
     /** Reuses one short position array per material; no per-block scene nodes. */
     private static final class FaceBuilder {
         int tile;
-        int lightLevel;
         short[] p = new short[192];
         short[] uv = new short[128];
         byte[] c = new byte[256];
         int vertexCount;
         int faceCount;
 
-        FaceBuilder(int tile) { this(tile, 0); }
-        FaceBuilder(int tile, int lightLevel) { reset(tile, lightLevel); }
+        FaceBuilder(int tile) { reset(tile); }
 
-        void reset(int nextTile, int nextLightLevel) {
+        void reset(int nextTile) {
             tile = nextTile;
-            lightLevel = nextLightLevel;
             vertexCount = 0;
             faceCount = 0;
         }
@@ -2642,10 +2639,6 @@ final class ChunkRenderer {
                 vertex(x,y,z+1, u0,v1,shade); vertex(x+1,y,z+1, u1,v1,shade);
             }
             faceCount++;
-        }
-
-        private int litShade(int face) {
-            return litShade(face, lightLevel);
         }
 
         private int litShade(int face, int light) {
