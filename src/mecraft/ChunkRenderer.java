@@ -1094,6 +1094,7 @@ final class ChunkRenderer {
     /** The loop timer is stored by chunk, while the visible first-person arm
      * samples only the currently mined chunk's timer. */
     void setHandLooping(int x, int y, int z, boolean looping) {
+        if (playerModel != null) playerModel.setActionLooping(looping);
         int slot = x < 0 ? -1 : findChunkSlot(x, y, z);
         if (activeMiningChunkSlot >= 0 && activeMiningChunkSlot < chunks.length &&
                 chunks[activeMiningChunkSlot] != null && activeMiningChunkSlot != slot)
