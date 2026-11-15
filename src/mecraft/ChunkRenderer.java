@@ -57,15 +57,6 @@ final class ChunkRenderer {
     private static final int WATER_BUCKET = FACE_COUNT;
     private static final int FACE_BUCKET_COUNT = FACE_COUNT + 1;
     private static final int FACE_TILE_COUNT = TILE_COUNT * FACE_BUCKET_COUNT;
-    private static final int TORCH_LIGHT_RADIUS = 6;
-    private static final int LAVA_LIGHT_RADIUS = 6;
-    private static final int MAX_CHUNK_TORCHES = 128;
-    private final int[] chunkTorchX = new int[MAX_CHUNK_TORCHES];
-    private final int[] chunkTorchY = new int[MAX_CHUNK_TORCHES];
-    private final int[] chunkTorchZ = new int[MAX_CHUNK_TORCHES];
-    private final byte[] chunkLightRadius = new byte[MAX_CHUNK_TORCHES];
-    private final boolean[] chunkLavaSource = new boolean[MAX_CHUNK_TORCHES];
-    private int chunkTorchCount;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
     // Half-diagonal of a 16x16x16 chunk, rounded up to avoid false culls.
     private static final float CHUNK_RADIUS = 14.0f;
@@ -131,8 +122,6 @@ final class ChunkRenderer {
     private final int[] chunkWorldZ = new int[CACHE_SIZE];
     // Full voxel snapshot for one chunk section; each source layer is copied into place once.
     private final byte[] chunkVoxelScratch = new byte[VoxelWorld.CHUNK_XZ *
-            VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
-    private final byte[] chunkLightScratch = new byte[VoxelWorld.CHUNK_XZ *
             VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
     private final int[] greedyMaskScratch = new int[CHUNK_AREA];
     // One chunk is meshed at a time; reuse the large material lookup table to
@@ -1363,33 +1352,18 @@ final class ChunkRenderer {
         int lx = x - cx * VoxelWorld.CHUNK_XZ;
         int ly = y % VoxelWorld.CHUNK_Y;
         int lz = z - cz * VoxelWorld.CHUNK_XZ;
-        boolean torchChanged = world.changedOldId == Block.TORCH ||
-                world.getLoaded(x, y, z) == Block.TORCH;
-
         // Keep an in-progress mesh job when this edit is elsewhere. Throwing
         // away a partially meshed visible chunk on every world revision caused
         // the renderer to repeat expensive M3G work while the player was moving.
         if (pendingBuild != null && pendingBuildSlot >= 0) {
             boolean affectsPending;
-            if (torchChanged) {
-                int bx0 = pendingBuild.x * VoxelWorld.CHUNK_XZ;
-                int by0 = pendingBuild.y * VoxelWorld.CHUNK_Y;
-                int bz0 = pendingBuild.z * VoxelWorld.CHUNK_XZ;
-                affectsPending = x >= bx0 - TORCH_LIGHT_RADIUS &&
-                        x < bx0 + VoxelWorld.CHUNK_XZ + TORCH_LIGHT_RADIUS &&
-                        y >= by0 - TORCH_LIGHT_RADIUS &&
-                        y < by0 + VoxelWorld.CHUNK_Y + TORCH_LIGHT_RADIUS &&
-                        z >= bz0 - TORCH_LIGHT_RADIUS &&
-                        z < bz0 + VoxelWorld.CHUNK_XZ + TORCH_LIGHT_RADIUS;
-            } else {
-                affectsPending =
-                        Math.abs(pendingBuild.x - cx) <=
-                                (lx == 0 || lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0) &&
-                        Math.abs(pendingBuild.y - cy) <=
-                                (ly == 0 || ly == VoxelWorld.CHUNK_Y - 1 ? 1 : 0) &&
-                        Math.abs(pendingBuild.z - cz) <=
-                                (lz == 0 || lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0);
-            }
+            affectsPending =
+                    Math.abs(pendingBuild.x - cx) <=
+                            (lx == 0 || lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0) &&
+                    Math.abs(pendingBuild.y - cy) <=
+                            (ly == 0 || ly == VoxelWorld.CHUNK_Y - 1 ? 1 : 0) &&
+                    Math.abs(pendingBuild.z - cz) <=
+                            (lz == 0 || lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0);
             if (affectsPending) {
                 // Discard the stale in-progress build and rebuild this chunk
                 // once from the current world state.
@@ -1403,21 +1377,6 @@ final class ChunkRenderer {
             // Include a chunk whose first mesh is still being built. Such a
             // slot already has world coordinates but is not resident yet.
             if (!assignedChunks[i]) continue;
-            if (torchChanged) {
-                int bx0 = chunkWorldX[i] * VoxelWorld.CHUNK_XZ;
-                int by0 = chunkWorldY[i] * VoxelWorld.CHUNK_Y;
-                int bz0 = chunkWorldZ[i] * VoxelWorld.CHUNK_XZ;
-                if (x < bx0 - TORCH_LIGHT_RADIUS || x >= bx0 + VoxelWorld.CHUNK_XZ + TORCH_LIGHT_RADIUS ||
-                    y < by0 - TORCH_LIGHT_RADIUS || y >= by0 + VoxelWorld.CHUNK_Y + TORCH_LIGHT_RADIUS ||
-                    z < bz0 - TORCH_LIGHT_RADIUS || z >= bz0 + VoxelWorld.CHUNK_XZ + TORCH_LIGHT_RADIUS)
-                    continue;
-                // The chunk is rebuilt as a whole, so one light-source edit
-                // invalidates this chunk without tracking individual slices.
-                dirtyChunks[i] = true;
-                if (chunkWorldX[i] == cx && chunkWorldY[i] == cy &&
-                        chunkWorldZ[i] == cz) pendingTargetSlot = i;
-                continue;
-            }
             if (Math.abs(chunkWorldX[i] - cx) > (lx == 0 || lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0) ||
                 Math.abs(chunkWorldY[i] - cy) > (ly == 0 || ly == VoxelWorld.CHUNK_Y - 1 ? 1 : 0) ||
                 Math.abs(chunkWorldZ[i] - cz) > (lz == 0 || lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0)) continue;
@@ -1848,11 +1807,6 @@ final class ChunkRenderer {
                         layer * CHUNK_AREA);
             }
             lastSnapshotBuildMillis = System.currentTimeMillis() - caveStartedAt;
-            collectChunkTorches(world, cx * VoxelWorld.CHUNK_XZ,
-                    cy * VoxelWorld.CHUNK_Y, cz * VoxelWorld.CHUNK_XZ,
-                    (cx + 1) * VoxelWorld.CHUNK_XZ,
-                    (cy + 1) * VoxelWorld.CHUNK_Y,
-                    (cz + 1) * VoxelWorld.CHUNK_XZ);
         }
         ChunkBuild job = pendingBuild;
         // A chunk is one render unit: rebuild all of its vertical slices into
@@ -2027,8 +1981,6 @@ final class ChunkRenderer {
         int z0 = cz * VoxelWorld.CHUNK_XZ;
         int voxelLayerOffset = layer * CHUNK_AREA;
 
-        fillChunkLightSlice(x0, y0, z0, layer);
-
         for (int z = 0; z < VoxelWorld.CHUNK_XZ; z++) {
             int row = voxelLayerOffset + z * VoxelWorld.CHUNK_XZ;
             for (int x = 0; x < VoxelWorld.CHUNK_XZ; x++) {
@@ -2036,9 +1988,6 @@ final class ChunkRenderer {
                 byte id = chunkVoxelScratch[row + x];
                 if (id == Block.AIR) continue;
                 chunkNonAirBlocks++;
-
-                if (id == Block.LAVA)
-                    chunkLightScratch[voxelLayerOffset + localIndex] = 14;
 
                 if (id == Block.PORTAL) {
                     if (buildingPortals == null) buildingPortals = reusablePortalBuilder;
@@ -2140,7 +2089,9 @@ final class ChunkRenderer {
                                         world.woolColor(wx, wy, wz) : 0;
                                 int tile = renderWorldTile(world, id, face,
                                         wx, wy, wz, woolColor);
-                                int light = chunkLightScratch[voxelIndex] & 255;
+                                // Local light propagation is intentionally disabled:
+                                // global ambient light handles the scene; lava stays emissive.
+                                int light = id == Block.LAVA ? 14 : 0;
                                 key = light * TILE_COUNT + tile + 1;
                             }
                         }
@@ -2460,55 +2411,6 @@ final class ChunkRenderer {
             appearance.getMaterial().setColor(Material.EMISSIVE, 0xFFFF6A18);
         tileAppearances[tile] = appearance;
         return appearance;
-    }
-
-    /** Gather nearby torch blocks once per chunk build; lighting stays block-quantized. */
-    private void collectChunkTorches(VoxelWorld world, int x0, int y0, int z0,
-                                     int x1, int y1, int z1) {
-        int scanRadius = LAVA_LIGHT_RADIUS;
-        int minY = Math.max(0, y0 - scanRadius);
-        int maxY = Math.min(VoxelWorld.HEIGHT - 1, y1 + scanRadius - 1);
-        chunkTorchCount = world.collectTorchSources(
-                x0 - scanRadius, minY, z0 - scanRadius,
-                x1 + scanRadius - 1, maxY, z1 + scanRadius - 1,
-                chunkTorchX, chunkTorchY, chunkTorchZ,
-                chunkLavaSource, MAX_CHUNK_TORCHES);
-        for (int i = 0; i < chunkTorchCount; i++) {
-            chunkLightRadius[i] = (byte)(chunkLavaSource[i] ?
-                    LAVA_LIGHT_RADIUS : TORCH_LIGHT_RADIUS);
-        }
-    }
-
-    /**
-     * Precomputes this one-block-high slice by projecting each nearby source
-     * into its bounded Manhattan-radius footprint. This replaces a scan of
-     * every source for every voxel during meshing.
-     */
-    private void fillChunkLightSlice(int x0, int y, int z0, int layer) {
-        int layerOffset = layer * CHUNK_AREA;
-        for (int i = 0; i < CHUNK_AREA; i++) chunkLightScratch[layerOffset + i] = 0;
-        for (int source = 0; source < chunkTorchCount; source++) {
-            int radius = chunkLightRadius[source] & 255;
-            int dy = Math.abs(y - chunkTorchY[source]);
-            if (dy > radius) continue;
-            int remaining = radius - dy;
-            int minX = Math.max(0, chunkTorchX[source] - x0 - remaining);
-            int maxX = Math.min(VoxelWorld.CHUNK_XZ - 1, chunkTorchX[source] - x0 + remaining);
-            int minZ = Math.max(0, chunkTorchZ[source] - z0 - remaining);
-            int maxZ = Math.min(VoxelWorld.CHUNK_XZ - 1, chunkTorchZ[source] - z0 + remaining);
-            int multiplier = chunkLavaSource[source] ? 2 : 3;
-            for (int z = minZ; z <= maxZ; z++) {
-                int zDistance = Math.abs(z0 + z - chunkTorchZ[source]);
-                for (int x = minX; x <= maxX; x++) {
-                    int distance = dy + zDistance + Math.abs(x0 + x - chunkTorchX[source]);
-                    int level = (radius + 1 - distance) * multiplier;
-                    if (level > 14) level = 14;
-                    int at = layerOffset + z * VoxelWorld.CHUNK_XZ + x;
-                    if (level > (chunkLightScratch[at] & 255))
-                        chunkLightScratch[at] = (byte)level;
-                }
-            }
-        }
     }
 
     private int renderWorldTile(VoxelWorld world, byte id, int face,
