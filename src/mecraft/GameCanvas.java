@@ -3176,6 +3176,20 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (state == MENU && width > 0 && height > 0) loadTitle();
     }
 
+    /**
+     * Prefer M3G 1.1 OVERWRITE: the World background fills the viewport,
+     * so preserving the target's previous pixels is unnecessary. Older
+     * M3G 1.0 implementations reject this hint; fall back to no quality hints.
+     */
+    private void bindPerformanceTarget(Graphics3D graphics3D, Graphics target) {
+        try {
+            // OVERWRITE is bit 16 in JSR-184 M3G 1.1.
+            graphics3D.bindTarget(target, true, 16);
+        } catch (IllegalArgumentException unsupportedOverwrite) {
+            graphics3D.bindTarget(target, true, 0);
+        }
+    }
+
     protected synchronized void paint(Graphics g) {
         if (state == TOUCH_SETUP) {
             drawTouchSetup(g);
@@ -3190,8 +3204,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 stage = "obteniendo contexto Graphics3D";
                 Graphics3D graphics3D = Graphics3D.getInstance();
                 stage = "enlazando Graphics del Canvas a M3G";
-                // Disable optional quality enhancements; retain depth buffering for 3D visibility.
-                graphics3D.bindTarget(g, true, 0);
+                                bindPerformanceTarget(graphics3D, g);
                 try {
                     stage = "configurando viewport M3G";
                     graphics3D.setViewport(0, 0, getWidth(), getHeight());
@@ -3988,8 +4001,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (skinGallery != null && viewportWidth > 0) {
             try {
                 Graphics3D graphics3D = Graphics3D.getInstance();
-                // Disable optional quality enhancements; retain depth buffering for 3D visibility.
-                graphics3D.bindTarget(g, true, 0);
+                                bindPerformanceTarget(graphics3D, g);
                 try {
                     graphics3D.setViewport(viewportX, viewportY, viewportWidth, viewportHeight);
                     skinGallery.render(graphics3D, System.currentTimeMillis());
