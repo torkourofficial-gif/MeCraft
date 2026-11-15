@@ -1089,6 +1089,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             if (world.mode == 0)
                 damageTool(hotbar[world.selectedSlot],
                         ItemCatalog.durabilityCost(hotbar[world.selectedSlot]));
+            // Keep the actual removed block as the priority coordinate even though
+            // removing a two-part door increments the world revision more than once.
+            world.changedOldId = id;
+            world.changedX = x;
+            world.changedY = lowerY;
+            world.changedZ = z;
             // Rebuild the removed door first, then emit debris so the visual burst
             // cannot be lost behind a terrain rebuild on slower M3G implementations.
             resetMining();
@@ -1144,6 +1150,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             }
             if (world.mode == 0 && id != Block.FIRE)
                 damageTool(heldItem, ItemCatalog.durabilityCost(heldItem));
+            // Attached blocks can be removed in the same operation. Preserve the
+            // primary edit as the renderer's priority target after those cascades.
+            world.changedOldId = id;
+            world.changedX = x;
+            world.changedY = y;
+            world.changedZ = z;
             // Sync the changed terrain before creating the burst. Fire vanishes
             // silently, while ordinary blocks retain their destruction particles.
             resetMining();
