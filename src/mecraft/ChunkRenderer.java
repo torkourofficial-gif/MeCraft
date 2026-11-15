@@ -1767,7 +1767,7 @@ final class ChunkRenderer {
         reusablePortalBuilder.reset();
     }
 
-    /** Assemble one block Mesh with one submesh/material per atlas tile. */
+    /** Assemble the chunk as simple per-material M3G meshes plus special geometry. */
     private Mesh[] finishChunkMeshes(VoxelWorld world, int cx, int cy, int cz) {
         buildChunkFaces(world, cx, cy, cz);
         int count = activeFaceBuilderCount;
@@ -1797,8 +1797,8 @@ final class ChunkRenderer {
         int z = cz * VoxelWorld.CHUNK_XZ;
         for (int i = 0; i < meshes.length; i++) meshes[i].setTranslation(x, y, z);
 
-        // Return material builders to the bounded pool only after their data
-        // has been copied into the shared vertex buffer.
+        // Return material builders to the bounded pool only after makeMesh has
+        // copied their vertex data into the corresponding M3G arrays.
         for (int active = 0; active < activeFaceBuilderCount; active++) {
             int index = activeFaceBuilderIndices[active];
             FaceBuilder builder = chunkFaceBuilders[index];
