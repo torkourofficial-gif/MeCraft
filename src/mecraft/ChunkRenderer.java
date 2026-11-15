@@ -31,10 +31,7 @@ final class ChunkRenderer {
     // All vertical layers are accumulated into one block mesh per chunk.
     private ChunkBuild pendingBuild;
     private int pendingBuildSlot = -1;
-    // Paint can run several times during one 50 ms game tick. A selected
-    // chunk is assembled completely in one build operation, regardless of
-    // redraw frequency.
-    private long lastChunkBuildTime;
+    // One complete chunk is built synchronously per renderer update.
     // Cache the active mesh job's camera key to skip a full stream-window scan
     // on every paint while that same chunk is being built.
     private boolean pendingViewKeyValid;
@@ -43,8 +40,7 @@ final class ChunkRenderer {
     private float pendingViewPitch, pendingViewFar;
     private int pendingViewCenterX, pendingViewCenterZ, pendingViewRadius;
     private boolean pendingViewShortest;
-    // Remember the next dirty chunk so paint calls do not rescan the full
-    // streaming window while the mesh-build cadence timer is waiting.
+    // Remember the next dirty chunk so paint calls can reuse the stream scan.
     private int pendingTargetSlot = -1;
     private int pendingTargetX, pendingTargetY, pendingTargetZ;
     // Reuse the camera basis while the player moves: PS1-style precomputed
@@ -53,9 +49,6 @@ final class ChunkRenderer {
     private float basisForwardX, basisForwardY, basisForwardZ;
     private float basisRightX, basisRightZ;
     private float basisUpX, basisUpY, basisUpZ;
-    // Adapt the gap between complete chunk builds to their measured cost.
-    // A slow device gets more breathing room; fast devices can stream sooner.
-    private int chunkBuildIntervalMillis = 50;
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
@@ -1668,10 +1661,6 @@ final class ChunkRenderer {
     }
 
     private void advanceChunkBuild(VoxelWorld world, int slot, int cx, int cy, int cz) {
-        long now = System.currentTimeMillis();
-        if (lastChunkBuildTime != 0L &&
-            now - lastChunkBuildTime < chunkBuildIntervalMillis) return;
-        lastChunkBuildTime = now;
         // Do not bake exposed faces against procedural neighbors that have not
         // finished loading yet.
         world.requestProceduralChunk(cx, cz);
@@ -1691,7 +1680,6 @@ final class ChunkRenderer {
                     (cz + 1) * VoxelWorld.CHUNK_XZ);
         }
         ChunkBuild job = pendingBuild;
-        long buildStarted = System.currentTimeMillis();
         while (job.nextLayer < VoxelWorld.CHUNK_Y &&
                 (job.dirtyMask & (1 << job.nextLayer)) == 0) job.nextLayer++;
         // Read every vertical slice into the same material builders. No partial
@@ -1701,10 +1689,6 @@ final class ChunkRenderer {
             buildChunkLayer(world, cx, cy, cz, layer);
             while (job.nextLayer < VoxelWorld.CHUNK_Y &&
                     (job.dirtyMask & (1 << job.nextLayer)) == 0) job.nextLayer++;
-        }
-        if (job.nextLayer < VoxelWorld.CHUNK_Y) {
-            recordChunkBuildCost(buildStarted);
-            return;
         }
 
         FireBuilder completedFireBuilder = buildingFires;
@@ -1733,7 +1717,6 @@ final class ChunkRenderer {
         dirtyLayerMasks[slot] = 0;
         pendingBuild = null;
         pendingBuildSlot = -1;
-        recordChunkBuildCost(buildStarted);
     }
 
     /** Start clean per-chunk geometry accumulators before reading its first layer. */
@@ -1789,24 +1772,6 @@ final class ChunkRenderer {
         buildingFires = null;
         buildingPortals = null;
         return meshes;
-    }
-
-    /** Tune streaming cadence from the measured cost of the last complete chunk. */
-    private void recordChunkBuildCost(long startedAt) {
-        long elapsed = System.currentTimeMillis() - startedAt;
-        if (elapsed >= 45L) {
-            chunkBuildIntervalMillis += 25;
-            if (chunkBuildIntervalMillis > 125) chunkBuildIntervalMillis = 125;
-        } else if (elapsed >= 25L) {
-            chunkBuildIntervalMillis += 15;
-            if (chunkBuildIntervalMillis > 100) chunkBuildIntervalMillis = 100;
-        } else if (elapsed <= 8L) {
-            chunkBuildIntervalMillis -= 5;
-            if (chunkBuildIntervalMillis < 30) chunkBuildIntervalMillis = 30;
-        } else if (elapsed <= 14L) {
-            chunkBuildIntervalMillis -= 2;
-            if (chunkBuildIntervalMillis < 35) chunkBuildIntervalMillis = 35;
-        }
     }
 
     /**
