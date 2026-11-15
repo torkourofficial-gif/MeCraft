@@ -1485,6 +1485,19 @@ final class ChunkRenderer {
         int lastChunkX = centerX + shortestChunkRadius;
         int firstChunkZ = centerZ - shortestChunkRadius;
         int lastChunkZ = centerZ + shortestChunkRadius;
+        // Old worlds have a hard 240x240 border (15x15 chunks). Clamp the
+        // candidate rectangle before scanning or assigning cache slots: the
+        // infinite-world path still streams freely, while finite worlds avoid
+        // visiting impossible coordinates and never reserve edge slots outside
+        // their playable area. The 15-slot ring maps every old-world chunk
+        // coordinate uniquely, so no extra modulo/collision handling is needed.
+        if (world.worldSize == VoxelWorld.SIZE_OLD) {
+            int lastWorldChunk = 240 / VoxelWorld.CHUNK_XZ - 1;
+            if (firstChunkX < 0) firstChunkX = 0;
+            if (firstChunkZ < 0) firstChunkZ = 0;
+            if (lastChunkX > lastWorldChunk) lastChunkX = lastWorldChunk;
+            if (lastChunkZ > lastWorldChunk) lastChunkZ = lastWorldChunk;
+        }
 
         // Evict only chunks that have actually left the horizontal stream window.
         for (int i = 0; i < CACHE_SIZE; i++) {
