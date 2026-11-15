@@ -10,6 +10,7 @@ import javax.microedition.m3g.Graphics3D;
 import javax.microedition.m3g.Fog;
 import javax.microedition.m3g.Group;
 import javax.microedition.m3g.Image2D;
+import javax.microedition.m3g.IndexBuffer;
 import javax.microedition.m3g.Light;
 import javax.microedition.m3g.Mesh;
 import javax.microedition.m3g.Material;
@@ -27,8 +28,7 @@ final class ChunkRenderer {
     // distance scans only the chunk columns whose bounds can intersect its
     // 24-block (1.5-chunk) radius; it does not need an extra candidate ring.
     private static final int MAX_STREAM_RADIUS = 7;
-    // A full chunk build is split into eight one-block-high slices. Each finished
-    // slice is attached to the scene immediately instead of being batched at the end.
+    // All vertical layers are accumulated into one block mesh per chunk.
     private ChunkBuild pendingBuild;
     private int pendingBuildSlot = -1;
     // Paint can run several times during one 50 ms game tick. Keep chunk
@@ -156,6 +156,10 @@ final class ChunkRenderer {
     private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[TILE_COUNT];
     private final int[] activeFaceBuilderIndices = new int[TILE_COUNT];
     private int activeFaceBuilderCount;
+    // Per-chunk accumulators: tile geometry is retained across every vertical layer.
+    private FlowerBuilder buildingFlowers;
+    private FireBuilder buildingFires;
+    private PortalBuilder buildingPortals;
     // A bounded pool avoids allocating FaceBuilder arrays for every streamed
     // chunk without retaining one builder for every possible tile/light pair.
     private final FaceBuilder[] freeFaceBuilders = new FaceBuilder[32];
@@ -1422,15 +1426,7 @@ final class ChunkRenderer {
     private void removeChunk(int i) {
         if (pendingBuildSlot == i) { pendingBuild = null; pendingBuildSlot = -1; }
         if (chunks[i] != null) {
-            Mesh[][] layers = chunks[i].layerMeshes;
-            if (layers != null) {
-                for (int layer = 0; layer < layers.length; layer++) {
-                    Mesh[] layerMeshes = layers[layer];
-                    if (layerMeshes == null) continue;
-                    for (int m = 0; m < layerMeshes.length; m++)
-                        terrain.removeChild(layerMeshes[m]);
-                }
-            } else if (chunks[i].meshes != null) {
+            if (chunks[i].meshes != null) {
                 for (int m = 0; m < chunks[i].meshes.length; m++)
                     terrain.removeChild(chunks[i].meshes[m]);
             }
@@ -1676,20 +1672,17 @@ final class ChunkRenderer {
         if (lastChunkBuildTime != 0L &&
             now - lastChunkBuildTime < chunkBuildIntervalMillis) return;
         lastChunkBuildTime = now;
-        // Queue the center and its face-neighbors. Do not mesh yet: treating
-        // an unloaded neighbor as air would bake false exposed faces into this
-        // section, and those faces would remain until another rebuild.
+        // Do not bake exposed faces against procedural neighbors that have not
+        // finished loading yet.
         world.requestProceduralChunk(cx, cz);
         if (!world.areProceduralChunkNeighborsReady(cx, cz)) return;
 
         if (pendingBuild == null || pendingBuildSlot != slot ||
             pendingBuild.x != cx || pendingBuild.y != cy || pendingBuild.z != cz) {
-            // Cave visibility is a 3D connectivity result: changing one layer
-            // can expose or seal cave air in every other layer of this section.
-            // Rebuild the complete vertical section so no stale hidden faces remain.
             int mask = (1 << VoxelWorld.CHUNK_Y) - 1;
-            pendingBuild = new ChunkBuild(slot, cx, cy, cz, mask, chunks[slot]);
+            pendingBuild = new ChunkBuild(slot, cx, cy, cz, mask);
             pendingBuildSlot = slot;
+            resetChunkMeshAccumulators();
             buildChunkAirVisibility(world, cx, cy, cz);
             collectChunkTorches(world, cx * VoxelWorld.CHUNK_XZ,
                     cy * VoxelWorld.CHUNK_Y, cz * VoxelWorld.CHUNK_XZ,
@@ -1699,39 +1692,13 @@ final class ChunkRenderer {
         }
         ChunkBuild job = pendingBuild;
         long buildStarted = System.currentTimeMillis();
-        // Keep the chunk's layer references live while the job is in progress.
-        // This lets each finished slice enter the scene immediately and also
-        // makes partially built chunks safe to evict or resume.
-        Chunk staging = chunks[slot];
-        if (staging == null) {
-            staging = new Chunk();
-            staging.layerMeshes = job.layerMeshes;
-            staging.fires = job.fires;
-            staging.meshes = new Mesh[0];
-            chunks[slot] = staging;
-        } else {
-            staging.layerMeshes = job.layerMeshes;
-            staging.fires = job.fires;
-        }
         while (job.nextLayer < VoxelWorld.CHUNK_Y &&
                 (job.dirtyMask & (1 << job.nextLayer)) == 0) job.nextLayer++;
-        // Build every dirty vertical slice in this chunk during the same
-        // operation. This avoids spreading one chunk's mesh construction over
-        // multiple frames and leaving it partially present in the scene.
+        // Read every vertical slice into the same material builders. No partial
+        // layer meshes are attached to the scene.
         while (job.nextLayer < VoxelWorld.CHUNK_Y) {
             int layer = job.nextLayer++;
-            Mesh[] oldLayer = job.layerMeshes[layer];
-            if (oldLayer != null) {
-                for (int m = 0; m < oldLayer.length; m++)
-                    terrain.removeChild(oldLayer[m]);
-            }
-            Chunk slice = buildChunkLayer(world, cx, cy, cz, layer);
-            Mesh[] newLayer = slice == null ? new Mesh[0] : slice.meshes;
-            job.layerMeshes[layer] = newLayer;
-            job.fires[layer] = slice == null || slice.fires == null ||
-                    slice.fires.length == 0 ? null : slice.fires[0];
-            for (int m = 0; m < newLayer.length; m++)
-                terrain.addChild(newLayer[m]);
+            buildChunkLayer(world, cx, cy, cz, layer);
             while (job.nextLayer < VoxelWorld.CHUNK_Y &&
                     (job.dirtyMask & (1 << job.nextLayer)) == 0) job.nextLayer++;
         }
@@ -1740,22 +1707,17 @@ final class ChunkRenderer {
             return;
         }
 
-        int total = 0;
-        for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++)
-            total += job.layerMeshes[layer].length;
-        Mesh[] meshes = new Mesh[total];
-        int at = 0;
-        for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++) {
-            Mesh[] layerMeshes = job.layerMeshes[layer];
-            System.arraycopy(layerMeshes, 0, meshes, at, layerMeshes.length);
-            at += layerMeshes.length;
-        }
+        Mesh[] meshes = finishChunkMeshes(cx, cy, cz);
+        Chunk previousChunk = chunks[slot];
         Chunk complete = new Chunk();
         complete.meshes = meshes;
-        complete.layerMeshes = job.layerMeshes;
-        complete.fires = job.fires;
-        Chunk previousChunk = chunks[slot];
+        complete.fires = buildingFires == null ? null :
+                new FireBuilder[] { buildingFires };
         if (previousChunk != null) {
+            if (previousChunk.meshes != null) {
+                for (int i = 0; i < previousChunk.meshes.length; i++)
+                    terrain.removeChild(previousChunk.meshes[i]);
+            }
             complete.crackMesh = previousChunk.crackMesh;
             complete.crackPositions = previousChunk.crackPositions;
             complete.crackPositionData = previousChunk.crackPositionData;
@@ -1763,6 +1725,7 @@ final class ChunkRenderer {
             complete.handSwinging = previousChunk.handSwinging;
             complete.handLooping = previousChunk.handLooping;
         }
+        for (int i = 0; i < meshes.length; i++) terrain.addChild(meshes[i]);
         chunks[slot] = complete;
         chunkWorldX[slot] = cx; chunkWorldY[slot] = cy; chunkWorldZ[slot] = cz;
         dirtyChunks[slot] = false;
@@ -1770,6 +1733,61 @@ final class ChunkRenderer {
         pendingBuild = null;
         pendingBuildSlot = -1;
         recordChunkBuildCost(buildStarted);
+    }
+
+    /** Start clean per-chunk geometry accumulators before reading its first layer. */
+    private void resetChunkMeshAccumulators() {
+        activeFaceBuilderCount = 0;
+        for (int i = 0; i < TILE_COUNT; i++) chunkFaceBuilders[i] = null;
+        buildingFlowers = null;
+        buildingFires = null;
+        buildingPortals = null;
+        reusableFlowerBuilder.reset();
+        reusablePortalBuilder.reset();
+    }
+
+    /** Assemble one block Mesh with one submesh/material per atlas tile. */
+    private Mesh[] finishChunkMeshes(int cx, int cy, int cz) {
+        int count = activeFaceBuilderCount;
+        int flowerCount = buildingFlowers == null ? 0 : 1;
+        int fireCount = buildingFires == null ? 0 : 1;
+        int portalCount = buildingPortals == null ? 0 : 1;
+        if (count + flowerCount + fireCount + portalCount == 0) return new Mesh[0];
+
+        Mesh[] meshes = new Mesh[(count > 0 ? 1 : 0) +
+                flowerCount + fireCount + portalCount];
+        int at = 0;
+        if (count > 0) meshes[at++] = makeChunkBlockMesh();
+        if (buildingFlowers != null)
+            meshes[at++] = makeFlowerMesh(buildingFlowers, flowerAppearance);
+        if (buildingFires != null) {
+            buildingFires.setFrame(fireAnimationFrame);
+            meshes[at++] = makeFireMesh(buildingFires, worldFireAppearance);
+        }
+        if (buildingPortals != null)
+            meshes[at++] = makePortalMesh(buildingPortals);
+
+        int x = cx * VoxelWorld.CHUNK_XZ;
+        int y = cy * VoxelWorld.CHUNK_Y;
+        int z = cz * VoxelWorld.CHUNK_XZ;
+        for (int i = 0; i < meshes.length; i++) meshes[i].setTranslation(x, y, z);
+
+        // Return material builders to the bounded pool only after their data
+        // has been copied into the shared vertex buffer.
+        for (int active = 0; active < activeFaceBuilderCount; active++) {
+            int index = activeFaceBuilderIndices[active];
+            FaceBuilder builder = chunkFaceBuilders[index];
+            chunkFaceBuilders[index] = null;
+            if (freeFaceBuilderCount < freeFaceBuilders.length &&
+                    builder.p.length <= 1536) {
+                builder.reset(0, 0);
+                freeFaceBuilders[freeFaceBuilderCount++] = builder;
+            }
+        }
+        buildingFlowers = null;
+        buildingFires = null;
+        buildingPortals = null;
+        return meshes;
     }
 
     /** Tune streaming cadence from the measured cost of the last mesh slice. */
@@ -1858,15 +1876,9 @@ final class ChunkRenderer {
         return tail;
     }
 
-    private Chunk buildChunkLayer(VoxelWorld world, int cx, int cy, int cz,
+    private void buildChunkLayer(VoxelWorld world, int cx, int cy, int cz,
                                    int layer) {
         FaceBuilder[] builders = chunkFaceBuilders;
-        activeFaceBuilderCount = 0;
-        FlowerBuilder flowers = null;
-        FireBuilder fires = null;
-        PortalBuilder portals = null;
-        reusableFlowerBuilder.reset();
-        reusablePortalBuilder.reset();
         int x0 = cx * VoxelWorld.CHUNK_XZ;
         int y0 = cy * VoxelWorld.CHUNK_Y + layer;
         int z0 = cz * VoxelWorld.CHUNK_XZ;
@@ -1890,26 +1902,26 @@ final class ChunkRenderer {
                 chunkLightScratch[localIndex] = (byte)(id == Block.LAVA ? 14 :
                         (chunkLightScratch[localIndex] & 255));
                 if (id == Block.PORTAL) {
-                    if (portals == null) portals = reusablePortalBuilder;
-                    portals.add(x, 0, z,
+                    if (buildingPortals == null) buildingPortals = reusablePortalBuilder;
+                    buildingPortals.add(x, layer, z,
                             world.portalAxisAt(x0 + x, y0, z0 + z), portalFrameSize);
                 } else if (id == Block.FIRE) {
-                    if (fires == null) fires = new FireBuilder();
-                    fires.add(x, 0, z);
+                    if (buildingFires == null) buildingFires = new FireBuilder();
+                    buildingFires.add(x, layer, z);
                 } else if (Block.isFlower(id)) {
-                    if (flowers == null) flowers = reusableFlowerBuilder;
-                    flowers.add(x, 0, z, Block.sideTile(id));
+                    if (buildingFlowers == null) buildingFlowers = reusableFlowerBuilder;
+                    buildingFlowers.add(x, layer, z, Block.sideTile(id));
                 } else if (Block.isDoor(id)) {
-                    if (flowers == null) flowers = reusableFlowerBuilder;
-                    flowers.addDoor(x, 0, z, id,
+                    if (buildingFlowers == null) buildingFlowers = reusableFlowerBuilder;
+                    buildingFlowers.addDoor(x, layer, z, id,
                             world.doorMetadata(x0 + x, y0, z0 + z));
                 }
             }
         }
 
-        // An all-air slice has no geometry. The build job records the empty
-        // slice and continues to the next layer on the following frame.
-        if (nonAirBlocks == 0) return null;
+        // Empty slices contribute no faces; keep the same accumulators for the
+        // next vertical layer.
+        if (nonAirBlocks == 0) return;
 
         // Mine64-style greedy meshing: combine adjacent visible faces on each
         // chunk plane when their atlas tile matches. Tile textures repeat, so
@@ -2022,47 +2034,16 @@ final class ChunkRenderer {
                             builders[builderIndex] = builder;
                             activeFaceBuilderIndices[activeFaceBuilderCount++] = builderIndex;
                         }
-                        builders[builderIndex].addRect(x, y, z, faceWidth, faceHeight, face, light);
+                        builders[builderIndex].addRect(x, y + layer, z,
+                                faceWidth, faceHeight, face, light);
                         a += rectWidth;
                     }
                 }
             }
         }
 
-        int count = activeFaceBuilderCount;
-        int flowerCount = flowers == null ? 0 : 1;
-        int fireCount = fires == null ? 0 : 1;
-        int portalCount = portals == null ? 0 : 1;
-        if (count + flowerCount + fireCount + portalCount == 0) return null;
-        Mesh[] meshes = new Mesh[count + flowerCount + fireCount + portalCount];
-        int at = 0;
-        for (int active = 0; active < activeFaceBuilderCount; active++) {
-            int i = activeFaceBuilderIndices[active];
-            int tile = i % TILE_COUNT;
-            float textureScale = tile == Block.sideTile(Block.GRASS) ? 0.999f / 16.0f : 1.0f / 16.0f;
-            FaceBuilder builder = builders[i];
-            meshes[at++] = makeMesh(builder, tileAppearance(tile), textureScale);
-            builders[i] = null;
-            // Retain at most 128 reusable builders. Oversized/extra builders
-            // naturally become collectible instead of growing the pool forever.
-            if (freeFaceBuilderCount < freeFaceBuilders.length &&
-                    builder.p.length <= 1536) {
-                builder.reset(0, 0);
-                freeFaceBuilders[freeFaceBuilderCount++] = builder;
-            }
-        }
-        if (flowers != null) meshes[at++] = makeFlowerMesh(flowers, flowerAppearance);
-        if (fires != null) {
-            fires.setFrame(fireAnimationFrame);
-            meshes[at++] = makeFireMesh(fires, worldFireAppearance);
-        }
-        if (portals != null) meshes[at++] = makePortalMesh(portals);
-        Chunk chunk = new Chunk();
-        chunk.meshes = meshes;
-        chunk.fires = fires == null ? null : new FireBuilder[] { fires };
-        int wx = x0, wy = y0, wz = z0;
-        for (int i = 0; i < meshes.length; i++) meshes[i].setTranslation(wx, wy, wz);
-        return chunk;
+        // Geometry remains in the shared per-material builders until all
+        // vertical layers have been processed by advanceChunkBuild().
     }
 
     /** Apply an Alpha-era biome tint to the vertex colors of a held block mesh. */
@@ -2082,6 +2063,57 @@ final class ChunkRenderer {
     private void add(FaceBuilder[] builders, int tile, int x, int y, int z, int face) {
         if (builders[tile] == null) builders[tile] = new FaceBuilder(tile, 0);
         builders[tile].add(x, y, z, face);
+    }
+
+    /**
+     * All solid block faces for this chunk share one VertexBuffer and one M3G
+     * Mesh. Each atlas tile remains a separate submesh so its original texture,
+     * transparency, tint and fog settings are preserved.
+     */
+    private Mesh makeChunkBlockMesh() {
+        int totalVertices = 0;
+        int totalFaces = 0;
+        for (int active = 0; active < activeFaceBuilderCount; active++) {
+            FaceBuilder builder = chunkFaceBuilders[activeFaceBuilderIndices[active]];
+            totalVertices += builder.vertexCount;
+            totalFaces += builder.faceCount;
+        }
+        if (totalVertices <= 0) return null;
+
+        VertexArray positions = new VertexArray(totalVertices, 3, 2);
+        VertexArray texCoords = new VertexArray(totalVertices, 2, 2);
+        VertexArray colors = new VertexArray(totalVertices, 4, 1);
+        short[] p = new short[totalVertices * 3];
+        short[] uv = new short[totalVertices * 2];
+        byte[] c = new byte[totalVertices * 4];
+        IndexBuffer[] submeshes = new IndexBuffer[activeFaceBuilderCount];
+        Appearance[] appearances = new Appearance[activeFaceBuilderCount];
+        int vertexOffset = 0;
+        for (int active = 0; active < activeFaceBuilderCount; active++) {
+            int index = activeFaceBuilderIndices[active];
+            FaceBuilder builder = chunkFaceBuilders[index];
+            System.arraycopy(builder.p, 0, p, vertexOffset * 3,
+                    builder.vertexCount * 3);
+            System.arraycopy(builder.uv, 0, uv, vertexOffset * 2,
+                    builder.vertexCount * 2);
+            System.arraycopy(builder.c, 0, c, vertexOffset * 4,
+                    builder.vertexCount * 4);
+            int[] strips = new int[builder.faceCount];
+            for (int face = 0; face < strips.length; face++) strips[face] = 4;
+            submeshes[active] = new TriangleStripArray(vertexOffset, strips);
+            appearances[active] = tileAppearance(index);
+            vertexOffset += builder.vertexCount;
+        }
+        positions.set(0, totalVertices, p);
+        texCoords.set(0, totalVertices, uv);
+        colors.set(0, totalVertices, c);
+        VertexBuffer vertices = new VertexBuffer();
+        vertices.setPositions(positions, 1.0f, null);
+        // A single scale is shared by all atlas-tile submeshes. The tiny 0.1%
+        // inset also prevents the grass-side repeat seam from bleeding.
+        vertices.setTexCoords(0, texCoords, 0.999f / 16.0f, null);
+        vertices.setColors(colors);
+        return new Mesh(vertices, submeshes, appearances);
     }
 
     private Mesh makeMesh(FaceBuilder data, Appearance appearance) {
@@ -2393,7 +2425,6 @@ final class ChunkRenderer {
 
     private static final class Chunk {
         Mesh[] meshes;
-        Mesh[][] layerMeshes;
         FireBuilder[] fires;
         Mesh crackMesh;
         VertexArray crackPositions;
@@ -2406,18 +2437,9 @@ final class ChunkRenderer {
     private static final class ChunkBuild {
         final int slot, x, y, z, dirtyMask;
         int nextLayer;
-        final Mesh[][] layerMeshes = new Mesh[VoxelWorld.CHUNK_Y][];
-        final FireBuilder[] fires = new FireBuilder[VoxelWorld.CHUNK_Y];
-        ChunkBuild(int slot, int x, int y, int z, int dirtyMask, Chunk previous) {
+        ChunkBuild(int slot, int x, int y, int z, int dirtyMask) {
             this.slot = slot; this.x = x; this.y = y; this.z = z;
             this.dirtyMask = dirtyMask;
-            if (previous != null && previous.layerMeshes != null) {
-                for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++) {
-                    layerMeshes[layer] = previous.layerMeshes[layer];
-                    if (previous.fires != null && layer < previous.fires.length)
-                        fires[layer] = previous.fires[layer];
-                }
-            }
         }
     }
 
