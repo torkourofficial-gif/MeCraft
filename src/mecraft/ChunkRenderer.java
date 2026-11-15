@@ -133,6 +133,9 @@ final class ChunkRenderer {
     // Full voxel snapshot for one chunk section; each source layer is copied into place once.
     private final byte[] chunkVoxelScratch = new byte[VoxelWorld.CHUNK_XZ *
             VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
+    // Separate staging row prevents copyLoadedChunkLayer from overwriting earlier snapshot layers.
+    private final byte[] chunkVoxelLayerScratch = new byte[VoxelWorld.CHUNK_XZ *
+            VoxelWorld.CHUNK_XZ];
     private final byte[] chunkLightScratch = new byte[VoxelWorld.CHUNK_XZ *
             VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
     // 3D air-connectivity mask for one 16x16xCHUNK_Y section. State 2 means
@@ -1807,12 +1810,12 @@ final class ChunkRenderer {
         final int z0 = cz * width;
 
         for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++) {
-            world.copyLoadedChunkLayer(x0, y0 + layer, z0, chunkVoxelScratch);
+            world.copyLoadedChunkLayer(x0, y0 + layer, z0, chunkVoxelLayerScratch);
             int offset = layer * area;
-            System.arraycopy(chunkVoxelScratch, 0, chunkVoxelScratch, offset, area);
+            System.arraycopy(chunkVoxelLayerScratch, 0, chunkVoxelScratch, offset, area);
             for (int i = 0; i < area; i++)
                 chunkAirVisibilityScratch[offset + i] =
-                        chunkVoxelScratch[offset + i] == Block.AIR ? (byte)1 : (byte)0;
+                        chunkVoxelLayerScratch[i] == Block.AIR ? (byte)1 : (byte)0;
         }
 
         int head = 0, tail = 0;
