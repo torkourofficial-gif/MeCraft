@@ -1524,7 +1524,12 @@ final class ChunkRenderer {
                 for (int rx = firstRx; rx <= lastRx; rx++) {
                     int cx = centerX + rx - MAX_STREAM_RADIUS;
                     int cz = centerZ + rz - MAX_STREAM_RADIUS;
-                    int i = (cy * span + floorMod(cz, span)) * span + floorMod(cx, span);
+                    // Finite Old coordinates are already 0..14, so their
+                    // cache address is a direct row-major lookup. Infinite
+                    // worlds retain the wrapping ring used by streamed chunks.
+                    int i = world.worldSize == VoxelWorld.SIZE_OLD ?
+                            (cy * span + cz) * span + cx :
+                            (cy * span + floorMod(cz, span)) * span + floorMod(cx, span);
                     float dx = cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeX;
                     float dy = cy * VoxelWorld.CHUNK_Y + VoxelWorld.CHUNK_Y * 0.5f - eyeY;
                     float dz = cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
