@@ -1101,6 +1101,9 @@ final class ChunkRenderer {
      * samples only the currently mined chunk's timer. */
     void setHandLooping(int x, int y, int z, boolean looping) {
         if (playerModel != null) playerModel.setActionLooping(looping);
+        // The global first-person arm must never retain a mining loop after the
+        // target is released or its chunk leaves the streaming cache.
+        handLooping = looping;
         int slot = x < 0 ? -1 : findChunkSlot(x, y, z);
         if (activeMiningChunkSlot >= 0 && activeMiningChunkSlot < chunks.length &&
                 chunks[activeMiningChunkSlot] != null && activeMiningChunkSlot != slot)
@@ -1115,6 +1118,7 @@ final class ChunkRenderer {
             activeMiningChunkSlot = slot;
         } else if (!looping) {
             activeMiningChunkSlot = -1;
+            handLooping = false;
         }
     }
 
@@ -1303,7 +1307,11 @@ final class ChunkRenderer {
 
     void sync(VoxelWorld world) {
         if (world.revision != builtRevision || world.fullRebuild) {
-            if (builtRevision < 0 || world.fullRebuild) rebuildWorld(world);
+            // changedX/Y/Z stores only the latest edit. If several voxels changed
+            // between renderer syncs (doors, support cascades, fluid spread), a
+            // single-coordinate invalidation would leave stale meshes behind.
+            if (builtRevision < 0 || world.fullRebuild ||
+                    world.revision != builtRevision + 1) rebuildWorld(world);
             else rebuildChanged(world);
             builtRevision = world.revision;
             pendingViewKeyValid = false;
@@ -1455,7 +1463,12 @@ final class ChunkRenderer {
             if (chunks[i].crackMesh != null) scene.removeChild(chunks[i].crackMesh);
             chunks[i] = null;
         }
-        if (activeMiningChunkSlot == i) activeMiningChunkSlot = -1;
+        if (activeMiningChunkSlot == i) {
+            activeMiningChunkSlot = -1;
+            handLooping = false;
+            handSwinging = false;
+            handSwingTicks = 8;
+        }
         if (activeCrackChunkSlot == i) activeCrackChunkSlot = -1;
         assignedChunks[i] = false;
         dirtyChunks[i] = false;
