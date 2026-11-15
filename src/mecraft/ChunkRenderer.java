@@ -173,9 +173,9 @@ final class ChunkRenderer {
     private final Texture2D[] portalFrames = new Texture2D[8];
     private final Texture2D[] crackFrames = new Texture2D[10];
     private final Appearance crackAppearance;
-    private final Mesh crackMesh;
-    private final VertexArray crackPositions;
-    private final short[] crackPositionData = new short[] { 0,0,0, 0,1,0, 1,0,0, 1,1,0 };
+    private final VertexArray crackUV;
+    private final short[] crackUVData = new short[] { 0,16, 0,0, 16,16, 16,0 };
+    private int activeMiningChunkSlot = -1;
     private final short[] crackUVData = new short[] { 0,16, 0,0, 16,16, 16,0 };
     private final Appearance portalAppearance;
     private final Texture2D worldFireTexture;
@@ -249,16 +249,8 @@ final class ChunkRenderer {
         crackCompositing.setAlphaThreshold(0.1f);
         crackCompositing.setBlending(CompositingMode.ALPHA);
         crackAppearance.setCompositingMode(crackCompositing);
-        VertexArray crackUV = new VertexArray(4, 2, 2);
+        crackUV = new VertexArray(4, 2, 2);
         crackUV.set(0, 4, crackUVData);
-        crackPositions = new VertexArray(4, 3, 2);
-        crackPositions.set(0, 4, crackPositionData);
-        VertexBuffer crackBuffer = new VertexBuffer();
-        crackBuffer.setPositions(crackPositions, 1.0f, null);
-        crackBuffer.setTexCoords(0, crackUV, 1.0f / 16.0f, null);
-        crackMesh = new Mesh(crackBuffer, new TriangleStripArray(0, new int[] { 4 }), crackAppearance);
-        crackMesh.setRenderingEnable(false);
-        scene.addChild(crackMesh);
         portalAppearance = createPortalAppearance(portalFrames[0]);
         Image fireImage = GameAssets.image("fire.png");
         worldFireTexture = new Texture2D(new Image2D(Image2D.RGBA, fireImage));
@@ -676,14 +668,28 @@ final class ChunkRenderer {
             fireAnimationFrame = (fireAnimationFrame + 1) & 7;
             updateFireMeshes();
         }
-        if (handSwinging) {
-            handSwingTicks++;
-            if (handSwingTicks >= 8) {
-                if (handLooping) {
-                    handSwingTicks = 0;
-                } else {
-                    handSwingTicks = 8;
-                    handSwinging = false;
+        boolean chunkLooping = false;
+        if (activeMiningChunkSlot >= 0 && activeMiningChunkSlot < chunks.length) {
+            Chunk miningChunk = chunks[activeMiningChunkSlot];
+            if (miningChunk != null) {
+                if (miningChunk.handSwinging) {
+                    miningChunk.handSwingTicks++;
+                    if (miningChunk.handSwingTicks >= 8) {
+                        if (miningChunk.handLooping) miningChunk.handSwingTicks = 0;
+                        else { miningChunk.handSwingTicks = 8; miningChunk.handSwinging = false; }
+                    }
+                }
+                handSwingTicks = miningChunk.handSwingTicks;
+                handSwinging = miningChunk.handSwinging;
+                chunkLooping = miningChunk.handLooping;
+            }
+        }
+        if (!chunkLooping && (activeMiningChunkSlot < 0 || chunks[activeMiningChunkSlot] == null)) {
+            if (handSwinging) {
+                handSwingTicks++;
+                if (handSwingTicks >= 8) {
+                    if (handLooping) handSwingTicks = 0;
+                    else { handSwingTicks = 8; handSwinging = false; }
                 }
             }
         }
@@ -1026,40 +1032,83 @@ final class ChunkRenderer {
         }
     }
 
-    /** Update the transparent crack quad on the selected block face; stage is 0..9. */
-    void setMiningCracks(int x, int y, int z, int faceX, int faceY, int faceZ, int stage) {
-        if (x < 0 || stage < 0) {
-            crackMesh.setRenderingEnable(false);
-            return;
+    /** Find the resident chunk that owns a world-space mining target. */
+    private int findChunkSlot(int x, int y, int z) {
+        int cx = floorDiv(x, VoxelWorld.CHUNK_XZ);
+        int cy = floorDiv(y, VoxelWorld.CHUNK_Y);
+        int cz = floorDiv(z, VoxelWorld.CHUNK_XZ);
+        for (int i = 0; i < chunks.length; i++) {
+            if (assignedChunks[i] && chunkWorldX[i] == cx &&
+                    chunkWorldY[i] == cy && chunkWorldZ[i] == cz) return i;
         }
+        return -1;
+    }
+
+    private void ensureChunkCrackMesh(Chunk chunk) {
+        if (chunk.crackMesh != null) return;
+        chunk.crackPositionData = new short[] { 0,0,0, 0,1,0, 1,0,0, 1,1,0 };
+        chunk.crackPositions = new VertexArray(4, 3, 2);
+        chunk.crackPositions.set(0, 4, chunk.crackPositionData);
+        VertexBuffer buffer = new VertexBuffer();
+        buffer.setPositions(chunk.crackPositions, 1.0f, null);
+        buffer.setTexCoords(0, crackUV, 1.0f / 16.0f, null);
+        chunk.crackMesh = new Mesh(buffer, new TriangleStripArray(0, new int[] { 4 }), crackAppearance);
+        chunk.crackMesh.setRenderingEnable(false);
+        scene.addChild(chunk.crackMesh);
+    }
+
+    /** Mining overlay belongs to the resident chunk, not to a global world-space mesh. */
+    void setMiningCracks(int x, int y, int z, int faceX, int faceY, int faceZ, int stage) {
+        if (activeMiningChunkSlot >= 0 && activeMiningChunkSlot < chunks.length &&
+                chunks[activeMiningChunkSlot] != null &&
+                chunks[activeMiningChunkSlot].crackMesh != null)
+            chunks[activeMiningChunkSlot].crackMesh.setRenderingEnable(false);
+        activeMiningChunkSlot = -1;
+        if (x < 0 || stage < 0) return;
+        int slot = findChunkSlot(x, y, z);
+        if (slot < 0 || chunks[slot] == null) return;
+        Chunk chunk = chunks[slot];
+        ensureChunkCrackMesh(chunk);
         if (stage > 9) stage = 9;
         crackAppearance.setTexture(0, crackFrames[stage]);
-
-        // Keep the quad vertices local (0..1) and position the mesh at the
-        // selected world block. This avoids truncating world coordinates into
-        // short vertex values, which made overlays fail outside the origin chunk.
+        short[] p = chunk.crackPositionData;
         float offset = 0.01f;
         if (Math.abs(faceY) >= Math.abs(faceX) && Math.abs(faceY) >= Math.abs(faceZ)) {
-            crackPositionData[0] = 0; crackPositionData[1] = 0; crackPositionData[2] = 0;
-            crackPositionData[3] = 0; crackPositionData[4] = 0; crackPositionData[5] = 1;
-            crackPositionData[6] = 1; crackPositionData[7] = 0; crackPositionData[8] = 0;
-            crackPositionData[9] = 1; crackPositionData[10] = 0; crackPositionData[11] = 1;
-            crackMesh.setTranslation(x, y + (faceY > 0 ? 1.0f + offset : -offset), z);
+            p[0]=0; p[1]=0; p[2]=0; p[3]=0; p[4]=0; p[5]=1;
+            p[6]=1; p[7]=0; p[8]=0; p[9]=1; p[10]=0; p[11]=1;
+            chunk.crackMesh.setTranslation(x, y + (faceY > 0 ? 1.0f + offset : -offset), z);
         } else if (Math.abs(faceX) >= Math.abs(faceZ)) {
-            crackPositionData[0] = 0; crackPositionData[1] = 0; crackPositionData[2] = 0;
-            crackPositionData[3] = 0; crackPositionData[4] = 0; crackPositionData[5] = 1;
-            crackPositionData[6] = 0; crackPositionData[7] = 1; crackPositionData[8] = 0;
-            crackPositionData[9] = 0; crackPositionData[10] = 1; crackPositionData[11] = 1;
-            crackMesh.setTranslation(x + (faceX > 0 ? 1.0f + offset : -offset), y, z);
+            p[0]=0; p[1]=0; p[2]=0; p[3]=0; p[4]=1; p[5]=0;
+            p[6]=0; p[7]=1; p[8]=0; p[9]=0; p[10]=1; p[11]=1;
+            chunk.crackMesh.setTranslation(x + (faceX > 0 ? 1.0f + offset : -offset), y, z);
         } else {
-            crackPositionData[0] = 0; crackPositionData[1] = 0; crackPositionData[2] = 0;
-            crackPositionData[3] = 0; crackPositionData[4] = 1; crackPositionData[5] = 0;
-            crackPositionData[6] = 1; crackPositionData[7] = 0; crackPositionData[8] = 0;
-            crackPositionData[9] = 1; crackPositionData[10] = 1; crackPositionData[11] = 0;
-            crackMesh.setTranslation(x, y, z + (faceZ > 0 ? 1.0f + offset : -offset));
+            p[0]=0; p[1]=0; p[2]=0; p[3]=0; p[4]=1; p[5]=0;
+            p[6]=1; p[7]=0; p[8]=0; p[9]=1; p[10]=1; p[11]=0;
+            chunk.crackMesh.setTranslation(x, y, z + (faceZ > 0 ? 1.0f + offset : -offset));
         }
-        crackPositions.set(0, 4, crackPositionData);
-        crackMesh.setRenderingEnable(true);
+        chunk.crackPositions.set(0, 4, p);
+        chunk.crackMesh.setRenderingEnable(true);
+        activeMiningChunkSlot = slot;
+    }
+
+    /** The loop timer is stored by chunk, while the visible first-person arm
+     * samples only the currently mined chunk's timer. */
+    void setHandLooping(int x, int y, int z, boolean looping) {
+        int slot = x < 0 ? -1 : findChunkSlot(x, y, z);
+        if (activeMiningChunkSlot >= 0 && activeMiningChunkSlot < chunks.length &&
+                chunks[activeMiningChunkSlot] != null && activeMiningChunkSlot != slot)
+            chunks[activeMiningChunkSlot].handLooping = false;
+        if (slot >= 0 && chunks[slot] != null) {
+            Chunk chunk = chunks[slot];
+            chunk.handLooping = looping;
+            if (looping && !chunk.handSwinging) {
+                chunk.handSwingTicks = 0;
+                chunk.handSwinging = true;
+            }
+            activeMiningChunkSlot = slot;
+        } else if (!looping) {
+            activeMiningChunkSlot = -1;
+        }
     }
 
     private Appearance createFirstPersonAppearance(Texture2D texture,
@@ -1384,8 +1433,10 @@ final class ChunkRenderer {
                 for (int m = 0; m < chunks[i].meshes.length; m++)
                     terrain.removeChild(chunks[i].meshes[m]);
             }
+            if (chunks[i].crackMesh != null) scene.removeChild(chunks[i].crackMesh);
             chunks[i] = null;
         }
+        if (activeMiningChunkSlot == i) activeMiningChunkSlot = -1;
         assignedChunks[i] = false;
         dirtyChunks[i] = false;
         dirtyLayerMasks[i] = 0;
@@ -1701,6 +1752,15 @@ final class ChunkRenderer {
         complete.meshes = meshes;
         complete.layerMeshes = job.layerMeshes;
         complete.fires = job.fires;
+        Chunk previousChunk = chunks[slot];
+        if (previousChunk != null) {
+            complete.crackMesh = previousChunk.crackMesh;
+            complete.crackPositions = previousChunk.crackPositions;
+            complete.crackPositionData = previousChunk.crackPositionData;
+            complete.handSwingTicks = previousChunk.handSwingTicks;
+            complete.handSwinging = previousChunk.handSwinging;
+            complete.handLooping = previousChunk.handLooping;
+        }
         chunks[slot] = complete;
         chunkWorldX[slot] = cx; chunkWorldY[slot] = cy; chunkWorldZ[slot] = cz;
         dirtyChunks[slot] = false;
@@ -2329,7 +2389,17 @@ final class ChunkRenderer {
         }
     }
 
-    private static final class Chunk { Mesh[] meshes; Mesh[][] layerMeshes; FireBuilder[] fires; }
+    private static final class Chunk {
+        Mesh[] meshes;
+        Mesh[][] layerMeshes;
+        FireBuilder[] fires;
+        Mesh crackMesh;
+        VertexArray crackPositions;
+        short[] crackPositionData;
+        int handSwingTicks = 8;
+        boolean handSwinging;
+        boolean handLooping;
+    }
 
     private static final class ChunkBuild {
         final int slot, x, y, z, dirtyMask;
