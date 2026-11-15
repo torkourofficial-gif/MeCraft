@@ -1458,8 +1458,8 @@ final class ChunkRenderer {
                 cameraFar == pendingViewFar && shortestDistance == pendingViewShortest &&
                 streamRadius == pendingViewRadius;
         if (samePendingView) {
-            // Resume the current build, or retry the selected dirty chunk when
-            // its build interval/procedural neighbors were not ready last paint.
+            // Resume the current build, or retry the selected dirty chunk when its
+            // procedural neighbors were not ready on the previous paint.
             if (pendingBuild != null && pendingBuildSlot >= 0 &&
                     assignedChunks[pendingBuildSlot] &&
                     chunkWorldX[pendingBuildSlot] == pendingBuild.x &&
@@ -1655,8 +1655,8 @@ final class ChunkRenderer {
         } else if (pendingBuild == null) {
             pendingTargetSlot = -1;
         }
-        // Keep the view cached even while a dirty chunk waits for its cadence
-        // slot or procedural neighbors; the target is retried without rescanning.
+        // Keep the view cached while a dirty chunk waits for procedural neighbors;
+        // retry the selected target without rescanning the stream window.
         pendingViewKeyValid = true;
     }
 
