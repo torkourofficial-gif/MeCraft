@@ -1272,6 +1272,27 @@ final class ChunkRenderer {
         return mobs.shootPlayerArrow(world, pitch);
     }
 
+    /**
+     * True when all currently visible mesh sections in the player's immediate
+     * 3x3 horizontal neighborhood are complete, and the 3x3 terrain data is
+     * resident. Used only by the initial loading screen.
+     */
+    boolean isInitialNeighborhoodReady(VoxelWorld world) {
+        int centerX = (int)Math.floor(world.playerX / (float)VoxelWorld.CHUNK_XZ);
+        int centerZ = (int)Math.floor(world.playerZ / (float)VoxelWorld.CHUNK_XZ);
+        if (!world.isProceduralNeighborhoodReady(centerX, centerZ)) return false;
+        boolean centerMeshReady = false;
+        for (int i = 0; i < CACHE_SIZE; i++) {
+            if (!assignedChunks[i]) continue;
+            int dx = chunkWorldX[i] - centerX;
+            int dz = chunkWorldZ[i] - centerZ;
+            if (dx < -1 || dx > 1 || dz < -1 || dz > 1) continue;
+            if (chunks[i] == null || dirtyChunks[i]) return false;
+            if (dx == 0 && dz == 0) centerMeshReady = true;
+        }
+        return centerMeshReady;
+    }
+
     void sync(VoxelWorld world) {
         if (world.revision != builtRevision || world.fullRebuild) {
             if (builtRevision < 0 || world.fullRebuild) rebuildWorld(world);
