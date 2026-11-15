@@ -63,6 +63,16 @@ final class PlayerPhysics {
     /** Returns Indev fall damage, if a landing occurred this tick. */
     int update(VoxelWorld world, float forward, float strafe, boolean jumping,
                boolean flying, boolean descending, boolean sprinting) {
+        // Never run collision resolution against an unloaded procedural area:
+        // getCollision intentionally returns AIR for missing cache entries.
+        // Freeze physics briefly while the persistent terrain worker fills it.
+        if (!world.isCollisionAreaReady(world.playerX, world.playerZ, RADIUS)) {
+            motionX = motionY = motionZ = 0.0f;
+            horizontalCollision = false;
+            onGround = false;
+            fallDistance = 0.0f;
+            return 0;
+        }
         // Recover from stale/spawned positions that begin inside a solid voxel.
         // The swept-axis clips below only stop movement at a face; they cannot
         // eject an AABB that was already intersecting a block.
@@ -304,6 +314,7 @@ final class PlayerPhysics {
 
     private float clipX(VoxelWorld world, float x, float y, float z, float dx) {
         if (dx == 0.0f) return 0.0f;
+        if (!world.isCollisionAreaReady(x + dx, z, RADIUS)) return 0.0f;
         int minY = floor(y + EPSILON), maxY = floor(y + HEIGHT - EPSILON);
         int minZ = floor(z - RADIUS + EPSILON), maxZ = floor(z + RADIUS - EPSILON);
         int fromX = floor(x - RADIUS + Math.min(0.0f, dx));
@@ -345,6 +356,7 @@ final class PlayerPhysics {
 
     private float clipZ(VoxelWorld world, float x, float y, float z, float dz) {
         if (dz == 0.0f) return 0.0f;
+        if (!world.isCollisionAreaReady(x, z + dz, RADIUS)) return 0.0f;
         int minY = floor(y + EPSILON), maxY = floor(y + HEIGHT - EPSILON);
         int minX = floor(x - RADIUS + EPSILON), maxX = floor(x + RADIUS - EPSILON);
         int fromZ = floor(z - RADIUS + Math.min(0.0f, dz));
