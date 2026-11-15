@@ -732,13 +732,6 @@ final class ChunkRenderer {
                (itemId > Block.AIR && itemId < Block.COUNT && Block.isFlower((byte)itemId));
     }
 
-    private void setRestHandPose() {
-        armSwingOffset.setTranslation(-0.08f * handHorizontalScale, 0.15f, 0.0f);
-        armSwingYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
-        armSwingRoll.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
-        setRestHeldItemPose();
-    }
-
     private void setRestHeldItemPose() {
         heldItemOffset.setTranslation(0.64f * handHorizontalScale, -0.60f, -0.72f);
         heldItemYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
