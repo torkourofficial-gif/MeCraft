@@ -136,12 +136,6 @@ final class ChunkRenderer {
             VoxelWorld.CHUNK_XZ];
     private final byte[] chunkLightScratch = new byte[VoxelWorld.CHUNK_XZ *
             VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
-    // 3D air-connectivity mask for one 16x16xCHUNK_Y section. State 2 means
-    // reachable from a chunk boundary; enclosed cave air remains state 1.
-    private final byte[] chunkAirVisibilityScratch = new byte[VoxelWorld.CHUNK_XZ *
-            VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
-    private final short[] chunkAirQueueScratch = new short[VoxelWorld.CHUNK_XZ *
-            VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
     private final int[] greedyMaskScratch = new int[CHUNK_AREA];
     // One chunk is meshed at a time; reuse the large material lookup table to
     // avoid allocating thousands of references every time the player moves.
@@ -1728,8 +1722,16 @@ final class ChunkRenderer {
             pendingBuild = new ChunkBuild(slot, cx, cy, cz);
             pendingBuildSlot = slot;
             resetChunkMeshAccumulators();
+            // Take one compact snapshot of the chunk. The mesher reads this
+            // snapshot directly, avoiding a separate cave flood-fill pass.
             long caveStartedAt = System.currentTimeMillis();
-            buildChunkAirVisibility(world, cx, cy, cz);
+            for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++) {
+                world.copyLoadedChunkLayer(cx * VoxelWorld.CHUNK_XZ,
+                        cy * VoxelWorld.CHUNK_Y + layer,
+                        cz * VoxelWorld.CHUNK_XZ, chunkVoxelLayerScratch);
+                System.arraycopy(chunkVoxelLayerScratch, 0, chunkVoxelScratch,
+                        layer * CHUNK_AREA, CHUNK_AREA);
+            }
             lastCaveBuildMillis = System.currentTimeMillis() - caveStartedAt;
             collectChunkTorches(world, cx * VoxelWorld.CHUNK_XZ,
                     cy * VoxelWorld.CHUNK_Y, cz * VoxelWorld.CHUNK_XZ,
@@ -1840,102 +1842,7 @@ final class ChunkRenderer {
             }
         }
         buildingFlowers = null;
-        buildingFires = null;
-        buildingPortals = null;
-        return meshes;
-    }
-
-    /**
-     * Flood-fill air through this chunk's complete vertical section. Faces
-     * bordering sealed cave pockets are omitted; caves connected to a chunk
-     * boundary remain renderable, including tunnels crossing into neighbors.
-     */
-    private void buildChunkAirVisibility(VoxelWorld world, int cx, int cy, int cz) {
-        final int width = VoxelWorld.CHUNK_XZ;
-        final int area = width * width;
-        final int x0 = cx * width;
-        final int y0 = cy * VoxelWorld.CHUNK_Y;
-        final int z0 = cz * width;
-
-        for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++) {
-            world.copyLoadedChunkLayer(x0, y0 + layer, z0, chunkVoxelLayerScratch);
-            int offset = layer * area;
-            System.arraycopy(chunkVoxelLayerScratch, 0, chunkVoxelScratch, offset, area);
-            for (int i = 0; i < area; i++)
-                chunkAirVisibilityScratch[offset + i] =
-                        chunkVoxelLayerScratch[i] == Block.AIR ? (byte)1 : (byte)0;
-        }
-
-        int head = 0, tail = 0;
-        // Only boundary air can connect to a neighboring chunk section.
-        // Seed the two horizontal caps first, then the four side walls without
-        // revisiting their corners. This avoids scanning every interior voxel
-        // just to discover that it cannot be an exterior flood-fill seed.
-        int topLayer = VoxelWorld.CHUNK_Y - 1;
-        for (int z = 0; z < width; z++) {
-            int row = z * width;
-            for (int x = 0; x < width; x++) {
-                tail = seedChunkAir(world, x, 0, z, x0, y0, z0, row + x, tail);
-                tail = seedChunkAir(world, x, topLayer, z, x0, y0, z0,
-                        topLayer * area + row + x, tail);
-            }
-        }
-        for (int y = 1; y < topLayer; y++) {
-            int layerOffset = y * area;
-            for (int z = 0; z < width; z++) {
-                int row = layerOffset + z * width;
-                tail = seedChunkAir(world, 0, y, z, x0, y0, z0, row, tail);
-                tail = seedChunkAir(world, width - 1, y, z, x0, y0, z0,
-                        row + width - 1, tail);
-            }
-            for (int x = 1; x < width - 1; x++) {
-                tail = seedChunkAir(world, x, y, 0, x0, y0, z0,
-                        layerOffset + x, tail);
-                tail = seedChunkAir(world, x, y, width - 1, x0, y0, z0,
-                        layerOffset + (width - 1) * width + x, tail);
-            }
-        }
-
-        while (head < tail) {
-            int index = chunkAirQueueScratch[head++] & 0xFFFF;
-            int x = index & (width - 1);
-            int z = (index / width) & (width - 1);
-            int y = index / area;
-            if (x > 0) tail = queueVisibleChunkAir(index - 1, tail);
-            if (x + 1 < width) tail = queueVisibleChunkAir(index + 1, tail);
-            if (z > 0) tail = queueVisibleChunkAir(index - width, tail);
-            if (z + 1 < width) tail = queueVisibleChunkAir(index + width, tail);
-            if (y > 0) tail = queueVisibleChunkAir(index - area, tail);
-            if (y + 1 < VoxelWorld.CHUNK_Y)
-                tail = queueVisibleChunkAir(index + area, tail);
-        }
-    }
-
-    /** Add an exterior-connected boundary air voxel to the flood-fill queue. */
-    private int seedChunkAir(VoxelWorld world, int x, int y, int z,
-                             int x0, int y0, int z0, int index, int tail) {
-        if (chunkAirVisibilityScratch[index] != 1) return tail;
-        int worldX = x0 + x, worldY = y0 + y, worldZ = z0 + z;
-        boolean connectedOutside =
-                (x == 0 && world.getLoaded(worldX - 1, worldY, worldZ) == Block.AIR) ||
-                (x == VoxelWorld.CHUNK_XZ - 1 &&
-                        world.getLoaded(worldX + 1, worldY, worldZ) == Block.AIR) ||
-                (z == 0 && world.getLoaded(worldX, worldY, worldZ - 1) == Block.AIR) ||
-                (z == VoxelWorld.CHUNK_XZ - 1 &&
-                        world.getLoaded(worldX, worldY, worldZ + 1) == Block.AIR) ||
-                (y == 0 && world.getLoaded(worldX, worldY - 1, worldZ) == Block.AIR) ||
-                (y == VoxelWorld.CHUNK_Y - 1 &&
-                        world.getLoaded(worldX, worldY + 1, worldZ) == Block.AIR);
-        if (!connectedOutside) return tail;
-        chunkAirVisibilityScratch[index] = 2;
-        chunkAirQueueScratch[tail++] = (short)index;
-        return tail;
-    }
-
-    private int queueVisibleChunkAir(int index, int tail) {
-        if (chunkAirVisibilityScratch[index] == 1) {
-            chunkAirVisibilityScratch[index] = 2;
-            chunkAirQueueScratch[tail++] = (short)index;
+         chunkAirQueueScratch[tail++] = (short)index;
         }
         return tail;
     }
@@ -2035,14 +1942,6 @@ final class ChunkRenderer {
                                 neighbor = chunkVoxelScratch[voxelLayerOffset + voxelIndex - CHUNK_AREA];
                             else neighbor = world.getLoaded(nx, ny, nz);
                             boolean faceVisible = Block.faceVisible(id, neighbor);
-                            if (faceVisible && neighbor == Block.AIR &&
-                                    nx >= x0 && nx < x1 && nz >= z0 && nz < z1 &&
-                                    ny >= cy * VoxelWorld.CHUNK_Y &&
-                                    ny < (cy + 1) * VoxelWorld.CHUNK_Y) {
-                                int airIndex = ((ny - cy * VoxelWorld.CHUNK_Y) * VoxelWorld.CHUNK_XZ +
-                                        (nz - z0)) * VoxelWorld.CHUNK_XZ + (nx - x0);
-                                faceVisible = chunkAirVisibilityScratch[airIndex] == 2;
-                            }
                             if (faceVisible) {
                                 int tile = renderWorldTile(world, id, face, x, y, z,
                                         id == Block.WOOL ? world.woolColor(x, y, z) : 0);
