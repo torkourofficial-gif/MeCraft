@@ -110,7 +110,10 @@ final class VoxelWorld {
     private int proceduralWorkerX, proceduralWorkerZ;
     private boolean proceduralWorkerNether;
     private int proceduralChunksGenerated;
+    private int proceduralChunksLoadedFromStorage;
+    private int proceduralChunksStored;
     private long lastProceduralGenerationMillis;
+    private ChunkStorageManager proceduralStorage;
     private int[] editX = new int[128];
     private int[] editY = new int[128];
     private int[] editZ = new int[128];
@@ -445,6 +448,16 @@ final class VoxelWorld {
         return epoch == proceduralGenerationEpoch && dimension == nether;
     }
 
+    /** Create the persistent second-level cache only after this world has a save identity. */
+    private synchronized ChunkStorageManager getProceduralStorage() {
+        if (saveStoreName == null || saveStoreName.length() == 0) return null;
+        if (proceduralStorage == null) {
+            proceduralStorage = new ChunkStorageManager(saveStoreName, seed,
+                    worldType, economicMode);
+        }
+        return proceduralStorage;
+    }
+
     private void runProceduralWorker() {
         while (true) {
             int cx, cz;
@@ -481,13 +494,19 @@ final class VoxelWorld {
                 continue;
             }
             long generationStarted = System.currentTimeMillis();
+            ChunkStorageManager storage = getProceduralStorage();
+            boolean restoredFromStorage = storage != null &&
+                    storage.load(cx, cz, dimension, proceduralWorkerBuffer);
+            if (restoredFromStorage) {
+                synchronized (this) { proceduralChunksLoadedFromStorage++; }
+            }
             try {
-                boolean completed;
-                if (worldType == TYPE_FLAT && !dimension) {
+                boolean completed = restoredFromStorage;
+                if (!completed && worldType == TYPE_FLAT && !dimension) {
                     generateFlatChunkInSlices(proceduralWorkerBuffer, proceduralWorkerHeights,
                                               proceduralWorkerBiomes);
                     completed = true;
-                } else {
+                } else if (!completed) {
                     InfdevTerrain.GenerationTask task = new InfdevTerrain.GenerationTask(
                             seed, cx, cz, proceduralWorkerBuffer, proceduralWorkerHeights,
                             proceduralWorkerBiomes, economicMode, dimension);
@@ -503,6 +522,12 @@ final class VoxelWorld {
                 if (!completed) {
                     synchronized (this) { proceduralWorkerBusy = false; }
                     continue;
+                }
+                // Persist only completed base terrain. Player edits remain in the
+                // existing edit journal and are overlaid by getLoaded/getCollision.
+                if (!restoredFromStorage && storage != null) {
+                    storage.store(cx, cz, dimension, proceduralWorkerBuffer);
+                    synchronized (this) { proceduralChunksStored++; }
                 }
             } catch (Throwable failure) {
                 synchronized (this) {
@@ -548,6 +573,8 @@ final class VoxelWorld {
                 "K C" + resident + "/" + PROCEDURAL_CACHE_SIZE +
                 " Q" + proceduralQueueCount +
                 " G" + proceduralChunksGenerated +
+                " D" + proceduralChunksLoadedFromStorage +
+                " W" + proceduralChunksStored +
                 " " + lastProceduralGenerationMillis + "ms";
     }
 
@@ -2138,6 +2165,7 @@ final class VoxelWorld {
         try {
             RecordStore.deleteRecordStore(storeName);
             try { RecordStore.deleteRecordStore(storeName + "-dim"); } catch (RecordStoreException ignored) { }
+            try { RecordStore.deleteRecordStore(storeName + "-chunks"); } catch (RecordStoreException ignored) { }
             return true;
         } catch (RecordStoreException ignored) {
             return false;
