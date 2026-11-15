@@ -1721,9 +1721,7 @@ final class ChunkRenderer {
                             Math.abs(vertical) <= Math.max(0.0f, depth) * tanVerticalFov + CHUNK_RADIUS;
                     }
 
-                    float nearX = Math.max(0.0f, Math.abs(dx) - VoxelWorld.CHUNK_XZ * 0.5f);
-                    float nearZ = Math.max(0.0f, Math.abs(dz) - VoxelWorld.CHUNK_XZ * 0.5f);
-                    int desiredLod = nearX * nearX + nearZ * nearZ > 40.0f * 40.0f ? 1 : 0;
+                    int desiredLod = lodForChunk(cx, cz, eyeX, eyeZ);
                     boolean sameChunk = assignedChunks[i] && chunkWorldX[i] == cx &&
                         chunkWorldY[i] == cy && chunkWorldZ[i] == cz;
                     if (sameChunk && chunks[i] != null && chunks[i].lodLevel != desiredLod)
@@ -1810,9 +1808,7 @@ final class ChunkRenderer {
             pendingBuild.x != cx || pendingBuild.y != cy || pendingBuild.z != cz ||
             pendingBuild.lodLevel != lodForChunk(cx, cz, world.playerX, world.playerZ)) {
             chunkBuildStartedAt = System.currentTimeMillis();
-            int nearX = Math.max(0, Math.abs(cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ / 2 - (int)world.playerX) - VoxelWorld.CHUNK_XZ / 2);
-            int nearZ = Math.max(0, Math.abs(cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ / 2 - (int)world.playerZ) - VoxelWorld.CHUNK_XZ / 2);
-            int lodLevel = nearX * nearX + nearZ * nearZ > 40 * 40 ? 1 : 0;
+            int lodLevel = lodForChunk(cx, cz, world.playerX, world.playerZ);
             pendingBuild = new ChunkBuild(slot, cx, cy, cz, lodLevel);
             pendingBuildSlot = slot;
             resetChunkMeshAccumulators();
