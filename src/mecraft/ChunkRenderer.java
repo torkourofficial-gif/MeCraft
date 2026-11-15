@@ -176,7 +176,6 @@ final class ChunkRenderer {
     private final VertexArray crackUV;
     private final short[] crackUVData = new short[] { 0,16, 0,0, 16,16, 16,0 };
     private int activeMiningChunkSlot = -1;
-    private final short[] crackUVData = new short[] { 0,16, 0,0, 16,16, 16,0 };
     private final Appearance portalAppearance;
     private final Texture2D worldFireTexture;
     private final Appearance worldFireAppearance;
@@ -1106,8 +1105,6 @@ final class ChunkRenderer {
                 chunk.handSwinging = true;
             }
             activeMiningChunkSlot = slot;
-        } else if (!looping) {
-            activeMiningChunkSlot = -1;
         }
     }
 
