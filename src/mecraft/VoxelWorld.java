@@ -331,6 +331,28 @@ final class VoxelWorld {
         synchronized (this) { return findProceduralChunk(cx, cz) >= 0; }
     }
 
+    /**
+     * Physics must not interpret an ungenerated procedural chunk as empty space.
+     * Check every chunk touched by the player's horizontal collision footprint;
+     * missing chunks are queued and movement waits until their voxel data exists.
+     */
+    boolean isCollisionAreaReady(float x, float z, float radius) {
+        int minX = floorChunk((int)Math.floor(x - radius));
+        int maxX = floorChunk((int)Math.floor(x + radius));
+        int minZ = floorChunk((int)Math.floor(z - radius));
+        int maxZ = floorChunk((int)Math.floor(z + radius));
+        boolean ready = true;
+        for (int cz = minZ; cz <= maxZ; cz++) {
+            for (int cx = minX; cx <= maxX; cx++) {
+                if (!isProceduralChunkReady(cx, cz)) {
+                    enqueueProceduralChunk(cx, cz, true);
+                    ready = false;
+                }
+            }
+        }
+        return ready;
+    }
+
     /** A mesh is safe to finalize only after every horizontal face-neighbor exists. */
     boolean areProceduralChunkNeighborsReady(int cx, int cz) {
         return isProceduralChunkReady(cx, cz) &&
