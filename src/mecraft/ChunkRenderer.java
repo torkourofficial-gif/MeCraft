@@ -31,9 +31,9 @@ final class ChunkRenderer {
     // All vertical layers are accumulated into one block mesh per chunk.
     private ChunkBuild pendingBuild;
     private int pendingBuildSlot = -1;
-    // Paint can run several times during one 50 ms game tick. Keep chunk
-    // meshing to one vertical slice per tick so redraw frequency cannot
-    // multiply terrain-build work on fast devices or emulators.
+    // Paint can run several times during one 50 ms game tick. A selected
+    // chunk is assembled completely in one build operation, regardless of
+    // redraw frequency.
     private long lastChunkBuildTime;
     // Cache the active mesh job's camera key to skip a full stream-window scan
     // on every paint while that same chunk is being built.
@@ -53,7 +53,7 @@ final class ChunkRenderer {
     private float basisForwardX, basisForwardY, basisForwardZ;
     private float basisRightX, basisRightZ;
     private float basisUpX, basisUpY, basisUpZ;
-    // Adapt the gap between main-thread mesh slices to their measured cost.
+    // Adapt the gap between complete chunk builds to their measured cost.
     // A slow device gets more breathing room; fast devices can stream sooner.
     private int chunkBuildIntervalMillis = 50;
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
@@ -1791,7 +1791,7 @@ final class ChunkRenderer {
         return meshes;
     }
 
-    /** Tune streaming cadence from the measured cost of the last mesh slice. */
+    /** Tune streaming cadence from the measured cost of the last complete chunk. */
     private void recordChunkBuildCost(long startedAt) {
         long elapsed = System.currentTimeMillis() - startedAt;
         if (elapsed >= 45L) {
