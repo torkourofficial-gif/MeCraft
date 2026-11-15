@@ -10,6 +10,7 @@ import javax.microedition.m3g.Graphics3D;
 import javax.microedition.m3g.Fog;
 import javax.microedition.m3g.Group;
 import javax.microedition.m3g.Image2D;
+import javax.microedition.m3g.IndexBuffer;
 import javax.microedition.m3g.Light;
 import javax.microedition.m3g.Mesh;
 import javax.microedition.m3g.Material;
@@ -155,6 +156,9 @@ final class ChunkRenderer {
     private long lastFaceCullMillis;
     private int lastAttachedChunkCount;
     private int lastDirectionalMeshCount;
+    // Cached geometry totals for meshes currently attached to the terrain group.
+    private long lastTerrainTriangles;
+    private long lastTerrainVertices;
     private long lastSceneRenderMillis;
     private long lastHandRenderMillis;
     private long chunkBuildStartedAt;
@@ -1459,6 +1463,24 @@ final class ChunkRenderer {
         }
     }
 
+    /** Recount attached terrain geometry only when scene membership changes. */
+    private void recountTerrainGeometry() {
+        long triangles = 0L;
+        long vertices = 0L;
+        int children = terrain.getChildCount();
+        for (int i = 0; i < children; i++) {
+            Mesh mesh = (Mesh)terrain.getChild(i);
+            vertices += mesh.getVertexBuffer().getVertexCount();
+            int submeshes = mesh.getSubmeshCount();
+            for (int sub = 0; sub < submeshes; sub++) {
+                IndexBuffer indices = mesh.getIndexBuffer(sub);
+                if (indices != null) triangles += indices.getIndexCount() / 3;
+            }
+        }
+        lastTerrainTriangles = triangles;
+        lastTerrainVertices = vertices;
+    }
+
     private void setChunkAttached(int slot, boolean attached) {
         Chunk chunk = chunks[slot];
         if (chunk == null || chunk.attached == attached) return;
@@ -1469,6 +1491,7 @@ final class ChunkRenderer {
             }
         }
         chunk.attached = attached;
+        recountTerrainGeometry();
         if (chunk.crackMesh != null)
             chunk.crackMesh.setRenderingEnable(attached &&
                     activeCrackChunkSlot == slot && activeCrackStage >= 0);
@@ -1536,6 +1559,7 @@ final class ChunkRenderer {
             }
             if (chunks[i].crackMesh != null) scene.removeChild(chunks[i].crackMesh);
             chunks[i] = null;
+            recountTerrainGeometry();
         }
         if (activeMiningChunkSlot == i) {
             activeMiningChunkSlot = -1;
@@ -1863,6 +1887,7 @@ final class ChunkRenderer {
         if (complete.attached) {
             for (int i = 0; i < meshes.length; i++) terrain.addChild(meshes[i]);
         }
+        recountTerrainGeometry();
         chunks[slot] = complete;
         chunkWorldX[slot] = cx; chunkWorldY[slot] = cy; chunkWorldZ[slot] = cz;
         dirtyChunks[slot] = false;
@@ -1894,7 +1919,8 @@ final class ChunkRenderer {
         return "S" + lastSyncMillis + " V" + lastVisibilityMillis +
                 " F" + lastFaceCullMillis + " W" + lastSceneRenderMillis +
                 " H" + lastHandRenderMillis + " C" + lastAttachedChunkCount +
-                " M" + terrainMeshes + "/" + lastDirectionalMeshCount + "ms";
+                " M" + terrainMeshes + "/" + lastDirectionalMeshCount +
+                " P" + lastTerrainTriangles + " V" + lastTerrainVertices + "ms";
     }
 
     /** Start clean per-chunk geometry accumulators before reading its first layer. */
