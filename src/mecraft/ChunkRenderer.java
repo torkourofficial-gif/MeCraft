@@ -150,6 +150,10 @@ final class ChunkRenderer {
     private long lastSnapshotBuildMillis;
     private long lastMeshAssemblyMillis;
     private long lastSyncMillis;
+    private long lastVisibilityMillis;
+    private long lastFaceCullMillis;
+    private int lastAttachedChunkCount;
+    private int lastDirectionalMeshCount;
     private long lastSceneRenderMillis;
     private long lastHandRenderMillis;
     private long chunkBuildStartedAt;
@@ -1322,7 +1326,9 @@ final class ChunkRenderer {
         // no block in the world changed.
         railSystem.update(world);
         world.fullRebuild = false;
+        long visibilityStarted = System.currentTimeMillis();
         updateVisibleChunks(world);
+        lastVisibilityMillis = System.currentTimeMillis() - visibilityStarted;
         updateChunkFaceCulling(world);
         lastSyncMillis = System.currentTimeMillis() - syncStarted;
     }
@@ -1496,14 +1502,28 @@ final class ChunkRenderer {
     }
 
     private void updateChunkFaceCulling(VoxelWorld world) {
+        long started = System.currentTimeMillis();
         float eyeX = world.playerX;
         float eyeY = world.playerY + 1.62f;
         float eyeZ = world.playerZ;
+        int attached = 0;
+        int directionalMeshes = 0;
         for (int slot = 0; slot < chunks.length; slot++) {
-            if (chunks[slot] != null)
-                applyChunkFaceVisibility(chunks[slot], chunkWorldX[slot],
-                        chunkWorldY[slot], chunkWorldZ[slot], eyeX, eyeY, eyeZ);
+            Chunk chunk = chunks[slot];
+            if (chunk == null) continue;
+            if (chunk.attached) {
+                attached++;
+                if (chunk.faceMeshes != null) {
+                    for (int face = 0; face < chunk.faceMeshes.length; face++)
+                        if (chunk.faceMeshes[face] != null) directionalMeshes++;
+                }
+            }
+            applyChunkFaceVisibility(chunk, chunkWorldX[slot],
+                    chunkWorldY[slot], chunkWorldZ[slot], eyeX, eyeY, eyeZ);
         }
+        lastAttachedChunkCount = attached;
+        lastDirectionalMeshCount = directionalMeshes;
+        lastFaceCullMillis = System.currentTimeMillis() - started;
     }
 
     private void removeChunk(int i) {
@@ -1853,10 +1873,13 @@ final class ChunkRenderer {
                 " M" + lastMeshAssemblyMillis + "ms";
     }
 
-    /** Per-frame timings: sync/build, full scene render, and first-person overlay. */
+    /** Per-frame timings and scene-graph counters for M3G profiling. */
     String renderStats() {
-        return "S" + lastSyncMillis + " W" + lastSceneRenderMillis +
-                " H" + lastHandRenderMillis + "ms";
+        int terrainMeshes = terrain.getChildCount();
+        return "S" + lastSyncMillis + " V" + lastVisibilityMillis +
+                " F" + lastFaceCullMillis + " W" + lastSceneRenderMillis +
+                " H" + lastHandRenderMillis + " C" + lastAttachedChunkCount +
+                " M" + terrainMeshes + "/" + lastDirectionalMeshCount + "ms";
     }
 
     /** Start clean per-chunk geometry accumulators before reading its first layer. */
