@@ -113,14 +113,6 @@ final class ChunkRenderer {
     private final SkySystem skyObjects;
     private final Light sunlight = new Light();
     private final Light[] torchLights = new Light[3];
-    private final float[] nearestTorchDistance = new float[] { 65.0f, 65.0f, 65.0f };
-    private final int[] nearestTorchX = new int[3];
-    private final int[] nearestTorchY = new int[3];
-    private final int[] nearestTorchZ = new int[3];
-    private int torchScanX = Integer.MIN_VALUE;
-    private int torchScanY = Integer.MIN_VALUE;
-    private int torchScanZ = Integer.MIN_VALUE;
-    private int torchScanRevision = Integer.MIN_VALUE;
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     // Assigned slots include chunks whose first mesh is still being built.
     private final boolean[] assignedChunks = new boolean[CACHE_SIZE];
@@ -144,6 +136,7 @@ final class ChunkRenderer {
     private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[TILE_COUNT];
     private final int[] activeFaceBuilderIndices = new int[TILE_COUNT];
     private int activeFaceBuilderCount;
+    private int chunkNonAirBlocks;
     private int completedChunkBuilds;
     private int completedDirtyRebuilds;
     private long lastChunkBuildMillis;
@@ -1749,7 +1742,7 @@ final class ChunkRenderer {
 
         FireBuilder completedFireBuilder = buildingFires;
         long meshStartedAt = System.currentTimeMillis();
-        Mesh[] meshes = finishChunkMeshes(cx, cy, cz);
+        Mesh[] meshes = finishChunkMeshes(world, cx, cy, cz);
         lastMeshAssemblyMillis = System.currentTimeMillis() - meshStartedAt;
         Chunk previousChunk = chunks[slot];
         // Remove the old scene nodes before replacing the mesh reference.
@@ -1795,6 +1788,7 @@ final class ChunkRenderer {
     /** Start clean per-chunk geometry accumulators before reading its first layer. */
     private void resetChunkMeshAccumulators() {
         activeFaceBuilderCount = 0;
+        chunkNonAirBlocks = 0;
         for (int i = 0; i < TILE_COUNT; i++) chunkFaceBuilders[i] = null;
         buildingFlowers = null;
         buildingFires = null;
@@ -1804,7 +1798,8 @@ final class ChunkRenderer {
     }
 
     /** Assemble one block Mesh with one submesh/material per atlas tile. */
-    private Mesh[] finishChunkMeshes(int cx, int cy, int cz) {
+    private Mesh[] finishChunkMeshes(VoxelWorld world, int cx, int cy, int cz) {
+        buildChunkFaces(world, cx, cy, cz);
         int count = activeFaceBuilderCount;
         int flowerCount = buildingFlowers == null ? 0 : 1;
         int fireCount = buildingFires == null ? 0 : 1;
@@ -1845,31 +1840,32 @@ final class ChunkRenderer {
         return meshes;
     }
 
+    /**
+     * Collects non-cube geometry and the per-voxel light field for one layer.
+     * Cube faces are deliberately postponed until all eight layers are ready:
+     * this lets the greedy mesher merge matching faces vertically as well as
+     * horizontally, instead of restarting its mask at every Y coordinate.
+     */
     private void buildChunkLayer(VoxelWorld world, int cx, int cy, int cz,
                                    int layer) {
-        FaceBuilder[] builders = chunkFaceBuilders;
         int x0 = cx * VoxelWorld.CHUNK_XZ;
         int y0 = cy * VoxelWorld.CHUNK_Y + layer;
         int z0 = cz * VoxelWorld.CHUNK_XZ;
-        int x1 = x0 + VoxelWorld.CHUNK_XZ;
-        int y1 = y0 + 1;
-        int z1 = z0 + VoxelWorld.CHUNK_XZ;
-
-        // Torch sources are gathered once when this resumable chunk build starts.
-        fillChunkLightSlice(x0, y0, z0);
-
-        // Crossed flowers do not form cube faces, so collect them separately.
-        // Empty vertical sections are common above the terrain: detect them in the
-        // shared voxel snapshot and avoid allocating face builders/M3G meshes.
-        int nonAirBlocks = 0;
         int voxelLayerOffset = layer * CHUNK_AREA;
+
+        fillChunkLightSlice(x0, y0, z0, layer);
+
         for (int z = 0; z < VoxelWorld.CHUNK_XZ; z++) {
+            int row = voxelLayerOffset + z * VoxelWorld.CHUNK_XZ;
             for (int x = 0; x < VoxelWorld.CHUNK_XZ; x++) {
                 int localIndex = z * VoxelWorld.CHUNK_XZ + x;
-                byte id = chunkVoxelScratch[voxelLayerOffset + localIndex];
-                if (id != Block.AIR) nonAirBlocks++;
-                chunkLightScratch[localIndex] = (byte)(id == Block.LAVA ? 14 :
-                        (chunkLightScratch[localIndex] & 255));
+                byte id = chunkVoxelScratch[row + x];
+                if (id == Block.AIR) continue;
+                chunkNonAirBlocks++;
+
+                if (id == Block.LAVA)
+                    chunkLightScratch[voxelLayerOffset + localIndex] = 14;
+
                 if (id == Block.PORTAL) {
                     if (buildingPortals == null) buildingPortals = reusablePortalBuilder;
                     buildingPortals.add(x, layer, z,
@@ -1887,62 +1883,86 @@ final class ChunkRenderer {
                 }
             }
         }
+    }
 
-        // Empty slices contribute no faces; keep the same accumulators for the
-        // next vertical layer.
-        if (nonAirBlocks == 0) return;
+    /**
+     * Greedy meshing over the complete 16x8x16 snapshot. Horizontal and
+     * vertical faces now share one 2D mask per chunk plane, allowing adjacent
+     * rectangles to merge across layer boundaries when tile and light match.
+     * Every mask key includes both values, so shading and atlas selection stay
+     * identical to the previous per-layer renderer.
+     */
+    private void buildChunkFaces(VoxelWorld world, int cx, int cy, int cz) {
+        if (chunkNonAirBlocks == 0) return;
 
-        // Mine64-style greedy meshing: combine adjacent visible faces on each
-        // chunk plane when their atlas tile matches. Tile textures repeat, so
-        // the merged rectangles preserve the original per-block texture scale.
-        int[] mask = greedyMaskScratch;
+        final int x0 = cx * VoxelWorld.CHUNK_XZ;
+        final int y0 = cy * VoxelWorld.CHUNK_Y;
+        final int z0 = cz * VoxelWorld.CHUNK_XZ;
+        final int width = VoxelWorld.CHUNK_XZ;
+        final int[] mask = greedyMaskScratch;
+        final FaceBuilder[] builders = chunkFaceBuilders;
+
         for (int face = 0; face < 6; face++) {
-            int slices = face == 0 || face == 5 ? 1 : VoxelWorld.CHUNK_XZ;
-            int width = VoxelWorld.CHUNK_XZ;
-            int height = face == 0 || face == 5 ? VoxelWorld.CHUNK_XZ : 1;
+            boolean horizontalFace = face == 0 || face == 5;
+            int slices = horizontalFace ? VoxelWorld.CHUNK_Y : VoxelWorld.CHUNK_XZ;
+            int height = horizontalFace ? VoxelWorld.CHUNK_XZ : VoxelWorld.CHUNK_Y;
+
             for (int slice = 0; slice < slices; slice++) {
                 for (int b = 0; b < height; b++) {
                     int row = b * width;
                     for (int a = 0; a < width; a++) {
-                        int x, y, z;
-                        if (face == 0 || face == 5) {
-                            x = x0 + a; y = y0 + slice; z = z0 + b;
+                        int lx, ly, lz;
+                        if (horizontalFace) {
+                            lx = a;
+                            ly = slice;
+                            lz = b;
                         } else if (face == 1 || face == 2) {
-                            x = x0 + slice; y = y0 + b; z = z0 + a;
+                            lx = slice;
+                            ly = b;
+                            lz = a;
                         } else {
-                            x = x0 + a; y = y0 + b; z = z0 + slice;
+                            lx = a;
+                            ly = b;
+                            lz = slice;
                         }
-                        int voxelIndex = (((y - y0) * VoxelWorld.CHUNK_XZ) + (z - z0)) *
-                                VoxelWorld.CHUNK_XZ + (x - x0);
-                        byte id = chunkVoxelScratch[voxelLayerOffset + voxelIndex];
+
+                        int voxelIndex = (ly * width + lz) * width + lx;
+                        byte id = chunkVoxelScratch[voxelIndex];
                         int key = 0;
-                        if (id != Block.AIR && id != Block.RAIL && !Block.isFlower(id) && !Block.isDoor(id) &&
-                            !(face == 5 && y == 0)) {
-                            int nx = x, ny = y, nz = z;
+
+                        if (id != Block.AIR && id != Block.RAIL &&
+                                !Block.isFlower(id) && !Block.isDoor(id) &&
+                                !(face == 5 && y0 + ly == 0)) {
+                            int nx = lx, ny = ly, nz = lz;
                             if (face == 0) ny++;
                             else if (face == 1) nx--;
                             else if (face == 2) nx++;
                             else if (face == 3) nz--;
                             else if (face == 4) nz++;
                             else ny--;
+
                             byte neighbor;
-                            if (face == 0 && y + 1 < y1)
-                                neighbor = chunkVoxelScratch[voxelLayerOffset + voxelIndex + CHUNK_AREA];
-                            else if (face == 1 && x > x0)
-                                neighbor = chunkVoxelScratch[voxelLayerOffset + voxelIndex - 1];
-                            else if (face == 2 && x + 1 < x1)
-                                neighbor = chunkVoxelScratch[voxelLayerOffset + voxelIndex + 1];
-                            else if (face == 3 && z > z0)
-                                neighbor = chunkVoxelScratch[voxelLayerOffset + voxelIndex - VoxelWorld.CHUNK_XZ];
-                            else if (face == 4 && z + 1 < z1)
-                                neighbor = chunkVoxelScratch[voxelLayerOffset + voxelIndex + VoxelWorld.CHUNK_XZ];
-                            else if (face == 5 && y > y0)
-                                neighbor = chunkVoxelScratch[voxelLayerOffset + voxelIndex - CHUNK_AREA];
-                            else neighbor = world.getLoaded(nx, ny, nz);
-                            boolean faceVisible = Block.faceVisible(id, neighbor);
-                            if (faceVisible) {
-                                int tile = renderWorldTile(world, id, face, x, y, z,
-                                        id == Block.WOOL ? world.woolColor(x, y, z) : 0);
+                            if (face == 0 && ly + 1 < VoxelWorld.CHUNK_Y)
+                                neighbor = chunkVoxelScratch[voxelIndex + CHUNK_AREA];
+                            else if (face == 5 && ly > 0)
+                                neighbor = chunkVoxelScratch[voxelIndex - CHUNK_AREA];
+                            else if (face == 1 && lx > 0)
+                                neighbor = chunkVoxelScratch[voxelIndex - 1];
+                            else if (face == 2 && lx + 1 < width)
+                                neighbor = chunkVoxelScratch[voxelIndex + 1];
+                            else if (face == 3 && lz > 0)
+                                neighbor = chunkVoxelScratch[voxelIndex - width];
+                            else if (face == 4 && lz + 1 < width)
+                                neighbor = chunkVoxelScratch[voxelIndex + width];
+                            else
+                                neighbor = world.getLoaded(x0 + nx, y0 + ny, z0 + nz);
+
+                            if (Block.faceVisible(id, neighbor)) {
+                                int wx = x0 + lx, wy = y0 + ly, wz = z0 + lz;
+                                int woolColor = id == Block.WOOL ?
+                                        world.woolColor(wx, wy, wz) : 0;
+                                int tile = renderWorldTile(world, id, face,
+                                        wx, wy, wz, woolColor);
                                 int light = chunkLightScratch[voxelIndex] & 255;
                                 key = light * TILE_COUNT + tile + 1;
                             }
@@ -1950,61 +1970,73 @@ final class ChunkRenderer {
                         mask[row + a] = key;
                     }
                 }
+
                 for (int b = 0; b < height; b++) {
+                    int row = b * width;
                     for (int a = 0; a < width; ) {
-                        int key = mask[b * width + a];
-                        if (key == 0) { a++; continue; }
+                        int key = mask[row + a];
+                        if (key == 0) {
+                            a++;
+                            continue;
+                        }
+
                         int rectWidth = 1;
-                        while (a + rectWidth < width && mask[b * width + a + rectWidth] == key)
+                        while (a + rectWidth < width &&
+                                mask[row + a + rectWidth] == key)
                             rectWidth++;
+
                         int rectHeight = 1;
                         boolean extend = true;
                         while (b + rectHeight < height && extend) {
                             int nextRow = (b + rectHeight) * width + a;
                             for (int k = 0; k < rectWidth; k++) {
-                                if (mask[nextRow + k] != key) { extend = false; break; }
+                                if (mask[nextRow + k] != key) {
+                                    extend = false;
+                                    break;
+                                }
                             }
                             if (extend) rectHeight++;
                         }
+
                         for (int clearY = 0; clearY < rectHeight; clearY++) {
                             int clearRow = (b + clearY) * width + a;
-                            for (int clearX = 0; clearX < rectWidth; clearX++) mask[clearRow + clearX] = 0;
+                            for (int clearX = 0; clearX < rectWidth; clearX++)
+                                mask[clearRow + clearX] = 0;
                         }
-                        int x, y, z, faceWidth, faceHeight;
-                        if (face == 0 || face == 5) {
-                            x = a; y = slice; z = b;
-                            faceWidth = rectWidth; faceHeight = rectHeight;
+
+                        int x, y, z;
+                        if (horizontalFace) {
+                            x = a;
+                            y = slice;
+                            z = b;
                         } else if (face == 1 || face == 2) {
-                            x = slice; y = b; z = a;
-                            faceWidth = rectWidth; faceHeight = rectHeight;
+                            x = slice;
+                            y = b;
+                            z = a;
                         } else {
-                            x = a; y = b; z = slice;
-                            faceWidth = rectWidth; faceHeight = rectHeight;
+                            x = a;
+                            y = b;
+                            z = slice;
                         }
+
                         int encoded = key - 1;
-                        int tile = encoded % TILE_COUNT;
+                        int tile = encoded & (TILE_COUNT - 1);
                         int light = encoded / TILE_COUNT;
-                        // Batch every light level of this atlas tile into one mesh;
-                        // addRect stores the correct brightness in its own vertices.
-                        int builderIndex = tile;
-                        if (builders[builderIndex] == null) {
+                        if (builders[tile] == null) {
                             FaceBuilder builder = freeFaceBuilderCount > 0 ?
                                     freeFaceBuilders[--freeFaceBuilderCount] : null;
                             if (builder == null) builder = new FaceBuilder(tile, light);
                             else builder.reset(tile, light);
-                            builders[builderIndex] = builder;
-                            activeFaceBuilderIndices[activeFaceBuilderCount++] = builderIndex;
+                            builders[tile] = builder;
+                            activeFaceBuilderIndices[activeFaceBuilderCount++] = tile;
                         }
-                        builders[builderIndex].addRect(x, y + layer, z,
-                                faceWidth, faceHeight, face, light);
+                        builders[tile].addRect(x, y, z, rectWidth,
+                                rectHeight, face, light);
                         a += rectWidth;
                     }
                 }
             }
         }
-
-        // Geometry remains in the shared per-material builders until all
-        // vertical layers have been processed by advanceChunkBuild().
     }
 
     /** Apply an Alpha-era biome tint to the vertex colors of a held block mesh. */
@@ -2242,8 +2274,9 @@ final class ChunkRenderer {
      * into its bounded Manhattan-radius footprint. This replaces a scan of
      * every source for every voxel during meshing.
      */
-    private void fillChunkLightSlice(int x0, int y, int z0) {
-        for (int i = 0; i < CHUNK_AREA; i++) chunkLightScratch[i] = 0;
+    private void fillChunkLightSlice(int x0, int y, int z0, int layer) {
+        int layerOffset = layer * CHUNK_AREA;
+        for (int i = 0; i < CHUNK_AREA; i++) chunkLightScratch[layerOffset + i] = 0;
         for (int source = 0; source < chunkTorchCount; source++) {
             int radius = chunkLightRadius[source] & 255;
             int dy = Math.abs(y - chunkTorchY[source]);
@@ -2260,7 +2293,7 @@ final class ChunkRenderer {
                     int distance = dy + zDistance + Math.abs(x0 + x - chunkTorchX[source]);
                     int level = (radius + 1 - distance) * multiplier;
                     if (level > 14) level = 14;
-                    int at = z * VoxelWorld.CHUNK_XZ + x;
+                    int at = layerOffset + z * VoxelWorld.CHUNK_XZ + x;
                     if (level > (chunkLightScratch[at] & 255))
                         chunkLightScratch[at] = (byte)level;
                 }
