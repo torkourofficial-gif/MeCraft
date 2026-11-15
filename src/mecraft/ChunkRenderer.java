@@ -2527,7 +2527,10 @@ final class ChunkRenderer {
             appearance.setCompositingMode(compositing);
         }
         PolygonMode polygon = new PolygonMode();
-        polygon.setCulling(PolygonMode.CULL_NONE);
+        // Chunk block quads are wound outwards on all six faces. Opaque terrain
+        // can therefore discard back-facing triangles before rasterization.
+        // Keep translucent water double-sided to preserve its existing behavior.
+        polygon.setCulling(translucent ? PolygonMode.CULL_NONE : PolygonMode.CULL_BACK);
         polygon.setShading(PolygonMode.SHADE_FLAT);
         appearance.setPolygonMode(polygon);
         return appearance;
