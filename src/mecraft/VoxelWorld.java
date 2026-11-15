@@ -442,6 +442,7 @@ final class VoxelWorld {
                 setGenerationDiagnosticStage("VoxelWorld: falló la generación procedural en segundo plano");
                 // Keep the reusable worker alive; a later valid request can
                 // still be processed instead of permanently disabling streaming.
+                continue;
             }
             synchronized (this) {
                 proceduralWorkerBusy = false;
