@@ -176,6 +176,7 @@ final class ChunkRenderer {
     private final VertexArray crackUV;
     private final short[] crackUVData = new short[] { 0,16, 0,0, 16,16, 16,0 };
     private int activeMiningChunkSlot = -1;
+    private int activeCrackChunkSlot = -1;
     private final Appearance portalAppearance;
     private final Texture2D worldFireTexture;
     private final Appearance worldFireAppearance;
@@ -1058,11 +1059,11 @@ final class ChunkRenderer {
 
     /** Mining overlay belongs to the resident chunk, not to a global world-space mesh. */
     void setMiningCracks(int x, int y, int z, int faceX, int faceY, int faceZ, int stage) {
-        if (activeMiningChunkSlot >= 0 && activeMiningChunkSlot < chunks.length &&
-                chunks[activeMiningChunkSlot] != null &&
-                chunks[activeMiningChunkSlot].crackMesh != null)
-            chunks[activeMiningChunkSlot].crackMesh.setRenderingEnable(false);
-        activeMiningChunkSlot = -1;
+        if (activeCrackChunkSlot >= 0 && activeCrackChunkSlot < chunks.length &&
+                chunks[activeCrackChunkSlot] != null &&
+                chunks[activeCrackChunkSlot].crackMesh != null)
+            chunks[activeCrackChunkSlot].crackMesh.setRenderingEnable(false);
+        activeCrackChunkSlot = -1;
         if (x < 0 || stage < 0) return;
         int slot = findChunkSlot(x, y, z);
         if (slot < 0 || chunks[slot] == null) return;
@@ -1087,7 +1088,7 @@ final class ChunkRenderer {
         }
         chunk.crackPositions.set(0, 4, p);
         chunk.crackMesh.setRenderingEnable(true);
-        activeMiningChunkSlot = slot;
+        activeCrackChunkSlot = slot;
     }
 
     /** The loop timer is stored by chunk, while the visible first-person arm
@@ -1105,6 +1106,8 @@ final class ChunkRenderer {
                 chunk.handSwinging = true;
             }
             activeMiningChunkSlot = slot;
+        } else if (!looping) {
+            activeMiningChunkSlot = -1;
         }
     }
 
@@ -1434,6 +1437,7 @@ final class ChunkRenderer {
             chunks[i] = null;
         }
         if (activeMiningChunkSlot == i) activeMiningChunkSlot = -1;
+        if (activeCrackChunkSlot == i) activeCrackChunkSlot = -1;
         assignedChunks[i] = false;
         dirtyChunks[i] = false;
         dirtyLayerMasks[i] = 0;
