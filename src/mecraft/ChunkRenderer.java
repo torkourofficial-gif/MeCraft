@@ -183,6 +183,11 @@ final class ChunkRenderer {
     private final short[] crackUVData = new short[] { 0,16, 0,0, 16,16, 16,0 };
     private int activeMiningChunkSlot = -1;
     private int activeCrackChunkSlot = -1;
+    // Keep the crack overlay's world-space target so a chunk remesh can refresh
+    // its separate M3G mesh in the same frame as the terrain replacement.
+    private int activeCrackX = -1, activeCrackY = -1, activeCrackZ = -1;
+    private int activeCrackFaceX, activeCrackFaceY, activeCrackFaceZ;
+    private int activeCrackStage = -1;
     private final Appearance portalAppearance;
     private final Texture2D worldFireTexture;
     private final Appearance worldFireAppearance;
@@ -1070,6 +1075,8 @@ final class ChunkRenderer {
                 chunks[activeCrackChunkSlot].crackMesh != null)
             chunks[activeCrackChunkSlot].crackMesh.setRenderingEnable(false);
         activeCrackChunkSlot = -1;
+        activeCrackX = activeCrackY = activeCrackZ = -1;
+        activeCrackStage = -1;
         if (x < 0 || stage < 0) return;
         int slot = findChunkSlot(x, y, z);
         if (slot < 0 || chunks[slot] == null) return;
@@ -1095,6 +1102,9 @@ final class ChunkRenderer {
         chunk.crackPositions.set(0, 4, p);
         chunk.crackMesh.setRenderingEnable(true);
         activeCrackChunkSlot = slot;
+        activeCrackX = x; activeCrackY = y; activeCrackZ = z;
+        activeCrackFaceX = faceX; activeCrackFaceY = faceY; activeCrackFaceZ = faceZ;
+        activeCrackStage = stage;
     }
 
     /** The loop timer is stored by chunk, while the visible first-person arm
@@ -1311,8 +1321,10 @@ final class ChunkRenderer {
             // between renderer syncs (doors, support cascades, fluid spread), a
             // single-coordinate invalidation would leave stale meshes behind.
             if (builtRevision < 0 || world.fullRebuild ||
-                    world.revision != builtRevision + 1) rebuildWorld(world);
-            else {
+                    world.revision != builtRevision + 1) {
+                rebuildWorld(world);
+                prioritizeChangedChunk(world);
+            } else {
                 // Drop the previous cached target before invalidating meshes.
                 // The edited chunk must be selected again even if the old target
                 // was a different chunk that finished between two paint calls.
@@ -1330,6 +1342,24 @@ final class ChunkRenderer {
         railSystem.update(world);
         world.fullRebuild = false;
         updateVisibleChunks(world);
+    }
+
+    /** Ensure the latest changed coordinate wins even after a multi-edit revision. */
+    private void prioritizeChangedChunk(VoxelWorld world) {
+        int cx = floorDiv(world.changedX, VoxelWorld.CHUNK_XZ);
+        int cy = world.changedY / VoxelWorld.CHUNK_Y;
+        int cz = floorDiv(world.changedZ, VoxelWorld.CHUNK_XZ);
+        for (int i = 0; i < CACHE_SIZE; i++) {
+            if (!assignedChunks[i] || chunkWorldX[i] != cx ||
+                    chunkWorldY[i] != cy || chunkWorldZ[i] != cz) continue;
+            dirtyLayerMasks[i] = (1 << VoxelWorld.CHUNK_Y) - 1;
+            dirtyChunks[i] = true;
+            pendingTargetSlot = i;
+            pendingTargetX = cx;
+            pendingTargetY = cy;
+            pendingTargetZ = cz;
+            return;
+        }
     }
 
     private void rebuildChanged(VoxelWorld world) {
@@ -1777,6 +1807,14 @@ final class ChunkRenderer {
         lastChunkBuildMillis = System.currentTimeMillis() - chunkBuildStartedAt;
         pendingBuild = null;
         pendingBuildSlot = -1;
+        // Crack overlay is a separate M3G mesh. Re-upload its vertex positions
+        // after terrain replacement so both meshes stay visually synchronized.
+        if (activeCrackChunkSlot == slot && activeCrackStage >= 0) {
+            int crackX = activeCrackX, crackY = activeCrackY, crackZ = activeCrackZ;
+            int faceX = activeCrackFaceX, faceY = activeCrackFaceY, faceZ = activeCrackFaceZ;
+            int stage = activeCrackStage;
+            setMiningCracks(crackX, crackY, crackZ, faceX, faceY, faceZ, stage);
+        }
     }
 
     /** Last completed chunk timings, shown only while the pause menu is open. */
