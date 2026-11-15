@@ -1403,6 +1403,8 @@ final class ChunkRenderer {
                         dirtyLayerMasks[i] |= 1 << layer;
                 }
                 dirtyChunks[i] = dirtyLayerMasks[i] != 0;
+                if (chunkWorldX[i] == cx && chunkWorldY[i] == cy &&
+                        chunkWorldZ[i] == cz) pendingTargetSlot = i;
                 continue;
             }
             if (Math.abs(chunkWorldX[i] - cx) > (lx == 0 || lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0) ||
