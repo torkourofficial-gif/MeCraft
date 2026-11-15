@@ -10,7 +10,6 @@ import javax.microedition.m3g.Graphics3D;
 import javax.microedition.m3g.Fog;
 import javax.microedition.m3g.Group;
 import javax.microedition.m3g.Image2D;
-import javax.microedition.m3g.IndexBuffer;
 import javax.microedition.m3g.Light;
 import javax.microedition.m3g.Mesh;
 import javax.microedition.m3g.Material;
@@ -1777,10 +1776,13 @@ final class ChunkRenderer {
         int portalCount = buildingPortals == null ? 0 : 1;
         if (count + flowerCount + fireCount + portalCount == 0) return new Mesh[0];
 
-        Mesh[] meshes = new Mesh[(count > 0 ? 1 : 0) +
-                flowerCount + fireCount + portalCount];
+        Mesh[] meshes = new Mesh[count + flowerCount + fireCount + portalCount];
         int at = 0;
-        if (count > 0) meshes[at++] = makeChunkBlockMesh();
+        if (count > 0) {
+            Mesh[] blockMeshes = makeChunkBlockMeshes();
+            for (int i = 0; i < blockMeshes.length; i++)
+                meshes[at++] = blockMeshes[i];
+        }
         if (buildingFlowers != null)
             meshes[at++] = makeFlowerMesh(buildingFlowers, flowerAppearance);
         if (buildingFires != null) {
@@ -2030,45 +2032,20 @@ final class ChunkRenderer {
     }
 
     /**
-     * All solid block faces for this chunk share one VertexBuffer and one M3G
-     * Mesh. Each atlas tile remains a separate submesh so its original texture,
-     * transparency, tint and fog settings are preserved.
+     * Build one ordinary M3G Mesh per atlas tile, following the simple 1.5
+     * renderer layout. Each mesh owns a compact VertexBuffer and one
+     * TriangleStripArray; current lighting, greedy rectangles and tile
+     * appearances are retained.
      */
-    private Mesh makeChunkBlockMesh() {
-        int totalVertices = 0;
-        for (int active = 0; active < activeFaceBuilderCount; active++) {
-            FaceBuilder builder = chunkFaceBuilders[activeFaceBuilderIndices[active]];
-            totalVertices += builder.vertexCount;
-        }
-        if (totalVertices <= 0) return null;
-
-        VertexArray positions = new VertexArray(totalVertices, 3, 2);
-        VertexArray texCoords = new VertexArray(totalVertices, 2, 2);
-        VertexArray colors = new VertexArray(totalVertices, 4, 1);
-        IndexBuffer[] submeshes = new IndexBuffer[activeFaceBuilderCount];
-        Appearance[] appearances = new Appearance[activeFaceBuilderCount];
-        int vertexOffset = 0;
+    private Mesh[] makeChunkBlockMeshes() {
+        Mesh[] meshes = new Mesh[activeFaceBuilderCount];
         for (int active = 0; active < activeFaceBuilderCount; active++) {
             int index = activeFaceBuilderIndices[active];
             FaceBuilder builder = chunkFaceBuilders[index];
-            // VertexArray.set copies directly from each reusable material buffer,
-            // avoiding a second full-size temporary copy on memory-limited phones.
-            positions.set(vertexOffset, builder.vertexCount, builder.p);
-            texCoords.set(vertexOffset, builder.vertexCount, builder.uv);
-            colors.set(vertexOffset, builder.vertexCount, builder.c);
-            int[] strips = new int[builder.faceCount];
-            for (int face = 0; face < strips.length; face++) strips[face] = 4;
-            submeshes[active] = new TriangleStripArray(vertexOffset, strips);
-            appearances[active] = tileAppearance(index);
-            vertexOffset += builder.vertexCount;
+            meshes[active] = makeMesh(builder, tileAppearance(index),
+                    0.999f / 16.0f);
         }
-        VertexBuffer vertices = new VertexBuffer();
-        vertices.setPositions(positions, 1.0f, null);
-        // A single scale is shared by all atlas-tile submeshes. The tiny 0.1%
-        // inset also prevents the grass-side repeat seam from bleeding.
-        vertices.setTexCoords(0, texCoords, 0.999f / 16.0f, null);
-        vertices.setColors(colors);
-        return new Mesh(vertices, submeshes, appearances);
+        return meshes;
     }
 
     private Mesh makeMesh(FaceBuilder data, Appearance appearance) {
