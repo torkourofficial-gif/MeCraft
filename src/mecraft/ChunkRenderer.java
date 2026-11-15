@@ -2073,41 +2073,32 @@ final class ChunkRenderer {
      */
     private Mesh makeChunkBlockMesh() {
         int totalVertices = 0;
-        int totalFaces = 0;
         for (int active = 0; active < activeFaceBuilderCount; active++) {
             FaceBuilder builder = chunkFaceBuilders[activeFaceBuilderIndices[active]];
             totalVertices += builder.vertexCount;
-            totalFaces += builder.faceCount;
         }
         if (totalVertices <= 0) return null;
 
         VertexArray positions = new VertexArray(totalVertices, 3, 2);
         VertexArray texCoords = new VertexArray(totalVertices, 2, 2);
         VertexArray colors = new VertexArray(totalVertices, 4, 1);
-        short[] p = new short[totalVertices * 3];
-        short[] uv = new short[totalVertices * 2];
-        byte[] c = new byte[totalVertices * 4];
         IndexBuffer[] submeshes = new IndexBuffer[activeFaceBuilderCount];
         Appearance[] appearances = new Appearance[activeFaceBuilderCount];
         int vertexOffset = 0;
         for (int active = 0; active < activeFaceBuilderCount; active++) {
             int index = activeFaceBuilderIndices[active];
             FaceBuilder builder = chunkFaceBuilders[index];
-            System.arraycopy(builder.p, 0, p, vertexOffset * 3,
-                    builder.vertexCount * 3);
-            System.arraycopy(builder.uv, 0, uv, vertexOffset * 2,
-                    builder.vertexCount * 2);
-            System.arraycopy(builder.c, 0, c, vertexOffset * 4,
-                    builder.vertexCount * 4);
+            // VertexArray.set copies directly from each reusable material buffer,
+            // avoiding a second full-size temporary copy on memory-limited phones.
+            positions.set(vertexOffset, builder.vertexCount, builder.p);
+            texCoords.set(vertexOffset, builder.vertexCount, builder.uv);
+            colors.set(vertexOffset, builder.vertexCount, builder.c);
             int[] strips = new int[builder.faceCount];
             for (int face = 0; face < strips.length; face++) strips[face] = 4;
             submeshes[active] = new TriangleStripArray(vertexOffset, strips);
             appearances[active] = tileAppearance(index);
             vertexOffset += builder.vertexCount;
         }
-        positions.set(0, totalVertices, p);
-        texCoords.set(0, totalVertices, uv);
-        colors.set(0, totalVertices, c);
         VertexBuffer vertices = new VertexBuffer();
         vertices.setPositions(positions, 1.0f, null);
         // A single scale is shared by all atlas-tile submeshes. The tiny 0.1%
