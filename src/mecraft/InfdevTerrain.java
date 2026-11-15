@@ -62,18 +62,25 @@ final class InfdevTerrain {
                     biome == SNOWY ? Block.SNOW : Block.GRASS;
                 int fill = biome == DESERT || biome == OCEAN ? Block.SAND : Block.DIRT;
                 int at = column * WORLD_HEIGHT;
-                for (int y = 0; y < WORLD_HEIGHT; y++) {
-                    byte id;
-                    if (y == 0) id = Block.BEDROCK;
-                    else if (y > height) id = biome == OCEAN && y <= SEA_LEVEL ?
-                        Block.WATER : Block.AIR;
-                    else if (y == height) id = (byte)top;
-                    else if (y >= height - 3) id = (byte)fill;
-                    else if (y < 8 && (hash(seed ^ 0x5F356495, worldX, y, worldZ) & 31) == 0) id = Block.COAL;
-                    else if (y < 5 && (hash(seed ^ 0x4B1D2A37, worldX, y, worldZ) & 95) == 0) id = Block.IRON;
-                    else id = Block.STONE;
+                boolean ocean = biome == OCEAN;
+                int stoneEnd = height - 3;
+                blocks[at] = Block.BEDROCK;
+                // Split the column into ranges to remove repeated surface and air tests.
+                for (int y = 1; y < stoneEnd; y++) {
+                    byte id = Block.STONE;
+                    if (y < 8 &&
+                        (hash(seed ^ 0x5F356495, worldX, y, worldZ) & 31) == 0)
+                        id = Block.COAL;
+                    else if (y < 5 &&
+                        (hash(seed ^ 0x4B1D2A37, worldX, y, worldZ) & 95) == 0)
+                        id = Block.IRON;
                     blocks[at + y] = id;
                 }
+                for (int y = stoneEnd; y < height; y++)
+                    blocks[at + y] = (byte)fill;
+                blocks[at + height] = (byte)top;
+                for (int y = height + 1; y < WORLD_HEIGHT; y++)
+                    blocks[at + y] = ocean && y <= SEA_LEVEL ? Block.WATER : Block.AIR;
             }
             yieldGenerationSlice();
         }
@@ -144,18 +151,25 @@ final class InfdevTerrain {
                         biome == SNOWY ? Block.SNOW : Block.GRASS;
                     int fill = biome == DESERT || biome == OCEAN ? Block.SAND : Block.DIRT;
                     int at = column * WORLD_HEIGHT;
-                    for (int y = 0; y < WORLD_HEIGHT; y++) {
-                        byte id;
-                        if (y == 0) id = Block.BEDROCK;
-                        else if (y > height) id = biome == OCEAN && y <= SEA_LEVEL ?
-                            Block.WATER : Block.AIR;
-                        else if (y == height) id = (byte)top;
-                        else if (y >= height - 3) id = (byte)fill;
-                        else if (y < 8 && (hash(seed ^ 0x5F356495, worldX, y, worldZ) & 31) == 0) id = Block.COAL;
-                        else if (y < 5 && (hash(seed ^ 0x4B1D2A37, worldX, y, worldZ) & 95) == 0) id = Block.IRON;
-                        else id = Block.STONE;
+                    boolean ocean = biome == OCEAN;
+                    int stoneEnd = height - 3;
+                    blocks[at] = Block.BEDROCK;
+                    // Split the column into ranges to remove repeated surface and air tests.
+                    for (int y = 1; y < stoneEnd; y++) {
+                        byte id = Block.STONE;
+                        if (y < 8 &&
+                            (hash(seed ^ 0x5F356495, worldX, y, worldZ) & 31) == 0)
+                            id = Block.COAL;
+                        else if (y < 5 &&
+                            (hash(seed ^ 0x4B1D2A37, worldX, y, worldZ) & 95) == 0)
+                            id = Block.IRON;
                         blocks[at + y] = id;
                     }
+                    for (int y = stoneEnd; y < height; y++)
+                        blocks[at + y] = (byte)fill;
+                    blocks[at + height] = (byte)top;
+                    for (int y = height + 1; y < WORLD_HEIGHT; y++)
+                        blocks[at + y] = ocean && y <= SEA_LEVEL ? Block.WATER : Block.AIR;
                 }
                 row++;
                 if (row == CHUNK_SIZE) phase = 1;
