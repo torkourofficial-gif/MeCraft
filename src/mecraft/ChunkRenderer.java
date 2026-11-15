@@ -112,7 +112,6 @@ final class ChunkRenderer {
     private final Fog terrainFog = new Fog();
     private final SkySystem skyObjects;
     private final Light sunlight = new Light();
-    private final Light[] torchLights = new Light[3];
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
     // Assigned slots include chunks whose first mesh is still being built.
     private final boolean[] assignedChunks = new boolean[CACHE_SIZE];
@@ -333,15 +332,6 @@ final class ChunkRenderer {
         sunlight.setMode(Light.AMBIENT);
         sunlight.setIntensity(1.0f);
         scene.addChild(sunlight);
-        for (int i = 0; i < torchLights.length; i++) {
-            Light light = new Light();
-            light.setMode(Light.OMNI);
-            light.setColor(0xFFFFC46B);
-            light.setAttenuation(1.0f, 0.10f, 0.035f);
-            light.setIntensity(0.0f);
-            torchLights[i] = light;
-            scene.addChild(light);
-        }
         builtWidth = width;
         builtHeight = height;
         tanHorizontalFov = tanVerticalFov * (float)width / (float)height;
@@ -1237,7 +1227,6 @@ final class ChunkRenderer {
             currentSkyColor = 0xFF4A1717;
             terrainFog.setColor(currentSkyColor);
             sunlight.setIntensity(0.45f);
-            updateTorchLights(world);
             return;
         }
         float angle = ((float)world.dayTime / (float)VoxelWorld.DAY_LENGTH - 0.15f) *
@@ -1250,7 +1239,6 @@ final class ChunkRenderer {
         sunlight.setIntensity(0.28f + sun * 0.72f);
         currentSkyColor = blendColor(0xFF26354A, 0xFF82B8E8, sun);
         terrainFog.setColor(currentSkyColor);
-        updateTorchLights(world);
     }
 
     private int blendColor(int night, int day, float amount) {
@@ -1261,12 +1249,6 @@ final class ChunkRenderer {
         g += (int)(((day >> 8) & 255) - g) * amount;
         b += (int)((day & 255) - b) * amount;
         return 0xFF000000 | (r << 16) | (g << 8) | b;
-    }
-
-    private void updateTorchLights(VoxelWorld world) {
-        // No M3G point lights: nearby blocks receive discrete brightness levels
-        // in torchLightAt() while their chunk meshes are built.
-        for (int i = 0; i < torchLights.length; i++) torchLights[i].setIntensity(0.0f);
     }
 
     int hitMob(VoxelWorld world, float pitch, int damage) {
@@ -2295,24 +2277,6 @@ final class ChunkRenderer {
                 }
             }
         }
-    }
-
-    /** Block-quantized torch falloff: each Manhattan step loses one brightness level. */
-    private int torchLightAt(int x, int y, int z) {
-        // Most chunks have no torches nearby. Avoid entering the per-block
-        // torch loop entirely in that common case.
-        if (chunkTorchCount == 0) return 0;
-        int best = 0;
-        for (int i = 0; i < chunkTorchCount; i++) {
-            int distance = Math.abs(x - chunkTorchX[i]) +
-                    Math.abs(y - chunkTorchY[i]) + Math.abs(z - chunkTorchZ[i]);
-            int radius = chunkLightRadius[i] & 255;
-            int level = (radius + 1 - distance) * (chunkLavaSource[i] ? 2 : 3);
-            if (level > 14) level = 14;
-            if (level > best) best = level;
-            if (best >= 14) return 14;
-        }
-        return best;
     }
 
     private int renderWorldTile(VoxelWorld world, byte id, int face,
