@@ -3190,7 +3190,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 stage = "obteniendo contexto Graphics3D";
                 Graphics3D graphics3D = Graphics3D.getInstance();
                 stage = "enlazando Graphics del Canvas a M3G";
-                graphics3D.bindTarget(g);
+                // Disable optional quality enhancements; retain depth buffering for 3D visibility.
+                graphics3D.bindTarget(g, true, 0);
                 try {
                     stage = "configurando viewport M3G";
                     graphics3D.setViewport(0, 0, getWidth(), getHeight());
@@ -3987,7 +3988,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (skinGallery != null && viewportWidth > 0) {
             try {
                 Graphics3D graphics3D = Graphics3D.getInstance();
-                graphics3D.bindTarget(g);
+                // Disable optional quality enhancements; retain depth buffering for 3D visibility.
+                graphics3D.bindTarget(g, true, 0);
                 try {
                     graphics3D.setViewport(viewportX, viewportY, viewportWidth, viewportHeight);
                     skinGallery.render(graphics3D, System.currentTimeMillis());
