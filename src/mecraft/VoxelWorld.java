@@ -494,13 +494,15 @@ final class VoxelWorld {
                 continue;
             }
             long generationStarted = System.currentTimeMillis();
-            ChunkStorageManager storage = getProceduralStorage();
-            boolean restoredFromStorage = storage != null &&
-                    storage.load(cx, cz, dimension, proceduralWorkerBuffer);
-            if (restoredFromStorage) {
-                synchronized (this) { proceduralChunksLoadedFromStorage++; }
-            }
+            ChunkStorageManager storage = null;
+            boolean restoredFromStorage = false;
             try {
+                storage = getProceduralStorage();
+                restoredFromStorage = storage != null &&
+                        storage.load(cx, cz, dimension, proceduralWorkerBuffer);
+                if (restoredFromStorage) {
+                    synchronized (this) { proceduralChunksLoadedFromStorage++; }
+                }
                 boolean completed = restoredFromStorage;
                 if (!completed && worldType == TYPE_FLAT && !dimension) {
                     generateFlatChunkInSlices(proceduralWorkerBuffer, proceduralWorkerHeights,
@@ -525,8 +527,8 @@ final class VoxelWorld {
                 }
                 // Persist only completed base terrain. Player edits remain in the
                 // existing edit journal and are overlaid by getLoaded/getCollision.
-                if (!restoredFromStorage && storage != null) {
-                    storage.store(cx, cz, dimension, proceduralWorkerBuffer);
+                if (!restoredFromStorage && storage != null &&
+                        storage.store(cx, cz, dimension, proceduralWorkerBuffer)) {
                     synchronized (this) { proceduralChunksStored++; }
                 }
             } catch (Throwable failure) {
