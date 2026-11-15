@@ -4296,10 +4296,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             } else {
                 g.setColor(55, 25, 25);
                 g.fillArc(x, y, 8, 8, 0, 360);
-                g.setColor(healthInHeart > 0 ? 202 : 115,
-                           healthInHeart > 0 ? 54 : 115,
-                           healthInHeart > 0 ? 47 : 115);
+                g.setColor(115, 115, 115);
                 g.fillArc(x + 1, y + 1, 6, 6, 0, 360);
+                g.setColor(202, 54, 47);
+                if (healthInHeart >= 2) {
+                    g.fillArc(x + 1, y + 1, 6, 6, 0, 360);
+                } else if (healthInHeart == 1) {
+                    g.fillArc(x + 1, y + 1, 6, 6, 90, 180);
+                }
             }
         }
     }
