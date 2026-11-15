@@ -11,7 +11,7 @@ import javax.microedition.rms.RecordStoreException;
 final class GameSettings {
     private static final String STORE = "mecraft-settings";
     private static final int MAGIC = 0x4D435354; // MCST
-    private static final int VERSION = 5;
+    private static final int VERSION = 6;
 
     private GameSettings() { }
 
@@ -72,7 +72,8 @@ final class GameSettings {
             int savedValues = versionOrFrameSkip == 1 ? 3 :
                     (versionOrFrameSkip == 2 ? 4 :
                     (versionOrFrameSkip == 3 ? 5 :
-                    (versionOrFrameSkip == 4 ? 6 : values.length)));
+                    (versionOrFrameSkip == 4 ? 6 :
+                    (versionOrFrameSkip == 5 ? 7 : values.length))));
             for (int i = 0; i < savedValues; i++) {
                 int value = in.readInt();
                 if (i < values.length) values[i] = value;
