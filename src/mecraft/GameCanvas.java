@@ -726,8 +726,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             stage = "configurando cámara M3G";
             renderer.updateCamera(world, cameraPitch);
             stage = "construyendo sectores visibles M3G";
-            loadingMessage = Language.text("Construyendo chunks visibles...");
-            renderer.sync(world);
+            loadingMessage = Language.text("Cargando chunks cercanos...");
+            waitForInitialNeighborhood(world, renderer);
             state = PLAYING;
             repaint();
         } catch (OutOfMemoryError exhausted) {
@@ -738,6 +738,26 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             }
             showDiagnostic(stage, problem);
         }
+    }
+
+    /**
+     * Keep the loading screen up until spawn terrain and nearby visible meshes
+     * are ready. Mesh work is still one complete chunk per sync call, so the
+     * first gameplay frame does not inherit a burst of unfinished chunk builds.
+     */
+    private void waitForInitialNeighborhood(VoxelWorld targetWorld, ChunkRenderer targetRenderer) {
+        int centerX = (int)Math.floor(targetWorld.playerX / (float)VoxelWorld.CHUNK_XZ);
+        int centerZ = (int)Math.floor(targetWorld.playerZ / (float)VoxelWorld.CHUNK_XZ);
+        targetWorld.requestProceduralNeighborhood(centerX, centerZ);
+        while (!targetRenderer.isInitialNeighborhoodReady(targetWorld)) {
+            targetRenderer.sync(targetWorld);
+            loadingMessage = Language.text("Preparando chunks cercanos...");
+            repaint();
+            serviceRepaints();
+            try { Thread.sleep(10L); } catch (InterruptedException ignored) { }
+        }
+        targetRenderer.sync(targetWorld);
+        repaint();
     }
 
     private void openSavedWorld(final VoxelWorld.SavedWorld savedWorld) {
@@ -795,9 +815,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             stage = "configurando cámara M3G";
             renderer.updateCamera(world, cameraPitch);
             stage = "construyendo sectores visibles M3G";
-            loadingMessage = Language.text("Preparando chunks cercanos...");
+            loadingMessage = Language.text("Cargando chunks cercanos...");
             repaint();
-            renderer.sync(world);
+            waitForInitialNeighborhood(world, renderer);
             state = world.mode == 0 && world.health <= 0 ? GAME_OVER : PLAYING;
             if (state == GAME_OVER) {
                 gameOverSelection = 0;
