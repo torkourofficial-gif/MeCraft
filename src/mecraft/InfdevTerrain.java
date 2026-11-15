@@ -346,10 +346,15 @@ final class InfdevTerrain {
         int gx = floorDiv(x, scale), gz = floorDiv(z, scale);
         int fx = smooth((x - gx * scale) * 256 / scale);
         int fz = smooth((z - gz * scale) * 256 / scale);
-        int a = lattice(seed, gx, gz);
-        int b = lattice(seed, gx + 1, gz);
-        int c = lattice(seed, gx, gz + 1);
-        int d = lattice(seed, gx + 1, gz + 1);
+        int a, b, c, d;
+        // Protect the shared direct-mapped cache once per four-corner sample.
+        // The old implementation entered/exited the monitor four times.
+        synchronized (latticeCacheValid) {
+            a = lattice(seed, gx, gz);
+            b = lattice(seed, gx + 1, gz);
+            c = lattice(seed, gx, gz + 1);
+            d = lattice(seed, gx + 1, gz + 1);
+        }
         int top = a + ((b - a) * fx >> 8);
         int bottom = c + ((d - c) * fx >> 8);
         return top + ((bottom - top) * fz >> 8);
@@ -359,7 +364,7 @@ final class InfdevTerrain {
         return value * value * (768 - 2 * value) >> 16;
     }
 
-    private static synchronized int lattice(int seed, int x, int z) {
+    private static int lattice(int seed, int x, int z) {
         int base = seed ^ x * 73428767 ^ z * 42317861;
         int slot = base & LATTICE_CACHE_MASK;
         if (latticeCacheValid[slot] && latticeSeedCache[slot] == seed &&
