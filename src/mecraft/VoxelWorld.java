@@ -105,6 +105,7 @@ final class VoxelWorld {
     private boolean proceduralWorkerRunning;
     private boolean proceduralWorkerBusy;
     private boolean proceduralWorkerStop;
+    private boolean proceduralInitialNeighborhoodLock;
     private Thread proceduralWorkerThread;
     private int proceduralWorkerX, proceduralWorkerZ;
     private boolean proceduralWorkerNether;
@@ -245,9 +246,11 @@ final class VoxelWorld {
      * followed by its four face-neighbors.
      */
     void requestProceduralChunk(int cx, int cz) {
+        boolean initialLock;
         synchronized (this) {
-            if (proceduralQueueFocusX != cx || proceduralQueueFocusZ != cz ||
-                proceduralQueueFocusNether != nether) {
+            initialLock = proceduralInitialNeighborhoodLock;
+            if (!initialLock && (proceduralQueueFocusX != cx || proceduralQueueFocusZ != cz ||
+                proceduralQueueFocusNether != nether)) {
                 int kept = 0;
                 for (int i = 0; i < proceduralQueueCount; i++) {
                     if (proceduralQueueNether[i] == nether &&
@@ -265,6 +268,13 @@ final class VoxelWorld {
                 proceduralQueueFocusNether = nether;
             }
         }
+        // During spawn warm-up keep the 3x3 cache pinned to the spawn center.
+        // The renderer may promote the chunk it is currently meshing, but must
+        // not move the generation focus and evict the other spawn neighbors.
+        if (initialLock) {
+            enqueueProceduralChunk(cx, cz, true);
+            return;
+        }
         // Generate the visible chunk first, then its four neighbors.
         enqueueProceduralChunk(cx, cz, true);
         enqueueProceduralChunk(cx - 1, cz, false);
@@ -278,11 +288,28 @@ final class VoxelWorld {
      * The fixed cache and request queue both hold exactly these nine chunks.
      */
     void requestProceduralNeighborhood(int cx, int cz) {
-        requestProceduralChunk(cx, cz);
+        synchronized (this) {
+            proceduralInitialNeighborhoodLock = true;
+            proceduralQueueFocusX = cx;
+            proceduralQueueFocusZ = cz;
+            proceduralQueueFocusNether = nether;
+            proceduralQueueCount = 0;
+        }
+        enqueueProceduralChunk(cx, cz, true);
+        enqueueProceduralChunk(cx - 1, cz, false);
+        enqueueProceduralChunk(cx + 1, cz, false);
+        enqueueProceduralChunk(cx, cz - 1, false);
+        enqueueProceduralChunk(cx, cz + 1, false);
         enqueueProceduralChunk(cx - 1, cz - 1, false);
         enqueueProceduralChunk(cx + 1, cz - 1, false);
         enqueueProceduralChunk(cx - 1, cz + 1, false);
         enqueueProceduralChunk(cx + 1, cz + 1, false);
+    }
+
+    void finishProceduralNeighborhood() {
+        synchronized (this) {
+            proceduralInitialNeighborhoodLock = false;
+        }
     }
 
     boolean isProceduralNeighborhoodReady(int cx, int cz) {
