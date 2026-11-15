@@ -591,8 +591,9 @@ final class VoxelWorld {
 
     /**
      * Collision lookup that never generates terrain on the physics thread.
-     * An unloaded procedural sector is a temporary solid barrier until the
-     * background worker publishes its real voxels, preventing falls through gaps.
+     * Missing procedural voxels stay non-solid until their real terrain has
+     * been generated and published. A fabricated solid here becomes an
+     * invisible wall/floor because the renderer correctly sees air meanwhile.
      */
     byte getCollision(int x, int y, int z) {
         if (y < 0 || y >= HEIGHT || outsideWorld(x, z)) return Block.AIR;
@@ -603,16 +604,12 @@ final class VoxelWorld {
         synchronized (this) {
             int cache = findProceduralChunk(cx, cz);
             if (cache >= 0) {
-
                 int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
                 return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
             }
         }
         enqueueProceduralChunk(cx, cz, true);
-        // Never let physics interpret an unfinished procedural chunk as empty
-        // space. The temporary solid barrier keeps the player supported until
-        // the worker publishes the real chunk on a later tick.
-        return Block.STONE;
+        return Block.AIR;
     }
 
     /**
