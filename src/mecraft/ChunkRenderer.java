@@ -152,6 +152,12 @@ final class ChunkRenderer {
     private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[TILE_COUNT];
     private final int[] activeFaceBuilderIndices = new int[TILE_COUNT];
     private int activeFaceBuilderCount;
+    private int completedChunkBuilds;
+    private int completedDirtyRebuilds;
+    private long lastChunkBuildMillis;
+    private long lastCaveBuildMillis;
+    private long lastMeshAssemblyMillis;
+    private long chunkBuildStartedAt;
     // Per-chunk accumulators: tile geometry is retained across every vertical layer.
     private FlowerBuilder buildingFlowers;
     private FireBuilder buildingFires;
@@ -1691,11 +1697,14 @@ final class ChunkRenderer {
 
         if (pendingBuild == null || pendingBuildSlot != slot ||
             pendingBuild.x != cx || pendingBuild.y != cy || pendingBuild.z != cz) {
+            chunkBuildStartedAt = System.currentTimeMillis();
             int mask = (1 << VoxelWorld.CHUNK_Y) - 1;
             pendingBuild = new ChunkBuild(slot, cx, cy, cz, mask);
             pendingBuildSlot = slot;
             resetChunkMeshAccumulators();
+            long caveStartedAt = System.currentTimeMillis();
             buildChunkAirVisibility(world, cx, cy, cz);
+            lastCaveBuildMillis = System.currentTimeMillis() - caveStartedAt;
             collectChunkTorches(world, cx * VoxelWorld.CHUNK_XZ,
                     cy * VoxelWorld.CHUNK_Y, cz * VoxelWorld.CHUNK_XZ,
                     (cx + 1) * VoxelWorld.CHUNK_XZ,
@@ -1715,9 +1724,13 @@ final class ChunkRenderer {
         }
 
         FireBuilder completedFireBuilder = buildingFires;
+        long meshStartedAt = System.currentTimeMillis();
         Mesh[] meshes = finishChunkMeshes(cx, cy, cz);
+        lastMeshAssemblyMillis = System.currentTimeMillis() - meshStartedAt;
         Chunk previousChunk = chunks[slot];
-        Chunk complete = new Chunk();
+        // Reuse the resident chunk wrapper on remesh instead of allocating a new
+        // object for every block edit; crack and hand-animation state stays attached.
+        Chunk complete = previousChunk == null ? new Chunk() : previousChunk;
         complete.meshes = meshes;
         complete.fires = completedFireBuilder == null ? null :
                 new FireBuilder[] { completedFireBuilder };
@@ -1726,20 +1739,24 @@ final class ChunkRenderer {
                 for (int i = 0; i < previousChunk.meshes.length; i++)
                     terrain.removeChild(previousChunk.meshes[i]);
             }
-            complete.crackMesh = previousChunk.crackMesh;
-            complete.crackPositions = previousChunk.crackPositions;
-            complete.crackPositionData = previousChunk.crackPositionData;
-            complete.handSwingTicks = previousChunk.handSwingTicks;
-            complete.handSwinging = previousChunk.handSwinging;
-            complete.handLooping = previousChunk.handLooping;
         }
         for (int i = 0; i < meshes.length; i++) terrain.addChild(meshes[i]);
         chunks[slot] = complete;
         chunkWorldX[slot] = cx; chunkWorldY[slot] = cy; chunkWorldZ[slot] = cz;
         dirtyChunks[slot] = false;
         dirtyLayerMasks[slot] = 0;
+        completedChunkBuilds++;
+        if (previousChunk != null) completedDirtyRebuilds++;
+        lastChunkBuildMillis = System.currentTimeMillis() - chunkBuildStartedAt;
         pendingBuild = null;
         pendingBuildSlot = -1;
+    }
+
+    /** Last completed chunk timings, shown only while the pause menu is open. */
+    String performanceStats() {
+        return "Chunks " + completedChunkBuilds + " (remesh " + completedDirtyRebuilds +
+                ")  ms: " + lastChunkBuildMillis + " / cuevas " + lastCaveBuildMillis +
+                " / M3G " + lastMeshAssemblyMillis;
     }
 
     /** Start clean per-chunk geometry accumulators before reading its first layer. */
