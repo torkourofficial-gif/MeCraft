@@ -51,6 +51,8 @@ final class ChunkRenderer {
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
+    private static final int FACE_COUNT = 6;
+    private static final int FACE_TILE_COUNT = TILE_COUNT * FACE_COUNT;
     private static final int TORCH_LIGHT_RADIUS = 6;
     private static final int LAVA_LIGHT_RADIUS = 6;
     private static final int MAX_CHUNK_TORCHES = 128;
@@ -133,9 +135,14 @@ final class ChunkRenderer {
     // avoid allocating thousands of references every time the player moves.
     // One material batch per atlas tile. Light levels remain separate greedy
     // rectangles, but their vertex colors share the same M3G mesh.
-    private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[TILE_COUNT];
-    private final int[] activeFaceBuilderIndices = new int[TILE_COUNT];
+    // OptiCraft-style face buckets: each direction is an independently switchable M3G mesh.
+    private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[FACE_TILE_COUNT];
+    private final int[] activeFaceBuilderIndices = new int[FACE_TILE_COUNT];
     private int activeFaceBuilderCount;
+    private int lastFaceCullCenterX = Integer.MIN_VALUE;
+    private int lastFaceCullCenterY = Integer.MIN_VALUE;
+    private int lastFaceCullCenterZ = Integer.MIN_VALUE;
+    private float currentBuildEyeX, currentBuildEyeY, currentBuildEyeZ;
     private int chunkNonAirBlocks;
     private int completedChunkBuilds;
     private int completedDirtyRebuilds;
@@ -1316,6 +1323,7 @@ final class ChunkRenderer {
         railSystem.update(world);
         world.fullRebuild = false;
         updateVisibleChunks(world);
+        updateChunkFaceCulling(world);
         lastSyncMillis = System.currentTimeMillis() - syncStarted;
     }
 
@@ -1457,6 +1465,49 @@ final class ChunkRenderer {
         if (chunk.crackMesh != null)
             chunk.crackMesh.setRenderingEnable(attached &&
                     activeCrackChunkSlot == slot && activeCrackStage >= 0);
+    }
+
+    /**
+     * OptiCraft-style face-bucket culling. A direction is rejected only when
+     * the eye is safely outside the entire chunk on the opposite side; the
+     * margin keeps third-person camera offsets conservative.
+     */
+    private void applyChunkFaceVisibility(Chunk chunk, int cx, int cy, int cz,
+                                          float eyeX, float eyeY, float eyeZ) {
+        if (chunk == null || chunk.faceMeshes == null) return;
+        float x0 = cx * VoxelWorld.CHUNK_XZ;
+        float y0 = cy * VoxelWorld.CHUNK_Y;
+        float z0 = cz * VoxelWorld.CHUNK_XZ;
+        final float margin = cameraMode == 0 ? 0.5f : 4.0f;
+        setFaceEnabled(chunk.faceMeshes, 0, eyeY >= y0 - margin);
+        setFaceEnabled(chunk.faceMeshes, 1, eyeX <= x0 + VoxelWorld.CHUNK_XZ + margin);
+        setFaceEnabled(chunk.faceMeshes, 2, eyeX >= x0 - margin);
+        setFaceEnabled(chunk.faceMeshes, 3, eyeZ <= z0 + VoxelWorld.CHUNK_XZ + margin);
+        setFaceEnabled(chunk.faceMeshes, 4, eyeZ >= z0 - margin);
+        setFaceEnabled(chunk.faceMeshes, 5, eyeY <= y0 + VoxelWorld.CHUNK_Y + margin);
+    }
+
+    private void setFaceEnabled(Mesh[] meshes, int face, boolean enabled) {
+        if (meshes[face] != null) meshes[face].setRenderingEnable(enabled);
+    }
+
+    private void updateChunkFaceCulling(VoxelWorld world) {
+        int centerX = floorDiv((int)world.playerX, VoxelWorld.CHUNK_XZ);
+        int centerY = (int)world.playerY / VoxelWorld.CHUNK_Y;
+        int centerZ = floorDiv((int)world.playerZ, VoxelWorld.CHUNK_XZ);
+        if (centerX == lastFaceCullCenterX && centerY == lastFaceCullCenterY &&
+                centerZ == lastFaceCullCenterZ) return;
+        lastFaceCullCenterX = centerX;
+        lastFaceCullCenterY = centerY;
+        lastFaceCullCenterZ = centerZ;
+        float eyeX = world.playerX;
+        float eyeY = world.playerY + 1.62f;
+        float eyeZ = world.playerZ;
+        for (int slot = 0; slot < chunks.length; slot++) {
+            if (chunks[slot] != null)
+                applyChunkFaceVisibility(chunks[slot], chunkWorldX[slot],
+                        chunkWorldY[slot], chunkWorldZ[slot], eyeX, eyeY, eyeZ);
+        }
     }
 
     private void removeChunk(int i) {
@@ -1757,9 +1808,13 @@ final class ChunkRenderer {
 
         FireBuilder completedFireBuilder = buildingFires;
         long meshStartedAt = System.currentTimeMillis();
-        Mesh[] meshes = finishChunkMeshes(world, cx, cy, cz);
-        lastMeshAssemblyMillis = System.currentTimeMillis() - meshStartedAt;
         Chunk previousChunk = chunks[slot];
+        Chunk complete = previousChunk == null ? new Chunk() : previousChunk;
+        currentBuildEyeX = world.playerX;
+        currentBuildEyeY = world.playerY + 1.62f;
+        currentBuildEyeZ = world.playerZ;
+        Mesh[] meshes = finishChunkMeshes(world, cx, cy, cz, complete);
+        lastMeshAssemblyMillis = System.currentTimeMillis() - meshStartedAt;
         // Remove the old scene nodes before replacing the mesh reference.
         // The resident wrapper is reused, so assigning complete.meshes first
         // would overwrite the only references to the old meshes and orphan
@@ -1770,7 +1825,6 @@ final class ChunkRenderer {
         }
         // Reuse the resident chunk wrapper on remesh instead of allocating a new
         // object for every block edit; crack and hand-animation state stays attached.
-        Chunk complete = previousChunk == null ? new Chunk() : previousChunk;
         complete.meshes = meshes;
         complete.fires = completedFireBuilder == null ? null :
                 new FireBuilder[] { completedFireBuilder };
@@ -1813,7 +1867,7 @@ final class ChunkRenderer {
     private void resetChunkMeshAccumulators() {
         activeFaceBuilderCount = 0;
         chunkNonAirBlocks = 0;
-        for (int i = 0; i < TILE_COUNT; i++) chunkFaceBuilders[i] = null;
+        for (int i = 0; i < FACE_TILE_COUNT; i++) chunkFaceBuilders[i] = null;
         buildingFlowers = null;
         buildingFires = null;
         buildingPortals = null;
@@ -1822,18 +1876,25 @@ final class ChunkRenderer {
     }
 
     /** Assemble the chunk as simple per-material M3G meshes plus special geometry. */
-    private Mesh[] finishChunkMeshes(VoxelWorld world, int cx, int cy, int cz) {
+    private Mesh[] finishChunkMeshes(VoxelWorld world, int cx, int cy, int cz,
+                                     Chunk targetChunk) {
         buildChunkFaces(world, cx, cy, cz);
         int count = activeFaceBuilderCount;
         int flowerCount = buildingFlowers == null ? 0 : 1;
         int fireCount = buildingFires == null ? 0 : 1;
         int portalCount = buildingPortals == null ? 0 : 1;
-        if (count + flowerCount + fireCount + portalCount == 0) return new Mesh[0];
+        Mesh[] faceMeshes = count > 0 ? makeChunkBlockMeshes() : new Mesh[FACE_COUNT];
+        targetChunk.faceMeshes = faceMeshes;
+        int blockMeshCount = 0;
+        for (int face = 0; face < FACE_COUNT; face++)
+            if (faceMeshes[face] != null) blockMeshCount++;
+        if (blockMeshCount + flowerCount + fireCount + portalCount == 0)
+            return new Mesh[0];
 
-        int blockMeshCount = count > 0 ? 1 : 0;
         Mesh[] meshes = new Mesh[blockMeshCount + flowerCount + fireCount + portalCount];
         int at = 0;
-        if (count > 0) meshes[at++] = makeChunkBlockMesh();
+        for (int face = 0; face < FACE_COUNT; face++)
+            if (faceMeshes[face] != null) meshes[at++] = faceMeshes[face];
         if (buildingFlowers != null)
             meshes[at++] = makeFlowerMesh(buildingFlowers, flowerAppearance);
         if (buildingFires != null) {
@@ -1847,6 +1908,8 @@ final class ChunkRenderer {
         int y = cy * VoxelWorld.CHUNK_Y;
         int z = cz * VoxelWorld.CHUNK_XZ;
         for (int i = 0; i < meshes.length; i++) meshes[i].setTranslation(x, y, z);
+        applyChunkFaceVisibility(targetChunk, cx, cy, cz,
+                currentBuildEyeX, currentBuildEyeY, currentBuildEyeZ);
 
         // Return material builders to the bounded pool only after makeMesh has
         // copied their vertex data into the corresponding M3G arrays.
@@ -2046,15 +2109,16 @@ final class ChunkRenderer {
                         int encoded = key - 1;
                         int tile = encoded & (TILE_COUNT - 1);
                         int light = encoded / TILE_COUNT;
-                        if (builders[tile] == null) {
+                        int builderIndex = face * TILE_COUNT + tile;
+                        if (builders[builderIndex] == null) {
                             FaceBuilder builder = freeFaceBuilderCount > 0 ?
                                     freeFaceBuilders[--freeFaceBuilderCount] : null;
-                            if (builder == null) builder = new FaceBuilder(tile);
-                            else builder.reset(tile);
-                            builders[tile] = builder;
-                            activeFaceBuilderIndices[activeFaceBuilderCount++] = tile;
+                            if (builder == null) builder = new FaceBuilder(tile, face);
+                            else builder.reset(tile, face);
+                            builders[builderIndex] = builder;
+                            activeFaceBuilderIndices[activeFaceBuilderCount++] = builderIndex;
                         }
-                        builders[tile].addRect(x, y, z, rectWidth,
+                        builders[builderIndex].addRect(x, y, z, rectWidth,
                                 rectHeight, face, light);
                         a += rectWidth;
                     }
@@ -2093,48 +2157,65 @@ final class ChunkRenderer {
      * Each tile remains a separate submesh with its original cropped texture,
      * while all submeshes share one position/UV/color VertexBuffer.
      */
-    private Mesh makeChunkBlockMesh() {
-        int totalVertices = 0;
-        for (int active = 0; active < activeFaceBuilderCount; active++) {
-            FaceBuilder builder = chunkFaceBuilders[activeFaceBuilderIndices[active]];
-            totalVertices += builder.vertexCount;
+    /**
+     * Builds six directional buckets, each retaining tile-specific submeshes.
+     * A bucket can be disabled as a whole when its outward normals face away
+     * from the camera, avoiding submission of those vertices to M3G.
+     */
+    private Mesh[] makeChunkBlockMeshes() {
+        Mesh[] result = new Mesh[FACE_COUNT];
+        for (int face = 0; face < FACE_COUNT; face++) {
+            int submeshCount = 0;
+            int totalVertices = 0;
+            for (int active = 0; active < activeFaceBuilderCount; active++) {
+                int index = activeFaceBuilderIndices[active];
+                if (index / TILE_COUNT != face) continue;
+                FaceBuilder builder = chunkFaceBuilders[index];
+                submeshCount++;
+                totalVertices += builder.vertexCount;
+            }
+            if (submeshCount == 0 || totalVertices == 0) continue;
+
+            short[] positionsData = new short[totalVertices * 3];
+            short[] uvData = new short[totalVertices * 2];
+            byte[] colorData = new byte[totalVertices * 4];
+            TriangleStripArray[] submeshes = new TriangleStripArray[submeshCount];
+            Appearance[] appearances = new Appearance[submeshCount];
+            int vertexOffset = 0;
+            int submesh = 0;
+
+            for (int active = 0; active < activeFaceBuilderCount; active++) {
+                int index = activeFaceBuilderIndices[active];
+                if (index / TILE_COUNT != face) continue;
+                int tile = index % TILE_COUNT;
+                FaceBuilder builder = chunkFaceBuilders[index];
+                int verticesCount = builder.vertexCount;
+                System.arraycopy(builder.p, 0, positionsData, vertexOffset * 3, verticesCount * 3);
+                System.arraycopy(builder.uv, 0, uvData, vertexOffset * 2, verticesCount * 2);
+                System.arraycopy(builder.c, 0, colorData, vertexOffset * 4, verticesCount * 4);
+
+                int[] strips = new int[builder.faceCount];
+                for (int strip = 0; strip < strips.length; strip++) strips[strip] = 4;
+                submeshes[submesh] = new TriangleStripArray(vertexOffset, strips);
+                appearances[submesh] = tileAppearance(tile);
+                vertexOffset += verticesCount;
+                submesh++;
+            }
+
+            VertexArray positions = new VertexArray(totalVertices, 3, 2);
+            positions.set(0, totalVertices, positionsData);
+            VertexArray texCoords = new VertexArray(totalVertices, 2, 2);
+            texCoords.set(0, totalVertices, uvData);
+            VertexArray colors = new VertexArray(totalVertices, 4, 1);
+            colors.set(0, totalVertices, colorData);
+
+            VertexBuffer vertices = new VertexBuffer();
+            vertices.setPositions(positions, 1.0f, null);
+            vertices.setTexCoords(0, texCoords, 0.999f / 16.0f, null);
+            vertices.setColors(colors);
+            result[face] = new Mesh(vertices, submeshes, appearances);
         }
-        if (totalVertices <= 0) return null;
-
-        short[] positionsData = new short[totalVertices * 3];
-        short[] uvData = new short[totalVertices * 2];
-        byte[] colorData = new byte[totalVertices * 4];
-        TriangleStripArray[] submeshes = new TriangleStripArray[activeFaceBuilderCount];
-        Appearance[] appearances = new Appearance[activeFaceBuilderCount];
-        int vertexOffset = 0;
-
-        for (int active = 0; active < activeFaceBuilderCount; active++) {
-            int tile = activeFaceBuilderIndices[active];
-            FaceBuilder builder = chunkFaceBuilders[tile];
-            int vertices = builder.vertexCount;
-            System.arraycopy(builder.p, 0, positionsData, vertexOffset * 3, vertices * 3);
-            System.arraycopy(builder.uv, 0, uvData, vertexOffset * 2, vertices * 2);
-            System.arraycopy(builder.c, 0, colorData, vertexOffset * 4, vertices * 4);
-
-            int[] strips = new int[builder.faceCount];
-            for (int strip = 0; strip < strips.length; strip++) strips[strip] = 4;
-            submeshes[active] = new TriangleStripArray(vertexOffset, strips);
-            appearances[active] = tileAppearance(tile);
-            vertexOffset += vertices;
-        }
-
-        VertexArray positions = new VertexArray(totalVertices, 3, 2);
-        positions.set(0, totalVertices, positionsData);
-        VertexArray texCoords = new VertexArray(totalVertices, 2, 2);
-        texCoords.set(0, totalVertices, uvData);
-        VertexArray colors = new VertexArray(totalVertices, 4, 1);
-        colors.set(0, totalVertices, colorData);
-
-        VertexBuffer vertices = new VertexBuffer();
-        vertices.setPositions(positions, 1.0f, null);
-        vertices.setTexCoords(0, texCoords, 0.999f / 16.0f, null);
-        vertices.setColors(colors);
-        return new Mesh(vertices, submeshes, appearances);
+        return result;
     }
 
     private Mesh makeMesh(FaceBuilder data, Appearance appearance) {
@@ -2429,6 +2510,7 @@ final class ChunkRenderer {
 
     private static final class Chunk {
         Mesh[] meshes;
+        Mesh[] faceMeshes;
         boolean attached;
         FireBuilder[] fires;
         Mesh crackMesh;
@@ -2631,8 +2713,16 @@ final class ChunkRenderer {
 
         FaceBuilder(int tile) { reset(tile); }
 
-        void reset(int nextTile) {
+        int faceGroup;
+
+        FaceBuilder(int tile) { reset(tile, -1); }
+        FaceBuilder(int tile, int face) { reset(tile, face); }
+
+        void reset(int nextTile) { reset(nextTile, -1); }
+
+        void reset(int nextTile, int nextFace) {
             tile = nextTile;
+            faceGroup = nextFace;
             vertexCount = 0;
             faceCount = 0;
         }
