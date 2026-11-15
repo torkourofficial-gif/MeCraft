@@ -273,6 +273,27 @@ final class VoxelWorld {
         enqueueProceduralChunk(cx, cz + 1, false);
     }
 
+    /**
+     * Prime the complete 3x3 terrain neighborhood before the first frame.
+     * The fixed cache and request queue both hold exactly these nine chunks.
+     */
+    void requestProceduralNeighborhood(int cx, int cz) {
+        requestProceduralChunk(cx, cz);
+        enqueueProceduralChunk(cx - 1, cz - 1, false);
+        enqueueProceduralChunk(cx + 1, cz - 1, false);
+        enqueueProceduralChunk(cx - 1, cz + 1, false);
+        enqueueProceduralChunk(cx + 1, cz + 1, false);
+    }
+
+    boolean isProceduralNeighborhoodReady(int cx, int cz) {
+        for (int dz = -1; dz <= 1; dz++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                if (!isProceduralChunkReady(cx + dx, cz + dz)) return false;
+            }
+        }
+        return true;
+    }
+
     boolean isProceduralChunkReady(int cx, int cz) {
         int x0 = cx * CHUNK_XZ, z0 = cz * CHUNK_XZ;
         if (worldSize == SIZE_OLD &&
