@@ -24,7 +24,8 @@ final class ChunkStorageManager {
     private final int seed;
     private final int worldType;
     private final boolean economicMode;
-    private int nextSlot;
+    private final long[] lastUse = new long[SLOT_COUNT];
+    private long useClock;
 
     ChunkStorageManager(String worldStoreName, int seed, int worldType,
                         boolean economicMode) {
@@ -49,7 +50,7 @@ final class ChunkStorageManager {
                 if (!matches(second, chunkX, chunkZ, nether, 1)) continue;
                 System.arraycopy(first, HEADER_BYTES, target, 0, PAGE_BYTES);
                 System.arraycopy(second, HEADER_BYTES, target, PAGE_BYTES, PAGE_BYTES);
-                nextSlot = (slot + 1) % SLOT_COUNT;
+                touch(slot);
                 return true;
             }
         } catch (Exception ignored) {
@@ -62,9 +63,9 @@ final class ChunkStorageManager {
         return false;
     }
 
-    synchronized void store(int chunkX, int chunkZ, boolean nether,
-                            byte[] source) {
-        if (source == null || source.length < InfdevTerrain.CHUNK_VOLUME) return;
+    synchronized boolean store(int chunkX, int chunkZ, boolean nether,
+                                byte[] source) {
+        if (source == null || source.length < InfdevTerrain.CHUNK_VOLUME) return false;
         RecordStore store = null;
         try {
             store = RecordStore.openRecordStore(storeName, true);
@@ -81,8 +82,10 @@ final class ChunkStorageManager {
                 }
             }
             if (slot < 0) {
-                slot = nextSlot;
-                nextSlot = (nextSlot + 1) % SLOT_COUNT;
+                slot = 0;
+                for (int candidate = 1; candidate < SLOT_COUNT; candidate++) {
+                    if (lastUse[candidate] < lastUse[slot]) slot = candidate;
+                }
             }
 
             byte[] record = new byte[RECORD_BYTES];
@@ -103,15 +106,23 @@ final class ChunkStorageManager {
                 store.setRecord(slot * PAGE_COUNT + page + 1,
                         record, 0, record.length);
             }
+            touch(slot);
+            return true;
         } catch (Exception ignored) {
             // The world remains playable if persistent caching is unavailable.
+            return false;
         } catch (OutOfMemoryError ignored) {
             // Never let an optional cache allocation terminate gameplay.
+            return false;
         } finally {
             if (store != null) {
                 try { store.closeRecordStore(); } catch (RecordStoreException ignored) { }
             }
         }
+    }
+
+    private void touch(int slot) {
+        lastUse[slot] = ++useClock;
     }
 
     private boolean matches(byte[] record, int chunkX, int chunkZ,
