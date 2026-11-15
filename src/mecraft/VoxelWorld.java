@@ -2167,6 +2167,7 @@ final class VoxelWorld {
         try {
             RecordStore.deleteRecordStore(storeName);
             try { RecordStore.deleteRecordStore(storeName + "-dim"); } catch (RecordStoreException ignored) { }
+            try { RecordStore.deleteRecordStore("mcc-" + storeName); } catch (RecordStoreException ignored) { }
             try { RecordStore.deleteRecordStore(storeName + "-chunks"); } catch (RecordStoreException ignored) { }
             return true;
         } catch (RecordStoreException ignored) {
