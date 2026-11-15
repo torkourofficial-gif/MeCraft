@@ -29,7 +29,7 @@ final class ChunkStorageManager {
 
     ChunkStorageManager(String worldStoreName, int seed, int worldType,
                         boolean economicMode) {
-        this.storeName = worldStoreName + "-chunks";
+        this.storeName = "mcc-" + worldStoreName;
         this.seed = seed;
         this.worldType = worldType;
         this.economicMode = economicMode;
