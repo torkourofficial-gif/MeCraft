@@ -3199,13 +3199,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (fullCanvasWorld && fullClip) {
             try {
                 // JSR-184 M3G 1.1 OVERWRITE bit; discard old pixels only after full redraw.
-                graphics3D.bindTarget(target, true, 16);
+                // EXPERIMENTAL: disable depth testing/writes for the full-world A/B test.
+                graphics3D.bindTarget(target, !fullCanvasWorld, 16);
                 return;
             } catch (IllegalArgumentException unsupportedOverwrite) {
                 // M3G 1.0 rejects the 1.1-only hint.
             }
         }
-        graphics3D.bindTarget(target, true, 0);
+        // Keep depth buffering for partial views; disable it only for the full-world test.
+        graphics3D.bindTarget(target, !fullCanvasWorld, 0);
     }
 
     protected synchronized void paint(Graphics g) {
