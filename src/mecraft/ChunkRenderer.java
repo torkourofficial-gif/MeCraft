@@ -1919,8 +1919,12 @@ final class ChunkRenderer {
         return "S" + lastSyncMillis + " V" + lastVisibilityMillis +
                 " F" + lastFaceCullMillis + " W" + lastSceneRenderMillis +
                 " H" + lastHandRenderMillis + " C" + lastAttachedChunkCount +
-                " M" + terrainMeshes + "/" + lastDirectionalMeshCount +
-                " P" + lastTerrainTriangles + " V" + lastTerrainVertices + "ms";
+                " M" + terrainMeshes + "/" + lastDirectionalMeshCount + "ms";
+    }
+
+    /** Cached geometry totals for the attached terrain meshes. */
+    String geometryStats() {
+        return "TRI:" + lastTerrainTriangles + " VTX:" + lastTerrainVertices;
     }
 
     /** Start clean per-chunk geometry accumulators before reading its first layer. */
