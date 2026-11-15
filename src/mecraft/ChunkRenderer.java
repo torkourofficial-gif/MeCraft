@@ -137,6 +137,9 @@ final class ChunkRenderer {
     private long lastChunkBuildMillis;
     private long lastSnapshotBuildMillis;
     private long lastMeshAssemblyMillis;
+    private long lastSyncMillis;
+    private long lastSceneRenderMillis;
+    private long lastHandRenderMillis;
     private long chunkBuildStartedAt;
     // Per-chunk accumulators: tile geometry is retained across every vertical layer.
     private FlowerBuilder buildingFlowers;
@@ -536,16 +539,25 @@ final class ChunkRenderer {
     void render(Graphics3D graphics) {
         boolean showHand = cameraMode == 0;
         if (showHand) handPivot.setRenderingEnable(false);
+        long sceneStarted = System.currentTimeMillis();
         try {
             graphics.render(scene);
         } finally {
+            lastSceneRenderMillis = System.currentTimeMillis() - sceneStarted;
             handPivot.setRenderingEnable(showHand);
         }
         if (showHand) {
-            camera.getTransformTo(scene, cameraTransform);
-            handPivot.getTransformTo(scene, handTransform);
-            graphics.setCamera(camera, cameraTransform);
-            graphics.render(handPivot, handTransform);
+            long handStarted = System.currentTimeMillis();
+            try {
+                camera.getTransformTo(scene, cameraTransform);
+                handPivot.getTransformTo(scene, handTransform);
+                graphics.setCamera(camera, cameraTransform);
+                graphics.render(handPivot, handTransform);
+            } finally {
+                lastHandRenderMillis = System.currentTimeMillis() - handStarted;
+            }
+        } else {
+            lastHandRenderMillis = 0L;
         }
     }
 
@@ -1272,6 +1284,7 @@ final class ChunkRenderer {
     }
 
     void sync(VoxelWorld world) {
+        long syncStarted = System.currentTimeMillis();
         if (world.revision != builtRevision || world.fullRebuild) {
             // changedX/Y/Z stores only the latest edit. If several voxels changed
             // between renderer syncs (doors, support cascades, fluid spread), a
@@ -1298,6 +1311,7 @@ final class ChunkRenderer {
         railSystem.update(world);
         world.fullRebuild = false;
         updateVisibleChunks(world);
+        lastSyncMillis = System.currentTimeMillis() - syncStarted;
     }
 
     /** Ensure the latest changed coordinate wins even after a multi-edit revision. */
@@ -1753,6 +1767,12 @@ final class ChunkRenderer {
         return "B" + completedChunkBuilds + " R" + completedDirtyRebuilds +
                 " T" + lastChunkBuildMillis + " S" + lastSnapshotBuildMillis +
                 " M" + lastMeshAssemblyMillis + "ms";
+    }
+
+    /** Per-frame timings: sync/build, full scene render, and first-person overlay. */
+    String renderStats() {
+        return "S" + lastSyncMillis + " W" + lastSceneRenderMillis +
+                " H" + lastHandRenderMillis + "ms";
     }
 
     /** Start clean per-chunk geometry accumulators before reading its first layer. */
