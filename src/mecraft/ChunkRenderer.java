@@ -123,9 +123,6 @@ final class ChunkRenderer {
     // Full voxel snapshot for one chunk section; each source layer is copied into place once.
     private final byte[] chunkVoxelScratch = new byte[VoxelWorld.CHUNK_XZ *
             VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
-    // Separate staging row prevents copyLoadedChunkLayer from overwriting earlier snapshot layers.
-    private final byte[] chunkVoxelLayerScratch = new byte[VoxelWorld.CHUNK_XZ *
-            VoxelWorld.CHUNK_XZ];
     private final byte[] chunkLightScratch = new byte[VoxelWorld.CHUNK_XZ *
             VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
     private final int[] greedyMaskScratch = new int[CHUNK_AREA];
@@ -1721,9 +1718,8 @@ final class ChunkRenderer {
             for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++) {
                 world.copyLoadedChunkLayer(cx * VoxelWorld.CHUNK_XZ,
                         cy * VoxelWorld.CHUNK_Y + layer,
-                        cz * VoxelWorld.CHUNK_XZ, chunkVoxelLayerScratch);
-                System.arraycopy(chunkVoxelLayerScratch, 0, chunkVoxelScratch,
-                        layer * CHUNK_AREA, CHUNK_AREA);
+                        cz * VoxelWorld.CHUNK_XZ, chunkVoxelScratch,
+                        layer * CHUNK_AREA);
             }
             lastSnapshotBuildMillis = System.currentTimeMillis() - caveStartedAt;
             collectChunkTorches(world, cx * VoxelWorld.CHUNK_XZ,
