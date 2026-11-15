@@ -721,9 +721,16 @@ final class VoxelWorld {
      * LRU lookup for every voxel. The destination uses z*CHUNK_XZ+x ordering.
      */
     void copyLoadedChunkLayer(int x0, int y, int z0, byte[] target) {
-        if (target == null || target.length < CHUNK_XZ * CHUNK_XZ) return;
+        copyLoadedChunkLayer(x0, y, z0, target, 0);
+    }
+
+    /** Copy directly into a chunk snapshot at the requested layer offset. */
+    void copyLoadedChunkLayer(int x0, int y, int z0, byte[] target, int targetOffset) {
+        int layerSize = CHUNK_XZ * CHUNK_XZ;
+        if (target == null || targetOffset < 0 ||
+                target.length - targetOffset < layerSize) return;
         if (y < 0 || y >= HEIGHT) {
-            for (int i = 0; i < CHUNK_XZ * CHUNK_XZ; i++) target[i] = Block.AIR;
+            for (int i = 0; i < layerSize; i++) target[targetOffset + i] = Block.AIR;
             return;
         }
         // The saved starting area is already one contiguous voxel array.
@@ -733,7 +740,7 @@ final class VoxelWorld {
             z0 >= 0 && z0 + CHUNK_XZ <= DEPTH) {
             int source = index(x0, y, z0);
             for (int z = 0; z < CHUNK_XZ; z++) {
-                System.arraycopy(blocks, source, target, z * CHUNK_XZ, CHUNK_XZ);
+                System.arraycopy(blocks, source, target, targetOffset + z * CHUNK_XZ, CHUNK_XZ);
                 source += WIDTH;
             }
             return;
@@ -745,7 +752,7 @@ final class VoxelWorld {
             for (int z = 0; z < CHUNK_XZ; z++) {
                 for (int x = 0; x < CHUNK_XZ; x++) {
                     int wx = x0 + x, wz = z0 + z;
-                    int at = z * CHUNK_XZ + x;
+                    int at = targetOffset + z * CHUNK_XZ + x;
                     if (outsideWorld(wx, wz)) {
                         target[at] = Block.AIR;
                     } else if (inside(wx, wz)) {
