@@ -63,6 +63,11 @@ final class PlayerPhysics {
     /** Returns Indev fall damage, if a landing occurred this tick. */
     int update(VoxelWorld world, float forward, float strafe, boolean jumping,
                boolean flying, boolean descending, boolean sprinting) {
+        // Recover from stale/spawned positions that begin inside a solid voxel.
+        // The swept-axis clips below only stop movement at a face; they cannot
+        // eject an AABB that was already intersecting a block.
+        resolvePlayerOverlap(world);
+
         float inputLength = (float)Math.sqrt(forward * forward + strafe * strafe);
         if (inputLength > 1.0f) {
             forward /= inputLength;
@@ -133,6 +138,65 @@ final class PlayerPhysics {
             reset();
         }
         return 0;
+    }
+
+    /**
+     * Resolve pre-existing player/block intersections before applying movement.
+     * This is deliberately bounded (small player AABB, at most a few voxels)
+     * and uses no temporary allocations.
+     */
+    private void resolvePlayerOverlap(VoxelWorld world) {
+        for (int pass = 0; pass < 4; pass++) {
+            float x = world.playerX, y = world.playerY, z = world.playerZ;
+            int minX = floor(x - RADIUS + EPSILON);
+            int maxX = floor(x + RADIUS - EPSILON);
+            int minY = floor(y + EPSILON);
+            int maxY = floor(y + HEIGHT - EPSILON);
+            int minZ = floor(z - RADIUS + EPSILON);
+            int maxZ = floor(z + RADIUS - EPSILON);
+            float best = Float.MAX_VALUE;
+            int pushAxis = -1;
+            float push = 0.0f;
+
+            for (int by = minY; by <= maxY; by++) {
+                for (int bx = minX; bx <= maxX; bx++) {
+                    for (int bz = minZ; bz <= maxZ; bz++) {
+                        byte block = world.getCollision(bx, by, bz);
+                        if (!Block.solid(block)) continue;
+                        if (block == Block.DOOR && (world.doorMetadata(bx, by, bz) & 4) != 0)
+                            continue;
+
+                        float px = x + RADIUS - bx;
+                        float nx = bx + 1.0f - (x - RADIUS);
+                        float py = y + HEIGHT - by;
+                        float ny = by + 1.0f - y;
+                        float pz = z + RADIUS - bz;
+                        float nz = bz + 1.0f - (z - RADIUS);
+
+                        if (px > 0.0f && px < best) { best = px; pushAxis = 0; push = -px - EPSILON; }
+                        if (nx > 0.0f && nx < best) { best = nx; pushAxis = 0; push = nx + EPSILON; }
+                        if (py > 0.0f && py < best) { best = py; pushAxis = 1; push = py + EPSILON; }
+                        if (ny > 0.0f && ny < best) { best = ny; pushAxis = 1; push = -ny - EPSILON; }
+                        if (pz > 0.0f && pz < best) { best = pz; pushAxis = 2; push = -pz - EPSILON; }
+                        if (nz > 0.0f && nz < best) { best = nz; pushAxis = 2; push = nz + EPSILON; }
+                    }
+                }
+            }
+
+            if (pushAxis < 0 || best == Float.MAX_VALUE) break;
+            if (pushAxis == 0) {
+                world.playerX += push;
+                motionX = 0.0f;
+            } else if (pushAxis == 1) {
+                world.playerY += push;
+                motionY = 0.0f;
+                if (push > 0.0f) onGround = true;
+                fallDistance = 0.0f;
+            } else {
+                world.playerZ += push;
+                motionZ = 0.0f;
+            }
+        }
     }
 
     private void moveHorizontally(VoxelWorld world) {
