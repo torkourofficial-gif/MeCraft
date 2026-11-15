@@ -741,22 +741,26 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     /**
-     * Keep the loading screen up until spawn terrain and nearby visible meshes
-     * are ready. Mesh work is still one complete chunk per sync call, so the
-     * first gameplay frame does not inherit a burst of unfinished chunk builds.
+     * Prepare spawn without allowing a slow or failed neighbor generation to
+     * trap the game on the loading screen forever.
      */
     private void waitForInitialNeighborhood(VoxelWorld targetWorld, ChunkRenderer targetRenderer) {
         int centerX = (int)Math.floor(targetWorld.playerX / (float)VoxelWorld.CHUNK_XZ);
         int centerZ = (int)Math.floor(targetWorld.playerZ / (float)VoxelWorld.CHUNK_XZ);
         targetWorld.requestProceduralNeighborhood(centerX, centerZ);
         try {
-            while (!targetRenderer.isInitialNeighborhoodReady(targetWorld)) {
+            int waitSteps = 0;
+            while (!targetRenderer.isInitialNeighborhoodReady(targetWorld) &&
+                   waitSteps < 1200) {
                 targetRenderer.sync(targetWorld);
                 loadingMessage = Language.text("Preparando chunks cercanos...");
                 repaint();
                 serviceRepaints();
                 try { Thread.sleep(10L); } catch (InterruptedException ignored) { }
+                waitSteps++;
             }
+            // Even on very slow devices, enter the world and let streaming
+            // finish in the background instead of waiting indefinitely.
             targetRenderer.sync(targetWorld);
             repaint();
         } finally {
