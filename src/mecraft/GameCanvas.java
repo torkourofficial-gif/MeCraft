@@ -954,7 +954,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             return;
         }
         advanceMining(trace(5.0f));
-        renderer.setHandLooping(miningX >= 0);
+        renderer.setHandLooping(miningX, miningY, miningZ, miningX >= 0);
         if (miningX >= 0) {
             int stage = (int)(miningDamage * 10.0f);
             if (stage > 9) stage = 9;
@@ -1127,7 +1127,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         miningX = miningY = miningZ = -1;
         miningFaceX = miningFaceY = miningFaceZ = 0;
         miningDamage = 0.0f;
-        if (renderer != null) { renderer.setHandLooping(false); renderer.setMiningCracks(-1, -1, -1, 0, 0, 0, -1); }
+        if (renderer != null) { renderer.setHandLooping(-1, -1, -1, false); renderer.setMiningCracks(-1, -1, -1, 0, 0, 0, -1); }
     }
 
     private void cancelMining() {
