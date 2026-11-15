@@ -1984,7 +1984,6 @@ final class ChunkRenderer {
         for (int z = 0; z < VoxelWorld.CHUNK_XZ; z++) {
             int row = voxelLayerOffset + z * VoxelWorld.CHUNK_XZ;
             for (int x = 0; x < VoxelWorld.CHUNK_XZ; x++) {
-                int localIndex = z * VoxelWorld.CHUNK_XZ + x;
                 byte id = chunkVoxelScratch[row + x];
                 if (id == Block.AIR) continue;
                 chunkNonAirBlocks++;
