@@ -27,7 +27,7 @@ final class ChunkRenderer {
     // distance scans only the chunk columns whose bounds can intersect its
     // 24-block (1.5-chunk) radius; it does not need an extra candidate ring.
     private static final int MAX_STREAM_RADIUS = 7;
-    // All vertical layers are accumulated into one block mesh per chunk.
+    // All vertical layers are accumulated into direction buckets per chunk.
     private ChunkBuild pendingBuild;
     private int pendingBuildSlot = -1;
     // One complete chunk is built synchronously per renderer update.
@@ -136,8 +136,8 @@ final class ChunkRenderer {
     private final int[] greedyMaskScratch = new int[CHUNK_AREA];
     // One chunk is meshed at a time; reuse the large material lookup table to
     // avoid allocating thousands of references every time the player moves.
-    // One material batch per atlas tile. Light levels remain separate greedy
-    // rectangles, but their vertex colors share the same M3G mesh.
+    // One material batch per atlas tile and face direction. Light levels remain
+    // separate greedy rectangles, but their vertex colors share the same M3G mesh.
     // OptiCraft-style face buckets: each direction is an independently switchable M3G mesh.
     private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[FACE_TILE_COUNT];
     private final int[] activeFaceBuilderIndices = new int[FACE_TILE_COUNT];
@@ -2157,9 +2157,9 @@ final class ChunkRenderer {
      * while all submeshes share one position/UV/color VertexBuffer.
      */
     /**
-     * Builds six directional buckets, each retaining tile-specific submeshes.
-     * A bucket can be disabled as a whole when its outward normals face away
-     * from the camera, avoiding submission of those vertices to M3G.
+     * Builds six directional buckets plus an always-enabled water bucket.
+     * Each bucket retains tile-specific submeshes; directional buckets can be
+     * disabled when their outward normals face away from the camera.
      */
     private Mesh[] makeChunkBlockMeshes() {
         Mesh[] result = new Mesh[FACE_BUCKET_COUNT];
