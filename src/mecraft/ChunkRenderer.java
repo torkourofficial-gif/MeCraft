@@ -1273,24 +1273,23 @@ final class ChunkRenderer {
     }
 
     /**
-     * True when all currently visible mesh sections in the player's immediate
-     * 3x3 horizontal neighborhood are complete, and the 3x3 terrain data is
-     * resident. Used only by the initial loading screen.
+     * Only the spawn chunk and its face-neighbor terrain data are required
+     * before play. Neighbor meshes and diagonal chunks stream in afterwards.
      */
     boolean isInitialNeighborhoodReady(VoxelWorld world) {
         int centerX = (int)Math.floor(world.playerX / (float)VoxelWorld.CHUNK_XZ);
         int centerZ = (int)Math.floor(world.playerZ / (float)VoxelWorld.CHUNK_XZ);
-        if (!world.isProceduralNeighborhoodReady(centerX, centerZ)) return false;
-        boolean centerMeshReady = false;
+        if (!world.isProceduralChunkReady(centerX, centerZ) ||
+            !world.isProceduralChunkReady(centerX - 1, centerZ) ||
+            !world.isProceduralChunkReady(centerX + 1, centerZ) ||
+            !world.isProceduralChunkReady(centerX, centerZ - 1) ||
+            !world.isProceduralChunkReady(centerX, centerZ + 1)) return false;
         for (int i = 0; i < CACHE_SIZE; i++) {
-            if (!assignedChunks[i]) continue;
-            int dx = chunkWorldX[i] - centerX;
-            int dz = chunkWorldZ[i] - centerZ;
-            if (dx < -1 || dx > 1 || dz < -1 || dz > 1) continue;
-            if (chunks[i] == null || dirtyChunks[i]) return false;
-            if (dx == 0 && dz == 0) centerMeshReady = true;
+            if (!assignedChunks[i] || chunkWorldX[i] != centerX ||
+                chunkWorldZ[i] != centerZ) continue;
+            if (chunks[i] != null && !dirtyChunks[i]) return true;
         }
-        return centerMeshReady;
+        return false;
     }
 
     void sync(VoxelWorld world) {
