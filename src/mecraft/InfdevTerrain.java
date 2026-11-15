@@ -877,6 +877,8 @@ final class InfdevTerrain {
 
     private static int floorDiv(int value, int divisor) {
         int result = value / divisor;
-        return value < 0 && value % divisor != 0 ? result - 1 : result;
+        // Reuse the quotient to detect a negative remainder. This avoids a
+        // second integer division/modulo in the hot valueNoise coordinate path.
+        return value < 0 && value - result * divisor != 0 ? result - 1 : result;
     }
 }
