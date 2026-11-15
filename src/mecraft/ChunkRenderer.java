@@ -1809,9 +1809,10 @@ final class ChunkRenderer {
         for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++) {
             world.copyLoadedChunkLayer(x0, y0 + layer, z0, chunkVoxelScratch);
             int offset = layer * area;
+            System.arraycopy(chunkVoxelScratch, 0, chunkVoxelScratch, offset, area);
             for (int i = 0; i < area; i++)
                 chunkAirVisibilityScratch[offset + i] =
-                        chunkVoxelScratch[i] == Block.AIR ? (byte)1 : (byte)0;
+                        chunkVoxelScratch[offset + i] == Block.AIR ? (byte)1 : (byte)0;
         }
 
         int head = 0, tail = 0;
@@ -1905,11 +1906,11 @@ final class ChunkRenderer {
         // Empty vertical sections are common above the terrain: detect them during
         // the voxel copy and avoid allocating face builders/M3G meshes for them.
         int nonAirBlocks = 0;
-        world.copyLoadedChunkLayer(x0, y0, z0, chunkVoxelScratch);
+        int voxelLayerOffset = layer * CHUNK_AREA;
         for (int z = 0; z < VoxelWorld.CHUNK_XZ; z++) {
             for (int x = 0; x < VoxelWorld.CHUNK_XZ; x++) {
                 int localIndex = z * VoxelWorld.CHUNK_XZ + x;
-                byte id = chunkVoxelScratch[localIndex];
+                byte id = chunkVoxelScratch[voxelLayerOffset + localIndex];
                 if (id != Block.AIR) nonAirBlocks++;
                 chunkLightScratch[localIndex] = (byte)(id == Block.LAVA ? 14 :
                         (chunkLightScratch[localIndex] & 255));
@@ -1957,7 +1958,7 @@ final class ChunkRenderer {
                         }
                         int voxelIndex = (((y - y0) * VoxelWorld.CHUNK_XZ) + (z - z0)) *
                                 VoxelWorld.CHUNK_XZ + (x - x0);
-                        byte id = chunkVoxelScratch[voxelIndex];
+                        byte id = chunkVoxelScratch[voxelLayerOffset + voxelIndex];
                         int key = 0;
                         if (id != Block.AIR && id != Block.RAIL && !Block.isFlower(id) && !Block.isDoor(id) &&
                             !(face == 5 && y == 0)) {
@@ -1970,17 +1971,17 @@ final class ChunkRenderer {
                             else ny--;
                             byte neighbor;
                             if (face == 0 && y + 1 < y1)
-                                neighbor = chunkVoxelScratch[voxelIndex + CHUNK_AREA];
+                                neighbor = chunkVoxelScratch[voxelLayerOffset + voxelIndex + CHUNK_AREA];
                             else if (face == 1 && x > x0)
-                                neighbor = chunkVoxelScratch[voxelIndex - 1];
+                                neighbor = chunkVoxelScratch[voxelLayerOffset + voxelIndex - 1];
                             else if (face == 2 && x + 1 < x1)
-                                neighbor = chunkVoxelScratch[voxelIndex + 1];
+                                neighbor = chunkVoxelScratch[voxelLayerOffset + voxelIndex + 1];
                             else if (face == 3 && z > z0)
-                                neighbor = chunkVoxelScratch[voxelIndex - VoxelWorld.CHUNK_XZ];
+                                neighbor = chunkVoxelScratch[voxelLayerOffset + voxelIndex - VoxelWorld.CHUNK_XZ];
                             else if (face == 4 && z + 1 < z1)
-                                neighbor = chunkVoxelScratch[voxelIndex + VoxelWorld.CHUNK_XZ];
+                                neighbor = chunkVoxelScratch[voxelLayerOffset + voxelIndex + VoxelWorld.CHUNK_XZ];
                             else if (face == 5 && y > y0)
-                                neighbor = chunkVoxelScratch[voxelIndex - CHUNK_AREA];
+                                neighbor = chunkVoxelScratch[voxelLayerOffset + voxelIndex - CHUNK_AREA];
                             else neighbor = world.getLoaded(nx, ny, nz);
                             boolean faceVisible = Block.faceVisible(id, neighbor);
                             if (faceVisible && neighbor == Block.AIR &&
