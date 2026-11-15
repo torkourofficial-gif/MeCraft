@@ -108,6 +108,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private int cameraSensitivity = 2;
     private int renderDistance = 4;
     private boolean economicMode;
+    private boolean fpsEnabled;
+    private int fpsFrameCount, displayedFps;
+    private long fpsWindowStart;
     private boolean controlsReturnSettings;
     private final int[] controlCodes = new int[CONTROL_COUNT];
     private final boolean[] customControls = new boolean[CONTROL_COUNT];
@@ -239,7 +242,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     GameCanvas(MeCraft app) {
         this.app = app;
         int[] settings = new int[] { GameSettings.loadFrameSkip(), cameraSensitivity,
-                                     selectedPlayerSkin, language, renderDistance, -1, 0 };
+                                     selectedPlayerSkin, language, renderDistance, -1, 0, 0 };
         GameSettings.load(settings, controlCodes, customControls);
         frameSkip = 0; // Rendering frameskip is intentionally disabled.
         cameraSensitivity = clamp(settings[1], 0, 4);
@@ -248,6 +251,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         renderDistance = clamp(settings[4], 0, 4);
         touchEnabled = settings[5] == 1;
         economicMode = settings[6] == 1;
+        fpsEnabled = settings[7] == 1;
         VoxelWorld.economicModeEnabled = economicMode;
         Language.set(language);
         try { music = new MusicController(); }
@@ -2274,10 +2278,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (state == SETTINGS) {
             int action = gameAction(keyCode);
             if (keyCode == KEY_NUM2 || action == UP) {
-                settingsSelection = (settingsSelection + 7) % 8;
+                settingsSelection = (settingsSelection + 8) % 9;
                 repaint();
             } else if (keyCode == KEY_NUM8 || action == DOWN) {
-                settingsSelection = (settingsSelection + 1) % 8;
+                settingsSelection = (settingsSelection + 1) % 9;
                 repaint();
             } else if (settingsSelection == 0 && (keyCode == KEY_NUM4 || action == LEFT)) changeFrameSkip(-1);
             else if (settingsSelection == 0 && (keyCode == KEY_NUM6 || action == RIGHT)) changeFrameSkip(1);
@@ -2303,8 +2307,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 VoxelWorld.economicModeEnabled = economicMode;
                 saveSettings();
                 repaint();
-            }
-            else if (keyCode == KEY_NUM0 || keyCode == KEY_POUND) {
+            } else if (settingsSelection == 8 && (keyCode == KEY_NUM4 || action == LEFT ||
+                    keyCode == KEY_NUM6 || action == RIGHT || keyCode == KEY_NUM5 || action == FIRE)) {
+                fpsEnabled = !fpsEnabled;
+                fpsFrameCount = 0;
+                fpsWindowStart = 0L;
+                saveSettings();
+                repaint();
+            } else if (keyCode == KEY_NUM0 || keyCode == KEY_POUND) {
                 state = MENU;
                 repaint();
             }
@@ -2600,7 +2610,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void saveSettings() {
         GameSettings.save(new int[] { frameSkip, cameraSensitivity, selectedPlayerSkin,
-                                      language, renderDistance, touchEnabled ? 1 : 0, economicMode ? 1 : 0 },
+                                      language, renderDistance, touchEnabled ? 1 : 0, economicMode ? 1 : 0,
+                                      fpsEnabled ? 1 : 0 },
                 controlCodes, customControls);
     }
 
@@ -3202,6 +3213,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             drawTouchSetup(g);
         } else if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH ||
             state == CREATIVE_INVENTORY || state == GAME_OVER || state == CHEST_INVENTORY || state == FURNACE_INVENTORY) {
+            if (state == PLAYING && fpsEnabled) updateFpsCounter();
             String stage = "actualizando mallas M3G";
             try {
                 renderer.sync(world);
@@ -3231,6 +3243,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     if (cameraUnderwater()) drawTint(g, waterTint);
                     if (hurtTicks > 0) drawTint(g, hurtTint);
                     drawHud(g);
+                    if (state == PLAYING && fpsEnabled) drawFpsCounter(g);
                     if (touchEnabled && state == PLAYING) drawTouchControls(g);
                 }
                 if (state == PAUSED) drawPause(g);
@@ -3541,11 +3554,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         } else if (state == SETTINGS) {
             int panelY = Math.max(8, (h - 242) / 2);
             int panelHeight = Math.min(h - panelY - 6, 242);
-            int rowStep = Math.min(22, Math.max(13, (panelHeight - 54) / 8));
+            int rowStep = Math.min(22, Math.max(13, (panelHeight - 54) / 9));
             int row = (y - (panelY + 32) + rowStep / 2) / rowStep;
-            if (row >= 0 && row < 8) {
+            if (row >= 0 && row < 9) {
                 settingsSelection = row;
-                if (row == 3 || row == 5 || row == 6 || row == 7) keyPressed(KEY_NUM5);
+                if (row == 3 || row == 5 || row == 6 || row == 7 || row == 8) keyPressed(KEY_NUM5);
                 else if (row == 4) changeLanguage();
                 else if (row == 0) changeFrameSkip(1);
                 else if (row == 1) changeSensitivity(1);
@@ -3934,7 +3947,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         drawDirtBackground(g);
         int panelY = Math.max(8, (h - 242) / 2);
         int panelHeight = Math.min(h - panelY - 6, 242);
-        int rowStep = Math.min(22, Math.max(13, (panelHeight - 54) / 8));
+        int rowStep = Math.min(22, Math.max(13, (panelHeight - 54) / 9));
         int firstRowY = panelY + 32;
         drawInsetPanel(g, 12, panelY, w - 24, panelHeight);
         g.setColor(255, 244, 200);
@@ -3957,6 +3970,32 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 firstRowY + rowStep * 6, settingsSelection == 6);
         drawMenuItem(g, "Modo económico: " + (economicMode ? "Si" : "No"),
                 firstRowY + rowStep * 7, settingsSelection == 7);
+        drawMenuItem(g, "Mostrar FPS: " + (fpsEnabled ? "Si" : "No"),
+                firstRowY + rowStep * 8, settingsSelection == 8);
+    }
+
+    private void updateFpsCounter() {
+        long now = System.currentTimeMillis();
+        if (fpsWindowStart == 0L) {
+            fpsWindowStart = now;
+            fpsFrameCount = 0;
+        }
+        fpsFrameCount++;
+        long elapsed = now - fpsWindowStart;
+        if (elapsed >= 1000L) {
+            displayedFps = (int) ((fpsFrameCount * 1000L) / elapsed);
+            fpsFrameCount = 0;
+            fpsWindowStart = now;
+        }
+    }
+
+    private void drawFpsCounter(Graphics g) {
+        String value = "FPS: " + displayedFps;
+        int width = Font.getDefaultFont().stringWidth(value) + 8;
+        g.setColor(0, 0, 0);
+        g.fillRect(4, 4, width, 16);
+        g.setColor(255, 255, 255);
+        g.drawString(value, 8, 5, Graphics.TOP | Graphics.LEFT);
     }
 
     private void drawControls(Graphics g) {
