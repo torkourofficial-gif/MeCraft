@@ -1924,9 +1924,29 @@ final class ChunkRenderer {
                 " M" + terrainMeshes + "/" + lastDirectionalMeshCount + "ms";
     }
 
-    /** Cached geometry totals for the attached terrain meshes. */
+    /** Live M3G submission counters for the currently enabled terrain meshes. */
     String geometryStats() {
-        return "TRI:" + lastTerrainTriangles + " VTX:" + lastTerrainVertices;
+        long triangles = 0L;
+        long indices = 0L;
+        int enabledMeshes = 0;
+        int submeshes = 0;
+        int children = terrain.getChildCount();
+        for (int i = 0; i < children; i++) {
+            Mesh mesh = (Mesh)terrain.getChild(i);
+            if (!mesh.isRenderingEnabled()) continue;
+            enabledMeshes++;
+            int count = mesh.getSubmeshCount();
+            submeshes += count;
+            for (int sub = 0; sub < count; sub++) {
+                IndexBuffer buffer = mesh.getIndexBuffer(sub);
+                if (buffer == null) continue;
+                int indexCount = buffer.getIndexCount();
+                indices += indexCount;
+                triangles += indexCount / 3;
+            }
+        }
+        return "TRI:" + triangles + " VTX:" + lastTerrainVertices +
+                " MSH:" + enabledMeshes + " SUB:" + submeshes + " IDX:" + indices;
     }
 
     /** Start clean per-chunk geometry accumulators before reading its first layer. */
