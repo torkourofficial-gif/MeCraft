@@ -52,7 +52,10 @@ final class ChunkRenderer {
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
     private static final int FACE_COUNT = 6;
-    private static final int FACE_TILE_COUNT = TILE_COUNT * FACE_COUNT;
+    // Water is two-sided/translucent, so it remains in an always-enabled bucket.
+    private static final int WATER_BUCKET = FACE_COUNT;
+    private static final int FACE_BUCKET_COUNT = FACE_COUNT + 1;
+    private static final int FACE_TILE_COUNT = TILE_COUNT * FACE_BUCKET_COUNT;
     private static final int TORCH_LIGHT_RADIUS = 6;
     private static final int LAVA_LIGHT_RADIUS = 6;
     private static final int MAX_CHUNK_TORCHES = 128;
@@ -1488,6 +1491,8 @@ final class ChunkRenderer {
         for (int face = 0; face < FACE_COUNT; face++)
             if (chunk.faceMeshes[face] != null)
                 chunk.faceMeshes[face].setRenderingEnable((mask & (1 << face)) != 0);
+        if (chunk.faceMeshes[WATER_BUCKET] != null)
+            chunk.faceMeshes[WATER_BUCKET].setRenderingEnable(true);
     }
 
     private void updateChunkFaceCulling(VoxelWorld world) {
@@ -1874,18 +1879,18 @@ final class ChunkRenderer {
         int flowerCount = buildingFlowers == null ? 0 : 1;
         int fireCount = buildingFires == null ? 0 : 1;
         int portalCount = buildingPortals == null ? 0 : 1;
-        Mesh[] faceMeshes = count > 0 ? makeChunkBlockMeshes() : new Mesh[FACE_COUNT];
+        Mesh[] faceMeshes = count > 0 ? makeChunkBlockMeshes() : new Mesh[FACE_BUCKET_COUNT];
         targetChunk.faceMeshes = faceMeshes;
         targetChunk.faceCullMask = -1;
         int blockMeshCount = 0;
-        for (int face = 0; face < FACE_COUNT; face++)
+        for (int face = 0; face < FACE_BUCKET_COUNT; face++)
             if (faceMeshes[face] != null) blockMeshCount++;
         if (blockMeshCount + flowerCount + fireCount + portalCount == 0)
             return new Mesh[0];
 
         Mesh[] meshes = new Mesh[blockMeshCount + flowerCount + fireCount + portalCount];
         int at = 0;
-        for (int face = 0; face < FACE_COUNT; face++)
+        for (int face = 0; face < FACE_BUCKET_COUNT; face++)
             if (faceMeshes[face] != null) meshes[at++] = faceMeshes[face];
         if (buildingFlowers != null)
             meshes[at++] = makeFlowerMesh(buildingFlowers, flowerAppearance);
@@ -2101,7 +2106,9 @@ final class ChunkRenderer {
                         int encoded = key - 1;
                         int tile = encoded & (TILE_COUNT - 1);
                         int light = encoded / TILE_COUNT;
-                        int builderIndex = face * TILE_COUNT + tile;
+                        int bucket = tile == Block.atlasTile(Block.WATER) ?
+                                WATER_BUCKET : face;
+                        int builderIndex = bucket * TILE_COUNT + tile;
                         if (builders[builderIndex] == null) {
                             FaceBuilder builder = freeFaceBuilderCount > 0 ?
                                     freeFaceBuilders[--freeFaceBuilderCount] : null;
@@ -2155,8 +2162,8 @@ final class ChunkRenderer {
      * from the camera, avoiding submission of those vertices to M3G.
      */
     private Mesh[] makeChunkBlockMeshes() {
-        Mesh[] result = new Mesh[FACE_COUNT];
-        for (int face = 0; face < FACE_COUNT; face++) {
+        Mesh[] result = new Mesh[FACE_BUCKET_COUNT];
+        for (int face = 0; face < FACE_BUCKET_COUNT; face++) {
             int submeshCount = 0;
             int totalVertices = 0;
             for (int active = 0; active < activeFaceBuilderCount; active++) {
