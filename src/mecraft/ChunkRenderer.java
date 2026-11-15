@@ -61,7 +61,8 @@ final class ChunkRenderer {
     private final boolean[] chunkLavaSource = new boolean[MAX_CHUNK_TORCHES];
     private int chunkTorchCount;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
-    private static final float CHUNK_RADIUS = 12.0f;
+    // Half-diagonal of a 16x16x16 chunk, rounded up to avoid false culls.
+    private static final float CHUNK_RADIUS = 14.0f;
     private static final float NORMAL_FOV = 68.0f;
     private static final float SPRINT_FOV = 76.0f;
     private float cameraFov = NORMAL_FOV;
@@ -1508,14 +1509,14 @@ final class ChunkRenderer {
             // Resume the current build, or retry the selected dirty chunk when its
             // procedural neighbors were not ready on the previous paint.
             if (pendingBuild != null && pendingBuildSlot >= 0 &&
-                    assignedChunks[pendingBuildSlot] &&
+                    assignedChunks[pendingBuildSlot] && visibleChunks[pendingBuildSlot] &&
                     chunkWorldX[pendingBuildSlot] == pendingBuild.x &&
                     chunkWorldY[pendingBuildSlot] == pendingBuild.y &&
                     chunkWorldZ[pendingBuildSlot] == pendingBuild.z) {
                 advanceChunkBuild(world, pendingBuildSlot,
                         pendingBuild.x, pendingBuild.y, pendingBuild.z);
             } else if (pendingTargetSlot >= 0) {
-                if (assignedChunks[pendingTargetSlot] &&
+                if (assignedChunks[pendingTargetSlot] && visibleChunks[pendingTargetSlot] &&
                         dirtyChunks[pendingTargetSlot] &&
                         chunkWorldX[pendingTargetSlot] == pendingTargetX &&
                         chunkWorldY[pendingTargetSlot] == pendingTargetY &&
@@ -1660,6 +1661,11 @@ final class ChunkRenderer {
                     if (assignedChunks[i] && !sameChunk) removeChunk(i);
                     visibleChunks[i] = visible;
                     if (!visible) {
+                        if (pendingBuildSlot == i) {
+                            pendingBuild = null;
+                            pendingBuildSlot = -1;
+                        }
+                        if (pendingTargetSlot == i) pendingTargetSlot = -1;
                         if (sameChunk && chunks[i] != null) setChunkAttached(i, false);
                         continue;
                     }
