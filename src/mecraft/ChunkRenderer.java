@@ -1478,7 +1478,7 @@ final class ChunkRenderer {
         float x0 = cx * VoxelWorld.CHUNK_XZ;
         float y0 = cy * VoxelWorld.CHUNK_Y;
         float z0 = cz * VoxelWorld.CHUNK_XZ;
-        final float margin = cameraMode == 0 ? 0.5f : 4.0f;
+        final float margin = cameraMode == 0 ? 0.5f : 4.5f;
         int mask = 0;
         if (eyeY >= y0 - margin) mask |= 1;
         if (eyeX <= x0 + VoxelWorld.CHUNK_XZ + margin) mask |= 1 << 1;
