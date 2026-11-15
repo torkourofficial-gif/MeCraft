@@ -144,6 +144,8 @@ final class ChunkRenderer {
     private int activeFaceBuilderCount;
     private float currentBuildEyeX, currentBuildEyeY, currentBuildEyeZ;
     private int chunkNonAirBlocks;
+    // 0 = full geometry; 1 = distant terrain (top surfaces only).
+    private int buildingLodLevel;
     private int completedChunkBuilds;
     private int completedDirtyRebuilds;
     private long lastChunkBuildMillis;
@@ -1720,8 +1722,13 @@ final class ChunkRenderer {
                             Math.abs(vertical) <= Math.max(0.0f, depth) * tanVerticalFov + CHUNK_RADIUS;
                     }
 
+                    float nearX = Math.max(0.0f, Math.abs(dx) - VoxelWorld.CHUNK_XZ * 0.5f);
+                    float nearZ = Math.max(0.0f, Math.abs(dz) - VoxelWorld.CHUNK_XZ * 0.5f);
+                    int desiredLod = nearX * nearX + nearZ * nearZ > 40.0f * 40.0f ? 1 : 0;
                     boolean sameChunk = assignedChunks[i] && chunkWorldX[i] == cx &&
                         chunkWorldY[i] == cy && chunkWorldZ[i] == cz;
+                    if (sameChunk && chunks[i] != null && chunks[i].lodLevel != desiredLod)
+                        dirtyChunks[i] = true;
                     // A slot can own a partially meshed chunk before it becomes
                     // resident. Always detach that partial mesh before reusing
                     // the ring slot for a different world coordinate.
@@ -1793,9 +1800,14 @@ final class ChunkRenderer {
         if (!world.areProceduralChunkNeighborsReady(cx, cz)) return;
 
         if (pendingBuild == null || pendingBuildSlot != slot ||
-            pendingBuild.x != cx || pendingBuild.y != cy || pendingBuild.z != cz) {
+            pendingBuild.x != cx || pendingBuild.y != cy || pendingBuild.z != cz ||
+            pendingBuild.lodLevel != (floatLodForChunk(cx, cz, world.playerX, world.playerZ))) {
             chunkBuildStartedAt = System.currentTimeMillis();
-            pendingBuild = new ChunkBuild(slot, cx, cy, cz);
+            int nearX = Math.max(0, Math.abs(cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ / 2 - (int)world.playerX) - VoxelWorld.CHUNK_XZ / 2);
+            int nearZ = Math.max(0, Math.abs(cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ / 2 - (int)world.playerZ) - VoxelWorld.CHUNK_XZ / 2);
+            int lodLevel = nearX * nearX + nearZ * nearZ > 40 * 40 ? 1 : 0;
+            pendingBuild = new ChunkBuild(slot, cx, cy, cz, lodLevel);
+            buildingLodLevel = lodLevel;
             pendingBuildSlot = slot;
             resetChunkMeshAccumulators();
             // Take one compact snapshot of the chunk. The mesher reads this
@@ -1829,7 +1841,7 @@ final class ChunkRenderer {
         currentBuildEyeX = world.playerX;
         currentBuildEyeY = world.playerY + 1.62f;
         currentBuildEyeZ = world.playerZ;
-        Mesh[] meshes = finishChunkMeshes(world, cx, cy, cz, complete);
+        Mesh[] meshes = finishChunkMeshes(world, cx, cy, cz, complete, job.lodLevel);
         lastMeshAssemblyMillis = System.currentTimeMillis() - meshStartedAt;
         // Remove the old scene nodes before replacing the mesh reference.
         // The resident wrapper is reused, so assigning complete.meshes first
@@ -1842,6 +1854,7 @@ final class ChunkRenderer {
         // Reuse the resident chunk wrapper on remesh instead of allocating a new
         // object for every block edit; crack and hand-animation state stays attached.
         complete.meshes = meshes;
+        complete.lodLevel = job.lodLevel;
         complete.fires = completedFireBuilder == null ? null :
                 new FireBuilder[] { completedFireBuilder };
         complete.attached = visibleChunks[slot];
@@ -1896,8 +1909,8 @@ final class ChunkRenderer {
 
     /** Assemble the chunk as simple per-material M3G meshes plus special geometry. */
     private Mesh[] finishChunkMeshes(VoxelWorld world, int cx, int cy, int cz,
-                                     Chunk targetChunk) {
-        buildChunkFaces(world, cx, cy, cz);
+                                     Chunk targetChunk, int lodLevel) {
+        buildChunkFaces(world, cx, cy, cz, lodLevel);
         int count = activeFaceBuilderCount;
         int flowerCount = buildingFlowers == null ? 0 : 1;
         int fireCount = buildingFires == null ? 0 : 1;
@@ -1999,7 +2012,7 @@ final class ChunkRenderer {
      * Every mask key includes both values, so shading and atlas selection stay
      * identical to the previous per-layer renderer.
      */
-    private void buildChunkFaces(VoxelWorld world, int cx, int cy, int cz) {
+    private void buildChunkFaces(VoxelWorld world, int cx, int cy, int cz, int lodLevel) {
         if (chunkNonAirBlocks == 0) return;
 
         final int x0 = cx * VoxelWorld.CHUNK_XZ;
@@ -2010,6 +2023,9 @@ final class ChunkRenderer {
         final FaceBuilder[] builders = chunkFaceBuilders;
 
         for (int face = 0; face < 6; face++) {
+            // Distant chunks keep only upward-facing surfaces. Neighbor checks
+            // still prevent internal tops from appearing through solid terrain.
+            if (lodLevel > 0 && face != 0) continue;
             boolean horizontalFace = face == 0 || face == 5;
             int slices = horizontalFace ? VoxelWorld.CHUNK_Y : VoxelWorld.CHUNK_XZ;
             int height = horizontalFace ? VoxelWorld.CHUNK_XZ : VoxelWorld.CHUNK_Y;
@@ -2533,6 +2549,7 @@ final class ChunkRenderer {
     private static final class Chunk {
         Mesh[] meshes;
         Mesh[] faceMeshes;
+        int lodLevel;
         int faceCullMask = -1;
         boolean attached;
         FireBuilder[] fires;
@@ -2545,10 +2562,11 @@ final class ChunkRenderer {
     }
 
     private static final class ChunkBuild {
-        final int slot, x, y, z;
+        final int slot, x, y, z, lodLevel;
         int nextLayer;
-        ChunkBuild(int slot, int x, int y, int z) {
+        ChunkBuild(int slot, int x, int y, int z, int lodLevel) {
             this.slot = slot; this.x = x; this.y = y; this.z = z;
+            this.lodLevel = lodLevel;
         }
     }
 
