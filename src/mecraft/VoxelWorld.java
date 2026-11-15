@@ -104,6 +104,8 @@ final class VoxelWorld {
     private int proceduralGenerationEpoch;
     private boolean proceduralWorkerRunning;
     private boolean proceduralWorkerBusy;
+    private boolean proceduralWorkerStop;
+    private Thread proceduralWorkerThread;
     private int proceduralWorkerX, proceduralWorkerZ;
     private boolean proceduralWorkerNether;
     private int proceduralChunksGenerated;
@@ -344,13 +346,19 @@ final class VoxelWorld {
                 proceduralQueueNether[proceduralQueueCount] = nether;
                 proceduralQueueCount++;
             }
-            if (!proceduralWorkerRunning) {
+            // Reuse one low-priority worker for this world. Spawning a new
+            // thread whenever the short queue drains adds avoidable VM/stack
+            // overhead on CLDC devices.
+            if (proceduralWorkerThread == null) {
+                proceduralWorkerStop = false;
                 proceduralWorkerRunning = true;
-                Thread worker = new Thread(new Runnable() {
+                proceduralWorkerThread = new Thread(new Runnable() {
                     public void run() { runProceduralWorker(); }
                 });
-                worker.setPriority(Thread.MIN_PRIORITY);
-                worker.start();
+                proceduralWorkerThread.setPriority(Thread.MIN_PRIORITY);
+                proceduralWorkerThread.start();
+            } else {
+                notifyAll();
             }
         }
     }
@@ -373,11 +381,16 @@ final class VoxelWorld {
             boolean dimension;
             int epoch;
             synchronized (this) {
-                // Drain the bounded request queue, then let the next request
-                // start a fresh worker. No sleeping worker or polling loop.
-                if (proceduralQueueCount == 0) {
+                // Keep one worker parked while idle. New requests wake it;
+                // there is no polling sleep and no thread churn between bursts.
+                while (proceduralQueueCount == 0 && !proceduralWorkerStop) {
+                    try { wait(); } catch (InterruptedException ignored) { }
+                }
+                if (proceduralWorkerStop) {
                     proceduralWorkerBusy = false;
                     proceduralWorkerRunning = false;
+                    proceduralWorkerThread = null;
+                    notifyAll();
                     return;
                 }
                 cx = proceduralQueueX[0]; cz = proceduralQueueZ[0];
@@ -424,11 +437,11 @@ final class VoxelWorld {
             } catch (Throwable failure) {
                 synchronized (this) {
                     proceduralWorkerBusy = false;
-                    proceduralWorkerRunning = false;
                     proceduralQueueCount = 0;
                 }
                 setGenerationDiagnosticStage("VoxelWorld: falló la generación procedural en segundo plano");
-                return;
+                // Keep the reusable worker alive; a later valid request can
+                // still be processed instead of permanently disabling streaming.
             }
             synchronized (this) {
                 proceduralWorkerBusy = false;
@@ -1288,7 +1301,11 @@ final class VoxelWorld {
 
     void setNetherDimension(boolean enabled) {
         if (nether == enabled) return;
-        synchronized (this) { proceduralGenerationEpoch++; proceduralQueueCount = 0; }
+        synchronized (this) {
+            proceduralGenerationEpoch++;
+            proceduralQueueCount = 0;
+            notifyAll();
+        }
         if (otherDimensionBlocks != null && otherDimensionIsNether == enabled) {
             byte[] oldBlocks = blocks;
             byte[] oldWater = waterLevels;
@@ -1326,6 +1343,16 @@ final class VoxelWorld {
     }
 
     void switchDimension() { setNetherDimension(!nether); }
+
+    /** Stop the world-owned streaming worker before this world is discarded. */
+    void shutdownProceduralWorker() {
+        synchronized (this) {
+            proceduralWorkerStop = true;
+            proceduralGenerationEpoch++;
+            proceduralQueueCount = 0;
+            notifyAll();
+        }
+    }
 
     private void convertLegacyNetherWater() {
         for (int i = 0; i < blocks.length; i++)
