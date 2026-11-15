@@ -1842,6 +1842,7 @@ final class ChunkRenderer {
             }
         }
         buildingFlowers = null;
+        return meshes;
     }
 
     private void buildChunkLayer(VoxelWorld world, int cx, int cy, int cz,
