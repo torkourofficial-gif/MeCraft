@@ -4622,9 +4622,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         for (int i = 0; i < PAUSE_ROWS.length; i++)
             drawMenuItem(g, PAUSE_ROWS[i], panelY + 40 + i * 27, i == pauseSelection);
         if (renderer != null) {
+            Font menuFont = g.getFont();
+            g.setFont(Font.getFont(Font.FACE_SYSTEM, Font.STYLE_PLAIN, Font.SIZE_SMALL));
             g.setColor(70, 55, 40);
-            g.drawString(renderer.performanceStats(), w / 2, panelY + panelHeight - 15,
+            g.drawString(renderer.performanceStats(), w / 2, panelY + panelHeight - 13,
                     Graphics.HCENTER | Graphics.TOP);
+            g.setFont(menuFont);
         }
     }
 
