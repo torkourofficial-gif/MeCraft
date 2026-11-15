@@ -144,8 +144,7 @@ final class ChunkRenderer {
     private int activeFaceBuilderCount;
     private float currentBuildEyeX, currentBuildEyeY, currentBuildEyeZ;
     private int chunkNonAirBlocks;
-    // 0 = full geometry; 1 = distant terrain (top surfaces only).
-    private int buildingLodLevel;
+    // LOD 0 = full geometry; LOD 1 = distant terrain (top surfaces only).
     private int completedChunkBuilds;
     private int completedDirtyRebuilds;
     private long lastChunkBuildMillis;
@@ -1793,6 +1792,14 @@ final class ChunkRenderer {
         pendingViewKeyValid = true;
     }
 
+    private static int lodForChunk(int cx, int cz, float playerX, float playerZ) {
+        float centerX = cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f;
+        float centerZ = cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f;
+        float nearX = Math.max(0.0f, Math.abs(centerX - playerX) - VoxelWorld.CHUNK_XZ * 0.5f);
+        float nearZ = Math.max(0.0f, Math.abs(centerZ - playerZ) - VoxelWorld.CHUNK_XZ * 0.5f);
+        return nearX * nearX + nearZ * nearZ > 40.0f * 40.0f ? 1 : 0;
+    }
+
     private void advanceChunkBuild(VoxelWorld world, int slot, int cx, int cy, int cz) {
         // Do not bake exposed faces against procedural neighbors that have not
         // finished loading yet.
@@ -1801,13 +1808,12 @@ final class ChunkRenderer {
 
         if (pendingBuild == null || pendingBuildSlot != slot ||
             pendingBuild.x != cx || pendingBuild.y != cy || pendingBuild.z != cz ||
-            pendingBuild.lodLevel != (floatLodForChunk(cx, cz, world.playerX, world.playerZ))) {
+            pendingBuild.lodLevel != lodForChunk(cx, cz, world.playerX, world.playerZ)) {
             chunkBuildStartedAt = System.currentTimeMillis();
             int nearX = Math.max(0, Math.abs(cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ / 2 - (int)world.playerX) - VoxelWorld.CHUNK_XZ / 2);
             int nearZ = Math.max(0, Math.abs(cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ / 2 - (int)world.playerZ) - VoxelWorld.CHUNK_XZ / 2);
             int lodLevel = nearX * nearX + nearZ * nearZ > 40 * 40 ? 1 : 0;
             pendingBuild = new ChunkBuild(slot, cx, cy, cz, lodLevel);
-            buildingLodLevel = lodLevel;
             pendingBuildSlot = slot;
             resetChunkMeshAccumulators();
             // Take one compact snapshot of the chunk. The mesher reads this
