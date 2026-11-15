@@ -3991,11 +3991,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void drawFpsCounter(Graphics g) {
         String value = "FPS: " + displayedFps;
-        int width = Font.getDefaultFont().stringWidth(value) + 8;
+        String detail = renderer == null ? "" : renderer.renderStats();
+        Font font = Font.getDefaultFont();
+        int width = Math.max(font.stringWidth(value), font.stringWidth(detail)) + 8;
+        int height = detail.length() == 0 ? 16 : 28;
         g.setColor(0, 0, 0);
-        g.fillRect(4, 4, width, 16);
+        g.fillRect(4, 4, width, height);
         g.setColor(255, 255, 255);
         g.drawString(value, 8, 5, Graphics.TOP | Graphics.LEFT);
+        if (detail.length() > 0)
+            g.drawString(detail, 8, 17, Graphics.TOP | Graphics.LEFT);
     }
 
     private void drawControls(Graphics g) {
