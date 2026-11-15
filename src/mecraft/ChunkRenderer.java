@@ -2704,8 +2704,6 @@ final class ChunkRenderer {
         int vertexCount;
         int faceCount;
 
-        FaceBuilder(int tile) { reset(tile); }
-
         int faceGroup;
 
         FaceBuilder(int tile) { reset(tile, -1); }
