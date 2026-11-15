@@ -130,7 +130,7 @@ final class ChunkRenderer {
     private final int[] chunkWorldX = new int[CACHE_SIZE];
     private final int[] chunkWorldY = new int[CACHE_SIZE];
     private final int[] chunkWorldZ = new int[CACHE_SIZE];
-    // Reused by the synchronous chunk mesher to avoid short-lived arrays.
+    // Full voxel snapshot for one chunk section; each source layer is copied into place once.
     private final byte[] chunkVoxelScratch = new byte[VoxelWorld.CHUNK_XZ *
             VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
     private final byte[] chunkLightScratch = new byte[VoxelWorld.CHUNK_XZ *
@@ -1903,8 +1903,8 @@ final class ChunkRenderer {
         fillChunkLightSlice(x0, y0, z0);
 
         // Crossed flowers do not form cube faces, so collect them separately.
-        // Empty vertical sections are common above the terrain: detect them during
-        // the voxel copy and avoid allocating face builders/M3G meshes for them.
+        // Empty vertical sections are common above the terrain: detect them in the
+        // shared voxel snapshot and avoid allocating face builders/M3G meshes.
         int nonAirBlocks = 0;
         int voxelLayerOffset = layer * CHUNK_AREA;
         for (int z = 0; z < VoxelWorld.CHUNK_XZ; z++) {
