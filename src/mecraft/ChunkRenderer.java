@@ -1312,7 +1312,13 @@ final class ChunkRenderer {
             // single-coordinate invalidation would leave stale meshes behind.
             if (builtRevision < 0 || world.fullRebuild ||
                     world.revision != builtRevision + 1) rebuildWorld(world);
-            else rebuildChanged(world);
+            else {
+                // Drop the previous cached target before invalidating meshes.
+                // The edited chunk must be selected again even if the old target
+                // was a different chunk that finished between two paint calls.
+                pendingTargetSlot = -1;
+                rebuildChanged(world);
+            }
             builtRevision = world.revision;
             pendingViewKeyValid = false;
         }
@@ -1407,6 +1413,10 @@ final class ChunkRenderer {
             // At a vertical chunk seam, only the touching edge slice is affected.
             dirtyLayerMasks[i] |= changedVerticalLayerMask(chunkWorldY[i], cy, ly);
             dirtyChunks[i] = dirtyLayerMasks[i] != 0;
+            // Prioritize the exact edited chunk. Otherwise a nearby dirty
+            // neighbor can win the distance scan and delay the visible edit.
+            if (chunkWorldX[i] == cx && chunkWorldY[i] == cy &&
+                    chunkWorldZ[i] == cz) pendingTargetSlot = i;
         }
     }
 
@@ -1665,7 +1675,9 @@ final class ChunkRenderer {
                         dirtyLayerMasks[i] = (1 << VoxelWorld.CHUNK_Y) - 1;
                     }
                     if (!sameChunk || dirtyChunks[i]) {
-                        float distance = dx * dx + dz * dz + dy * dy * 2.0f;
+                        // Show the block edit before remeshing unrelated chunks.
+                        float distance = i == pendingTargetSlot ? -1.0f :
+                                dx * dx + dz * dz + dy * dy * 2.0f;
                         if (distance < bestDistance) {
                             bestDistance = distance;
                             best = i;
