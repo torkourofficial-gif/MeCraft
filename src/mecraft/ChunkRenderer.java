@@ -1830,13 +1830,10 @@ final class ChunkRenderer {
         int portalCount = buildingPortals == null ? 0 : 1;
         if (count + flowerCount + fireCount + portalCount == 0) return new Mesh[0];
 
-        Mesh[] meshes = new Mesh[count + flowerCount + fireCount + portalCount];
+        int blockMeshCount = count > 0 ? 1 : 0;
+        Mesh[] meshes = new Mesh[blockMeshCount + flowerCount + fireCount + portalCount];
         int at = 0;
-        if (count > 0) {
-            Mesh[] blockMeshes = makeChunkBlockMeshes();
-            for (int i = 0; i < blockMeshes.length; i++)
-                meshes[at++] = blockMeshes[i];
-        }
+        if (count > 0) meshes[at++] = makeChunkBlockMesh();
         if (buildingFlowers != null)
             meshes[at++] = makeFlowerMesh(buildingFlowers, flowerAppearance);
         if (buildingFires != null) {
@@ -2091,15 +2088,53 @@ final class ChunkRenderer {
      * TriangleStripArray; current lighting, greedy rectangles and tile
      * appearances are retained.
      */
-    private Mesh[] makeChunkBlockMeshes() {
-        Mesh[] meshes = new Mesh[activeFaceBuilderCount];
+    /**
+     * Packs every opaque tile batch in this chunk into one M3G Mesh node.
+     * Each tile remains a separate submesh with its original cropped texture,
+     * while all submeshes share one position/UV/color VertexBuffer.
+     */
+    private Mesh makeChunkBlockMesh() {
+        int totalVertices = 0;
         for (int active = 0; active < activeFaceBuilderCount; active++) {
-            int index = activeFaceBuilderIndices[active];
-            FaceBuilder builder = chunkFaceBuilders[index];
-            meshes[active] = makeMesh(builder, tileAppearance(index),
-                    0.999f / 16.0f);
+            FaceBuilder builder = chunkFaceBuilders[activeFaceBuilderIndices[active]];
+            totalVertices += builder.vertexCount;
         }
-        return meshes;
+        if (totalVertices <= 0) return null;
+
+        short[] positionsData = new short[totalVertices * 3];
+        short[] uvData = new short[totalVertices * 2];
+        byte[] colorData = new byte[totalVertices * 4];
+        TriangleStripArray[] submeshes = new TriangleStripArray[activeFaceBuilderCount];
+        Appearance[] appearances = new Appearance[activeFaceBuilderCount];
+        int vertexOffset = 0;
+
+        for (int active = 0; active < activeFaceBuilderCount; active++) {
+            int tile = activeFaceBuilderIndices[active];
+            FaceBuilder builder = chunkFaceBuilders[tile];
+            int vertices = builder.vertexCount;
+            System.arraycopy(builder.p, 0, positionsData, vertexOffset * 3, vertices * 3);
+            System.arraycopy(builder.uv, 0, uvData, vertexOffset * 2, vertices * 2);
+            System.arraycopy(builder.c, 0, colorData, vertexOffset * 4, vertices * 4);
+
+            int[] strips = new int[builder.faceCount];
+            for (int strip = 0; strip < strips.length; strip++) strips[strip] = 4;
+            submeshes[active] = new TriangleStripArray(vertexOffset, strips);
+            appearances[active] = tileAppearance(tile);
+            vertexOffset += vertices;
+        }
+
+        VertexArray positions = new VertexArray(totalVertices, 3, 2);
+        positions.set(0, totalVertices, positionsData);
+        VertexArray texCoords = new VertexArray(totalVertices, 2, 2);
+        texCoords.set(0, totalVertices, uvData);
+        VertexArray colors = new VertexArray(totalVertices, 4, 1);
+        colors.set(0, totalVertices, colorData);
+
+        VertexBuffer vertices = new VertexBuffer();
+        vertices.setPositions(positions, 1.0f, null);
+        vertices.setTexCoords(0, texCoords, 0.999f / 16.0f, null);
+        vertices.setColors(colors);
+        return new Mesh(vertices, submeshes, appearances);
     }
 
     private Mesh makeMesh(FaceBuilder data, Appearance appearance) {
