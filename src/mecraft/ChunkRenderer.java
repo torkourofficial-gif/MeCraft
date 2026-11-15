@@ -115,6 +115,10 @@ final class ChunkRenderer {
     // Assigned slots include chunks whose first mesh is still being built.
     private final boolean[] assignedChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
+    // A resident chunk may keep its M3G meshes cached while detached from the
+    // scene graph. This avoids both draw traversal and costly remeshing when
+    // the player turns back toward a previously visited direction.
+    private final boolean[] visibleChunks = new boolean[CACHE_SIZE];
     private final int[] chunkWorldX = new int[CACHE_SIZE];
     private final int[] chunkWorldY = new int[CACHE_SIZE];
     private final int[] chunkWorldZ = new int[CACHE_SIZE];
@@ -1439,10 +1443,25 @@ final class ChunkRenderer {
         }
     }
 
+    private void setChunkAttached(int slot, boolean attached) {
+        Chunk chunk = chunks[slot];
+        if (chunk == null || chunk.attached == attached) return;
+        if (chunk.meshes != null) {
+            for (int m = 0; m < chunk.meshes.length; m++) {
+                if (attached) terrain.addChild(chunk.meshes[m]);
+                else terrain.removeChild(chunk.meshes[m]);
+            }
+        }
+        chunk.attached = attached;
+        if (chunk.crackMesh != null)
+            chunk.crackMesh.setRenderingEnable(attached &&
+                    activeCrackChunkSlot == slot && activeCrackStage >= 0);
+    }
+
     private void removeChunk(int i) {
         if (pendingBuildSlot == i) { pendingBuild = null; pendingBuildSlot = -1; }
         if (chunks[i] != null) {
-            if (chunks[i].meshes != null) {
+            if (chunks[i].attached && chunks[i].meshes != null) {
                 for (int m = 0; m < chunks[i].meshes.length; m++)
                     terrain.removeChild(chunks[i].meshes[m]);
             }
@@ -1458,6 +1477,7 @@ final class ChunkRenderer {
         if (activeCrackChunkSlot == i) activeCrackChunkSlot = -1;
         assignedChunks[i] = false;
         dirtyChunks[i] = false;
+        visibleChunks[i] = false;
         chunkWorldX[i] = Integer.MIN_VALUE;
         chunkWorldY[i] = Integer.MIN_VALUE;
         chunkWorldZ[i] = Integer.MIN_VALUE;
@@ -1638,7 +1658,12 @@ final class ChunkRenderer {
                     // resident. Always detach that partial mesh before reusing
                     // the ring slot for a different world coordinate.
                     if (assignedChunks[i] && !sameChunk) removeChunk(i);
-                    if (!visible) continue;
+                    visibleChunks[i] = visible;
+                    if (!visible) {
+                        if (sameChunk && chunks[i] != null) setChunkAttached(i, false);
+                        continue;
+                    }
+                    if (sameChunk && chunks[i] != null) setChunkAttached(i, true);
                     if (pendingBuild != null && pendingBuildSlot == i &&
                             pendingBuild.x == cx && pendingBuild.y == cy && pendingBuild.z == cz)
                         pendingVisible = true;
@@ -1733,7 +1758,7 @@ final class ChunkRenderer {
         // The resident wrapper is reused, so assigning complete.meshes first
         // would overwrite the only references to the old meshes and orphan
         // them in the terrain group permanently.
-        if (previousChunk != null && previousChunk.meshes != null) {
+        if (previousChunk != null && previousChunk.attached && previousChunk.meshes != null) {
             for (int i = 0; i < previousChunk.meshes.length; i++)
                 terrain.removeChild(previousChunk.meshes[i]);
         }
@@ -1743,7 +1768,10 @@ final class ChunkRenderer {
         complete.meshes = meshes;
         complete.fires = completedFireBuilder == null ? null :
                 new FireBuilder[] { completedFireBuilder };
-        for (int i = 0; i < meshes.length; i++) terrain.addChild(meshes[i]);
+        complete.attached = visibleChunks[slot];
+        if (complete.attached) {
+            for (int i = 0; i < meshes.length; i++) terrain.addChild(meshes[i]);
+        }
         chunks[slot] = complete;
         chunkWorldX[slot] = cx; chunkWorldY[slot] = cy; chunkWorldZ[slot] = cz;
         dirtyChunks[slot] = false;
@@ -2360,6 +2388,7 @@ final class ChunkRenderer {
 
     private static final class Chunk {
         Mesh[] meshes;
+        boolean attached;
         FireBuilder[] fires;
         Mesh crackMesh;
         VertexArray crackPositions;
