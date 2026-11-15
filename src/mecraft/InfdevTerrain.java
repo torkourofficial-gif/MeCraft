@@ -321,16 +321,12 @@ final class InfdevTerrain {
     }
 
     private static int surfaceHeight(int seed, int x, int z, int biome) {
-        // Alpha-inspired continental shape: broad low-frequency terrain, a
-        // medium ridge field and a small detail octave. All work is 2D and
-        // performed once per column (never a full 3D noise volume).
+        // Two 2D noise samples are enough for the standard terrain profile.
+        // Dropping the extra detail and ridge octaves cuts repeated lattice
+        // lookups while keeping broad hills, biome height and seeded variation.
         int broad = valueNoise(seed ^ 0x1A2B3C, x, z, 96) - 128;
         int medium = valueNoise(seed ^ 0x4D5E6F, x, z, 32) - 128;
-        int detail = valueNoise(seed ^ 0x778899, x, z, 10) - 128;
-        int ridgeNoise = valueNoise(seed ^ 0x13579B, x, z, 72);
-        int ridge = 128 - Math.abs(ridgeNoise - 128);
-        int variation = (broad * 30 + medium * 12 + detail * 4) >> 8;
-        variation += (ridge - 64) >> 2;
+        int variation = (broad * 30 + medium * 12) >> 8;
         int height;
         if (biome == OCEAN) height = 12 + (variation >> 2);
         else if (biome == SNOWY) height = 20 + variation;
