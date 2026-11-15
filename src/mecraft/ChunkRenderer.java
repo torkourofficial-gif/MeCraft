@@ -125,8 +125,6 @@ final class ChunkRenderer {
     // Assigned slots include chunks whose first mesh is still being built.
     private final boolean[] assignedChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
-    // Bit mask of vertical slices that actually need remeshing for each chunk.
-    private final int[] dirtyLayerMasks = new int[CACHE_SIZE];
     private final int[] chunkWorldX = new int[CACHE_SIZE];
     private final int[] chunkWorldY = new int[CACHE_SIZE];
     private final int[] chunkWorldZ = new int[CACHE_SIZE];
@@ -1352,7 +1350,6 @@ final class ChunkRenderer {
         for (int i = 0; i < CACHE_SIZE; i++) {
             if (!assignedChunks[i] || chunkWorldX[i] != cx ||
                     chunkWorldY[i] != cy || chunkWorldZ[i] != cz) continue;
-            dirtyLayerMasks[i] = (1 << VoxelWorld.CHUNK_Y) - 1;
             dirtyChunks[i] = true;
             pendingTargetSlot = i;
             pendingTargetX = cx;
@@ -1405,8 +1402,6 @@ final class ChunkRenderer {
                 // pendingBuild.y is a CHUNK coordinate, not a block-layer
                 // coordinate. Use the edited local Y slice; edits immediately
                 // across a vertical chunk seam belong to the edge slice.
-                int pendingMask = changedVerticalLayerMask(pendingBuild.y, cy, ly);
-                dirtyLayerMasks[pendingBuildSlot] |= pendingBuild.dirtyMask | pendingMask;
                 dirtyChunks[pendingBuildSlot] = true;
                 pendingBuild = null;
                 pendingBuildSlot = -1;
@@ -1430,9 +1425,8 @@ final class ChunkRenderer {
                     int layerMin = baseY + layer * VoxelWorld.CHUNK_Y;
                     int layerMax = layerMin + VoxelWorld.CHUNK_Y;
                     if (y >= layerMin - TORCH_LIGHT_RADIUS && y < layerMax + TORCH_LIGHT_RADIUS)
-                        dirtyLayerMasks[i] |= 1 << layer;
                 }
-                dirtyChunks[i] = dirtyLayerMasks[i] != 0;
+                dirtyChunks[i] = true;
                 if (chunkWorldX[i] == cx && chunkWorldY[i] == cy &&
                         chunkWorldZ[i] == cz) pendingTargetSlot = i;
                 continue;
@@ -1443,8 +1437,7 @@ final class ChunkRenderer {
             // A changed voxel affects its own slice and the slices directly
             // above and below: their bottom/top faces may become visible or hidden.
             // At a vertical chunk seam, only the touching edge slice is affected.
-            dirtyLayerMasks[i] |= changedVerticalLayerMask(chunkWorldY[i], cy, ly);
-            dirtyChunks[i] = dirtyLayerMasks[i] != 0;
+            dirtyChunks[i] = true;
             // Prioritize the exact edited chunk. Otherwise a nearby dirty
             // neighbor can win the distance scan and delay the visible edit.
             if (chunkWorldX[i] == cx && chunkWorldY[i] == cy &&
@@ -1452,15 +1445,6 @@ final class ChunkRenderer {
         }
     }
 
-    /** Returns the mesh slices whose exposed faces can change after editing Y. */
-    private int changedVerticalLayerMask(int chunkY, int changedChunkY, int localY) {
-        if (chunkY < changedChunkY) return 1 << (VoxelWorld.CHUNK_Y - 1);
-        if (chunkY > changedChunkY) return 1;
-        int mask = 1 << localY;
-        if (localY > 0) mask |= 1 << (localY - 1);
-        if (localY + 1 < VoxelWorld.CHUNK_Y) mask |= 1 << (localY + 1);
-        return mask;
-    }
 
     private int floorDiv(int value, int divisor) {
         int result = value / divisor;
@@ -1484,13 +1468,11 @@ final class ChunkRenderer {
             return;
         }
         if (pendingBuild != null && pendingBuildSlot >= 0)
-            dirtyLayerMasks[pendingBuildSlot] |= pendingBuild.dirtyMask;
+            dirtyChunks[pendingBuildSlot] = true;
         pendingBuild = null;
         pendingBuildSlot = -1;
-        int allLayers = (1 << VoxelWorld.CHUNK_Y) - 1;
         for (int i = 0; i < chunks.length; i++) {
             if (!assignedChunks[i]) continue;
-            dirtyLayerMasks[i] = allLayers;
             dirtyChunks[i] = true;
         }
     }
@@ -1514,7 +1496,6 @@ final class ChunkRenderer {
         if (activeCrackChunkSlot == i) activeCrackChunkSlot = -1;
         assignedChunks[i] = false;
         dirtyChunks[i] = false;
-        dirtyLayerMasks[i] = 0;
         chunkWorldX[i] = Integer.MIN_VALUE;
         chunkWorldY[i] = Integer.MIN_VALUE;
         chunkWorldZ[i] = Integer.MIN_VALUE;
@@ -1704,7 +1685,6 @@ final class ChunkRenderer {
                         chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
                         assignedChunks[i] = true;
                         dirtyChunks[i] = true;
-                        dirtyLayerMasks[i] = (1 << VoxelWorld.CHUNK_Y) - 1;
                     }
                     if (!sameChunk || dirtyChunks[i]) {
                         // Show the block edit before remeshing unrelated chunks.
@@ -1755,8 +1735,7 @@ final class ChunkRenderer {
         if (pendingBuild == null || pendingBuildSlot != slot ||
             pendingBuild.x != cx || pendingBuild.y != cy || pendingBuild.z != cz) {
             chunkBuildStartedAt = System.currentTimeMillis();
-            int mask = (1 << VoxelWorld.CHUNK_Y) - 1;
-            pendingBuild = new ChunkBuild(slot, cx, cy, cz, mask);
+            pendingBuild = new ChunkBuild(slot, cx, cy, cz);
             pendingBuildSlot = slot;
             resetChunkMeshAccumulators();
             long caveStartedAt = System.currentTimeMillis();
@@ -1769,15 +1748,11 @@ final class ChunkRenderer {
                     (cz + 1) * VoxelWorld.CHUNK_XZ);
         }
         ChunkBuild job = pendingBuild;
-        while (job.nextLayer < VoxelWorld.CHUNK_Y &&
-                (job.dirtyMask & (1 << job.nextLayer)) == 0) job.nextLayer++;
-        // Read every vertical slice into the same material builders. No partial
-        // layer meshes are attached to the scene.
+        // A chunk is one render unit: rebuild all of its vertical slices into
+        // one replacement mesh, rather than tracking masks that were never used
+        // to avoid the full mesh assembly.
         while (job.nextLayer < VoxelWorld.CHUNK_Y) {
-            int layer = job.nextLayer++;
-            buildChunkLayer(world, cx, cy, cz, layer);
-            while (job.nextLayer < VoxelWorld.CHUNK_Y &&
-                    (job.dirtyMask & (1 << job.nextLayer)) == 0) job.nextLayer++;
+            buildChunkLayer(world, cx, cy, cz, job.nextLayer++);
         }
 
         FireBuilder completedFireBuilder = buildingFires;
@@ -1801,7 +1776,6 @@ final class ChunkRenderer {
         chunks[slot] = complete;
         chunkWorldX[slot] = cx; chunkWorldY[slot] = cy; chunkWorldZ[slot] = cz;
         dirtyChunks[slot] = false;
-        dirtyLayerMasks[slot] = 0;
         completedChunkBuilds++;
         if (previousChunk != null) completedDirtyRebuilds++;
         lastChunkBuildMillis = System.currentTimeMillis() - chunkBuildStartedAt;
@@ -2524,11 +2498,10 @@ final class ChunkRenderer {
     }
 
     private static final class ChunkBuild {
-        final int slot, x, y, z, dirtyMask;
+        final int slot, x, y, z;
         int nextLayer;
-        ChunkBuild(int slot, int x, int y, int z, int dirtyMask) {
+        ChunkBuild(int slot, int x, int y, int z) {
             this.slot = slot; this.x = x; this.y = y; this.z = z;
-            this.dirtyMask = dirtyMask;
         }
     }
 
