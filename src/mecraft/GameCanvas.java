@@ -749,15 +749,19 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         int centerX = (int)Math.floor(targetWorld.playerX / (float)VoxelWorld.CHUNK_XZ);
         int centerZ = (int)Math.floor(targetWorld.playerZ / (float)VoxelWorld.CHUNK_XZ);
         targetWorld.requestProceduralNeighborhood(centerX, centerZ);
-        while (!targetRenderer.isInitialNeighborhoodReady(targetWorld)) {
+        try {
+            while (!targetRenderer.isInitialNeighborhoodReady(targetWorld)) {
+                targetRenderer.sync(targetWorld);
+                loadingMessage = Language.text("Preparando chunks cercanos...");
+                repaint();
+                serviceRepaints();
+                try { Thread.sleep(10L); } catch (InterruptedException ignored) { }
+            }
             targetRenderer.sync(targetWorld);
-            loadingMessage = Language.text("Preparando chunks cercanos...");
             repaint();
-            serviceRepaints();
-            try { Thread.sleep(10L); } catch (InterruptedException ignored) { }
+        } finally {
+            targetWorld.finishProceduralNeighborhood();
         }
-        targetRenderer.sync(targetWorld);
-        repaint();
     }
 
     private void openSavedWorld(final VoxelWorld.SavedWorld savedWorld) {
