@@ -1750,18 +1750,20 @@ final class ChunkRenderer {
         Mesh[] meshes = finishChunkMeshes(cx, cy, cz);
         lastMeshAssemblyMillis = System.currentTimeMillis() - meshStartedAt;
         Chunk previousChunk = chunks[slot];
+        // Remove the old scene nodes before replacing the mesh reference.
+        // The resident wrapper is reused, so assigning complete.meshes first
+        // would overwrite the only references to the old meshes and orphan
+        // them in the terrain group permanently.
+        if (previousChunk != null && previousChunk.meshes != null) {
+            for (int i = 0; i < previousChunk.meshes.length; i++)
+                terrain.removeChild(previousChunk.meshes[i]);
+        }
         // Reuse the resident chunk wrapper on remesh instead of allocating a new
         // object for every block edit; crack and hand-animation state stays attached.
         Chunk complete = previousChunk == null ? new Chunk() : previousChunk;
         complete.meshes = meshes;
         complete.fires = completedFireBuilder == null ? null :
                 new FireBuilder[] { completedFireBuilder };
-        if (previousChunk != null) {
-            if (previousChunk.meshes != null) {
-                for (int i = 0; i < previousChunk.meshes.length; i++)
-                    terrain.removeChild(previousChunk.meshes[i]);
-            }
-        }
         for (int i = 0; i < meshes.length; i++) terrain.addChild(meshes[i]);
         chunks[slot] = complete;
         chunkWorldX[slot] = cx; chunkWorldY[slot] = cy; chunkWorldZ[slot] = cz;
