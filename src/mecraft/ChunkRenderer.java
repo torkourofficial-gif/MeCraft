@@ -147,7 +147,7 @@ final class ChunkRenderer {
     private int completedChunkBuilds;
     private int completedDirtyRebuilds;
     private long lastChunkBuildMillis;
-    private long lastCaveBuildMillis;
+    private long lastSnapshotBuildMillis;
     private long lastMeshAssemblyMillis;
     private long chunkBuildStartedAt;
     // Per-chunk accumulators: tile geometry is retained across every vertical layer.
@@ -1732,7 +1732,7 @@ final class ChunkRenderer {
                 System.arraycopy(chunkVoxelLayerScratch, 0, chunkVoxelScratch,
                         layer * CHUNK_AREA, CHUNK_AREA);
             }
-            lastCaveBuildMillis = System.currentTimeMillis() - caveStartedAt;
+            lastSnapshotBuildMillis = System.currentTimeMillis() - caveStartedAt;
             collectChunkTorches(world, cx * VoxelWorld.CHUNK_XZ,
                     cy * VoxelWorld.CHUNK_Y, cz * VoxelWorld.CHUNK_XZ,
                     (cx + 1) * VoxelWorld.CHUNK_XZ,
@@ -1788,7 +1788,7 @@ final class ChunkRenderer {
     /** Last completed chunk timings, shown only while the pause menu is open. */
     String performanceStats() {
         return "B" + completedChunkBuilds + " R" + completedDirtyRebuilds +
-                " T" + lastChunkBuildMillis + " C" + lastCaveBuildMillis +
+                " T" + lastChunkBuildMillis + " S" + lastSnapshotBuildMillis +
                 " M" + lastMeshAssemblyMillis + "ms";
     }
 
