@@ -1707,12 +1707,13 @@ final class ChunkRenderer {
             return;
         }
 
+        FireBuilder completedFireBuilder = buildingFires;
         Mesh[] meshes = finishChunkMeshes(cx, cy, cz);
         Chunk previousChunk = chunks[slot];
         Chunk complete = new Chunk();
         complete.meshes = meshes;
-        complete.fires = buildingFires == null ? null :
-                new FireBuilder[] { buildingFires };
+        complete.fires = completedFireBuilder == null ? null :
+                new FireBuilder[] { completedFireBuilder };
         if (previousChunk != null) {
             if (previousChunk.meshes != null) {
                 for (int i = 0; i < previousChunk.meshes.length; i++)
