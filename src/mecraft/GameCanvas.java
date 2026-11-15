@@ -648,6 +648,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         respawn();
         saveIfNeeded();
         renderer = null;
+        if (world != null) world.shutdownProceduralWorker();
         world = null;
         System.gc();
         if (gameOverSelection == 0) {
@@ -767,6 +768,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             loadingMessage = Language.text("Restaurando terreno y modificaciones...");
             repaint();
             if (renderer != null) { renderer = null; System.gc(); }
+            if (world != null && world != saved) world.shutdownProceduralWorker();
             world = saved;
             world.health = clamp(world.health, 0, 20);
             playerPhysics.reset();
@@ -2853,6 +2855,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         menuSelection = MENU_SINGLEPLAYER;
         clearKeys();
         renderer = null;
+        if (world != null) world.shutdownProceduralWorker();
         world = null;
         System.gc();
         loadTitle();
@@ -4277,14 +4280,26 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         int y = getHeight() - 32;
         for (int i = 0; i < 10; i++) {
             int x = getWidth() / 2 - 91 + i * 8;
+            int healthInHeart = world.health - i * 2;
             if (iconsTexture != null && iconsTexture.getWidth() >= 70 && iconsTexture.getHeight() >= 9) {
-                int healthInHeart = world.health - i * 2;
-                int tileX = healthInHeart >= 2 ? 52 : (healthInHeart == 1 ? 61 : 16);
-                g.drawRegion(iconsTexture, tileX, 0, 9, 9, Sprite.TRANS_NONE, x, y, Graphics.TOP | Graphics.LEFT);
+                // Draw the empty heart first so a half-heart keeps its grey
+                // half and the shared dark outline instead of looking clipped.
+                g.drawRegion(iconsTexture, 16, 0, 9, 9, Sprite.TRANS_NONE,
+                        x, y, Graphics.TOP | Graphics.LEFT);
+                if (healthInHeart >= 2) {
+                    g.drawRegion(iconsTexture, 52, 0, 9, 9, Sprite.TRANS_NONE,
+                            x, y, Graphics.TOP | Graphics.LEFT);
+                } else if (healthInHeart == 1) {
+                    g.drawRegion(iconsTexture, 61, 0, 9, 9, Sprite.TRANS_NONE,
+                            x, y, Graphics.TOP | Graphics.LEFT);
+                }
             } else {
-                g.setColor(world.health > i * 2 ? 202 : 100, world.health > i * 2 ? 54 : 100,
-                           world.health > i * 2 ? 47 : 100);
-                g.fillArc(x, y, 7, 7, 0, 360);
+                g.setColor(55, 25, 25);
+                g.fillArc(x, y, 8, 8, 0, 360);
+                g.setColor(healthInHeart > 0 ? 202 : 115,
+                           healthInHeart > 0 ? 54 : 115,
+                           healthInHeart > 0 ? 47 : 115);
+                g.fillArc(x + 1, y + 1, 6, 6, 0, 360);
             }
         }
     }
