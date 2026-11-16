@@ -269,7 +269,13 @@ final class InfdevTerrain {
         return value * value * (768 - 2 * value) >> 16;
     }
 
-    private static synchronized int lattice(int seed, int x, int z) {
+    /**
+     * Lock-free noise lookup. The old synchronized lattice cache serialized
+     * every single noise sample from terrain generation. Version 0 uses a
+     * direct coordinate hash; version 1 reads the permutation prepared when
+     * the world is created.
+     */
+    private static int lattice(int seed, int x, int z) {
         if (preparedNoiseSeed != seed || preparedNoiseVersion < 0)
             prepareNoise(seed, 1);
         if (preparedNoiseVersion != 0) {
@@ -278,19 +284,9 @@ final class InfdevTerrain {
             return seededPermutation[px + (seededPermutation[pz] & 255)] & 255;
         }
         int base = seed ^ x * 73428767 ^ z * 42317861;
-        int slot = base & LATTICE_CACHE_MASK;
-        if (latticeCacheValid[slot] && latticeSeedCache[slot] == seed &&
-            latticeXCache[slot] == x && latticeZCache[slot] == z)
-            return latticeValueCache[slot] & 255;
         int mixed = (base ^ (base >>> 13)) * 1274126177;
         mixed ^= mixed >>> 16;
-        int value = mixed >>> 24;
-        latticeSeedCache[slot] = seed;
-        latticeXCache[slot] = x;
-        latticeZCache[slot] = z;
-        latticeValueCache[slot] = (byte)value;
-        latticeCacheValid[slot] = true;
-        return value;
+        return mixed >>> 24;
     }
 
     /** Sparse, short, mostly unbranched tunnels for Economic worlds. */
