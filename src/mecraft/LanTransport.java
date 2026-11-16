@@ -36,7 +36,10 @@ final class LanTransport implements Runnable {
     private ServerSocketConnection server;
     private DatagramConnection discovery;
     private SocketConnection clientSocket;
+    private DataInputStream clientInput;
     private DataOutputStream clientOutput;
+    private int clientPlayerId = -1;
+    private final DataInputStream[] peerInputs = new DataInputStream[LanProtocol.MAX_PLAYERS - 1];
     private final DataOutputStream[] peerOutputs = new DataOutputStream[LanProtocol.MAX_PLAYERS - 1];
     private final SocketConnection[] peerSockets =
             new SocketConnection[LanProtocol.MAX_PLAYERS - 1];
@@ -274,6 +277,7 @@ final class LanTransport implements Runnable {
                 closeSocket(openedClient);
                 return;
             }
+            clientInput = input;
             clientOutput = output;
         }
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -298,6 +302,10 @@ final class LanTransport implements Runnable {
         if (accepted.available() != 0 || playerId < 1 ||
                 playerId >= LanProtocol.MAX_PLAYERS)
             throw new IOException("Respuesta de conexion invalida.");
+        synchronized (this) {
+            if (!running) return;
+            clientPlayerId = playerId;
+        }
         notifyConnected("Anfitrion");
         while (running) {
             byte[] packet = LanProtocol.readFrame(input);
@@ -350,6 +358,7 @@ final class LanTransport implements Runnable {
                         }
                         if (slot >= 0) {
                             peerSockets[slot] = socket;
+                            peerInputs[slot] = input;
                             peerOutputs[slot] = output;
                             peerCount++;
                         }
@@ -378,6 +387,7 @@ final class LanTransport implements Runnable {
                 synchronized (LanTransport.this) {
                     if (slot >= 0 && peerSockets[slot] == socket) {
                         peerSockets[slot] = null;
+                        peerInputs[slot] = null;
                         peerOutputs[slot] = null;
                         peerCount--;
                     } else if (slot < 0 && !pendingReleased && pendingPeers > 0) {
@@ -510,6 +520,16 @@ final class LanTransport implements Runnable {
         catch (Throwable ignored) { }
     }
 
+    private void closeStream(DataInputStream stream) {
+        if (stream == null) return;
+        try { stream.close(); } catch (IOException ignored) { }
+    }
+
+    private void closeStream(DataOutputStream stream) {
+        if (stream == null) return;
+        try { stream.close(); } catch (IOException ignored) { }
+    }
+
     private void closeSocket(SocketConnection socket) {
         if (socket == null) return;
         try { socket.close(); } catch (IOException ignored) { }
@@ -525,6 +545,10 @@ final class LanTransport implements Runnable {
         DatagramConnection oldDiscovery;
         SocketConnection oldClient;
         SocketConnection peer0, peer1, peer2;
+        DataInputStream oldClientInput;
+        DataOutputStream oldClientOutput;
+        DataInputStream[] oldPeerInputs = new DataInputStream[peerInputs.length];
+        DataOutputStream[] oldPeerOutputs = new DataOutputStream[peerOutputs.length];
         synchronized (this) {
             running = false;
             oldServer = server;
@@ -533,18 +557,31 @@ final class LanTransport implements Runnable {
             server = null;
             discovery = null;
             clientSocket = null;
+            oldClientInput = clientInput;
+            oldClientOutput = clientOutput;
+            clientInput = null;
             clientOutput = null;
+            clientPlayerId = -1;
             peer0 = peerSockets.length > 0 ? peerSockets[0] : null;
             peer1 = peerSockets.length > 1 ? peerSockets[1] : null;
             peer2 = peerSockets.length > 2 ? peerSockets[2] : null;
             for (int i = 0; i < peerSockets.length; i++) {
                 peerSockets[i] = null;
+                oldPeerInputs[i] = peerInputs[i];
+                oldPeerOutputs[i] = peerOutputs[i];
+                peerInputs[i] = null;
                 peerOutputs[i] = null;
             }
             peerCount = 0;
             pendingPeers = 0;
         }
         closeDatagram(oldDiscovery);
+        closeStream(oldClientInput);
+        closeStream(oldClientOutput);
+        for (int i = 0; i < oldPeerInputs.length; i++) {
+            closeStream(oldPeerInputs[i]);
+            closeStream(oldPeerOutputs[i]);
+        }
         if (oldServer != null) {
             try { oldServer.close(); } catch (IOException ignored) { }
         }
