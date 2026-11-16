@@ -24,6 +24,7 @@ final class MenuPanorama {
     private static final int FACE_SIZE = 256;
     private final World world = new World();
     private final Camera camera = new Camera();
+    private final Group baseRotation = new Group();
     private final Group tilt = new Group();
     private final Group cube = new Group();
 
@@ -38,9 +39,10 @@ final class MenuPanorama {
             cube.addChild(makeFace(image, face));
         }
         tilt.addChild(cube);
-        world.addChild(tilt);
+        baseRotation.addChild(tilt);
+        world.addChild(baseRotation);
 
-        camera.setPerspective(64.0f, (float)width / (float)height, 0.1f, 8.0f);
+        camera.setPerspective(120.0f, (float)width / (float)height, 0.05f, 10.0f);
         world.addChild(camera);
         world.setActiveCamera(camera);
 
@@ -56,11 +58,12 @@ final class MenuPanorama {
 
     void resize(int width, int height) {
         if (width > 0 && height > 0)
-            camera.setPerspective(64.0f, (float)width / (float)height, 0.1f, 8.0f);
+            camera.setPerspective(120.0f, (float)width / (float)height, 0.05f, 10.0f);
     }
 
     void render(Graphics3D graphics, Graphics target, int tick, int width, int height) {
         float timer = (float)tick;
+        baseRotation.setOrientation(180.0f, 1.0f, 0.0f, 0.0f);
         cube.setOrientation(timer * 0.1f, 0.0f, 1.0f, 0.0f);
         float pitch = (float)Math.sin(timer / 400.0f) * 25.0f + 20.0f;
         tilt.setOrientation(-pitch, 1.0f, 0.0f, 0.0f);
