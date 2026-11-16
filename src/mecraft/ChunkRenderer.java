@@ -1535,8 +1535,9 @@ final class ChunkRenderer {
             // naturally become collectible instead of growing the pool forever.
             if (freeFaceBuilderCount < freeFaceBuilders.length &&
                     builder.p.length <= 1536) {
-                builder.reset(0, 0);
-                freeFaceBuilders[freeFaceBuilderCount++] = builder;
+                builder.reset(0);
+                freeFaceBuilders[freeFaceBuilderCount] = builder;
+                freeFaceBuilderCount++;
             }
         }
         if (flowers != null) meshes[at++] = makeFlowerMesh(flowers, flowerAppearance);
@@ -1554,7 +1555,7 @@ final class ChunkRenderer {
     }
 
     private void add(FaceBuilder[] builders, int tile, int x, int y, int z, int face) {
-        if (builders[tile] == null) builders[tile] = new FaceBuilder(tile, 0);
+        if (builders[tile] == null) builders[tile] = new FaceBuilder(tile);
         builders[tile].add(x, y, z, face);
     }
 
