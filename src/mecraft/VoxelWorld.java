@@ -261,7 +261,7 @@ final class VoxelWorld {
             changedX = cx * CHUNK_XZ + CHUNK_XZ / 2;
             changedY = CHUNK_Y / 2;
             changedZ = cz * CHUNK_XZ + CHUNK_XZ / 2;
-            changedOldId = Block.AIR;
+            changedOldId = (byte)-1;
             revision++;
         }
     }
