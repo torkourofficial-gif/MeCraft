@@ -7,6 +7,7 @@ import javax.microedition.m3g.Background;
 import javax.microedition.m3g.Camera;
 import javax.microedition.m3g.CompositingMode;
 import javax.microedition.m3g.Graphics3D;
+import javax.microedition.m3g.Fog;
 import javax.microedition.m3g.Group;
 import javax.microedition.m3g.Image2D;
 import javax.microedition.m3g.Light;
@@ -23,10 +24,10 @@ import javax.microedition.m3g.World;
 /** Builds shared-texture chunk meshes on demand for the visible part of the world. */
 final class ChunkRenderer {
     private static final int MAX_STREAM_RADIUS = 4;
-    // A full chunk build is still a costly operation on constrained MIDP/M3G
-    // devices. Keep streaming strictly single-chunk-per-sync; never catch up by
-    // building multiple chunks after a slow frame.
-    private static final int CHUNKS_PER_FRAME = 1;
+    // Build a second chunk only when the first build leaves enough frame time.
+    // Slow MIDP devices therefore retain the one-chunk fallback automatically.
+    private static final int CHUNKS_PER_FRAME = 2;
+    private static final long CHUNK_SECOND_BUILD_BUDGET_MS = 42L;
     // Avoid rebuilding the same dirty chunk repeatedly while edits arrive.
     private int lastBuildFrameChunk = -1;
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
@@ -88,6 +89,7 @@ final class ChunkRenderer {
     private final Group handModelOffset = new Group();
     private final Group terrain = new Group();
     private final Background sky = new Background();
+    private final Fog terrainFog = new Fog();
     private final SkySystem skyObjects;
     private final Light sunlight = new Light();
     private final Light[] torchLights = new Light[3];
@@ -215,6 +217,9 @@ final class ChunkRenderer {
         crackMesh = new Mesh(crackBuffer, new TriangleStripArray(0, new int[] { 4 }), crackAppearance);
         crackMesh.setRenderingEnable(false);
         scene.addChild(crackMesh);
+        terrainFog.setMode(Fog.LINEAR);
+        terrainFog.setColor(currentSkyColor & 0x00FFFFFF);
+        updateTerrainFog();
         portalAppearance = createPortalAppearance(portalFrames[0]);
         Image fireImage = GameAssets.image("fire.png");
         worldFireTexture = new Texture2D(new Image2D(Image2D.RGBA, fireImage));
@@ -367,6 +372,15 @@ final class ChunkRenderer {
                 0.1f, cameraFar);
         externalCamera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
                 0.1f, cameraFar);
+        updateTerrainFog();
+    }
+
+    private void updateTerrainFog() {
+        float start = cameraFar * 0.58f;
+        float end = cameraFar * 0.94f;
+        if (end <= start) end = start + 1.0f;
+        terrainFog.setColor(currentSkyColor & 0x00FFFFFF);
+        terrainFog.setLinear(start, end);
     }
 
     float fieldOfView() { return cameraFov; }
@@ -1123,6 +1137,7 @@ final class ChunkRenderer {
         if (world.nether) {
             currentDaylight = 0.32f;
             currentSkyColor = 0xFF4A1717;
+            updateTerrainFog();
             sunlight.setIntensity(0.45f);
             updateTorchLights(world);
             return;
@@ -1136,6 +1151,7 @@ final class ChunkRenderer {
         // Keep moonlight visible on small, low-brightness phone displays.
         sunlight.setIntensity(0.28f + sun * 0.72f);
         currentSkyColor = blendColor(0xFF26354A, 0xFF82B8E8, sun);
+        updateTerrainFog();
         updateTorchLights(world);
     }
 
@@ -1289,7 +1305,9 @@ final class ChunkRenderer {
         int firstRz = firstChunkZ - centerZ + MAX_STREAM_RADIUS;
         int lastRz = lastChunkZ - centerZ + MAX_STREAM_RADIUS;
         int best = -1;
+        int secondBest = -1;
         float bestDistance = Float.MAX_VALUE;
+        float secondBestDistance = Float.MAX_VALUE;
 
         // Search and rank candidates only in the active window, not all 648
         // cache slots. In shortest mode this is 72 sectors (3x3x8).
@@ -1326,35 +1344,29 @@ final class ChunkRenderer {
                     if (!sameChunk || dirtyChunks[i]) {
                         float distance = dx * dx + dz * dz + dy * dy * 2.0f;
                         if (distance < bestDistance) {
+                            secondBestDistance = bestDistance;
+                            secondBest = best;
                             bestDistance = distance;
                             best = i;
+                        } else if (distance < secondBestDistance) {
+                            secondBestDistance = distance;
+                            secondBest = i;
                         }
                     }
                 }
             }
         }
 
-        // Build one nearest sector per frame; no second full-cache scan needed.
-        for (int build = 0; build < CHUNKS_PER_FRAME && best >= 0; build++) {
+        // Mesh the two nearest visible sectors when the first build is quick
+        // enough. On slower phones the elapsed-time guard keeps this to one.
+        if (best >= 0) {
+            long buildStart = System.currentTimeMillis();
             replaceChunk(world, best, chunkWorldX[best], chunkWorldY[best], chunkWorldZ[best]);
-            best = -1;
-            bestDistance = Float.MAX_VALUE;
-            // A second candidate is only needed if CHUNKS_PER_FRAME is raised.
-            if (build + 1 < CHUNKS_PER_FRAME) {
-                for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++)
-                    for (int rz = firstRz; rz <= lastRz; rz++)
-                        for (int rx = firstRx; rx <= lastRx; rx++) {
-                            int cx = centerX + rx - MAX_STREAM_RADIUS;
-                            int cz = centerZ + rz - MAX_STREAM_RADIUS;
-                            int i = (cy * span + floorMod(cz, span)) * span + floorMod(cx, span);
-                            if (!residentChunks[i] || dirtyChunks[i]) {
-                                float dx = cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeX;
-                                float dy = cy * VoxelWorld.CHUNK_Y + VoxelWorld.CHUNK_Y * 0.5f - eyeY;
-                                float dz = cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
-                                float distance = dx * dx + dz * dz + dy * dy * 2.0f;
-                                if (distance < bestDistance) { bestDistance = distance; best = i; }
-                            }
-                        }
+            if (CHUNKS_PER_FRAME > 1 && secondBest >= 0 &&
+                    System.currentTimeMillis() - buildStart < CHUNK_SECOND_BUILD_BUDGET_MS &&
+                    (!residentChunks[secondBest] || dirtyChunks[secondBest])) {
+                replaceChunk(world, secondBest, chunkWorldX[secondBest],
+                        chunkWorldY[secondBest], chunkWorldZ[secondBest]);
             }
         }
     }
@@ -1664,6 +1676,7 @@ final class ChunkRenderer {
     private Appearance createPortalAppearance(Texture2D texture) {
         Appearance appearance = new Appearance();
         appearance.setTexture(0, texture);
+        appearance.setFog(terrainFog);
         Material material = new Material();
         material.setColor(Material.AMBIENT, 0xFFFFFFFF);
         material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
@@ -1787,6 +1800,7 @@ final class ChunkRenderer {
     private Appearance createBlockAppearance(Texture2D texture, boolean translucent) {
         Appearance appearance = new Appearance();
         appearance.setTexture(0, texture);
+        appearance.setFog(terrainFog);
         Material material = new Material();
         material.setColor(Material.AMBIENT, 0xFFFFFFFF);
         material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
@@ -1810,6 +1824,7 @@ final class ChunkRenderer {
     private Appearance createFlowerAppearance() {
         Appearance appearance = new Appearance();
         appearance.setTexture(0, atlas);
+        appearance.setFog(terrainFog);
         Material material = new Material();
         material.setColor(Material.AMBIENT, 0xFFFFFFFF);
         material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
@@ -1828,6 +1843,7 @@ final class ChunkRenderer {
     private Appearance createFireAppearance(Texture2D texture) {
         Appearance appearance = new Appearance();
         appearance.setTexture(0, texture);
+        appearance.setFog(terrainFog);
         Material material = new Material();
         material.setColor(Material.AMBIENT, 0xFFFFFFFF);
         material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
