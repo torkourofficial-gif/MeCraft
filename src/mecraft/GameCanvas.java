@@ -4008,6 +4008,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                         if (y > 0 && y < VoxelWorld.HEIGHT && id >= Block.AIR && id < Block.COUNT) {
                             lanApplyingPacket = true;
                             world.setNetworkBlock(x, y, z, id, metadata);
+                            world.clearLanChanges();
                             lanLastWorldRevision = world.revision;
                             lanApplyingPacket = false;
                             if (lanLocalPlayerId == 0 && lanTransport != null)
@@ -4068,7 +4069,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             lanGameActive = false;
             lanTransport = null;
             lanLocalPlayerId = -1;
-            for (int i = 0; i < lanRemotePresent.length; i++) lanRemotePresent[i] = false;
+            for (int i = 0; i < lanRemotePresent.length; i++) {
+                lanRemotePresent[i] = false;
+                if (renderer != null) renderer.removeLanPlayer(i);
+            }
         }
         repaint();
     }
