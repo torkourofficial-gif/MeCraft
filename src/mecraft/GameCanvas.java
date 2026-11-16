@@ -301,8 +301,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             long elapsed = System.currentTimeMillis() - start;
             reportFrameProfile(start, elapsed);
             long wait = 50L - elapsed;
-            if (wait < 8L) wait = 8L;
-            try { Thread.sleep(wait); } catch (InterruptedException ignored) { }
+            if (wait > 0L) {
+                try { Thread.sleep(wait); } catch (InterruptedException ignored) { }
+            }
         }
     }
 
