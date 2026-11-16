@@ -98,6 +98,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private final int[] inventory = new int[ItemCatalog.COUNT];
     private volatile boolean running;
     private volatile boolean visible;
+    private volatile long profileUpdateWait, profileUpdateWork, profileRenderSync;
+    private volatile long profileMaxUpdateWait, profileMaxUpdateWork, profileMaxRenderSync;
+    private volatile long profileLastReport;
     private volatile int state = MENU;
     private int menuSelection = MENU_SINGLEPLAYER;
     private int debugMenuSequence;
@@ -296,10 +299,23 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             if (visible && state == GAME_OVER && gameOverTicks < 12) gameOverTicks++;
             if (visible && (state != PLAYING || renderFrame++ % (frameSkip + 1) == 0)) repaint();
             long elapsed = System.currentTimeMillis() - start;
+            reportFrameProfile(start, elapsed);
             long wait = 50L - elapsed;
             if (wait < 8L) wait = 8L;
             try { Thread.sleep(wait); } catch (InterruptedException ignored) { }
         }
+    }
+
+    private void reportFrameProfile(long now, long frameTime) {
+        if (now - profileLastReport < 2000L) return;
+        profileLastReport = now;
+        System.out.println("MeCraft timing ms: frame=" + frameTime +
+            " updateWait=" + profileUpdateWait + " update=" + profileUpdateWork +
+            " renderSync=" + profileRenderSync + " maxWait=" + profileMaxUpdateWait +
+            " maxUpdate=" + profileMaxUpdateWork + " maxSync=" + profileMaxRenderSync);
+        profileMaxUpdateWait = 0L;
+        profileMaxUpdateWork = 0L;
+        profileMaxRenderSync = 0L;
     }
 
     private int musicModeForState() {
@@ -313,7 +329,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         return MusicController.OFF;
     }
 
-    private synchronized void updateGame() {
+    private void updateGame() {
+        long waitingSince = System.currentTimeMillis();
+        synchronized (this) {
+            long enteredAt = System.currentTimeMillis();
+            long waited = enteredAt - waitingSince;
+            profileUpdateWait = waited;
+            if (waited > profileMaxUpdateWait) profileMaxUpdateWait = waited;
+            updateGameLocked();
+            long work = System.currentTimeMillis() - enteredAt;
+            profileUpdateWork = work;
+            if (work > profileMaxUpdateWork) profileMaxUpdateWork = work;
+        }
+    }
+
+    private void updateGameLocked() {
         if (!visible || state != PLAYING || world == null || renderer == null) return;
         if (sprintToggleTimer > 0) sprintToggleTimer--;
         if (pendingIronDoorTicks > 0 && --pendingIronDoorTicks == 0)
@@ -3126,7 +3156,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             state == CREATIVE_INVENTORY || state == GAME_OVER || state == CHEST_INVENTORY || state == FURNACE_INVENTORY) {
             String stage = "actualizando mallas M3G";
             try {
+                long syncStarted = System.currentTimeMillis();
                 renderer.sync(world);
+                long syncTime = System.currentTimeMillis() - syncStarted;
+                profileRenderSync = syncTime;
+                if (syncTime > profileMaxRenderSync) profileMaxRenderSync = syncTime;
                 int heldBlock = hotbar[world.selectedSlot];
                 renderer.updateHeldItem(heldBlock,
                     world.mode == 1 || inventory[heldBlock] > 0);
