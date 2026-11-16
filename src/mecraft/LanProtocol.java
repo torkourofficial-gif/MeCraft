@@ -16,7 +16,7 @@ final class LanProtocol {
     static final int MAX_PACKET_SIZE = 4096;
     static final int CODE_LENGTH = 6;
     static final int DISCOVERY_MAGIC = 0x4D434C4E;
-    static final int PROTOCOL_VERSION = 1;
+    static final int PROTOCOL_VERSION = 2;
     static final int DISCOVERY_QUERY = 1;
     static final int DISCOVERY_RESPONSE = 2;
     static final int HELLO = 3;
