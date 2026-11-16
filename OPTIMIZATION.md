@@ -42,3 +42,18 @@ The code already has several good J2ME/M3G practices that were deliberately pres
 ## Validation status
 
 The change was reviewed against the repository source and the JSR-184 API model. A Java ME SDK / emulator build and on-device frame-time comparison have **not** been run in this environment. Do not interpret this branch as a measured FPS claim or a completed hardware certification.
+
+## Target hardware constraints supplied by the project
+
+The primary target is an **HTC S730** and a J2ME emulator configured with an **8 MB Java heap**. Treat the 8 MB heap as a hard application budget, not as available memory for terrain alone: MIDP classes, game state, image decoding, save buffers, networking, and temporary mesh builders all compete for it. M3G implementations may also allocate native memory outside the Java heap, so heap headroom does not guarantee that texture/mesh creation will succeed.
+
+Priorities for this target:
+- Keep all hot-path pools fixed-capacity and avoid per-frame/per-tick object creation.
+- Keep chunk-build scratch buffers bounded and reused; avoid building several chunks concurrently.
+- Prefer one persistent low-priority chunk worker and a single coalesced pending request over creating a new thread per chunk.
+- Put explicit upper bounds on queued chunk results, mesh count, vertices, and decoded texture memory. Drop or defer work rather than allowing a backlog.
+- Release references to evicted M3G nodes, meshes, vertex arrays, and decoded images; do not rely on `System.gc()` to reclaim native resources.
+- Measure peak heap during world generation, chunk replacement, texture loading, and save/load—not just steady-state gameplay.
+- Test the actual HTC S730 runtime separately from the 8 MB emulator: the emulator heap limit is useful for catching Java-heap pressure but does not model the phone's M3G driver, native heap, or timing.
+
+The current particle change is intentionally small and bounded. Larger changes to chunk storage, texture formats, or mesh batching should be measured against this memory budget before adoption.
