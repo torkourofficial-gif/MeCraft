@@ -1191,7 +1191,7 @@ final class ChunkRenderer {
         // Rail meshes also have a camera-centered streaming window, so they
         // must be refreshed when the player crosses chunk boundaries even if
         // no block in the world changed.
-        railSystem.update(world);
+        railSystem.update(world, shortestDistance ? 1 : Math.min(streamRadius, 2));
         world.fullRebuild = false;
         updateVisibleChunks(world);
     }
