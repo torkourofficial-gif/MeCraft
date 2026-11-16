@@ -201,14 +201,15 @@ final class VoxelWorld {
     }
 
     /** Prepare one procedural column-chunk ahead of the renderer's mesh pass. */
-    void prepareProceduralChunk(int cx, int cz) {
+    boolean prepareProceduralChunk(int cx, int cz) {
         int x = cx * CHUNK_XZ, z = cz * CHUNK_XZ;
-        if (inside(x, z) || outsideWorld(x, z)) return;
+        if (inside(x, z) || outsideWorld(x, z)) return false;
         int cache = proceduralCacheSlot(cx, cz);
-        if (proceduralChunkX[cache] == cx && proceduralChunkZ[cache] == cz) return;
+        if (proceduralChunkX[cache] == cx && proceduralChunkZ[cache] == cz) return false;
         generateChunk(cx, cz, proceduralChunks[cache]);
         proceduralChunkX[cache] = cx;
         proceduralChunkZ[cache] = cz;
+        return true;
     }
 
     private int findEdit(int x, int y, int z) {
