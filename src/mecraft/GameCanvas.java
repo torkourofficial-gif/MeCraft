@@ -3801,6 +3801,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     private void closeLanSession() {
+        if (world != null) world.setLanTrackingEnabled(false);
         LanTransport current = lanTransport;
         lanTransport = null;
         if (current != null) current.stop();
@@ -3839,6 +3840,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     if (renderer != null) { renderer = null; System.gc(); }
                     world = new VoxelWorld(seed, 0, VoxelWorld.SIZE_INFINITE,
                             VoxelWorld.TYPE_STANDARD);
+                    world.setLanTrackingEnabled(true);
+                    world.clearLanChanges();
                     world.difficulty = VoxelWorld.DIFFICULTY_NORMAL;
                     world.worldName = "LAN " + lanRoomCode;
                     world.saveStoreName = "MeCraftLAN" + lanRoomCode;
