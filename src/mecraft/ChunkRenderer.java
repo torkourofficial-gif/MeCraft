@@ -361,7 +361,9 @@ final class ChunkRenderer {
         shortestDistance = setting == 4;
         streamRadius = setting == 0 ? 1 : setting + 1;
         if (streamRadius > MAX_STREAM_RADIUS) streamRadius = MAX_STREAM_RADIUS;
-        cameraFar = shortestDistance ? 28.0f :
+        // Shortest draws only the player's current 16x16 column chunk.
+        // Keep enough far-plane distance to show its far corners without a heavy fog wall.
+        cameraFar = shortestDistance ? 24.0f :
                 ((streamRadius * 2 + 1) * (float)VoxelWorld.CHUNK_XZ) + 8.0f;
         camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
                 0.1f, cameraFar);
@@ -371,8 +373,8 @@ final class ChunkRenderer {
     }
 
     private void updateTerrainFog() {
-        float start = shortestDistance ? 5.5f : cameraFar * 0.58f;
-        float end = shortestDistance ? cameraFar - 0.5f : cameraFar * 0.94f;
+        float start = shortestDistance ? 17.0f : cameraFar * 0.58f;
+        float end = shortestDistance ? cameraFar - 0.25f : cameraFar * 0.94f;
         if (end <= start) end = start + 1.0f;
         terrainFog.setColor(currentSkyColor & 0x00FFFFFF);
         terrainFog.setLinear(start, end);
@@ -1288,28 +1290,9 @@ final class ChunkRenderer {
         int firstChunkZ = centerZ - streamRadius;
         int lastChunkZ = centerZ + streamRadius;
         if (shortestDistance) {
-            // Build a 2x2 square from the player's chunk, the chunk ahead,
-            // the chunk to the camera-right, and the forward-right corner.
-            // Quantize yaw to its dominant axis to keep the window stable.
-            float facingX = (float)Math.sin(yaw);
-            float facingZ = (float)Math.cos(yaw);
-            int forwardChunkX = 0;
-            int forwardChunkZ = 0;
-            int rightChunkX = 0;
-            int rightChunkZ = 0;
-            if (Math.abs(facingX) > Math.abs(facingZ)) {
-                forwardChunkX = facingX >= 0.0f ? 1 : -1;
-                rightChunkZ = facingX >= 0.0f ? -1 : 1;
-            } else {
-                forwardChunkZ = facingZ >= 0.0f ? 1 : -1;
-                rightChunkX = facingZ >= 0.0f ? 1 : -1;
-            }
-            int cornerX = forwardChunkX + rightChunkX;
-            int cornerZ = forwardChunkZ + rightChunkZ;
-            firstChunkX = centerX + Math.min(0, Math.min(forwardChunkX, cornerX));
-            lastChunkX = centerX + Math.max(0, Math.max(forwardChunkX, cornerX));
-            firstChunkZ = centerZ + Math.min(0, Math.min(forwardChunkZ, cornerZ));
-            lastChunkZ = centerZ + Math.max(0, Math.max(forwardChunkZ, cornerZ));
+            // Extreme low-memory mode: keep only the player's current X/Z chunk.
+            firstChunkX = lastChunkX = centerX;
+            firstChunkZ = lastChunkZ = centerZ;
         }
 
         // Evict only chunks that have actually left the horizontal stream window.
