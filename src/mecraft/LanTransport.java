@@ -400,6 +400,10 @@ final class LanTransport implements Runnable {
         }
     }
 
+    int localPlayerId() {
+        synchronized (this) { return mode == HOST ? 0 : clientPlayerId; }
+    }
+
     /**
      * Sends a framed gameplay packet to the host (client mode).
      * Packet payload must begin with a LanProtocol opcode.
