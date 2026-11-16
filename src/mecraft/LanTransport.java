@@ -396,6 +396,10 @@ final class LanTransport implements Runnable {
                 }
                 closeSocket(socket);
                 notifyPeerCount();
+                if (slot >= 0 && listener != null) {
+                    listener.onLanPacket(slot + 1,
+                            new byte[] { (byte)LanProtocol.PLAYER_LEAVE, (byte)(slot + 1) });
+                }
             }
         }
     }
