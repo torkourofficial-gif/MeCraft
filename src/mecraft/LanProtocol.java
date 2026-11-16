@@ -27,6 +27,7 @@ final class LanProtocol {
     static final int BLOCK_CHANGE = 20;
     static final int WORLD_TIME = 21;
     static final int INVENTORY_CHANGE = 22;
+    static final int BLOCK_BATCH = 23;
     static final int ENTITY_STATE = 30;
     static final int PING = 40;
     static final int PONG = 41;
