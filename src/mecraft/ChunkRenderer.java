@@ -1378,7 +1378,7 @@ final class ChunkRenderer {
         int targetY = chunkWorldY[best];
         int targetZ = chunkWorldZ[best];
         if (pendingChunkX != targetX || pendingChunkY != targetY ||
-                pendingChunkZ != targetZ || dirtyChunks[best]) {
+                pendingChunkZ != targetZ) {
             pendingChunkX = targetX;
             pendingChunkY = targetY;
             pendingChunkZ = targetZ;
