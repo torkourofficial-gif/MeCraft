@@ -3215,6 +3215,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     if (cameraUnderwater()) drawTint(g, waterTint);
                     if (hurtTicks > 0) drawTint(g, hurtTint);
                     drawHud(g);
+                    if (lanGameActive) drawLanPlayers(g);
                     if (touchEnabled && state == PLAYING) drawTouchControls(g);
                 }
                 if (state == PAUSED) drawPause(g);
@@ -3965,9 +3966,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 } else if (opcode == LanProtocol.WORLD_TIME && packet.length == 5 &&
                         playerId == 0 && lanLocalPlayerId != 0) {
                     world.dayTime = in.readInt();
-                } else if (opcode == LanProtocol.PLAYER_LEAVE) {
-                    if (playerId >= 0 && playerId < lanRemotePresent.length)
-                        lanRemotePresent[playerId] = false;
+                } else if (opcode == LanProtocol.PLAYER_LEAVE && packet.length == 2) {
+                    int leavingId = in.readUnsignedByte();
+                    if (leavingId > 0 && leavingId < lanRemotePresent.length)
+                        lanRemotePresent[leavingId] = false;
+                    if (lanLocalPlayerId == 0 && lanTransport != null)
+                        lanTransport.broadcast(packet);
                 }
             } catch (Throwable malformed) {
                 lanApplyingPacket = false;
@@ -4008,6 +4012,41 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     public synchronized void onLanError(String message) {
         lanStatus = message == null ? lanLabel("Error de red.", "Network error.") : message;
         repaint();
+    }
+
+    private void drawLanPlayers(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        double yaw = world.yaw * Math.PI / 180.0;
+        double pitch = cameraPitch * Math.PI / 180.0;
+        double sy = Math.sin(yaw), cy = Math.cos(yaw);
+        double sp = Math.sin(pitch), cp = Math.cos(pitch);
+        double focal = w * 0.82;
+        int i;
+        for (i = 0; i < LanProtocol.MAX_PLAYERS; i++) {
+            if (!lanRemotePresent[i]) continue;
+            double dx = lanRemoteX[i] - world.playerX;
+            double dy = (lanRemoteY[i] + 0.9) - (world.playerY + PLAYER_EYE_HEIGHT);
+            double dz = lanRemoteZ[i] - world.playerZ;
+            double depth = dx * sy * cp + dy * sp + dz * cy * cp;
+            if (depth < 0.25) continue;
+            double side = dx * cy - dz * sy;
+            double vertical = -dx * sy * sp + dy * cp - dz * cy * sp;
+            int sx = (int)(w * 0.5 + side * focal / depth);
+            int syScreen = (int)(h * 0.5 - vertical * focal / depth);
+            if (sx < 4 || sx > w - 4 || syScreen < 4 || syScreen > h - 4) continue;
+            int size = (int)(focal * 0.32 / depth);
+            if (size < 2) size = 2;
+            if (size > 18) size = 18;
+            int bodyHeight = size * 3;
+            g.setColor(i == 0 ? 80 : 70 + (i * 47) % 150,
+                    i == 0 ? 210 : 110 + (i * 31) % 120,
+                    i == 0 ? 255 : 80 + (i * 67) % 160);
+            g.fillRect(sx - size / 2, syScreen - bodyHeight, size, bodyHeight);
+            g.fillRect(sx - size / 2, syScreen - bodyHeight - size, size, size);
+            g.setColor(255, 255, 255);
+            g.drawString("P" + (i + 1), sx, syScreen - bodyHeight - size - 2,
+                    Graphics.BOTTOM | Graphics.HCENTER);
+        }
     }
 
     private void drawLanMenu(Graphics g) {
