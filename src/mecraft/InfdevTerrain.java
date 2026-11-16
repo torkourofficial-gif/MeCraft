@@ -19,7 +19,7 @@ final class InfdevTerrain {
     private static int preparedNoiseSeed = Integer.MIN_VALUE;
     private static int preparedNoiseVersion = -1;
 
-    static void prepareNoise(int seed, int version) {
+    static synchronized void prepareNoise(int seed, int version) {
         int selectedVersion = version <= 0 ? 0 : 1;
         if (preparedNoiseSeed == seed && preparedNoiseVersion == selectedVersion) return;
         preparedNoiseSeed = seed;
@@ -269,7 +269,7 @@ final class InfdevTerrain {
         return value * value * (768 - 2 * value) >> 16;
     }
 
-    private static int lattice(int seed, int x, int z) {
+    private static synchronized int lattice(int seed, int x, int z) {
         if (preparedNoiseSeed != seed || preparedNoiseVersion < 0)
             prepareNoise(seed, 1);
         if (preparedNoiseVersion != 0) {
