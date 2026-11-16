@@ -30,7 +30,9 @@ final class MenuPanorama {
 
     MenuPanorama(Image atlas, int width, int height) {
         if (atlas == null) throw new IllegalArgumentException("Missing skybox");
-        int[] cellX = new int[] { 0, 258, 515, 0, 258, 515 };
+        // The top and bottom atlas cells are intentionally exchanged:
+        // the source panorama stores them in the opposite order.
+        int[] cellX = new int[] { 0, 258, 515, 0, 515, 258 };
         int[] cellY = new int[] { 12, 12, 12, 269, 269, 269 };
 
         for (int face = 0; face < 6; face++) {
