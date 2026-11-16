@@ -158,7 +158,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private boolean lookUp, lookDown, lookLeft, lookRight;
     private VoxelWorld world;
     private ChunkRenderer renderer;
-    private MenuDiorama menuDiorama;
     private boolean ridingBoat;
     private boolean ridingMinecart;
     private MusicController music;
@@ -3548,24 +3547,43 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
      * by the same M3G chunk pipeline as gameplay. The camera circles it
      * continuously instead of rebuilding a software cubemap every repaint.
      */
+    /**
+     * Menú 2D: panorama precalculado desde skybox.png y silueta por primitivas.
+     * No crea mundos, chunks, mallas ni contextos M3G.
+     */
     private void drawDioramaBackground(Graphics g) {
+        drawPanoramaBackground(g);
+        drawMenuDioramaForeground(g);
+    }
+
+    /** Pequeño paisaje de bloques dibujado en 2D; no usa imágenes ni buffers extra. */
+    private void drawMenuDioramaForeground(Graphics g) {
         int w = getWidth(), h = getHeight();
         if (w <= 0 || h <= 0) return;
-        try {
-            if (menuDiorama == null) menuDiorama = new MenuDiorama(w, h);
-            Graphics3D graphics3D = Graphics3D.getInstance();
-            graphics3D.bindTarget(g);
-            try {
-                graphics3D.setViewport(0, 0, w, h);
-                menuDiorama.render(graphics3D, w, h, panoramaTick);
-            } finally {
-                graphics3D.releaseTarget();
-            }
-        } catch (OutOfMemoryError exhausted) {
-            drawDirtBackground(g);
-        } catch (Throwable unavailable) {
-            drawDirtBackground(g);
-        }
+
+        int ridge = h * 4 / 5;
+        // Colina lejana.
+        g.setColor(48, 76, 55);
+        g.fillTriangle(0, ridge + 12, w * 2 / 5, ridge - h / 10, w * 3 / 4, ridge + 12);
+        // Colina cercana y su capa de tierra.
+        g.setColor(53, 91, 52);
+        g.fillTriangle(w / 4, ridge + 22, w * 3 / 4, ridge - h / 12, w, ridge + 22);
+        g.setColor(91, 65, 42);
+        g.fillRect(0, ridge + 12, w, h - ridge - 12);
+        g.setColor(66, 105, 48);
+        g.fillRect(0, ridge + 12, w, 5);
+        g.fillRect(w / 4, ridge + 2, w / 2, 5);
+
+        // Dos árboles geométricos en los extremos para dar escala al paisaje.
+        int treeY = ridge - h / 13;
+        g.setColor(91, 62, 38);
+        g.fillRect(w / 8, treeY + 12, Math.max(3, w / 35), h / 9);
+        g.fillRect(w * 7 / 8, treeY + 18, Math.max(3, w / 35), h / 10);
+        g.setColor(43, 91, 43);
+        g.fillTriangle(w / 8 - w / 18, treeY + 22, w / 8 + w / 18, treeY + 22,
+                w / 8, treeY - h / 12);
+        g.fillTriangle(w * 7 / 8 - w / 18, treeY + 28,
+                w * 7 / 8 + w / 18, treeY + 28, w * 7 / 8, treeY - h / 14);
     }
 
     private void drawMenu(Graphics g) {
@@ -3992,8 +4010,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
         // Refresh the perspective cube view periodically instead of allocating
         // a new frame on every repaint.
-        if (menuPanorama == null || panoramaWidth != w || panoramaHeight != h ||
-                panoramaTick % 2 == 0) {
+        if (menuPanorama == null || panoramaWidth != w || panoramaHeight != h) {
             try {
                 menuPanorama = buildMenuPanorama(h);
                 panoramaWidth = w;
@@ -4049,7 +4066,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         int rw = (w + 3) / 4;
         int rh = (h + 3) / 4;
         int[] low = new int[rw * rh];
-        double yaw = panoramaTick * 0.04 * Math.PI / 180.0;
+        // Vista fija: la proyección se genera una vez y se reutiliza en cada repaint.
+        double yaw = 0.0;
         double pitch = -0.035;
         // Trigonometric values are constant for the whole frame. Calculate
         // them once rather than invoking Math.sin/cos for every output pixel.
