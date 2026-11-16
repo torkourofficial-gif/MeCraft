@@ -3914,7 +3914,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     ByteArrayOutputStream bytes = new ByteArrayOutputStream(16);
                     DataOutputStream out = new DataOutputStream(bytes);
                     out.writeByte(LanProtocol.BLOCK_CHANGE);
-                    out.writeInt(x); out.writeShort(y); out.writeInt(z); out.writeByte(id);
+                    out.writeInt(x); out.writeShort(y); out.writeInt(z);
+                    out.writeByte(id); out.writeByte(world.metadataAt(x, y, z));
                     out.flush();
                     byte[] packet = bytes.toByteArray();
                     if (lanLocalPlayerId == 0) lanTransport.broadcast(packet);
@@ -3950,13 +3951,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                         if (lanLocalPlayerId == 0 && lanTransport != null)
                             lanTransport.broadcast(packet);
                     }
-                } else if (opcode == LanProtocol.BLOCK_CHANGE && packet.length == 12) {
+                } else if (opcode == LanProtocol.BLOCK_CHANGE && packet.length == 13) {
                     if (lanLocalPlayerId == 0 || playerId == 0) {
                         int x = in.readInt(), y = in.readUnsignedShort(), z = in.readInt();
                         byte id = in.readByte();
+                        int metadata = in.readUnsignedByte();
                         if (y > 0 && y < VoxelWorld.HEIGHT && id >= Block.AIR && id < Block.COUNT) {
                             lanApplyingPacket = true;
-                            world.set(x, y, z, id);
+                            world.setNetworkBlock(x, y, z, id, metadata);
                             lanLastWorldRevision = world.revision;
                             lanApplyingPacket = false;
                             if (lanLocalPlayerId == 0 && lanTransport != null)
