@@ -1598,7 +1598,7 @@ final class ChunkRenderer {
 
         // Search only the active window, then use the circle/AABB and
         // camera-frustum tests below to reject corner sectors before meshing.
-        for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++) {
+        for (int cy = 0; cy < 1; cy++) {
             for (int rz = firstRz; rz <= lastRz; rz++) {
                 for (int rx = firstRx; rx <= lastRx; rx++) {
                     int cx = centerX + rx - MAX_STREAM_RADIUS;
@@ -1610,7 +1610,7 @@ final class ChunkRenderer {
                             (cy * span + cz) * span + cx :
                             (cy * span + floorMod(cz, span)) * span + floorMod(cx, span);
                     float dx = cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeX;
-                    float dy = cy * VoxelWorld.CHUNK_Y + VoxelWorld.CHUNK_Y * 0.5f - eyeY;
+                    float dy = CHUNK_FULL_HEIGHT * 0.5f - eyeY;
                     float dz = cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
 
                     boolean visible = shortestDistance;
