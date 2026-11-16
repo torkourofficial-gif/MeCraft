@@ -1486,6 +1486,7 @@ final class ChunkRenderer {
 
     private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {
         FaceBuilder[] builders = chunkFaceBuilders;
+        for (int i = 0; i < builders.length; i++) builders[i] = null;
         FlowerBuilder flowers = null;
         FireBuilder fires = null;
         PortalBuilder portals = null;
