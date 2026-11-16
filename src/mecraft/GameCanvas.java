@@ -2718,8 +2718,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private void changeCreateOption(int delta) {
         if (createSelection == 1) newWorldMode = 1 - newWorldMode;
         else if (createSelection == 2) newWorldSize = 1 - newWorldSize;
-        else if (createSelection == 3) newWorldType = newWorldType == VoxelWorld.TYPE_FLAT ?
-                VoxelWorld.TYPE_STANDARD : VoxelWorld.TYPE_FLAT;
+        else if (createSelection == 3) {
+            if (delta > 0) {
+                newWorldType = newWorldType == VoxelWorld.TYPE_STANDARD ? VoxelWorld.TYPE_FLAT :
+                        (newWorldType == VoxelWorld.TYPE_FLAT ? VoxelWorld.TYPE_ECONOMIC : VoxelWorld.TYPE_STANDARD);
+            } else {
+                newWorldType = newWorldType == VoxelWorld.TYPE_STANDARD ? VoxelWorld.TYPE_ECONOMIC :
+                        (newWorldType == VoxelWorld.TYPE_ECONOMIC ? VoxelWorld.TYPE_FLAT : VoxelWorld.TYPE_STANDARD);
+            }
+        }
         else if (createSelection == 4) newWorldDifficulty = (newWorldDifficulty + (delta > 0 ? 1 : 3)) % 4;
         repaint();
     }
@@ -3447,7 +3454,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 activateWorldSelection();
             } else if (y >= h - 36) backToMainMenu();
         } else if (state == WORLD_CREATE) {
-            int row = (y - 70 + 17) / 34;
+            int row = (y - 55 + 14) / 29;
             if (row >= 0 && row <= 7) { createSelection = row; activateCreateSelection(); }
         } else if (state == PAUSED) {
             int row = (y - (h / 2 - 75 + 40) + 13) / 27;
