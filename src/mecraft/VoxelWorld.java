@@ -676,6 +676,7 @@ final class VoxelWorld {
             editId[edit] = Block.WOOL;
             editMeta[edit] = (byte)color;
             changedX = x; changedY = y; changedZ = z; revision++;
+            recordLanChange(x, y, z);
             return true;
         }
         int i = index(x, y, z);
