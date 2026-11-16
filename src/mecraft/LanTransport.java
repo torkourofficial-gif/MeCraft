@@ -12,8 +12,8 @@ import javax.microedition.io.ServerSocketConnection;
 import javax.microedition.io.SocketConnection;
 
 /**
- * Small LAN lobby transport. Networking always runs on worker threads.
- * This establishes a real TCP session but does not yet replicate the world.
+ * LAN TCP/UDP transport. Networking runs on worker threads; gameplay packets
+ * are queued by GameCanvas and applied on the game thread.
  */
 final class LanTransport implements Runnable {
     interface Listener {
