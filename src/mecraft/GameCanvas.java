@@ -2707,7 +2707,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
     }
 
-    private int parseWorldSeed(String value) {\n        if (value == null || value.trim().length() == 0)\n            return (int)(System.currentTimeMillis() ^ (System.currentTimeMillis() >>> 32));\n        String seedText = value.trim();\n        try { return Integer.parseInt(seedText); }\n        catch (NumberFormatException notNumeric) { return seedText.hashCode(); }\n    }\n\n    private void changeCreateOption(int delta) {
+    private int parseWorldSeed(String value) {
+        if (value == null || value.trim().length() == 0)
+            return (int)(System.currentTimeMillis() ^ (System.currentTimeMillis() >>> 32));
+        String seedText = value.trim();
+        try { return Integer.parseInt(seedText); }
+        catch (NumberFormatException notNumeric) { return seedText.hashCode(); }
+    }
+
+    private void changeCreateOption(int delta) {
         if (createSelection == 1) newWorldMode = 1 - newWorldMode;
         else if (createSelection == 2) newWorldSize = 1 - newWorldSize;
         else if (createSelection == 3) newWorldType = newWorldType == VoxelWorld.TYPE_FLAT ?
