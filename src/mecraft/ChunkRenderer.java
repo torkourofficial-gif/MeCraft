@@ -52,11 +52,8 @@ final class ChunkRenderer {
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
-    private static final int FACE_COUNT = 6;
-    // Water is two-sided/translucent, so it remains in an always-enabled bucket.
-    private static final int WATER_BUCKET = FACE_COUNT;
-    private static final int FACE_BUCKET_COUNT = FACE_COUNT + 1;
-    private static final int FACE_TILE_COUNT = TILE_COUNT * FACE_BUCKET_COUNT;
+    // One geometry batch per atlas tile, matching the compact legacy renderer.
+    private static final int FACE_TILE_COUNT = TILE_COUNT;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
     // Half-diagonal of a 16x16x16 chunk, rounded up to avoid false culls.
     private static final float CHUNK_RADIUS = 14.0f;
@@ -126,9 +123,8 @@ final class ChunkRenderer {
     private final int[] greedyMaskScratch = new int[CHUNK_AREA];
     // One chunk is meshed at a time; reuse the large material lookup table to
     // avoid allocating thousands of references every time the player moves.
-    // One material batch per atlas tile and face direction. Light levels remain
-    // separate greedy rectangles, but their vertex colors share the same M3G mesh.
-    // OptiCraft-style face buckets: each direction is an independently switchable M3G mesh.
+    // One reusable geometry builder per atlas tile. Different face directions
+    // share a mesh again; face shading remains encoded in each rectangle's colors.
     private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[FACE_TILE_COUNT];
     private final int[] activeFaceBuilderIndices = new int[FACE_TILE_COUNT];
     private int activeFaceBuilderCount;
@@ -1323,7 +1319,6 @@ final class ChunkRenderer {
         long visibilityStarted = System.currentTimeMillis();
         updateVisibleChunks(world);
         lastVisibilityMillis = System.currentTimeMillis() - visibilityStarted;
-        updateChunkFaceCulling(world);
         lastSyncMillis = System.currentTimeMillis() - syncStarted;
     }
 
@@ -1456,59 +1451,6 @@ final class ChunkRenderer {
         if (chunk.crackMesh != null)
             chunk.crackMesh.setRenderingEnable(attached &&
                     activeCrackChunkSlot == slot && activeCrackStage >= 0);
-    }
-
-    /**
-     * OptiCraft-style face-bucket culling. A direction is rejected only when
-     * the eye is safely outside the entire chunk on the opposite side; the
-     * margin keeps third-person camera offsets conservative.
-     */
-    private void applyChunkFaceVisibility(Chunk chunk, int cx, int cy, int cz,
-                                          float eyeX, float eyeY, float eyeZ) {
-        if (chunk == null || chunk.faceMeshes == null) return;
-        float x0 = cx * VoxelWorld.CHUNK_XZ;
-        float y0 = cy * VoxelWorld.CHUNK_Y;
-        float z0 = cz * VoxelWorld.CHUNK_XZ;
-        final float margin = cameraMode == 0 ? 0.5f : 4.5f;
-        int mask = 0;
-        if (eyeY >= y0 - margin) mask |= 1;
-        if (eyeX <= x0 + VoxelWorld.CHUNK_XZ + margin) mask |= 1 << 1;
-        if (eyeX >= x0 - margin) mask |= 1 << 2;
-        if (eyeZ <= z0 + VoxelWorld.CHUNK_XZ + margin) mask |= 1 << 3;
-        if (eyeZ >= z0 - margin) mask |= 1 << 4;
-        if (eyeY <= y0 + VoxelWorld.CHUNK_Y + margin) mask |= 1 << 5;
-        if (mask == chunk.faceCullMask) return;
-        chunk.faceCullMask = mask;
-        for (int face = 0; face < FACE_COUNT; face++)
-            if (chunk.faceMeshes[face] != null)
-                chunk.faceMeshes[face].setRenderingEnable((mask & (1 << face)) != 0);
-        if (chunk.faceMeshes[WATER_BUCKET] != null)
-            chunk.faceMeshes[WATER_BUCKET].setRenderingEnable(true);
-    }
-
-    private void updateChunkFaceCulling(VoxelWorld world) {
-        long started = System.currentTimeMillis();
-        float eyeX = world.playerX;
-        float eyeY = world.playerY + 1.62f;
-        float eyeZ = world.playerZ;
-        int attached = 0;
-        int directionalMeshes = 0;
-        for (int slot = 0; slot < chunks.length; slot++) {
-            Chunk chunk = chunks[slot];
-            if (chunk == null) continue;
-            if (chunk.attached) {
-                attached++;
-                if (chunk.faceMeshes != null) {
-                    for (int face = 0; face < chunk.faceMeshes.length; face++)
-                        if (chunk.faceMeshes[face] != null) directionalMeshes++;
-                }
-            }
-            applyChunkFaceVisibility(chunk, chunkWorldX[slot],
-                    chunkWorldY[slot], chunkWorldZ[slot], eyeX, eyeY, eyeZ);
-        }
-        lastAttachedChunkCount = attached;
-        lastDirectionalMeshCount = directionalMeshes;
-        lastFaceCullMillis = System.currentTimeMillis() - started;
     }
 
     private void removeChunk(int i) {
@@ -1873,9 +1815,8 @@ final class ChunkRenderer {
     String renderStats() {
         int terrainMeshes = terrain.getChildCount();
         return "S" + lastSyncMillis + " V" + lastVisibilityMillis +
-                " F" + lastFaceCullMillis + " W" + lastSceneRenderMillis +
-                " H" + lastHandRenderMillis + " C" + lastAttachedChunkCount +
-                " M" + terrainMeshes + "/" + lastDirectionalMeshCount + "ms";
+                " W" + lastSceneRenderMillis + " H" + lastHandRenderMillis +
+                " C" + lastAttachedChunkCount + " M" + terrainMeshes + "ms";
     }
 
     /** Live M3G submission counters for the currently enabled terrain meshes. */
@@ -1923,19 +1864,13 @@ final class ChunkRenderer {
         int flowerCount = buildingFlowers == null ? 0 : 1;
         int fireCount = buildingFires == null ? 0 : 1;
         int portalCount = buildingPortals == null ? 0 : 1;
-        Mesh[] faceMeshes = count > 0 ? makeChunkBlockMeshes() : new Mesh[FACE_BUCKET_COUNT];
-        targetChunk.faceMeshes = faceMeshes;
-        targetChunk.faceCullMask = -1;
-        int blockMeshCount = 0;
-        for (int face = 0; face < FACE_BUCKET_COUNT; face++)
-            if (faceMeshes[face] != null) blockMeshCount++;
-        if (blockMeshCount + flowerCount + fireCount + portalCount == 0)
+        Mesh[] blockMeshes = count > 0 ? makeChunkBlockMeshes() : new Mesh[0];
+        if (blockMeshes.length + flowerCount + fireCount + portalCount == 0)
             return new Mesh[0];
 
-        Mesh[] meshes = new Mesh[blockMeshCount + flowerCount + fireCount + portalCount];
+        Mesh[] meshes = new Mesh[blockMeshes.length + flowerCount + fireCount + portalCount];
         int at = 0;
-        for (int face = 0; face < FACE_BUCKET_COUNT; face++)
-            if (faceMeshes[face] != null) meshes[at++] = faceMeshes[face];
+        for (int i = 0; i < blockMeshes.length; i++) meshes[at++] = blockMeshes[i];
         if (buildingFlowers != null)
             meshes[at++] = makeFlowerMesh(buildingFlowers, flowerAppearance);
         if (buildingFires != null) {
@@ -1949,9 +1884,6 @@ final class ChunkRenderer {
         int y = cy * VoxelWorld.CHUNK_Y;
         int z = cz * VoxelWorld.CHUNK_XZ;
         for (int i = 0; i < meshes.length; i++) meshes[i].setTranslation(x, y, z);
-        applyChunkFaceVisibility(targetChunk, cx, cy, cz,
-                currentBuildEyeX, currentBuildEyeY, currentBuildEyeZ);
-
         // Return material builders to the bounded pool only after makeMesh has
         // copied their vertex data into the corresponding M3G arrays.
         for (int active = 0; active < activeFaceBuilderCount; active++) {
@@ -2149,9 +2081,10 @@ final class ChunkRenderer {
                         int encoded = key - 1;
                         int tile = encoded & (TILE_COUNT - 1);
                         int light = encoded / TILE_COUNT;
-                        int bucket = tile == Block.atlasTile(Block.WATER) ?
-                                WATER_BUCKET : face;
-                        int builderIndex = bucket * TILE_COUNT + tile;
+                        // Keep all six directions for this tile in one batch.
+                        // Water still uses its translucent Appearance, but no
+                        // longer needs a separate always-visible scene node.
+                        int builderIndex = tile;
                         if (builders[builderIndex] == null) {
                             FaceBuilder builder = freeFaceBuilderCount > 0 ?
                                     freeFaceBuilders[--freeFaceBuilderCount] : null;
@@ -2204,60 +2137,24 @@ final class ChunkRenderer {
      * Each bucket retains tile-specific submeshes; directional buckets can be
      * disabled when their outward normals face away from the camera.
      */
+    /**
+     * Legacy-style M3G assembly: one ordinary Mesh and one VertexBuffer per
+     * atlas tile. All six face directions for a tile share that mesh; their
+     * individual shade values remain in the vertex-color array.
+     */
     private Mesh[] makeChunkBlockMeshes() {
-        Mesh[] result = new Mesh[FACE_BUCKET_COUNT];
-        for (int face = 0; face < FACE_BUCKET_COUNT; face++) {
-            int submeshCount = 0;
-            int totalVertices = 0;
-            for (int active = 0; active < activeFaceBuilderCount; active++) {
-                int index = activeFaceBuilderIndices[active];
-                if (index / TILE_COUNT != face) continue;
-                FaceBuilder builder = chunkFaceBuilders[index];
-                submeshCount++;
-                totalVertices += builder.vertexCount;
-            }
-            if (submeshCount == 0 || totalVertices == 0) continue;
-
-            short[] positionsData = new short[totalVertices * 3];
-            short[] uvData = new short[totalVertices * 2];
-            byte[] colorData = new byte[totalVertices * 4];
-            TriangleStripArray[] submeshes = new TriangleStripArray[submeshCount];
-            Appearance[] appearances = new Appearance[submeshCount];
-            int vertexOffset = 0;
-            int submesh = 0;
-
-            for (int active = 0; active < activeFaceBuilderCount; active++) {
-                int index = activeFaceBuilderIndices[active];
-                if (index / TILE_COUNT != face) continue;
-                int tile = index % TILE_COUNT;
-                FaceBuilder builder = chunkFaceBuilders[index];
-                int verticesCount = builder.vertexCount;
-                System.arraycopy(builder.p, 0, positionsData, vertexOffset * 3, verticesCount * 3);
-                System.arraycopy(builder.uv, 0, uvData, vertexOffset * 2, verticesCount * 2);
-                System.arraycopy(builder.c, 0, colorData, vertexOffset * 4, verticesCount * 4);
-
-                int[] strips = new int[builder.faceCount];
-                for (int strip = 0; strip < strips.length; strip++) strips[strip] = 4;
-                submeshes[submesh] = new TriangleStripArray(vertexOffset, strips);
-                appearances[submesh] = tileAppearance(tile);
-                vertexOffset += verticesCount;
-                submesh++;
-            }
-
-            VertexArray positions = new VertexArray(totalVertices, 3, 2);
-            positions.set(0, totalVertices, positionsData);
-            VertexArray texCoords = new VertexArray(totalVertices, 2, 2);
-            texCoords.set(0, totalVertices, uvData);
-            VertexArray colors = new VertexArray(totalVertices, 4, 1);
-            colors.set(0, totalVertices, colorData);
-
-            VertexBuffer vertices = new VertexBuffer();
-            vertices.setPositions(positions, 1.0f, null);
-            vertices.setTexCoords(0, texCoords, 0.999f / 16.0f, null);
-            vertices.setColors(colors);
-            result[face] = new Mesh(vertices, submeshes, appearances);
+        Mesh[] result = new Mesh[activeFaceBuilderCount];
+        int count = 0;
+        for (int active = 0; active < activeFaceBuilderCount; active++) {
+            int tile = activeFaceBuilderIndices[active];
+            FaceBuilder builder = chunkFaceBuilders[tile];
+            if (builder == null || builder.vertexCount == 0) continue;
+            result[count++] = makeMesh(builder, tileAppearance(tile), 1.0f / 16.0f);
         }
-        return result;
+        if (count == result.length) return result;
+        Mesh[] compact = new Mesh[count];
+        System.arraycopy(result, 0, compact, 0, count);
+        return compact;
     }
 
     private Mesh makeMesh(FaceBuilder data, Appearance appearance) {
@@ -2506,9 +2403,7 @@ final class ChunkRenderer {
 
     private static final class Chunk {
         Mesh[] meshes;
-        Mesh[] faceMeshes;
         int lodLevel;
-        int faceCullMask = -1;
         boolean attached;
         FireBuilder[] fires;
         Mesh crackMesh;
