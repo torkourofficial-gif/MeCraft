@@ -4,7 +4,6 @@ import javax.microedition.lcdui.Image;
 import javax.microedition.m3g.Appearance;
 import javax.microedition.m3g.CompositingMode;
 import javax.microedition.m3g.Group;
-import javax.microedition.m3g.Image2D;
 import javax.microedition.m3g.Material;
 import javax.microedition.m3g.Mesh;
 import javax.microedition.m3g.PolygonMode;
@@ -18,6 +17,26 @@ import javax.microedition.m3g.VertexBuffer;
  * mapping from SkinGallery, so gameplay and the skin preview share one layout.
  */
 final class PlayerModel {
+    // A bounded shared texture cache: one M3G texture per decoded player skin.
+    // The five numbered skins plus char.png are the only supported entries.
+    private static final Image[] sharedSkinImages = new Image[6];
+    private static final Texture2D[] sharedSkinTextures = new Texture2D[6];
+    private static int sharedSkinCount;
+
+    static synchronized Texture2D sharedSkinTexture(Image skin) {
+        for (int i = 0; i < sharedSkinCount; i++)
+            if (sharedSkinImages[i] == skin) return sharedSkinTextures[i];
+        Texture2D texture = new Texture2D(new javax.microedition.m3g.Image2D(
+                javax.microedition.m3g.Image2D.RGBA, skin));
+        texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
+        texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
+        if (sharedSkinCount < sharedSkinImages.length) {
+            sharedSkinImages[sharedSkinCount] = skin;
+            sharedSkinTextures[sharedSkinCount] = texture;
+            sharedSkinCount++;
+        }
+        return texture;
+    }
     final Group root = new Group();
     private final Group leftArm = new Group();
     private final Group rightArm = new Group();
@@ -37,9 +56,7 @@ final class PlayerModel {
     PlayerModel(Image skin) {
         int textureWidth = skin.getWidth();
         int textureHeight = skin.getHeight();
-        Texture2D texture = new Texture2D(new Image2D(Image2D.RGBA, skin));
-        texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
-        texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
+        Texture2D texture = sharedSkinTexture(skin);
         Appearance appearance = makeAppearance(texture);
 
         // Head is mounted on its own yaw/pitch pivots, like a normal biped rig.

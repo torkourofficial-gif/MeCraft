@@ -11,6 +11,24 @@ This branch contains a conservative hot-path optimization for the existing MIDP 
 - Atlas UVs are calculated once when a particle is spawned. The texture-coordinate `VertexArray` is no longer uploaded every update; only positions and vertex colors are updated while particles are alive.
 - The pool remains fixed-size and allocation-free during update/spawn. No change to particle count, lifetime, atlas, collision, or visual fade was intended.
 
+## Memory optimizations applied
+
+### Player skins: shared decoded images and M3G textures
+
+- Added a bounded five-skin plus default-image cache in `GameAssets`. A missing numbered skin now shares the single decoded `char.png` image instead of decoding that fallback repeatedly.
+- Added a six-entry identity-based `Texture2D` cache in `PlayerModel`. The first-person hand, local avatar, LAN avatars, and skin preview now share the same M3G texture for the same decoded skin image.
+- `SkinGallery` creates the M3G texture only for the first/selected skin. Other skin textures are created when selected, not all at gallery construction.
+- The cache is deliberately fixed-capacity and matches the five supported numbered skins plus the default image; it does not grow without bound.
+
+### Mob textures: lazy species and fleece variants
+
+- The mob system no longer converts every species skin to an M3G texture during renderer startup.
+- The skeleton texture remains eager because the fixed arrow pool uses it. Other species textures are created on first use and retained in the existing fixed-size texture array.
+- Spider-eye texture and sheep-fleece texture variants are also created only when a spider or the corresponding sheep color is instantiated.
+- Existing mob pools, model geometry, gameplay behavior, and texture filtering remain unchanged.
+
+These changes reduce duplicate player-skin texture objects and avoid startup conversion/residency for unused mob textures. The actual byte savings depend on the JSR-184 implementation and asset dimensions; no numerical heap/native-memory claim is made without device profiling.
+
 ## Existing strengths retained
 
 The code already has several good J2ME/M3G practices that were deliberately preserved:
@@ -29,7 +47,7 @@ The code already has several good J2ME/M3G practices that were deliberately pres
 3. **Make chunk snapshots revision-safe.** The worker reads world blocks while the game can edit them. Introduce a compact immutable chunk snapshot (including a one-block border and relevant light/portal metadata) captured under a short lock, then mesh that snapshot outside the lock. This avoids inconsistent geometry without holding the gameplay lock for a full mesh build.
 4. **Reduce M3G mesh count.** Current terrain is split by atlas tile/appearance. Measure driver overhead before merging compatible tiles into fewer meshes or using a single atlas mesh; preserve per-face lighting, alpha/cutout behavior, and UV seams.
 5. **Bound native M3G residency.** Track estimated vertices/meshes per resident chunk and evict by memory budget as well as view distance. `System.gc()` is not a substitute for releasing references to scene nodes, textures, and vertex arrays.
-6. **Audit texture formats and dimensions.** Compare RGB/RGBA image storage and alpha requirements per asset. Keep nearest filtering for pixel art; do not assume a format conversion saves memory on every vendor implementation.
+6. **Audit remaining texture formats and dimensions.** Player-skin duplication and eager mob conversion are addressed. Compare RGB/RGBA storage and alpha requirements for other assets; keep nearest filtering for pixel art and do not assume a format conversion saves memory on every vendor implementation.
 7. **Benchmark update cadence.** Keep simulation at 20 Hz, but consider lower-frequency updates for distant mobs, particles, and cosmetic animation. Do not skip collision, fluid, save, or network state transitions without tests.
 8. **Add automated compatibility tests.** Build and preverify with Oracle Java ME SDK 3.2, then test MIDP/CLDC and JSR-184 behavior across multiple emulators. Also test save compatibility, negative chunk coordinates, chunk-border edits, camera changes, and low-memory recovery.
 
@@ -56,4 +74,4 @@ Priorities for this target:
 - Measure peak heap during world generation, chunk replacement, texture loading, and save/load—not just steady-state gameplay.
 - Test the actual HTC S730 runtime separately from the 8 MB emulator: the emulator heap limit is useful for catching Java-heap pressure but does not model the phone's M3G driver, native heap, or timing.
 
-The current particle change is intentionally small and bounded. Larger changes to chunk storage, texture formats, or mesh batching should be measured against this memory budget before adoption.
+The particle hot-path and the bounded player/mob texture changes are intentionally conservative. Larger changes to chunk storage, texture formats, or mesh batching should be measured against this memory budget before adoption.

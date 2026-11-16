@@ -8,7 +8,6 @@ import javax.microedition.m3g.Camera;
 import javax.microedition.m3g.CompositingMode;
 import javax.microedition.m3g.Graphics3D;
 import javax.microedition.m3g.Group;
-import javax.microedition.m3g.Image2D;
 import javax.microedition.m3g.Light;
 import javax.microedition.m3g.Material;
 import javax.microedition.m3g.Mesh;
@@ -25,7 +24,6 @@ final class SkinGallery {
     private final World world = new World();
     private final Camera camera = new Camera();
     private final Group model;
-    private final Image[] skinImages = new Image[SKIN_COUNT];
     private final Texture2D[] skinTextures = new Texture2D[SKIN_COUNT];
     private final boolean[] fallback = new boolean[SKIN_COUNT];
     private final Appearance appearance;
@@ -33,23 +31,13 @@ final class SkinGallery {
     SkinGallery(int width, int height) throws IOException {
         if (width <= 0) width = 240;
         if (height <= 0) height = 200;
-        Image defaultSkin = GameAssets.image("char.png");
-        int textureWidth = 64;
-        int textureHeight = 64;
-        for (int i = 0; i < SKIN_COUNT; i++) {
-            try {
-                skinImages[i] = GameAssets.image("skin" + (i + 1) + ".png");
-            } catch (IOException missingSkin) {
-                skinImages[i] = defaultSkin;
-                fallback[i] = true;
-            }
-            skinTextures[i] = createSkinTexture(skinImages[i]);
-            if (i == 0) {
-                textureWidth = skinImages[i].getWidth();
-                textureHeight = skinImages[i].getHeight();
-            }
-        }
+        Image firstSkin = GameAssets.playerSkin(0);
+        skinTextures[0] = PlayerModel.sharedSkinTexture(firstSkin);
+        fallback[0] = GameAssets.playerSkinFallback(0);
+        int textureWidth = firstSkin.getWidth();
+        int textureHeight = firstSkin.getHeight();
         appearance = skinAppearance();
+        appearance.setTexture(0, skinTextures[0]);
         model = makePlayer(appearance, textureWidth, textureHeight);
         model.setScale(2.0f, 2.0f, 2.0f);
         model.setTranslation(0.0f, -2.0f, 0.0f);
@@ -81,19 +69,30 @@ final class SkinGallery {
         graphics.render(world);
     }
 
-    boolean isFallback(int index) { return fallback[index]; }
+    boolean isFallback(int index) {
+        if (index < 0 || index >= SKIN_COUNT) return true;
+        ensureSkinLoaded(index);
+        return fallback[index];
+    }
 
     void selectSkin(int index) {
         if (index < 0) index = 0;
         if (index >= SKIN_COUNT) index = SKIN_COUNT - 1;
-        appearance.setTexture(0, skinTextures[index]);
+        ensureSkinLoaded(index);
+        appearance.setTexture(0, skinTextures[index] == null
+                ? skinTextures[0] : skinTextures[index]);
     }
 
-    private Texture2D createSkinTexture(Image image) {
-        Texture2D texture = new Texture2D(new Image2D(Image2D.RGBA, image));
-        texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
-        texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
-        return texture;
+    /** Convert only a skin that is actually previewed or inspected. */
+    private void ensureSkinLoaded(int index) {
+        if (skinTextures[index] != null) return;
+        try {
+            Image image = GameAssets.playerSkin(index);
+            skinTextures[index] = PlayerModel.sharedSkinTexture(image);
+            fallback[index] = GameAssets.playerSkinFallback(index);
+        } catch (IOException missingDefault) {
+            fallback[index] = true;
+        }
     }
 
     private Appearance skinAppearance() {
