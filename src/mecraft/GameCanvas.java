@@ -3876,6 +3876,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     repaint();
                 } catch (Throwable problem) {
                     lanGameActive = false;
+                    if (world != null) world.setLanTrackingEnabled(false);
                     showDiagnostic(stage, problem);
                 }
             }
@@ -4068,6 +4069,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         lanStatus = message == null ? lanLabel("Error de red.", "Network error.") : message;
         if (lanGameActive) {
             lanGameActive = false;
+            if (world != null) world.setLanTrackingEnabled(false);
             lanTransport = null;
             lanLocalPlayerId = -1;
             for (int i = 0; i < lanRemotePresent.length; i++) {
