@@ -88,6 +88,10 @@ final class VoxelWorld {
             new byte[PROCEDURAL_CACHE_SIZE][InfdevTerrain.CHUNK_VOLUME];
     private final int[] proceduralChunkX = new int[PROCEDURAL_CACHE_SIZE];
     private final int[] proceduralChunkZ = new int[PROCEDURAL_CACHE_SIZE];
+    // Completed streamed chunks are queued separately from gameplay block edits.
+    private final int[] terrainReadyX = new int[16];
+    private final int[] terrainReadyZ = new int[16];
+    private int terrainReadyCount;
     private final int[] proceduralHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     private final byte[] proceduralBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     // Private scratch storage used only by the background prefetch worker.
@@ -231,6 +235,19 @@ final class VoxelWorld {
         return y <= provisionalFloor ? Block.STONE : Block.AIR;
     }
 
+    /** Consume one generated chunk notification for incremental renderer refresh. */
+    synchronized boolean consumeTerrainReadyChunk(int[] coordinates) {
+        if (terrainReadyCount == 0 || coordinates == null || coordinates.length < 2) return false;
+        coordinates[0] = terrainReadyX[0];
+        coordinates[1] = terrainReadyZ[0];
+        for (int i = 1; i < terrainReadyCount; i++) {
+            terrainReadyX[i - 1] = terrainReadyX[i];
+            terrainReadyZ[i - 1] = terrainReadyZ[i];
+        }
+        terrainReadyCount--;
+        return true;
+    }
+
     /** Generate one requested chunk on the terrain worker, then publish atomically. */
     void generateRequestedChunk(int cx, int cz) {
         int cache = proceduralCacheSlot(cx, cz);
@@ -259,11 +276,18 @@ final class VoxelWorld {
             System.arraycopy(generated, 0, proceduralChunks[cache], 0, generated.length);
             proceduralChunkX[cache] = cx;
             proceduralChunkZ[cache] = cz;
-            // Tell the renderer that this chunk's provisional geometry is stale.
-            changedX = cx * CHUNK_XZ + CHUNK_XZ / 2;
-            changedY = CHUNK_Y / 2;
-            changedZ = cz * CHUNK_XZ + CHUNK_XZ / 2;
-            changedOldId = (byte)-1;
+            // Keep every completion until the renderer has consumed it; several
+            // chunks may finish between two game frames.
+            if (terrainReadyCount == terrainReadyX.length) {
+                for (int i = 1; i < terrainReadyCount; i++) {
+                    terrainReadyX[i - 1] = terrainReadyX[i];
+                    terrainReadyZ[i - 1] = terrainReadyZ[i];
+                }
+                terrainReadyCount--;
+            }
+            terrainReadyX[terrainReadyCount] = cx;
+            terrainReadyZ[terrainReadyCount] = cz;
+            terrainReadyCount++;
             revision++;
         }
     }
