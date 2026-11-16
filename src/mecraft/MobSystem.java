@@ -1046,8 +1046,10 @@ final class MobSystem {
             if (fleeceTextures[color] == null)
                 fleeceTextures[color] = texture(recolor(fleeceImage, color));
         }
-        return fleeceTextures[0] == null ? fleeceTextures[color] : fleeceTextures[color] == null
-                ? fleeceTextures[0] : fleeceTextures[color];
+        if (color == WoolColors.LIGHT_GRAY || color == WoolColors.BLACK) {
+            if (fleeceTextures[color] != null) return fleeceTextures[color];
+        }
+        return fleeceTextures[0];
     }
 
     private Appearance spiderEyesAppearance() {
