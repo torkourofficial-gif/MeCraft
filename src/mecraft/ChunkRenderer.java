@@ -98,6 +98,7 @@ final class ChunkRenderer {
     private int torchScanZ = Integer.MIN_VALUE;
     private int torchScanRevision = Integer.MIN_VALUE;
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
+    private final int[] terrainReadyCoordinate = new int[2];
     // Geometry is prepared by a low-priority worker; M3G objects are created
     // incrementally by sync() on the rendering thread.
     private volatile ChunkBuildResult completedChunkBuild;
@@ -1196,6 +1197,18 @@ final class ChunkRenderer {
     }
 
     private void rebuildChanged(VoxelWorld world) {
+        // A generation worker can finish multiple chunks between frames.
+        // Drain all notifications instead of relying on the single edit marker.
+        while (world.consumeTerrainReadyChunk(terrainReadyCoordinate)) {
+            int readyX = terrainReadyCoordinate[0];
+            int readyZ = terrainReadyCoordinate[1];
+            for (int i = 0; i < CACHE_SIZE; i++) {
+                if (residentChunks[i] &&
+                    Math.abs(chunkWorldX[i] - readyX) <= 1 &&
+                    Math.abs(chunkWorldZ[i] - readyZ) <= 1) dirtyChunks[i] = true;
+            }
+        }
+
         int x = world.changedX, y = world.changedY, z = world.changedZ;
         int cx = floorDiv(x, VoxelWorld.CHUNK_XZ);
         int cy = y / VoxelWorld.CHUNK_Y;
@@ -1203,16 +1216,10 @@ final class ChunkRenderer {
         int lx = x - cx * VoxelWorld.CHUNK_XZ;
         int ly = y % VoxelWorld.CHUNK_Y;
         int lz = z - cz * VoxelWorld.CHUNK_XZ;
-        boolean terrainChunkReady = world.changedOldId == (byte)-1;
-        boolean torchChanged = !terrainChunkReady && (world.changedOldId == Block.TORCH ||
-                world.get(x, y, z) == Block.TORCH);
+        boolean torchChanged = world.changedOldId == Block.TORCH ||
+                world.get(x, y, z) == Block.TORCH;
         for (int i = 0; i < CACHE_SIZE; i++) {
             if (!residentChunks[i]) continue;
-            if (terrainChunkReady) {
-                if (Math.abs(chunkWorldX[i] - cx) <= 1 &&
-                    Math.abs(chunkWorldZ[i] - cz) <= 1) dirtyChunks[i] = true;
-                continue;
-            }
             if (torchChanged) {
                 int bx0 = chunkWorldX[i] * VoxelWorld.CHUNK_XZ;
                 int by0 = chunkWorldY[i] * VoxelWorld.CHUNK_Y;
