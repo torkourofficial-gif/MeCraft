@@ -3215,7 +3215,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     if (cameraUnderwater()) drawTint(g, waterTint);
                     if (hurtTicks > 0) drawTint(g, hurtTint);
                     drawHud(g);
-                    if (lanGameActive) drawLanPlayers(g);
                     if (touchEnabled && state == PLAYING) drawTouchControls(g);
                 }
                 if (state == PAUSED) drawPause(g);
@@ -3806,7 +3805,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         lanGameActive = false;
         lanLocalPlayerId = -1;
         lanPacketHead = lanPacketTail = lanPacketCount = 0;
-        for (int i = 0; i < lanRemotePresent.length; i++) lanRemotePresent[i] = false;
+        for (int i = 0; i < lanRemotePresent.length; i++) {
+            lanRemotePresent[i] = false;
+            if (renderer != null) renderer.removeLanPlayer(i);
+        }
     }
 
     private int lanWorldSeed() {
@@ -3889,6 +3891,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 out.writeFloat(world.yaw);
                 out.writeFloat(cameraPitch);
                 out.writeByte(world.health);
+                out.writeByte(selectedPlayerSkin);
                 out.flush();
                 byte[] packet = bytes.toByteArray();
                 if (lanLocalPlayerId == 0) lanTransport.broadcast(packet);
@@ -3936,7 +3939,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             try {
                 DataInputStream in = new DataInputStream(new ByteArrayInputStream(packet));
                 int opcode = in.readUnsignedByte();
-                if (opcode == LanProtocol.PLAYER_STATE && packet.length == 23) {
+                if (opcode == LanProtocol.PLAYER_STATE && packet.length == 24) {
                     int statePlayerId = in.readUnsignedByte();
                     if (statePlayerId < LanProtocol.MAX_PLAYERS &&
                             statePlayerId != lanLocalPlayerId &&
@@ -3947,7 +3950,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                         lanRemoteYaw[statePlayerId] = in.readFloat();
                         lanRemotePitch[statePlayerId] = in.readFloat();
                         lanRemoteHealth[statePlayerId] = in.readUnsignedByte();
+                        int skinIndex = in.readUnsignedByte();
                         lanRemotePresent[statePlayerId] = true;
+                        if (renderer != null)
+                            renderer.updateLanPlayer(statePlayerId, skinIndex,
+                                    lanRemoteX[statePlayerId], lanRemoteY[statePlayerId],
+                                    lanRemoteZ[statePlayerId], lanRemoteYaw[statePlayerId],
+                                    lanRemotePitch[statePlayerId]);
                         if (lanLocalPlayerId == 0 && lanTransport != null)
                             lanTransport.broadcast(packet);
                     }
@@ -3970,8 +3979,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     world.dayTime = in.readInt();
                 } else if (opcode == LanProtocol.PLAYER_LEAVE && packet.length == 2) {
                     int leavingId = in.readUnsignedByte();
-                    if (leavingId > 0 && leavingId < lanRemotePresent.length)
+                    if (leavingId > 0 && leavingId < lanRemotePresent.length) {
                         lanRemotePresent[leavingId] = false;
+                        if (renderer != null) renderer.removeLanPlayer(leavingId);
+                    }
                     if (lanLocalPlayerId == 0 && lanTransport != null)
                         lanTransport.broadcast(packet);
                 }
