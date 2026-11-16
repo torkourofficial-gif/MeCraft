@@ -194,14 +194,21 @@ final class VoxelWorld {
 
     private byte proceduralBlock(int x, int y, int z) {
         int cx = floorChunk(x), cz = floorChunk(z);
+        prepareProceduralChunk(cx, cz);
         int cache = proceduralCacheSlot(cx, cz);
-        if (proceduralChunkX[cache] != cx || proceduralChunkZ[cache] != cz) {
-            generateChunk(cx, cz, proceduralChunks[cache]);
-            proceduralChunkX[cache] = cx;
-            proceduralChunkZ[cache] = cz;
-        }
         int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
         return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
+    }
+
+    /** Prepare one procedural column-chunk ahead of the renderer's mesh pass. */
+    void prepareProceduralChunk(int cx, int cz) {
+        int x = cx * CHUNK_XZ, z = cz * CHUNK_XZ;
+        if (inside(x, z) || outsideWorld(x, z)) return;
+        int cache = proceduralCacheSlot(cx, cz);
+        if (proceduralChunkX[cache] == cx && proceduralChunkZ[cache] == cz) return;
+        generateChunk(cx, cz, proceduralChunks[cache]);
+        proceduralChunkX[cache] = cx;
+        proceduralChunkZ[cache] = cz;
     }
 
     private int findEdit(int x, int y, int z) {
