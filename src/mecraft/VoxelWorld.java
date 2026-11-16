@@ -873,6 +873,24 @@ final class VoxelWorld {
         return true;
     }
 
+    /** Applies one authoritative LAN block state, including its metadata. */
+    boolean setNetworkBlock(int x, int y, int z, byte id, int metadata) {
+        if (y <= 0 || y >= HEIGHT || id < Block.AIR || id >= Block.COUNT) return false;
+        if (id == Block.WOOL) return setWool(x, y, z, metadata & 15);
+        int oldMeta = metadataAt(x, y, z);
+        boolean changed = setBlock(x, y, z, id, Block.isFluid(id) ? metadata : 0);
+        if (!Block.isFluid(id) && oldMeta != metadata) {
+            setMetadata(x, y, z, metadata);
+            if (!changed) {
+                changedOldId = id;
+                changedX = x; changedY = y; changedZ = z;
+                revision++;
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
     int fluidLevel(int x, int y, int z) {
         return Block.isFluid(get(x, y, z)) ? metadataAt(x, y, z) & 15 : -1;
     }
