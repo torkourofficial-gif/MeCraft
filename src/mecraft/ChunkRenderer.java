@@ -952,20 +952,13 @@ final class ChunkRenderer {
 
     void setPlayerSkinIndex(int index) {
         if (index < 0 || index > 4) index = 0;
-        Image image;
-        try { image = GameAssets.image("skin" + (index + 1) + ".png"); }
-        catch (IOException missingSkin) {
-            try { image = GameAssets.image("char.png"); }
-            catch (IOException missingDefault) { return; }
-        }
-        setPlayerSkin(image);
+        try { setPlayerSkin(GameAssets.playerSkin(index)); }
+        catch (IOException missingDefault) { }
     }
 
     void setPlayerSkin(Image image) {
         if (image == null) return;
-        Texture2D texture = new Texture2D(new Image2D(Image2D.RGBA, image));
-        texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
-        texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
+        Texture2D texture = PlayerModel.sharedSkinTexture(image);
         handAppearance.setTexture(0, texture);
         if (playerModel != null) {
             playerModel.detachCamera(externalCameraPivot);
@@ -991,13 +984,8 @@ final class ChunkRenderer {
         PlayerModel model = lanPlayerModels[playerId];
         if (model == null) {
             Image skin;
-            try {
-                if (skinIndex < 0 || skinIndex > 4) skinIndex = 0;
-                skin = GameAssets.image("skin" + (skinIndex + 1) + ".png");
-            } catch (IOException missingSkin) {
-                try { skin = GameAssets.image("char.png"); }
-                catch (IOException missingDefault) { return; }
-            }
+            try { skin = GameAssets.playerSkin(skinIndex); }
+            catch (IOException missingDefault) { return; }
             model = new PlayerModel(skin);
             lanPlayerModels[playerId] = model;
             scene.addChild(model.root);
