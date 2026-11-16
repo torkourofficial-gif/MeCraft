@@ -24,14 +24,8 @@ import javax.microedition.m3g.World;
 /** Builds shared-texture chunk meshes on demand for the visible part of the world. */
 final class ChunkRenderer {
     private static final int MAX_STREAM_RADIUS = 4;
-    // Streaming is deliberately deterministic: one preparation step or one
-    // mesh build per sync. Never use elapsed frame time to decide extra work.
-    private static final int PREPARE_NEIGHBORS = 4;
-    private int pendingChunkX = Integer.MIN_VALUE;
-    private int pendingChunkY = Integer.MIN_VALUE;
-    private int pendingChunkZ = Integer.MIN_VALUE;
-    private int pendingPrepareStep;
-    private boolean pendingMeshReady;
+    // One nearest chunk mesh is built per sync, matching the pre-November 10
+    // streamer. Procedural data is generated on demand by VoxelWorld.get().
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
@@ -1186,7 +1180,6 @@ final class ChunkRenderer {
             if (resetStreaming) rebuildWorld(world);
             else rebuildChanged(world);
             builtRevision = world.revision;
-            if (resetStreaming) resetPendingChunk();
         }
         // Rail meshes also have a camera-centered streaming window, so they
         // must be refreshed when the player crosses chunk boundaries even if
@@ -1274,21 +1267,21 @@ final class ChunkRenderer {
         int centerZ = floorDiv((int)eyeZ, VoxelWorld.CHUNK_XZ);
         int span = MAX_STREAM_SPAN;
 
-        // Shortest uses a compact 2x2 forward-facing window, so no frustum math is needed.
-        float sinYaw = 0.0f, cosYaw = 1.0f;
-        float sinPitch = 0.0f, cosPitch = 1.0f;
-        float forwardX = 0.0f, forwardY = 0.0f, forwardZ = 1.0f;
-        float rightX = 1.0f, rightZ = 0.0f;
-        float upX = 0.0f, upY = 1.0f, upZ = 0.0f;
-        if (!shortestDistance) {
-            float yaw = (float)(world.yaw * Math.PI / 180.0);
-            float pitch = (float)(cameraPitch * Math.PI / 180.0);
-            sinYaw = (float)Math.sin(yaw); cosYaw = (float)Math.cos(yaw);
-            sinPitch = (float)Math.sin(pitch); cosPitch = (float)Math.cos(pitch);
-            forwardX = sinYaw * cosPitch; forwardY = sinPitch; forwardZ = cosYaw * cosPitch;
-            rightX = cosYaw; rightZ = -sinYaw;
-            upX = -sinYaw * sinPitch; upY = cosPitch; upZ = -cosYaw * sinPitch;
-        }
+        // Build the camera basis for every preset. Shortest keeps its 2x2
+        // horizontal window but still rejects vertical chunks outside the view.
+        float yaw = (float)(world.yaw * Math.PI / 180.0);
+        float pitch = (float)(cameraPitch * Math.PI / 180.0);
+        float sinYaw = (float)Math.sin(yaw), cosYaw = (float)Math.cos(yaw);
+        float sinPitch = (float)Math.sin(pitch), cosPitch = (float)Math.cos(pitch);
+        float forwardX = sinYaw * cosPitch, forwardY = sinPitch, forwardZ = cosYaw * cosPitch;
+        float rightX = cosYaw, rightZ = -sinYaw;
+        float upX = -sinYaw * sinPitch, upY = cosPitch, upZ = -cosYaw * sinPitch;
+        float depthRadius = Math.abs(forwardX) * (VoxelWorld.CHUNK_XZ * 0.5f) +
+                Math.abs(forwardY) * (VoxelWorld.CHUNK_Y * 0.5f) +
+                Math.abs(forwardZ) * (VoxelWorld.CHUNK_XZ * 0.5f);
+        float verticalRadius = Math.abs(upX) * (VoxelWorld.CHUNK_XZ * 0.5f) +
+                Math.abs(upY) * (VoxelWorld.CHUNK_Y * 0.5f) +
+                Math.abs(upZ) * (VoxelWorld.CHUNK_XZ * 0.5f);
 
         int firstChunkX = centerX - streamRadius;
         int lastChunkX = centerX + streamRadius;
@@ -1346,11 +1339,19 @@ final class ChunkRenderer {
                     float dy = cy * VoxelWorld.CHUNK_Y + VoxelWorld.CHUNK_Y * 0.5f - eyeY;
                     float dz = cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
 
-                    boolean visible = shortestDistance;
-                    if (!shortestDistance) {
-                        float depth = dx * forwardX + dy * forwardY + dz * forwardZ;
+                    float depth = dx * forwardX + dy * forwardY + dz * forwardZ;
+                    float vertical = dx * upX + dy * upY + dz * upZ;
+                    boolean visible;
+                    if (shortestDistance) {
+                        // The 2x2 window already limits horizontal work. Use
+                        // the projected chunk bounds to avoid meshing unseen
+                        // vertical sections (the old 2x2 path did this too).
+                        float visibleDepth = Math.max(0.0f, depth + depthRadius);
+                        visible = depth + depthRadius >= 0.1f &&
+                            depth - depthRadius <= cameraFar &&
+                            Math.abs(vertical) <= visibleDepth * tanVerticalFov + verticalRadius;
+                    } else {
                         float horizontal = dx * rightX + dz * rightZ;
-                        float vertical = dx * upX + dy * upY + dz * upZ;
                         visible = depth + CHUNK_RADIUS >= 0.1f &&
                             depth - CHUNK_RADIUS <= cameraFar &&
                             Math.abs(horizontal) <= Math.max(0.0f, depth) * tanHorizontalFov + CHUNK_RADIUS &&
@@ -1377,52 +1378,15 @@ final class ChunkRenderer {
             }
         }
 
-        // Keep preparing the same nearest sector across frames. Its procedural
-        // center and four horizontal neighbors are generated in separate syncs,
-        // so mesh creation does not unexpectedly trigger several terrain builds.
-        if (best < 0) {
-            resetPendingChunk();
-            return;
+        // Build the nearest missing sector immediately. The historical
+        // streamer generated procedural neighbors on demand while meshing;
+        // this avoids spending several complete frames prefetching every side.
+        if (best >= 0) {
+            int targetX = chunkWorldX[best];
+            int targetY = chunkWorldY[best];
+            int targetZ = chunkWorldZ[best];
+            replaceChunk(world, best, targetX, targetY, targetZ);
         }
-        int targetX = chunkWorldX[best];
-        int targetY = chunkWorldY[best];
-        int targetZ = chunkWorldZ[best];
-        if (pendingChunkX != targetX || pendingChunkY != targetY ||
-                pendingChunkZ != targetZ) {
-            pendingChunkX = targetX;
-            pendingChunkY = targetY;
-            pendingChunkZ = targetZ;
-            pendingPrepareStep = 0;
-            pendingMeshReady = false;
-        }
-
-        if (!pendingMeshReady) {
-            while (pendingPrepareStep <= PREPARE_NEIGHBORS) {
-                int prepareX = targetX;
-                int prepareZ = targetZ;
-                if (pendingPrepareStep == 1) prepareX++;
-                else if (pendingPrepareStep == 2) prepareX--;
-                else if (pendingPrepareStep == 3) prepareZ++;
-                else if (pendingPrepareStep == 4) prepareZ--;
-                pendingPrepareStep++;
-                // At most one cache miss (one full terrain generation) per sync.
-                // Already-cached or saved-area sectors are skipped immediately.
-                if (world.prepareProceduralChunk(prepareX, prepareZ)) return;
-            }
-            pendingMeshReady = true;
-        }
-
-        // Exactly one M3G sector is built per sync, independent of frame time.
-        replaceChunk(world, best, targetX, targetY, targetZ);
-        resetPendingChunk();
-    }
-
-    private void resetPendingChunk() {
-        pendingChunkX = Integer.MIN_VALUE;
-        pendingChunkY = Integer.MIN_VALUE;
-        pendingChunkZ = Integer.MIN_VALUE;
-        pendingPrepareStep = 0;
-        pendingMeshReady = false;
     }
 
     private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {
@@ -1525,7 +1489,8 @@ final class ChunkRenderer {
                                 neighbor = chunkVoxelScratch[voxelIndex - CHUNK_AREA];
                             else neighbor = world.get(nx, ny, nz);
                             if (Block.faceVisible(id, neighbor)) {
-                                int tile = renderWorldTile(world, id, face, x, y, z, world.woolColor(x, y, z));
+                                int woolColor = id == Block.WOOL ? world.woolColor(x, y, z) : 0;
+                                int tile = renderWorldTile(world, id, face, x, y, z, woolColor);
                                 int light = chunkLightScratch[voxelIndex] & 255;
                                 key = light * TILE_COUNT + tile + 1;
                             }
@@ -1780,25 +1745,17 @@ final class ChunkRenderer {
     /** Gather nearby torch blocks once per chunk build; lighting stays block-quantized. */
     private void collectChunkTorches(VoxelWorld world, int x0, int y0, int z0,
                                      int x1, int y1, int z1) {
-        chunkTorchCount = 0;
         int scanRadius = LAVA_LIGHT_RADIUS;
         int minX = x0 - scanRadius, maxX = x1 + scanRadius;
         int minY = y0 - scanRadius, maxY = y1 + scanRadius;
         int minZ = z0 - scanRadius, maxZ = z1 + scanRadius;
         if (minY < 0) minY = 0;
         if (maxY > VoxelWorld.HEIGHT) maxY = VoxelWorld.HEIGHT;
-        for (int y = minY; y < maxY && chunkTorchCount < MAX_CHUNK_TORCHES; y++)
-            for (int z = minZ; z < maxZ && chunkTorchCount < MAX_CHUNK_TORCHES; z++)
-                for (int x = minX; x < maxX && chunkTorchCount < MAX_CHUNK_TORCHES; x++) {
-                    byte source = world.getTorchCandidate(x, y, z);
-                    if (source != Block.TORCH && source != Block.LAVA) continue;
-                    chunkTorchX[chunkTorchCount] = x;
-                    chunkTorchY[chunkTorchCount] = y;
-                    chunkTorchZ[chunkTorchCount] = z;
-                    chunkLavaSource[chunkTorchCount] = source == Block.LAVA;
-                    chunkLightRadius[chunkTorchCount] = (byte)(source == Block.LAVA ? LAVA_LIGHT_RADIUS : TORCH_LIGHT_RADIUS);
-                    chunkTorchCount++;
-                }
+        // Torches and edited lava are sparse. Enumerating saved blocks and
+        // the edit list avoids thousands of hash lookups through empty space.
+        chunkTorchCount = world.collectLightSources(minX, minY, minZ, maxX, maxY, maxZ,
+                chunkTorchX, chunkTorchY, chunkTorchZ, chunkLightRadius,
+                chunkLavaSource, MAX_CHUNK_TORCHES, TORCH_LIGHT_RADIUS, LAVA_LIGHT_RADIUS);
     }
 
     /** Block-quantized torch falloff: each Manhattan step loses one brightness level. */
