@@ -148,6 +148,11 @@ final class VoxelWorld {
     private int fluidTickDelay;
     private int lavaTickCounter;
     private int fluidDirection;
+    private static final int LAN_CHANGE_CAPACITY = 256;
+    private final int[] lanChangeX = new int[LAN_CHANGE_CAPACITY];
+    private final int[] lanChangeY = new int[LAN_CHANGE_CAPACITY];
+    private final int[] lanChangeZ = new int[LAN_CHANGE_CAPACITY];
+    private int lanChangeHead, lanChangeCount;
 
     void tickTime() {
         dayTime += DAY_TICKS_PER_UPDATE;
@@ -508,6 +513,34 @@ final class VoxelWorld {
             int i = ensureEdit(x, y, z);
             if (i >= 0) editMeta[i] = (byte)metadata;
         }
+        recordLanChange(x, y, z);
+    }
+
+    private void recordLanChange(int x, int y, int z) {
+        if (lanChangeCount >= LAN_CHANGE_CAPACITY) {
+            lanChangeHead = (lanChangeHead + 1) % LAN_CHANGE_CAPACITY;
+            lanChangeCount--;
+        }
+        int at = (lanChangeHead + lanChangeCount) % LAN_CHANGE_CAPACITY;
+        lanChangeX[at] = x; lanChangeY[at] = y; lanChangeZ[at] = z;
+        lanChangeCount++;
+    }
+
+    /** Drains a bounded batch of changed voxel coordinates for LAN replication. */
+    int drainLanChanges(int[] xs, int[] ys, int[] zs, int maximum) {
+        int count = Math.min(Math.min(maximum, lanChangeCount),
+                Math.min(xs.length, Math.min(ys.length, zs.length)));
+        for (int i = 0; i < count; i++) {
+            int at = lanChangeHead;
+            xs[i] = lanChangeX[at]; ys[i] = lanChangeY[at]; zs[i] = lanChangeZ[at];
+            lanChangeHead = (lanChangeHead + 1) % LAN_CHANGE_CAPACITY;
+            lanChangeCount--;
+        }
+        return count;
+    }
+
+    void clearLanChanges() {
+        lanChangeHead = lanChangeCount = 0;
     }
 
     /** Four horizontal chest facings: 0=-Z, 1=+X, 2=+Z, 3=-X. */
@@ -653,6 +686,7 @@ final class VoxelWorld {
         waterLevels[i] = (byte)color;
         changedX = x; changedY = y; changedZ = z;
         revision++;
+        recordLanChange(x, y, z);
         scheduleFluidNeighbors(x, y, z);
         // Alpha rails are supported by the block below. Removing a support
         // block also removes any rail directly above it; this can cascade.
@@ -869,6 +903,7 @@ final class VoxelWorld {
         changedY = y;
         changedZ = z;
         revision++;
+        recordLanChange(x, y, z);
         scheduleFluidNeighbors(x, y, z);
         return true;
     }
