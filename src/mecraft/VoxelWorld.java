@@ -48,7 +48,7 @@ final class VoxelWorld {
     private static final int ALPHA_ITEM_SAVE_MAGIC = 0x4D434645; // MCFE
     private static final int DEEP_WORLD_SAVE_MAGIC = 0x4D434646; // MCFF
     private static final int CONFIG_WORLD_SAVE_MAGIC = 0x4D434647; // MCFG
-    private static final int DIFFICULTY_WORLD_SAVE_MAGIC = 0x4D434648; // MCFH
+    private static final int DIFFICULTY_WORLD_SAVE_MAGIC = 0x4D434648; // MCFH\n    private static final int SEEDED_NOISE_WORLD_SAVE_MAGIC = 0x4D434649; // MCFI
     static final int SIZE_INFINITE = 0;
     static final int SIZE_OLD = 1;
     static final int TYPE_STANDARD = 0;
@@ -104,8 +104,7 @@ final class VoxelWorld {
         Block.DIRT, Block.STONE, Block.LOG, Block.SAND, Block.PLANKS,
         Block.LEAVES, Block.COAL, Block.IRON, Block.TORCH
     };
-    int seed;
-    int mode;
+    int seed;\n    int noiseVersion;\n    int mode;
     String worldName = "Mundo";
     boolean nether;
     String saveStoreName;
@@ -140,12 +139,9 @@ final class VoxelWorld {
         return dayTime >= 13000 && dayTime < 23000;
     }
 
-    VoxelWorld(int seed, int mode) { this(seed, mode, SIZE_INFINITE, TYPE_STANDARD); }
-
-    VoxelWorld(int seed, int mode, int worldSize, int worldType) {
+    VoxelWorld(int seed, int mode) { this(seed, mode, SIZE_INFINITE, TYPE_STANDARD, 1); }\n\n    VoxelWorld(int seed, int mode, int worldSize, int worldType) {\n        this(seed, mode, worldSize, worldType, 1);\n    }\n\n    VoxelWorld(int seed, int mode, int worldSize, int worldType, int noiseVersion) {
         setGenerationDiagnosticStage("VoxelWorld: asignando semilla");
-        this.seed = seed;
-        setGenerationDiagnosticStage("VoxelWorld: asignando modo");
+        this.seed = seed;\n        this.noiseVersion = noiseVersion <= 0 ? 0 : 1;\n        InfdevTerrain.prepareNoise(seed, this.noiseVersion);\n        setGenerationDiagnosticStage("VoxelWorld: asignando modo");
         this.mode = mode;
         this.worldSize = worldSize == SIZE_OLD ? SIZE_OLD : SIZE_INFINITE;
         this.worldType = worldType == TYPE_FLAT ? TYPE_FLAT :
@@ -1042,12 +1038,11 @@ final class VoxelWorld {
 
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(blocks.length * 2 + 64);
             DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(DIFFICULTY_WORLD_SAVE_MAGIC);
+            out.writeInt(SEEDED_NOISE_WORLD_SAVE_MAGIC);
             out.writeByte(HEIGHT);
             out.writeByte(worldSize);
             out.writeByte(worldType);
-            out.writeByte(difficulty);
-            out.writeInt(seed);
+            out.writeByte(difficulty);\n            out.writeByte(noiseVersion);\n            out.writeInt(seed);
             out.writeByte(mode);
             out.writeUTF(worldName == null ? "Mundo" : worldName);
             out.writeBoolean(nether);
@@ -1250,29 +1245,27 @@ final class VoxelWorld {
             byte[] data = store.getRecord(1);
             DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
             int format = in.readInt();
-            boolean difficultyWorldFormat = format == DIFFICULTY_WORLD_SAVE_MAGIC;
-            boolean configWorldFormat = format == CONFIG_WORLD_SAVE_MAGIC || difficultyWorldFormat;
+            boolean seededNoiseFormat = format == SEEDED_NOISE_WORLD_SAVE_MAGIC;\n            boolean difficultyWorldFormat = format == DIFFICULTY_WORLD_SAVE_MAGIC || seededNoiseFormat;\n            boolean configWorldFormat = format == CONFIG_WORLD_SAVE_MAGIC || difficultyWorldFormat;
             boolean deepWorldFormat = format == DEEP_WORLD_SAVE_MAGIC || configWorldFormat;
             if (format != 0x4D434631 && format != 0x4D434632 && format != 0x4D434633 &&
                 format != 0x4D434634 && format != 0x4D434635 && format != 0x4D434636 &&
                 format != 0x4D434637 && format != 0x4D434638 && format != 0x4D434639 &&
                 format != 0x4D434641 && format != 0x4D434642 && format != 0x4D434643 &&
                 format != 0x4D434644 && format != ALPHA_ITEM_SAVE_MAGIC &&
-                format != DIFFICULTY_WORLD_SAVE_MAGIC && !deepWorldFormat) return null;
+                format != DIFFICULTY_WORLD_SAVE_MAGIC && format != SEEDED_NOISE_WORLD_SAVE_MAGIC && !deepWorldFormat) return null;
             int savedHeight = deepWorldFormat ? in.readUnsignedByte() : 24;
             if (savedHeight < 8 || savedHeight > HEIGHT) return null;
             int savedWorldSize = configWorldFormat ? in.readUnsignedByte() : SIZE_INFINITE;
             int savedWorldType = configWorldFormat ? in.readUnsignedByte() : TYPE_STANDARD;
-            int savedDifficulty = difficultyWorldFormat ? in.readUnsignedByte() : DIFFICULTY_NORMAL;
-            int seed = in.readInt();
+            int savedDifficulty = difficultyWorldFormat ? in.readUnsignedByte() : DIFFICULTY_NORMAL;\n            int savedNoiseVersion = seededNoiseFormat ? in.readUnsignedByte() : 0;\n            int seed = in.readInt();
             int mode = in.readByte();
             boolean namedFormat = format == 0x4D434642 || format == 0x4D434643 ||
-                                  format == 0x4D434644 || format == ALPHA_ITEM_SAVE_MAGIC || deepWorldFormat;
-            VoxelWorld world = new VoxelWorld(seed, mode, savedWorldSize, savedWorldType);
+                                  format == 0x4D434644 || format == ALPHA_ITEM_SAVE_MAGIC || deepWorldFormat || seededNoiseFormat;
+            VoxelWorld world = new VoxelWorld(seed, mode, savedWorldSize, savedWorldType, savedNoiseVersion);
             world.worldName = namedFormat ? in.readUTF() : "Mundo guardado";
             world.difficulty = savedDifficulty < DIFFICULTY_PEACEFUL || savedDifficulty > DIFFICULTY_HARD ? DIFFICULTY_NORMAL : savedDifficulty;
             boolean alphaItemFormat = format == ALPHA_ITEM_SAVE_MAGIC || deepWorldFormat;
-            boolean explicitDimensionFormat = format == 0x4D434644 || alphaItemFormat;
+            boolean explicitDimensionFormat = format == 0x4D434644 || alphaItemFormat || seededNoiseFormat;
             boolean savedNether = explicitDimensionFormat ? in.readBoolean() :
                                   "NETHER".equalsIgnoreCase(world.worldName);
             world.setNetherDimension(savedNether);
@@ -1280,7 +1273,7 @@ final class VoxelWorld {
             world.selectedSlot = in.readByte();
             boolean currentFormat = format == 0x4D434641 || format == 0x4D434642 ||
                                     format == 0x4D434643 || explicitDimensionFormat;
-            boolean latestFormat = format == 0x4D434643 || format == 0x4D434644 || alphaItemFormat;
+            boolean latestFormat = format == 0x4D434643 || format == 0x4D434644 || alphaItemFormat || seededNoiseFormat;
             if (format == 0x4D434635 || format == 0x4D434636 || format == 0x4D434637 ||
                 format == 0x4D434638 || format == 0x4D434639 || currentFormat) {
                 int inventoryLength;
