@@ -491,7 +491,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         renderer.updateCamera(world, cameraPitch);
         renderer.setHurtCameraRoll(hurtCameraRoll());
         renderer.updateParticles(world, world.yaw, cameraPitch);
-        world.prefetchAhead();
+        ChunkPrefetchWorker.request(world);
     }
 
     /** Indev drains 300 air ticks, waits another 20 ticks, then deals a heart. */
