@@ -64,12 +64,14 @@ final class LanProtocol {
 
     /** Reads one complete frame, returning null only for a clean stream end. */
     static byte[] readFrame(DataInputStream input) throws IOException {
-        int length;
-        try {
-            length = input.readUnsignedShort();
-        } catch (java.io.EOFException end) {
-            return null;
-        }
+        // EOF is clean only when it occurs before the first header byte.
+        // Treat a truncated two-byte header or payload as a broken connection;
+        // otherwise a damaged stream could be mistaken for a normal disconnect.
+        int high = input.read();
+        if (high < 0) return null;
+        int low = input.read();
+        if (low < 0) throw new IOException("Truncated LAN frame header");
+        int length = (high << 8) | low;
         if (length < 1 || length > MAX_PACKET_SIZE)
             throw new IOException("Invalid LAN frame length");
         byte[] packet = new byte[length];
