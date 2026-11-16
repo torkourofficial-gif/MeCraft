@@ -1565,6 +1565,7 @@ final class VoxelWorld {
         try {
             RecordStore.deleteRecordStore(storeName);
             try { RecordStore.deleteRecordStore(storeName + "-dim"); } catch (RecordStoreException ignored) { }
+            try { RecordStore.deleteRecordStore(storeName + "-chunks"); } catch (RecordStoreException ignored) { }
             return true;
         } catch (RecordStoreException ignored) {
             return false;
@@ -1600,7 +1601,8 @@ final class VoxelWorld {
         int count = 0;
         for (int i = 0; i < stores.length; i++) {
             String storeName = stores[i];
-            if (!"mecraft-save".equals(storeName) && !storeName.startsWith("mecraft-world-")) continue;
+            if (storeName.endsWith("-chunks") ||
+                (!"mecraft-save".equals(storeName) && !storeName.startsWith("mecraft-world-"))) continue;
             RecordStore store = null;
             try {
                 store = RecordStore.openRecordStore(storeName, false);
