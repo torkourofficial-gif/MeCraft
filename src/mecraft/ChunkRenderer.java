@@ -128,7 +128,6 @@ final class ChunkRenderer {
     private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[FACE_TILE_COUNT];
     private final int[] activeFaceBuilderIndices = new int[FACE_TILE_COUNT];
     private int activeFaceBuilderCount;
-    private float currentBuildEyeX, currentBuildEyeY, currentBuildEyeZ;
     private int chunkNonAirBlocks;
     // LOD 0 = full geometry; LOD 1 = distant terrain (top surfaces only).
     private int completedChunkBuilds;
@@ -138,9 +137,7 @@ final class ChunkRenderer {
     private long lastMeshAssemblyMillis;
     private long lastSyncMillis;
     private long lastVisibilityMillis;
-    private long lastFaceCullMillis;
     private int lastAttachedChunkCount;
-    private int lastDirectionalMeshCount;
     // Cached geometry totals for meshes currently attached to the terrain group.
     private long lastTerrainTriangles;
     private long lastTerrainVertices;
@@ -1762,9 +1759,6 @@ final class ChunkRenderer {
         long meshStartedAt = System.currentTimeMillis();
         Chunk previousChunk = chunks[slot];
         Chunk complete = previousChunk == null ? new Chunk() : previousChunk;
-        currentBuildEyeX = world.playerX;
-        currentBuildEyeY = world.playerY + 1.62f;
-        currentBuildEyeZ = world.playerZ;
         Mesh[] meshes = finishChunkMeshes(world, cx, cy, cz, complete, job.lodLevel);
         lastMeshAssemblyMillis = System.currentTimeMillis() - meshStartedAt;
         // Remove the old scene nodes before replacing the mesh reference.
