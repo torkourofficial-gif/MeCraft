@@ -3937,8 +3937,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 int opcode = in.readUnsignedByte();
                 if (opcode == LanProtocol.PLAYER_STATE && packet.length == 23) {
                     int statePlayerId = in.readUnsignedByte();
-                    if (statePlayerId >= 0 && statePlayerId < LanProtocol.MAX_PLAYERS &&
-                            statePlayerId != lanLocalPlayerId) {
+                    if (statePlayerId < LanProtocol.MAX_PLAYERS &&
+                            statePlayerId != lanLocalPlayerId &&
+                            (lanLocalPlayerId != 0 || statePlayerId == playerId)) {
                         lanRemoteX[statePlayerId] = in.readFloat();
                         lanRemoteY[statePlayerId] = in.readFloat();
                         lanRemoteZ[statePlayerId] = in.readFloat();
@@ -3956,7 +3957,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                         if (y > 0 && y < VoxelWorld.HEIGHT && id >= Block.AIR && id < Block.COUNT) {
                             lanApplyingPacket = true;
                             world.set(x, y, z, id);
-                            renderer.sync(world);
                             lanLastWorldRevision = world.revision;
                             lanApplyingPacket = false;
                             if (lanLocalPlayerId == 0 && lanTransport != null)
@@ -4011,6 +4011,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     public synchronized void onLanError(String message) {
         lanStatus = message == null ? lanLabel("Error de red.", "Network error.") : message;
+        if (lanGameActive) {
+            lanGameActive = false;
+            lanTransport = null;
+            lanLocalPlayerId = -1;
+            for (int i = 0; i < lanRemotePresent.length; i++) lanRemotePresent[i] = false;
+        }
         repaint();
     }
 
