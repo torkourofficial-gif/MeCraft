@@ -3842,6 +3842,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     world.difficulty = VoxelWorld.DIFFICULTY_NORMAL;
                     world.worldName = "LAN " + lanRoomCode;
                     world.saveStoreName = "MeCraftLAN" + lanRoomCode;
+                    world.clearLanChanges();
                     copyHotbarFromWorld();
                     resetInventory(0);
                     copyInventoryToWorld();
@@ -3920,8 +3921,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 try {
                     ByteArrayOutputStream bytes = new ByteArrayOutputStream(2 + batch * 13);
                     DataOutputStream out = new DataOutputStream(bytes);
+                    int valid = 0;
+                    for (int i = 0; i < batch; i++) {
+                        int y = lanChangeY[offset + i];
+                        if (y > 0 && y < VoxelWorld.HEIGHT) valid++;
+                    }
                     out.writeByte(LanProtocol.BLOCK_BATCH);
-                    out.writeByte(batch);
+                    out.writeByte(valid);
                     for (int i = 0; i < batch; i++) {
                         int x = lanChangeX[offset + i];
                         int y = lanChangeY[offset + i];
