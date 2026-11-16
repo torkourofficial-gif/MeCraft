@@ -1394,7 +1394,8 @@ final class ChunkRenderer {
         }
         // Never build terrain synchronously here. The worker prepares plain
         // geometry arrays while gameplay/rendering continues normally.
-        if (!chunkBuildRunning && completedChunkBuild == null && pendingChunkMeshes == null && best >= 0) {
+        if (!chunkBuildRunning && completedChunkBuild == null && pendingChunkMeshes == null &&
+                best >= 0 && (!residentChunks[best] || dirtyChunks[best])) {
             requestChunkBuild(world, best, chunkWorldX[best], chunkWorldY[best], chunkWorldZ[best]);
         }
     }
