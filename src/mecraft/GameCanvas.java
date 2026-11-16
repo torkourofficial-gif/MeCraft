@@ -164,9 +164,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private SkinGallery skinGallery;
     private Image title;
     private Image skybox;
-    private Image menuPanorama;
-    private int panoramaWidth;
-    private int panoramaHeight;
+    private MenuPanorama menuPanorama;
     private int panoramaTick;
     private Image guiTexture;
     private Image iconsTexture;
@@ -3543,48 +3541,26 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         g.setFont(old);
     }
 
-    /**
-     * Lightweight title scene: a tiny, prebuilt two-chunk landscape rendered
-     * by the same M3G chunk pipeline as gameplay. The camera circles it
-     * continuously instead of rebuilding a software cubemap every repaint.
-     */
-    /**
-     * Menú 2D: panorama precalculado desde skybox.png y silueta por primitivas.
-     * No crea mundos, chunks, mallas ni contextos M3G.
-     */
+    /** M3G skybox cube; no procedural terrain or software pixel projection. */
     private void drawDioramaBackground(Graphics g) {
-        drawPanoramaBackground(g);
-        drawMenuDioramaForeground(g);
-    }
-
-    /** Pequeño paisaje de bloques dibujado en 2D; no usa imágenes ni buffers extra. */
-    private void drawMenuDioramaForeground(Graphics g) {
         int w = getWidth(), h = getHeight();
         if (w <= 0 || h <= 0) return;
-
-        int ridge = h * 4 / 5;
-        // Colina lejana.
-        g.setColor(48, 76, 55);
-        g.fillTriangle(0, ridge + 12, w * 2 / 5, ridge - h / 10, w * 3 / 4, ridge + 12);
-        // Colina cercana y su capa de tierra.
-        g.setColor(53, 91, 52);
-        g.fillTriangle(w / 4, ridge + 22, w * 3 / 4, ridge - h / 12, w, ridge + 22);
-        g.setColor(91, 65, 42);
-        g.fillRect(0, ridge + 12, w, h - ridge - 12);
-        g.setColor(66, 105, 48);
-        g.fillRect(0, ridge + 12, w, 5);
-        g.fillRect(w / 4, ridge + 2, w / 2, 5);
-
-        // Dos árboles geométricos en los extremos para dar escala al paisaje.
-        int treeY = ridge - h / 13;
-        g.setColor(91, 62, 38);
-        g.fillRect(w / 8, treeY + 12, Math.max(3, w / 35), h / 9);
-        g.fillRect(w * 7 / 8, treeY + 18, Math.max(3, w / 35), h / 10);
-        g.setColor(43, 91, 43);
-        g.fillTriangle(w / 8 - w / 18, treeY + 22, w / 8 + w / 18, treeY + 22,
-                w / 8, treeY - h / 12);
-        g.fillTriangle(w * 7 / 8 - w / 18, treeY + 28,
-                w * 7 / 8 + w / 18, treeY + 28, w * 7 / 8, treeY - h / 14);
+        if (skybox == null) {
+            try { skybox = GameAssets.image("skybox.png"); }
+            catch (Throwable ignored) { skybox = null; }
+        }
+        if (skybox == null) {
+            drawDirtBackground(g);
+            return;
+        }
+        try {
+            if (menuPanorama == null) menuPanorama = new MenuPanorama(skybox, w, h);
+            menuPanorama.resize(w, h);
+            menuPanorama.render(Graphics3D.getInstance(), g, panoramaTick, w, h);
+        } catch (Throwable unavailable) {
+            menuPanorama = null;
+            drawDirtBackground(g);
+        }
     }
 
     private void drawMenu(Graphics g) {
@@ -3991,140 +3967,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         int textX = (w - textWidth) / 2;
         g.drawString(marker, textX, y + 3, Graphics.TOP | Graphics.LEFT);
         g.drawString(shownLabel, textX + font.stringWidth(marker), y + 3, Graphics.TOP | Graphics.LEFT);
-    }
-
-    /**
-     * Pocket Edition-style animated title panorama. Only the main menu uses
-     * this background; world, settings, controls and other submenus retain
-     * their existing dirt texture and panel rendering.
-     */
-    private void drawPanoramaBackground(Graphics g) {
-        int w = getWidth(), h = getHeight();
-        if (w <= 0 || h <= 0) return;
-        if (skybox == null) {
-            try { skybox = GameAssets.image("skybox.png"); }
-            catch (Throwable ignored) { skybox = null; }
-        }
-        if (skybox == null) {
-            drawDirtBackground(g);
-            return;
-        }
-        // Rebuild only every eight menu ticks: smooth slow rotation without
-        // running the software cube projection on every repaint.
-        if (menuPanorama == null || panoramaWidth != w || panoramaHeight != h || (panoramaTick & 7) == 0) {
-            try {
-                menuPanorama = buildMenuPanorama(h);
-                panoramaWidth = w;
-                panoramaHeight = h;
-            } catch (Throwable ignored) {
-                menuPanorama = null;
-            }
-        }
-        if (menuPanorama == null) {
-            drawDirtBackground(g);
-            return;
-        }
-        g.drawImage(menuPanorama, 0, 0, Graphics.TOP | Graphics.LEFT);
-    }
-
-    /**
-     * Maps the six square faces in the supplied 3x2 Minecraft panorama atlas
-     * onto a perspective cube view. The atlas has four side faces in reading
-     * order, followed by sky (bottom-middle) and ground (bottom-right).
-     * A small software-rendered frame is cached between menu updates.
-     */
-    private Image buildMenuPanorama(int targetHeight) {
-        if (skybox == null || targetHeight <= 0) return null;
-        int w = getWidth();
-        int h = targetHeight;
-        int sw = skybox.getWidth(), sh = skybox.getHeight();
-        if (w <= 0 || sw < 700 || sh < 500) return null;
-
-        // This asset is a screenshot/export of a 3x2 cubemap atlas. Exclude
-        // the "Panorama" header and credits footer; sample the six 257px faces.
-        int faceSize = Math.min(Math.min(sw / 3, (sh - 24) / 2), Math.min(sw - 515, sh - 269));
-        if (faceSize < 32) return null;
-        // Read each atlas face directly into its destination. Avoids a second
-        // full-atlas pixel buffer, which matters on small Java ME heaps.
-        int[] faces = new int[6 * faceSize * faceSize];
-        int[] cellX = new int[] { 0, 258, 515, 0, 258, 515 };
-        int[] cellY = new int[] { 12, 12, 12, 269, 269, 269 };
-        for (int f = 0; f < 6; f++) {
-            skybox.getRGB(faces, f * faceSize * faceSize, faceSize,
-                    cellX[f], cellY[f], faceSize, faceSize);
-        }
-
-        // Render at quarter resolution: MIDP has no hardware cube mapping, so
-        // reducing ray samples is the main way to avoid stalling old devices.
-        int rw = (w + 3) / 4;
-        int rh = (h + 3) / 4;
-        int[] low = new int[rw * rh];
-        // Same slow yaw rotation as the original Minecraft title panorama.
-        double yaw = panoramaTick * 0.04 * Math.PI / 180.0;
-        double pitch = -0.035;
-        // Trigonometric values are constant for the whole frame. Calculate
-        // them once rather than invoking Math.sin/cos for every output pixel.
-        double cosYaw = Math.cos(yaw);
-        double sinYaw = Math.sin(yaw);
-        double cosPitch = Math.cos(pitch);
-        double sinPitch = Math.sin(pitch);
-        double fovScale = Math.tan(Math.toRadians(32.0));
-        double aspect = (double)rw / (double)rh;
-        for (int y = 0; y < rh; y++) {
-            double sy = (1.0 - 2.0 * (y + 0.5) / rh) * fovScale;
-            for (int x = 0; x < rw; x++) {
-                double sx = (2.0 * (x + 0.5) / rw - 1.0) * fovScale * aspect;
-                double vx = sx * cosYaw + sinYaw;
-                double vy = sy * cosPitch + sinPitch * (sx * sinYaw - cosYaw);
-                double vz = sx * sinYaw - cosYaw;
-                double ax = Math.abs(vx), ay = Math.abs(vy), az = Math.abs(vz);
-                int face;
-                double u, v, major;
-                if (ay >= ax && ay >= az) {
-                    major = ay;
-                    if (vy >= 0) { face = 4; u = vx / major; v = vz / major; }
-                    else { face = 5; u = vx / major; v = -vz / major; }
-                } else if (ax >= az) {
-                    major = ax;
-                    if (vx >= 0) { face = 1; u = -vz / major; v = -vy / major; }
-                    else { face = 3; u = vz / major; v = -vy / major; }
-                } else {
-                    major = az;
-                    if (vz >= 0) { face = 2; u = vx / major; v = -vy / major; }
-                    else { face = 0; u = -vx / major; v = -vy / major; }
-                }
-                // Minecraft panorama order: 0 front, 1 right, 2 back,
-                // 3 left, 4 up, 5 down. Atlas cells are in row-major layout:
-                // 0,1,2 across the top; 3,4,5 across the bottom.
-                int atlasFace;
-                if (face == 4) atlasFace = 4;
-                else if (face == 5) atlasFace = 5;
-                else if (face == 1) atlasFace = 1; // +X: right
-                else if (face == 3) atlasFace = 3; // -X: left
-                else if (face == 2) atlasFace = 2; // +Z: back
-                else atlasFace = 0;                // -Z: front
-                int tx = (int)((u + 1.0) * 0.5 * (faceSize - 1));
-                int ty = (int)((v + 1.0) * 0.5 * (faceSize - 1));
-                if (tx < 0) tx = 0; else if (tx >= faceSize) tx = faceSize - 1;
-                if (ty < 0) ty = 0; else if (ty >= faceSize) ty = faceSize - 1;
-                low[y * rw + x] = faces[atlasFace * faceSize * faceSize + ty * faceSize + tx];
-            }
-        }
-        faces = null;
-
-        int[] output = new int[w * h];
-        for (int y = 0; y < h; y++) {
-            // Both dimensions were rendered at quarter resolution. Using
-            // y / 2 here walked past the low-resolution buffer and could
-            // throw on taller screens, causing the panorama to disappear.
-            int ly = y / 4;
-            if (ly >= rh) ly = rh - 1;
-            for (int x = 0; x < w; x++) {
-                output[y * w + x] = low[ly * rw + x / 4];
-            }
-        }
-        low = null;
-        return Image.createRGBImage(output, w, h, true);
     }
 
     private void drawDirtBackground(Graphics g) {
