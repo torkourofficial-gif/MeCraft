@@ -309,10 +309,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private void reportFrameProfile(long now, long frameTime) {
         if (now - profileLastReport < 2000L) return;
         profileLastReport = now;
-        System.out.println("MeCraft timing ms: frame=" + frameTime +
-            " updateWait=" + profileUpdateWait + " update=" + profileUpdateWork +
-            " renderSync=" + profileRenderSync + " maxWait=" + profileMaxUpdateWait +
-            " maxUpdate=" + profileMaxUpdateWork + " maxSync=" + profileMaxRenderSync);
+        if (frameTime >= 80L || profileMaxUpdateWait >= 20L ||
+                profileMaxUpdateWork >= 35L || profileMaxRenderSync >= 35L) {
+            System.out.println("MeCraft STALL ms: frame=" + frameTime +
+                " updateWait=" + profileUpdateWait + " update=" + profileUpdateWork +
+                " renderSync=" + profileRenderSync + " maxWait=" + profileMaxUpdateWait +
+                " maxUpdate=" + profileMaxUpdateWork + " maxSync=" + profileMaxRenderSync);
+        }
         profileMaxUpdateWait = 0L;
         profileMaxUpdateWork = 0L;
         profileMaxRenderSync = 0L;
