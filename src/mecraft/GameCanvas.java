@@ -158,6 +158,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private final int[] lanPacketPlayers = new int[16];
     private int lanPacketHead, lanPacketTail, lanPacketCount;
     private boolean lanApplyingPacket;
+    private final int[] lanChangeX = new int[32];
+    private final int[] lanChangeY = new int[32];
+    private final int[] lanChangeZ = new int[32];
     private int pauseSelection;
     private int gameOverSelection;
     private int gameOverTicks;
@@ -3908,23 +3911,36 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 lanTransport.broadcast(bytes.toByteArray());
             } catch (Throwable ignored) { }
         }
-        if (!lanApplyingPacket && world.revision != lanLastWorldRevision) {
-            lanLastWorldRevision = world.revision;
-            int x = world.changedX, y = world.changedY, z = world.changedZ;
-            byte id = world.get(x, y, z);
-            if (y > 0 && y < VoxelWorld.HEIGHT) {
+        if (!lanApplyingPacket) {
+            int changed = world.drainLanChanges(lanChangeX, lanChangeY, lanChangeZ,
+                    lanChangeX.length);
+            int offset = 0;
+            while (offset < changed) {
+                int batch = Math.min(32, changed - offset);
                 try {
-                    ByteArrayOutputStream bytes = new ByteArrayOutputStream(16);
+                    ByteArrayOutputStream bytes = new ByteArrayOutputStream(2 + batch * 13);
                     DataOutputStream out = new DataOutputStream(bytes);
-                    out.writeByte(LanProtocol.BLOCK_CHANGE);
-                    out.writeInt(x); out.writeShort(y); out.writeInt(z);
-                    out.writeByte(id); out.writeByte(world.metadataAt(x, y, z));
+                    out.writeByte(LanProtocol.BLOCK_BATCH);
+                    out.writeByte(batch);
+                    for (int i = 0; i < batch; i++) {
+                        int x = lanChangeX[offset + i];
+                        int y = lanChangeY[offset + i];
+                        int z = lanChangeZ[offset + i];
+                        if (y <= 0 || y >= VoxelWorld.HEIGHT) continue;
+                        out.writeInt(x); out.writeShort(y); out.writeInt(z);
+                        out.writeByte(world.get(x, y, z));
+                        out.writeByte(world.metadataAt(x, y, z));
+                    }
                     out.flush();
                     byte[] packet = bytes.toByteArray();
-                    if (lanLocalPlayerId == 0) lanTransport.broadcast(packet);
-                    else lanTransport.sendToHost(packet);
+                    if (packet.length > 2) {
+                        if (lanLocalPlayerId == 0) lanTransport.broadcast(packet);
+                        else lanTransport.sendToHost(packet);
+                    }
                 } catch (Throwable ignored) { }
+                offset += batch;
             }
+            lanLastWorldRevision = world.revision;
         }
     }
 
@@ -3960,6 +3976,24 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                         if (lanLocalPlayerId == 0 && lanTransport != null)
                             lanTransport.broadcast(packet);
                     }
+                } else if (opcode == LanProtocol.BLOCK_BATCH && packet.length >= 2 &&
+                        (lanLocalPlayerId == 0 || playerId == 0)) {
+                    int count = in.readUnsignedByte();
+                    if (count > 32 || packet.length != 2 + count * 13) continue;
+                    lanApplyingPacket = true;
+                    for (int i = 0; i < count; i++) {
+                        int x = in.readInt(), y = in.readUnsignedShort(), z = in.readInt();
+                        byte id = in.readByte();
+                        int metadata = in.readUnsignedByte();
+                        if (y > 0 && y < VoxelWorld.HEIGHT &&
+                                id >= Block.AIR && id < Block.COUNT)
+                            world.setNetworkBlock(x, y, z, id, metadata);
+                    }
+                    world.clearLanChanges();
+                    lanLastWorldRevision = world.revision;
+                    lanApplyingPacket = false;
+                    if (lanLocalPlayerId == 0 && lanTransport != null)
+                        lanTransport.broadcast(packet);
                 } else if (opcode == LanProtocol.BLOCK_CHANGE && packet.length == 13) {
                     if (lanLocalPlayerId == 0 || playerId == 0) {
                         int x = in.readInt(), y = in.readUnsignedShort(), z = in.readInt();
