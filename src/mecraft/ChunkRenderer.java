@@ -1182,10 +1182,11 @@ final class ChunkRenderer {
 
     void sync(VoxelWorld world) {
         if (world.revision != builtRevision || world.fullRebuild) {
-            if (builtRevision < 0 || world.fullRebuild) rebuildWorld(world);
+            boolean resetStreaming = builtRevision < 0 || world.fullRebuild;
+            if (resetStreaming) rebuildWorld(world);
             else rebuildChanged(world);
             builtRevision = world.revision;
-            resetPendingChunk();
+            if (resetStreaming) resetPendingChunk();
         }
         // Rail meshes also have a camera-centered streaming window, so they
         // must be refreshed when the player crosses chunk boundaries even if
