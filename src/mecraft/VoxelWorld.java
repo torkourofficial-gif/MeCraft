@@ -898,7 +898,10 @@ final class VoxelWorld {
 
         // Process only the queue snapshot so newly scheduled neighbors are
         // handled on a later tick, keeping the work bounded on small devices.
+        // Hard per-step budget: a dense liquid network must not monopolize
+        // the gameplay thread for an entire tick. Remaining cells stay queued.
         int pending = fluidQueueCount;
+        if (pending > 48) pending = 48;
         while (pending-- > 0 && fluidQueueCount > 0) {
             int i = fluidQueue[fluidQueueHead];
             fluidQueueHead++;
