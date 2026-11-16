@@ -377,12 +377,24 @@ final class ChunkRenderer {
         updateTerrainFog();
     }
 
+    private int appliedFogColor = Integer.MIN_VALUE;
+    private float appliedFogStart = -1.0f;
+    private float appliedFogEnd = -1.0f;
+
     private void updateTerrainFog() {
         float start = shortestDistance ? 10.0f : cameraFar * 0.58f;
         float end = shortestDistance ? cameraFar - 0.25f : cameraFar * 0.94f;
         if (end <= start) end = start + 1.0f;
-        terrainFog.setColor(currentSkyColor & 0x00FFFFFF);
-        terrainFog.setLinear(start, end);
+        int color = currentSkyColor & 0x00FFFFFF;
+        if (color != appliedFogColor) {
+            terrainFog.setColor(color);
+            appliedFogColor = color;
+        }
+        if (start != appliedFogStart || end != appliedFogEnd) {
+            terrainFog.setLinear(start, end);
+            appliedFogStart = start;
+            appliedFogEnd = end;
+        }
     }
 
     float fieldOfView() { return cameraFov; }
@@ -1168,9 +1180,8 @@ final class ChunkRenderer {
     }
 
     private void updateTorchLights(VoxelWorld world) {
-        // No M3G point lights: nearby blocks receive discrete brightness levels
-        // in torchLightAt() while their chunk meshes are built.
-        for (int i = 0; i < torchLights.length; i++) torchLights[i].setIntensity(0.0f);
+        // Torch brightness is baked into chunk vertex colors by torchLightAt().
+        // No per-frame M3G light updates are needed.
     }
 
     int hitMob(VoxelWorld world, float pitch, int damage) {
