@@ -71,21 +71,7 @@ final class MenuPanorama {
         if (width <= 0 || height <= 0) return;
 
         float aspect = (float) width / (float) height;
-        float verticalFov;
-
-        if (aspect < 0.60f) {
-            verticalFov = 100.0f;
-        } else if (aspect < 0.80f) {
-            verticalFov = 90.0f;
-        } else if (aspect < 1.10f) {
-            verticalFov = 85.0f;
-        } else if (aspect < 1.60f) {
-            verticalFov = 75.0f;
-        } else {
-            verticalFov = 65.0f;
-        }
-
-        camera.setPerspective(verticalFov, aspect, 0.05f, 10.0f);
+        camera.setPerspective(120.0f, aspect, 0.05f, 10.0f);
     }
 
     void render(Graphics3D graphics, Graphics target, int tick, int width, int height) {
@@ -136,7 +122,8 @@ final class MenuPanorama {
         appearance.setPolygonMode(polygon);
 
         Texture2D texture = new Texture2D(new Image2D(Image2D.RGB, image));
-        texture.setFiltering(Texture2D.FILTER_LINEAR, Texture2D.FILTER_LINEAR);
+        // Keep the original block-art crisp; linear filtering softens the pixels.
+        texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         appearance.setTexture(0, texture);
         return new Mesh(buffer, new TriangleStripArray(0, new int[] { 4 }), appearance);
