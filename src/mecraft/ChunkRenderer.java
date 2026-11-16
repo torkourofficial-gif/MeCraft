@@ -1407,13 +1407,22 @@ final class ChunkRenderer {
         // Poll completed geometry and advance only one M3G mesh per frame.
         pollChunkBuild(world);
         if (pendingChunkMeshes != null) {
-            if (pendingChunkMeshes.world != world || pendingChunkMeshes.revision != world.revision) {
-                dirtyChunks[pendingChunkMeshes.slot] = true;
+            ChunkBuildResult pending = pendingChunkMeshes;
+            boolean slotStillMatches = pending.slot >= 0 && pending.slot < CACHE_SIZE &&
+                    chunkWorldX[pending.slot] == pending.cx &&
+                    chunkWorldY[pending.slot] == pending.cy &&
+                    chunkWorldZ[pending.slot] == pending.cz;
+            if (pending.world != world || !slotStillMatches) {
                 pendingChunkMeshes = null;
-            } else if (finishChunkMeshStep(pendingChunkMeshes.chunk)) {
+            } else if (finishChunkMeshStep(pending.chunk)) {
                 ChunkBuildResult ready = pendingChunkMeshes;
                 pendingChunkMeshes = null;
+                boolean changedDuringBuild = ready.revision != world.revision;
                 installChunk(ready.slot, ready.cx, ready.cy, ready.cz, ready.chunk);
+                // A global world revision can change because of an unrelated
+                // chunk. Keep this mesh visible, then rebuild it once if the
+                // world changed while its geometry was being prepared.
+                if (changedDuringBuild) dirtyChunks[ready.slot] = true;
             }
         }
         // Never build terrain synchronously here. The worker prepares plain
@@ -1446,13 +1455,20 @@ final class ChunkRenderer {
         ChunkBuildResult result = completedChunkBuild;
         if (result == null) return;
         completedChunkBuild = null;
-        if (result.failure != null || result.world != world || result.revision != world.revision ||
+        if (result.failure != null || result.world != world ||
                 result.slot < 0 || result.slot >= CACHE_SIZE ||
                 chunkWorldX[result.slot] != result.cx || chunkWorldY[result.slot] != result.cy ||
                 chunkWorldZ[result.slot] != result.cz) {
-            if (result.slot >= 0 && result.slot < CACHE_SIZE) dirtyChunks[result.slot] = true;
+            if (result.slot >= 0 && result.slot < CACHE_SIZE &&
+                    chunkWorldX[result.slot] == result.cx &&
+                    chunkWorldY[result.slot] == result.cy &&
+                    chunkWorldZ[result.slot] == result.cz)
+                dirtyChunks[result.slot] = true;
             return;
         }
+        // Do not reject a finished chunk merely because some other region
+        // changed the global revision. It is safer to display it and schedule
+        // a local refresh after installation than to starve chunk streaming.
         if (result.chunk == null) {
             result.chunk = new Chunk();
             result.chunk.faceBuilders = new FaceBuilder[TILE_COUNT];
