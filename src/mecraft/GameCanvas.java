@@ -3091,6 +3091,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     protected synchronized void paint(Graphics g) {
+
+        if (state == MENU || state == TOUCH_SETUP) panoramaTick++;
         if (state == TOUCH_SETUP) {
             drawTouchSetup(g);
         } else if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH ||
@@ -4006,8 +4008,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             drawDirtBackground(g);
             return;
         }
-        // Build once; subsequent menu repaints only blit the cached 2D image.
-        if (menuPanorama == null || panoramaWidth != w || panoramaHeight != h) {
+        // Rebuild only every eight menu ticks: smooth slow rotation without
+        // running the software cube projection on every repaint.
+        if (menuPanorama == null || panoramaWidth != w || panoramaHeight != h || (panoramaTick & 7) == 0) {
             try {
                 menuPanorama = buildMenuPanorama(h);
                 panoramaWidth = w;
@@ -4055,8 +4058,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         int rw = (w + 3) / 4;
         int rh = (h + 3) / 4;
         int[] low = new int[rw * rh];
-        // Vista fija: la proyección se genera una vez y se reutiliza en cada repaint.
-        double yaw = 0.0;
+        // Same slow yaw rotation as the original Minecraft title panorama.
+        double yaw = panoramaTick * 0.04 * Math.PI / 180.0;
         double pitch = -0.035;
         // Trigonometric values are constant for the whole frame. Calculate
         // them once rather than invoking Math.sin/cos for every output pixel.
