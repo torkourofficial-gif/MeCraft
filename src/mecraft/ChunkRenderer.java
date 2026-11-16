@@ -32,23 +32,9 @@ final class ChunkRenderer {
     private ChunkBuild pendingBuild;
     private int pendingBuildSlot = -1;
     // One complete chunk is built synchronously per renderer update.
-    // Cache the active mesh job's camera key to skip a full stream-window scan
-    // on every paint while that same chunk is being built.
-    private boolean pendingViewKeyValid;
-    private float pendingViewX, pendingViewY, pendingViewZ;
-    private float pendingViewYaw;
-    private float pendingViewPitch, pendingViewFar;
-    private int pendingViewCenterX, pendingViewCenterZ, pendingViewRadius;
-    private boolean pendingViewShortest;
     // Remember the next dirty chunk so paint calls can reuse the stream scan.
     private int pendingTargetSlot = -1;
     private int pendingTargetX, pendingTargetY, pendingTargetZ;
-    // Reuse the camera basis while the player moves: PS1-style precomputed
-    // transform data avoids repeating expensive trigonometry for every scan.
-    private float basisYaw = Float.NaN, basisPitch = Float.NaN;
-    private float basisForwardX, basisForwardY, basisForwardZ;
-    private float basisRightX, basisRightZ;
-    private float basisUpX, basisUpY, basisUpZ;
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN;
     private static final int CHUNK_FULL_HEIGHT = VoxelWorld.HEIGHT;
@@ -1307,7 +1293,6 @@ final class ChunkRenderer {
                 rebuildChanged(world);
             }
             builtRevision = world.revision;
-            pendingViewKeyValid = false;
         }
         builtNether = world.nether;
         hasBuiltDimension = true;
