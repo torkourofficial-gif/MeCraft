@@ -20,6 +20,13 @@ This branch contains a conservative hot-path optimization for the existing MIDP 
 - `SkinGallery` creates the M3G texture only for the first/selected skin. Other skin textures are created when selected, not all at gallery construction.
 - The cache is deliberately fixed-capacity and matches the five supported numbered skins plus the default image; it does not grow without bound.
 
+### Rail geometry: grow-on-demand staging buffers
+
+- Reused the Java-side position and UV staging arrays across rail-chunk rebuilds.
+- Buffers start empty and grow only when a chunk exceeds the largest rail count seen so far; the theoretical 2,048-rail maximum is not reserved at startup.
+- M3G `VertexArray.set` copies the requested vertex range, so the staging arrays can safely be overwritten after each mesh is created. The per-mesh strip-length array remains exact-sized because M3G consumes the full strip list.
+- This reduces repeated large temporary allocations without pinning a maximum-sized buffer on devices/worlds that contain few rails.
+
 ### Mob textures: lazy species and fleece variants
 
 - The mob system no longer converts every species skin to an M3G texture during renderer startup.
