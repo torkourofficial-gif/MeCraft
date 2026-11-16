@@ -214,31 +214,55 @@ final class VoxelWorld {
     private byte proceduralBlock(int x, int y, int z) {
         int cx = floorChunk(x), cz = floorChunk(z);
         int cache = proceduralCacheSlot(cx, cz);
-        boolean dimension;
         synchronized (this) {
             if (proceduralChunkX[cache] == cx && proceduralChunkZ[cache] == cz) {
                 int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
                 return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
             }
-            dimension = nether;
         }
 
-        // Use private scratch arrays: the prefetch worker and foreground may
-        // generate different columns concurrently without corrupting each other.
+        // A cache miss is never generated on the caller. The terrain worker
+        // prepares it independently while the game keeps running.
+        ChunkPrefetchWorker.requestChunk(this, cx, cz);
+
+        // Temporary collision/render floor while the real terrain is queued.
+        // The generated chunk replaces this placeholder and invalidates meshes.
+        int provisionalFloor = nether ? 23 : SEA_LEVEL - 1;
+        return y <= provisionalFloor ? Block.STONE : Block.AIR;
+    }
+
+    /** Generate one requested chunk on the terrain worker, then publish atomically. */
+    void generateRequestedChunk(int cx, int cz) {
+        int cache = proceduralCacheSlot(cx, cz);
+        final boolean dimension;
+        final String storeName;
+        synchronized (this) {
+            if (proceduralChunkX[cache] == cx && proceduralChunkZ[cache] == cz) return;
+            dimension = nether;
+            storeName = saveStoreName;
+        }
+
         byte[] generated = new byte[InfdevTerrain.CHUNK_VOLUME];
         int[] heights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
         byte[] biomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
-        generateChunk(cx, cz, generated, heights, biomes, dimension);
+        boolean loaded = loadPrefetchedChunk(cx, cz, generated, dimension, storeName);
+        if (!loaded) {
+            generateChunk(cx, cz, generated, heights, biomes, dimension);
+            savePrefetchedChunk(cx, cz, generated, dimension, storeName);
+        }
 
         synchronized (this) {
-            // Another thread may have populated this cache slot while we worked.
-            if (proceduralChunkX[cache] != cx || proceduralChunkZ[cache] != cz) {
-                System.arraycopy(generated, 0, proceduralChunks[cache], 0, generated.length);
-                proceduralChunkX[cache] = cx;
-                proceduralChunkZ[cache] = cz;
-            }
-            int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
-            return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
+            if (nether != dimension || !sameStoreName(saveStoreName, storeName)) return;
+            if (proceduralChunkX[cache] == cx && proceduralChunkZ[cache] == cz) return;
+            System.arraycopy(generated, 0, proceduralChunks[cache], 0, generated.length);
+            proceduralChunkX[cache] = cx;
+            proceduralChunkZ[cache] = cz;
+            // Tell the renderer that this chunk's provisional geometry is stale.
+            changedX = cx * CHUNK_XZ + CHUNK_XZ / 2;
+            changedY = CHUNK_Y / 2;
+            changedZ = cz * CHUNK_XZ + CHUNK_XZ / 2;
+            changedOldId = Block.AIR;
+            revision++;
         }
     }
 
