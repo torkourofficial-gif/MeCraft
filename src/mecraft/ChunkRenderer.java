@@ -113,7 +113,7 @@ final class ChunkRenderer {
     private final int[] greedyMaskScratch = new int[CHUNK_AREA];
     // One chunk is meshed at a time; reuse the large material lookup table to
     // avoid allocating thousands of references every time the player moves.
-    private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[TILE_COUNT * 15];
+    private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[TILE_COUNT];
     // A bounded pool avoids allocating FaceBuilder arrays for every streamed
     // chunk without retaining one builder for every possible tile/light pair.
     private final FaceBuilder[] freeFaceBuilders = new FaceBuilder[32];
@@ -1501,15 +1501,15 @@ final class ChunkRenderer {
                         int encoded = key - 1;
                         int tile = encoded % TILE_COUNT;
                         int light = encoded / TILE_COUNT;
-                        int builderIndex = light * TILE_COUNT + tile;
+                        int builderIndex = tile;
                         if (builders[builderIndex] == null) {
                             FaceBuilder builder = freeFaceBuilderCount > 0 ?
                                     freeFaceBuilders[--freeFaceBuilderCount] : null;
-                            if (builder == null) builder = new FaceBuilder(tile, light);
-                            else builder.reset(tile, light);
+                            if (builder == null) builder = new FaceBuilder(tile);
+                            else builder.reset(tile);
                             builders[builderIndex] = builder;
                         }
-                        builders[builderIndex].addRect(x, y, z, faceWidth, faceHeight, face);
+                        builders[builderIndex].addRect(x, y, z, faceWidth, faceHeight, face, light);
                         a += rectWidth;
                     }
                 }
@@ -2029,25 +2029,22 @@ final class ChunkRenderer {
     /** Reuses one short position array per material; no per-block scene nodes. */
     private static final class FaceBuilder {
         int tile;
-        int lightLevel;
         short[] p = new short[192];
         short[] uv = new short[128];
         byte[] c = new byte[256];
         int vertexCount;
         int faceCount;
 
-        FaceBuilder(int tile) { this(tile, 0); }
-        FaceBuilder(int tile, int lightLevel) { reset(tile, lightLevel); }
+        FaceBuilder(int tile) { reset(tile); }
 
-        void reset(int nextTile, int nextLightLevel) {
+        void reset(int nextTile) {
             tile = nextTile;
-            lightLevel = nextLightLevel;
             vertexCount = 0;
             faceCount = 0;
         }
 
         /** Add one tiled rectangle produced by the chunk's greedy face scan. */
-        void addRect(int x, int y, int z, int width, int height, int face) {
+        void addRect(int x, int y, int z, int width, int height, int face, int lightLevel) {
             ensure(vertexCount + 4);
             int u0 = 1, v0 = 1;
             int u1 = 1 + width * 16, v1 = 1 + height * 16;
@@ -2058,7 +2055,7 @@ final class ChunkRenderer {
                 u0 = 0; v0 = 0;
                 u1 = width * 16; v1 = height * 16;
             }
-            int shade = litShade(face);
+            int shade = litShade(face, lightLevel);
             if (face == 0) {
                 vertex(x,y+1,z, u0,v1,shade); vertex(x,y+1,z+height, u0,v0,shade);
                 vertex(x+width,y+1,z, u1,v1,shade); vertex(x+width,y+1,z+height, u1,v0,shade);
@@ -2110,7 +2107,7 @@ final class ChunkRenderer {
             faceCount++;
         }
 
-        private int litShade(int face) {
+        private int litShade(int face, int lightLevel) {
             int shade = face == 0 ? 255 : (face == 5 ? 135 : (face <= 2 ? 205 : 180));
             return shade + (255 - shade) * lightLevel / 14;
         }
