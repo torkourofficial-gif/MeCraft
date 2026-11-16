@@ -366,7 +366,10 @@ final class ChunkRenderer {
         shortestDistance = setting == 4;
         streamRadius = setting == 0 ? 1 : setting + 1;
         if (streamRadius > MAX_STREAM_RADIUS) streamRadius = MAX_STREAM_RADIUS;
-        cameraFar = shortestDistance ? 40.0f :
+        // Shortest keeps exactly the same 3x3 chunk streaming window.
+        // Only the camera far plane is shortened, so distant geometry is clipped
+        // earlier without reducing the number of loaded/resident chunks.
+        cameraFar = shortestDistance ? 28.0f :
                 ((streamRadius * 2 + 1) * (float)VoxelWorld.CHUNK_XZ) + 8.0f;
         camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
                 0.1f, cameraFar);
