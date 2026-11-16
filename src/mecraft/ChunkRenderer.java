@@ -28,7 +28,7 @@ final class ChunkRenderer {
     // distance scans only the chunk columns whose bounds can intersect its
     // 24-block (1.5-chunk) radius; it does not need an extra candidate ring.
     private static final int MAX_STREAM_RADIUS = 7;
-    // All vertical layers are accumulated into direction buckets per chunk.
+    // One rendered chunk spans the complete world height; vertical sections are not separate scene objects.
     private ChunkBuild pendingBuild;
     private int pendingBuildSlot = -1;
     // One complete chunk is built synchronously per renderer update.
@@ -50,7 +50,8 @@ final class ChunkRenderer {
     private float basisRightX, basisRightZ;
     private float basisUpX, basisUpY, basisUpZ;
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
-    static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
+    static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN;
+    private static final int CHUNK_FULL_HEIGHT = VoxelWorld.HEIGHT;
     private static final int TILE_COUNT = 256;
     // One geometry batch per atlas tile, matching the compact legacy renderer.
     private static final int FACE_TILE_COUNT = TILE_COUNT;
@@ -117,10 +118,10 @@ final class ChunkRenderer {
     private final int[] chunkWorldX = new int[CACHE_SIZE];
     private final int[] chunkWorldY = new int[CACHE_SIZE];
     private final int[] chunkWorldZ = new int[CACHE_SIZE];
-    // Full voxel snapshot for one chunk section; each source layer is copied into place once.
-    private final byte[] chunkVoxelScratch = new byte[VoxelWorld.CHUNK_XZ *
-            VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
-    private final int[] greedyMaskScratch = new int[CHUNK_AREA];
+    // Full voxel snapshot for one full-height chunk; each source layer is copied into place once.
+    private final byte[] chunkVoxelScratch = new byte[CHUNK_AREA * CHUNK_FULL_HEIGHT];
+    // Side-face greedy masks are 16xworld-height; top/bottom use only 16x16.
+    private final int[] greedyMaskScratch = new int[VoxelWorld.CHUNK_XZ * CHUNK_FULL_HEIGHT];
     // One chunk is meshed at a time; reuse the large material lookup table to
     // avoid allocating thousands of references every time the player moves.
     // One reusable geometry builder per atlas tile. Different face directions
@@ -1025,7 +1026,7 @@ final class ChunkRenderer {
     /** Find the resident chunk that owns a world-space mining target. */
     private int findChunkSlot(int x, int y, int z) {
         int cx = floorDiv(x, VoxelWorld.CHUNK_XZ);
-        int cy = floorDiv(y, VoxelWorld.CHUNK_Y);
+        int cy = 0;
         int cz = floorDiv(z, VoxelWorld.CHUNK_XZ);
         for (int i = 0; i < chunks.length; i++) {
             if (assignedChunks[i] && chunkWorldX[i] == cx &&
@@ -1322,7 +1323,7 @@ final class ChunkRenderer {
     /** Ensure the latest changed coordinate wins even after a multi-edit revision. */
     private void prioritizeChangedChunk(VoxelWorld world) {
         int cx = floorDiv(world.changedX, VoxelWorld.CHUNK_XZ);
-        int cy = world.changedY / VoxelWorld.CHUNK_Y;
+        int cy = 0;
         int cz = floorDiv(world.changedZ, VoxelWorld.CHUNK_XZ);
         for (int i = 0; i < CACHE_SIZE; i++) {
             if (!assignedChunks[i] || chunkWorldX[i] != cx ||
@@ -1339,10 +1340,9 @@ final class ChunkRenderer {
     private void rebuildChanged(VoxelWorld world) {
         int x = world.changedX, y = world.changedY, z = world.changedZ;
         int cx = floorDiv(x, VoxelWorld.CHUNK_XZ);
-        int cy = y / VoxelWorld.CHUNK_Y;
+        int cy = 0;
         int cz = floorDiv(z, VoxelWorld.CHUNK_XZ);
         int lx = x - cx * VoxelWorld.CHUNK_XZ;
-        int ly = y % VoxelWorld.CHUNK_Y;
         int lz = z - cz * VoxelWorld.CHUNK_XZ;
         // Keep an in-progress mesh job when this edit is elsewhere. Throwing
         // away a partially meshed visible chunk on every world revision caused
@@ -1352,8 +1352,6 @@ final class ChunkRenderer {
             affectsPending =
                     Math.abs(pendingBuild.x - cx) <=
                             (lx == 0 || lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0) &&
-                    Math.abs(pendingBuild.y - cy) <=
-                            (ly == 0 || ly == VoxelWorld.CHUNK_Y - 1 ? 1 : 0) &&
                     Math.abs(pendingBuild.z - cz) <=
                             (lz == 0 || lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0);
             if (affectsPending) {
@@ -1370,7 +1368,6 @@ final class ChunkRenderer {
             // slot already has world coordinates but is not resident yet.
             if (!assignedChunks[i]) continue;
             if (Math.abs(chunkWorldX[i] - cx) > (lx == 0 || lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0) ||
-                Math.abs(chunkWorldY[i] - cy) > (ly == 0 || ly == VoxelWorld.CHUNK_Y - 1 ? 1 : 0) ||
                 Math.abs(chunkWorldZ[i] - cz) > (lz == 0 || lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0)) continue;
             // Rebuild the full chunk; horizontal boundary edits also invalidate
             // the adjacent chunk whose shared face may have changed.
@@ -1739,9 +1736,9 @@ final class ChunkRenderer {
             // Take one compact snapshot of the chunk. The mesher reads this
             // snapshot directly, avoiding a separate cave flood-fill pass.
             long caveStartedAt = System.currentTimeMillis();
-            for (int layer = 0; layer < VoxelWorld.CHUNK_Y; layer++) {
+            for (int layer = 0; layer < CHUNK_FULL_HEIGHT; layer++) {
                 world.copyLoadedChunkLayer(cx * VoxelWorld.CHUNK_XZ,
-                        cy * VoxelWorld.CHUNK_Y + layer,
+                        layer,
                         cz * VoxelWorld.CHUNK_XZ, chunkVoxelScratch,
                         layer * CHUNK_AREA);
             }
@@ -1751,7 +1748,7 @@ final class ChunkRenderer {
         // A chunk is one render unit: rebuild all of its vertical slices into
         // one replacement mesh, rather than tracking masks that were never used
         // to avoid the full mesh assembly.
-        while (job.nextLayer < VoxelWorld.CHUNK_Y) {
+        while (job.nextLayer < CHUNK_FULL_HEIGHT) {
             buildChunkLayer(world, cx, cy, cz, job.nextLayer++);
         }
 
@@ -1875,7 +1872,7 @@ final class ChunkRenderer {
             meshes[at++] = makePortalMesh(buildingPortals);
 
         int x = cx * VoxelWorld.CHUNK_XZ;
-        int y = cy * VoxelWorld.CHUNK_Y;
+        int y = 0;
         int z = cz * VoxelWorld.CHUNK_XZ;
         for (int i = 0; i < meshes.length; i++) meshes[i].setTranslation(x, y, z);
         // Return material builders to the bounded pool only after makeMesh has
@@ -1903,7 +1900,7 @@ final class ChunkRenderer {
     private void buildChunkLayer(VoxelWorld world, int cx, int cy, int cz,
                                    int layer) {
         int x0 = cx * VoxelWorld.CHUNK_XZ;
-        int y0 = cy * VoxelWorld.CHUNK_Y + layer;
+        int y0 = layer;
         int z0 = cz * VoxelWorld.CHUNK_XZ;
         int voxelLayerOffset = layer * CHUNK_AREA;
 
@@ -1934,7 +1931,7 @@ final class ChunkRenderer {
     }
 
     /**
-     * Greedy meshing over the complete 16x8x16 snapshot. Horizontal and
+     * Greedy meshing over the complete 16x64x16 snapshot. Horizontal and
      * vertical faces now share one 2D mask per chunk plane, allowing adjacent
      * rectangles to merge across layer boundaries when tile and light match.
      * Every mask key includes both values, so shading and atlas selection stay
@@ -1944,7 +1941,7 @@ final class ChunkRenderer {
         if (chunkNonAirBlocks == 0) return;
 
         final int x0 = cx * VoxelWorld.CHUNK_XZ;
-        final int y0 = cy * VoxelWorld.CHUNK_Y;
+        final int y0 = 0;
         final int z0 = cz * VoxelWorld.CHUNK_XZ;
         final int width = VoxelWorld.CHUNK_XZ;
         final int[] mask = greedyMaskScratch;
@@ -1955,8 +1952,8 @@ final class ChunkRenderer {
             // still prevent internal tops from appearing through solid terrain.
             if (lodLevel > 0 && face != 0) continue;
             boolean horizontalFace = face == 0 || face == 5;
-            int slices = horizontalFace ? VoxelWorld.CHUNK_Y : VoxelWorld.CHUNK_XZ;
-            int height = horizontalFace ? VoxelWorld.CHUNK_XZ : VoxelWorld.CHUNK_Y;
+            int slices = horizontalFace ? CHUNK_FULL_HEIGHT : VoxelWorld.CHUNK_XZ;
+            int height = horizontalFace ? VoxelWorld.CHUNK_XZ : CHUNK_FULL_HEIGHT;
 
             for (int slice = 0; slice < slices; slice++) {
                 for (int b = 0; b < height; b++) {
@@ -1993,7 +1990,7 @@ final class ChunkRenderer {
                             else ny--;
 
                             byte neighbor;
-                            if (face == 0 && ly + 1 < VoxelWorld.CHUNK_Y)
+                            if (face == 0 && ly + 1 < CHUNK_FULL_HEIGHT)
                                 neighbor = chunkVoxelScratch[voxelIndex + CHUNK_AREA];
                             else if (face == 5 && ly > 0)
                                 neighbor = chunkVoxelScratch[voxelIndex - CHUNK_AREA];
