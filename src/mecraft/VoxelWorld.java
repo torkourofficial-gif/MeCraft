@@ -90,6 +90,10 @@ final class VoxelWorld {
     private final int[] proceduralChunkZ = new int[PROCEDURAL_CACHE_SIZE];
     private final int[] proceduralHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     private final byte[] proceduralBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
+    // Private scratch storage used only by the background prefetch worker.
+    private final byte[] prefetchChunk = new byte[InfdevTerrain.CHUNK_VOLUME];
+    private final int[] prefetchHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
+    private final byte[] prefetchBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     // Small persistent ring for two terrain columns prepared ahead of the player.
     private static final int PREFETCH_STORE_MAGIC = 0x4D435043; // MCPC
     private static final int PREFETCH_RECORDS = 4;
@@ -223,21 +227,30 @@ final class VoxelWorld {
     }
 
     /** Prepare at most one of the next two forward chunks per game tick. */
-    synchronized void prefetchAhead() {
-        if (saveStoreName == null) return;
-        int blockX = (int)playerX, blockZ = (int)playerZ;
-        if (playerX < blockX) blockX--;
-        if (playerZ < blockZ) blockZ--;
+    void prefetchAhead() {
+        // Snapshot tiny mutable fields quickly; never hold the world monitor while
+        // generating terrain or accessing RMS, otherwise rendering stalls in world.get().
+        int blockX, blockZ, dimension;
+        float directionYaw;
+        String storeName;
+        synchronized (this) {
+            storeName = saveStoreName;
+            if (storeName == null) return;
+            blockX = (int)playerX; blockZ = (int)playerZ;
+            if (playerX < blockX) blockX--;
+            if (playerZ < blockZ) blockZ--;
+            directionYaw = yaw;
+            dimension = nether ? 1 : 0;
+        }
         int centerX = floorChunk(blockX);
         int centerZ = floorChunk(blockZ);
-        int dimension = nether ? 1 : 0;
         if (centerX != prefetchCenterX || centerZ != prefetchCenterZ ||
                 dimension != prefetchDimension) {
             prefetchCenterX = centerX;
             prefetchCenterZ = centerZ;
             prefetchDimension = dimension;
             prefetchStep = 1;
-            double angle = yaw * Math.PI / 180.0;
+            double angle = directionYaw * Math.PI / 180.0;
             float fx = (float)Math.sin(angle), fz = (float)Math.cos(angle);
             prefetchDirectionX = 0;
             prefetchDirectionZ = 0;
@@ -253,13 +266,28 @@ final class VoxelWorld {
         int x = cx * CHUNK_XZ, z = cz * CHUNK_XZ;
         if (inside(x, z) || outsideWorld(x, z)) return;
         int cache = proceduralCacheSlot(cx, cz);
-        if (proceduralChunkX[cache] != cx || proceduralChunkZ[cache] != cz) {
-            if (!loadPrefetchedChunk(cx, cz, proceduralChunks[cache]))
-                generateChunk(cx, cz, proceduralChunks[cache]);
-            proceduralChunkX[cache] = cx;
-            proceduralChunkZ[cache] = cz;
+        synchronized (this) {
+            if (nether != (dimension != 0) || !sameStoreName(saveStoreName, storeName)) return;
+            if (proceduralChunkX[cache] == cx && proceduralChunkZ[cache] == cz) return;
         }
-        savePrefetchedChunk(cx, cz, proceduralChunks[cache]);
+        boolean loaded = loadPrefetchedChunk(cx, cz, prefetchChunk, dimension != 0);
+        if (!loaded) generateChunk(cx, cz, prefetchChunk, prefetchHeights, prefetchBiomes, dimension != 0);
+        // Persist outside the world lock. RMS can be slow on feature phones.
+        savePrefetchedChunk(cx, cz, prefetchChunk, dimension != 0, storeName);
+        // Publish the finished data atomically so the game thread can use it
+        // without waiting for generation or disk access.
+        synchronized (this) {
+            if (nether == (dimension != 0) && sameStoreName(saveStoreName, storeName) &&
+                    (proceduralChunkX[cache] != cx || proceduralChunkZ[cache] != cz)) {
+                System.arraycopy(prefetchChunk, 0, proceduralChunks[cache], 0, prefetchChunk.length);
+                proceduralChunkX[cache] = cx;
+                proceduralChunkZ[cache] = cz;
+            }
+        }
+    }
+
+    private static boolean sameStoreName(String a, String b) {
+        return a == b || (a != null && a.equals(b));
     }
 
     private String prefetchStoreName() {
@@ -267,6 +295,10 @@ final class VoxelWorld {
     }
 
     private boolean loadPrefetchedChunk(int cx, int cz, byte[] target) {
+        return loadPrefetchedChunk(cx, cz, target, nether);
+    }
+
+    private boolean loadPrefetchedChunk(int cx, int cz, byte[] target, boolean dimension) {
         String name = prefetchStoreName();
         if (name == null) return false;
         RecordStore store = null;
@@ -281,7 +313,7 @@ final class VoxelWorld {
                 if (in.readInt() != PREFETCH_STORE_MAGIC) continue;
                 if (in.readInt() != seed || in.readUnsignedByte() != noiseVersion ||
                         in.readUnsignedByte() != worldType ||
-                        in.readUnsignedByte() != (nether ? 1 : 0) ||
+                        in.readUnsignedByte() != (dimension ? 1 : 0) ||
                         in.readInt() != cx || in.readInt() != cz) continue;
                 in.readFully(target);
                 return true;
@@ -294,7 +326,11 @@ final class VoxelWorld {
     }
 
     private void savePrefetchedChunk(int cx, int cz, byte[] source) {
-        String name = prefetchStoreName();
+        savePrefetchedChunk(cx, cz, source, nether, saveStoreName);
+    }
+
+    private void savePrefetchedChunk(int cx, int cz, byte[] source, boolean dimension, String worldStoreName) {
+        String name = worldStoreName == null ? null : worldStoreName + "-chunks";
         if (name == null) return;
         RecordStore store = null;
         try {
@@ -308,7 +344,7 @@ final class VoxelWorld {
             out.writeInt(seed);
             out.writeByte(noiseVersion);
             out.writeByte(worldType);
-            out.writeByte(nether ? 1 : 0);
+            out.writeByte(dimension ? 1 : 0);
             out.writeInt(cx);
             out.writeInt(cz);
             out.write(source);
@@ -941,26 +977,38 @@ final class VoxelWorld {
     }
 
     private void generateChunk(int cx, int cz, byte[] target) {
+        generateChunk(cx, cz, target, proceduralHeights, proceduralBiomes, nether);
+    }
+
+    private void generateChunk(int cx, int cz, byte[] target, int[] heights,
+                               byte[] biomes, boolean dimension) {
+        synchronized (InfdevTerrain.class) {
+            generateChunkLocked(cx, cz, target, heights, biomes, dimension);
+        }
+    }
+
+    private void generateChunkLocked(int cx, int cz, byte[] target, int[] heights,
+                                     byte[] biomes, boolean dimension) {
         InfdevTerrain.prepareNoise(seed, noiseVersion);
         setGenerationDiagnosticStage("VoxelWorld.generateChunk: validando dimensión; chunk cx=" + cx + ", cz=" + cz);
-        if (!nether && worldType == TYPE_FLAT) {
+        if (!dimension && worldType == TYPE_FLAT) {
             for (int z = 0; z < CHUNK_XZ; z++) for (int x = 0; x < CHUNK_XZ; x++) {
                 int base = (z * CHUNK_XZ + x) * HEIGHT;
                 for (int y = 0; y < HEIGHT; y++)
                     target[base + y] = y == 0 ? Block.BEDROCK : (y <= 3 ? Block.DIRT : (y == 4 ? Block.GRASS : Block.AIR));
-                proceduralHeights[z * CHUNK_XZ + x] = 4;
-                proceduralBiomes[z * CHUNK_XZ + x] = 0;
+                heights[z * CHUNK_XZ + x] = 4;
+                biomes[z * CHUNK_XZ + x] = 0;
             }
-        } else if (nether) {
+        } else if (dimension) {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generateNether; cx=" + cx + ", cz=" + cz);
-            if (economicMode) InfdevTerrain.generateEconomicNether(seed, cx, cz, target, proceduralHeights);
-            else InfdevTerrain.generateNether(seed, cx, cz, target, proceduralHeights);
+            if (economicMode) InfdevTerrain.generateEconomicNether(seed, cx, cz, target, heights);
+            else InfdevTerrain.generateNether(seed, cx, cz, target, heights);
         } else if (economicMode) {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generateEconomic; cx=" + cx + ", cz=" + cz);
-            InfdevTerrain.generateEconomic(seed, cx, cz, target, proceduralHeights, proceduralBiomes);
+            InfdevTerrain.generateEconomic(seed, cx, cz, target, heights, biomes);
         } else {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generate; cx=" + cx + ", cz=" + cz);
-            InfdevTerrain.generate(seed, cx, cz, target, proceduralHeights, proceduralBiomes);
+            InfdevTerrain.generate(seed, cx, cz, target, heights, biomes);
         }
     }
 
