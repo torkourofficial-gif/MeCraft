@@ -62,6 +62,8 @@ El objetivo es ejecutarse en un heap Java de **4 MiB o más**. Las decisiones pa
 
 - 55 296 bytes para el mundo (un byte por bloque) y unos pocos bytes de estado/inventario.
 - Una sola imagen de terreno de 256 × 256 píxeles, cargada una vez y compartida por todas las mallas.
+- Las cinco skins del jugador comparten imágenes decodificadas y una sola `Texture2D` por skin entre la mano, el modelo local, los jugadores LAN y la galería; la galería convierte a M3G solo la skin seleccionada.
+- Las texturas de criaturas se convierten a M3G al crear por primera vez esa especie; las texturas de ojos de araña y variantes de lana también son diferidas.
 - 27 sectores de datos como máximo, pero las mallas M3G solo se crean para los sectores que intersectan la vista y el alcance de la cámara. Al girar o alejarse, las mallas fuera de vista se quitan de la escena y se liberan; vuelven a construirse desde los bytes del mundo al entrar en vista.
 - No hay un límite global de triángulos que recorte terreno. Se descartan caras ocultas antes de crear las mallas y los bloques visibles se agrupan por tile para compartir apariencia y reducir nodos.
 - Geometría cuantizada a `short`, una apariencia compartida y buffers de trabajo reutilizados para leer bloques y agrupar caras al reconstruir sectores.
