@@ -1475,236 +1475,141 @@ final class ChunkRenderer {
         chunkWorldZ[i] = Integer.MIN_VALUE;
     }
 
-    /** Keep M3G buffers only for chunks intersecting the camera frustum. */
+    /** Keep only nearby chunks that can contribute to the horizontal camera view. */
     private void updateVisibleChunks(VoxelWorld world) {
-        float eyeX = world.playerX, eyeY = world.playerY + 1.62f, eyeZ = world.playerZ;
-        int centerX = floorDiv((int)eyeX, VoxelWorld.CHUNK_XZ);
-        int centerZ = floorDiv((int)eyeZ, VoxelWorld.CHUNK_XZ);
-        // Camera/player motion is continuous, but the stream window only needs
-        // refreshing after a meaningful change. The old exact-float key forced
-        // a full multi-hundred-slot scan on virtually every paint while walking.
-        float yawDelta = Math.abs(world.yaw - pendingViewYaw);
-        if (yawDelta > 180) yawDelta = 360.0f - yawDelta;
-        boolean samePendingView = pendingViewKeyValid &&
-                centerX == pendingViewCenterX && centerZ == pendingViewCenterZ &&
-                // The stream window is chunk-based, not block-based. Re-scan
-                // only after a meaningful camera movement; the 12-block frustum
-                // padding keeps edge chunks resident during this hysteresis.
-                Math.abs(eyeX - pendingViewX) < 4.0f &&
-                Math.abs(eyeY - pendingViewY) < 4.0f &&
-                Math.abs(eyeZ - pendingViewZ) < 4.0f &&
-                yawDelta < 6 && Math.abs(cameraPitch - pendingViewPitch) < 6.0f &&
-                cameraFar == pendingViewFar && shortestDistance == pendingViewShortest &&
-                streamRadius == pendingViewRadius;
-        if (samePendingView) {
-            // Resume the current build, or retry the selected dirty chunk when its
-            // procedural neighbors were not ready on the previous paint.
-            if (pendingBuild != null && pendingBuildSlot >= 0 &&
-                    assignedChunks[pendingBuildSlot] && visibleChunks[pendingBuildSlot] &&
-                    chunkWorldX[pendingBuildSlot] == pendingBuild.x &&
-                    chunkWorldY[pendingBuildSlot] == pendingBuild.y &&
-                    chunkWorldZ[pendingBuildSlot] == pendingBuild.z) {
-                advanceChunkBuild(world, pendingBuildSlot,
-                        pendingBuild.x, pendingBuild.y, pendingBuild.z);
-            } else if (pendingTargetSlot >= 0) {
-                if (assignedChunks[pendingTargetSlot] && visibleChunks[pendingTargetSlot] &&
-                        dirtyChunks[pendingTargetSlot] &&
-                        chunkWorldX[pendingTargetSlot] == pendingTargetX &&
-                        chunkWorldY[pendingTargetSlot] == pendingTargetY &&
-                        chunkWorldZ[pendingTargetSlot] == pendingTargetZ) {
-                    advanceChunkBuild(world, pendingTargetSlot,
-                            pendingTargetX, pendingTargetY, pendingTargetZ);
-                    return;
-                }
-                // The previous target finished or left the window. Select the
-                // next dirty chunk with one fresh scan instead of stalling.
-                pendingTargetSlot = -1;
-                pendingViewKeyValid = false;
-            } else {
-                return;
-            }
-            if (pendingViewKeyValid) return;
-        }
-        int span = MAX_STREAM_SPAN;
+        final float eyeX = world.playerX;
+        final float eyeZ = world.playerZ;
+        final int centerX = floorDiv((int)eyeX, VoxelWorld.CHUNK_XZ);
+        final int centerZ = floorDiv((int)eyeZ, VoxelWorld.CHUNK_XZ);
+        final int span = MAX_STREAM_SPAN;
 
-        // Shortest uses a circular horizontal radius inside the candidate
-        // window. The cache ring remains a slot-addressing mechanism only.
-        float forwardX = 0.0f, forwardY = 0.0f, forwardZ = 1.0f;
-        float rightX = 1.0f, rightZ = 0.0f;
-        float upX = 0.0f, upY = 1.0f, upZ = 0.0f;
-        {
-            if (world.yaw != basisYaw || cameraPitch != basisPitch) {
-                float yaw = (float)(world.yaw * Math.PI / 180.0);
-                float pitch = (float)(cameraPitch * Math.PI / 180.0);
-                float sinYaw = (float)Math.sin(yaw);
-                float cosYaw = (float)Math.cos(yaw);
-                float sinPitch = (float)Math.sin(pitch);
-                float cosPitch = (float)Math.cos(pitch);
-                basisForwardX = sinYaw * cosPitch;
-                basisForwardY = sinPitch;
-                basisForwardZ = cosYaw * cosPitch;
-                basisRightX = cosYaw;
-                basisRightZ = -sinYaw;
-                basisUpX = -sinYaw * sinPitch;
-                basisUpY = cosPitch;
-                basisUpZ = -cosYaw * sinPitch;
-                basisYaw = world.yaw;
-                basisPitch = cameraPitch;
-            }
-            forwardX = basisForwardX; forwardY = basisForwardY; forwardZ = basisForwardZ;
-            rightX = basisRightX; rightZ = basisRightZ;
-            upX = basisUpX; upY = basisUpY; upZ = basisUpZ;
-        }
-
-        // A chunk column can intersect the 24-block circle only when its
-        // coordinate differs by at most ceil(radius / chunkSize) from the
-        // player's chunk. The AABB/circle test below then rejects corner chunks.
-        // Do not add another ring: it needlessly scans and retains extra chunks.
-        int shortestChunkRadius = shortestDistance ?
+        // One simple square candidate window; shortest mode adds a circular limit.
+        int radius = shortestDistance ?
                 (int)Math.ceil(cameraFar / (float)VoxelWorld.CHUNK_XZ) : streamRadius;
-        int firstChunkX = centerX - shortestChunkRadius;
-        int lastChunkX = centerX + shortestChunkRadius;
-        int firstChunkZ = centerZ - shortestChunkRadius;
-        int lastChunkZ = centerZ + shortestChunkRadius;
-        float depthRadius = Math.abs(forwardX) * CHUNK_HALF_XZ +
-                Math.abs(forwardY) * CHUNK_HALF_Y + Math.abs(forwardZ) * CHUNK_HALF_XZ;
-        float horizontalRadius = (Math.abs(rightX) + Math.abs(rightZ)) * CHUNK_HALF_XZ;
-        float verticalRadius = Math.abs(upX) * CHUNK_HALF_XZ +
-                Math.abs(upY) * CHUNK_HALF_Y + Math.abs(upZ) * CHUNK_HALF_XZ;
-        // Old worlds have a hard 240x240 border (15x15 chunks). Clamp the
-        // candidate rectangle before scanning or assigning cache slots: the
-        // infinite-world path still streams freely, while finite worlds avoid
-        // visiting impossible coordinates and never reserve edge slots outside
-        // their playable area. The 15-slot ring maps every old-world chunk
-        // coordinate uniquely, so no extra modulo/collision handling is needed.
+        if (radius < 0) radius = 0;
+        if (radius > MAX_STREAM_RADIUS) radius = MAX_STREAM_RADIUS;
+
+        int firstX = centerX - radius;
+        int lastX = centerX + radius;
+        int firstZ = centerZ - radius;
+        int lastZ = centerZ + radius;
+
         if (world.worldSize == VoxelWorld.SIZE_OLD) {
-            int lastWorldChunk = 240 / VoxelWorld.CHUNK_XZ - 1;
-            if (firstChunkX < 0) firstChunkX = 0;
-            if (firstChunkZ < 0) firstChunkZ = 0;
-            if (lastChunkX > lastWorldChunk) lastChunkX = lastWorldChunk;
-            if (lastChunkZ > lastWorldChunk) lastChunkZ = lastWorldChunk;
+            int maxChunk = 240 / VoxelWorld.CHUNK_XZ - 1;
+            if (firstX < 0) firstX = 0;
+            if (firstZ < 0) firstZ = 0;
+            if (lastX > maxChunk) lastX = maxChunk;
+            if (lastZ > maxChunk) lastZ = maxChunk;
         }
 
-        // Evict only chunks that have actually left the horizontal stream window.
+        // Forget chunks that have left the active window.
         for (int i = 0; i < CACHE_SIZE; i++) {
             if (assignedChunks[i] &&
-                    (chunkWorldX[i] < firstChunkX || chunkWorldX[i] > lastChunkX ||
-                     chunkWorldZ[i] < firstChunkZ || chunkWorldZ[i] > lastChunkZ)) removeChunk(i);
+                    (chunkWorldX[i] < firstX || chunkWorldX[i] > lastX ||
+                     chunkWorldZ[i] < firstZ || chunkWorldZ[i] > lastZ)) {
+                removeChunk(i);
+            }
         }
 
-        int firstRx = firstChunkX - centerX + MAX_STREAM_RADIUS;
-        int lastRx = lastChunkX - centerX + MAX_STREAM_RADIUS;
-        int firstRz = firstChunkZ - centerZ + MAX_STREAM_RADIUS;
-        int lastRz = lastChunkZ - centerZ + MAX_STREAM_RADIUS;
+        // A horizontal yaw-only frustum is enough for full-height columns.
+        // It avoids the old per-frame 3D camera-basis and pitch calculations.
+        float yaw = (float)(world.yaw * Math.PI / 180.0);
+        float sinYaw = (float)Math.sin(yaw);
+        float cosYaw = (float)Math.cos(yaw);
+        float forwardX = sinYaw;
+        float forwardZ = cosYaw;
+        float rightX = cosYaw;
+        float rightZ = -sinYaw;
+        float depthRadius = (Math.abs(forwardX) + Math.abs(forwardZ)) *
+                VoxelWorld.CHUNK_XZ * 0.5f;
+        float sideRadius = (Math.abs(rightX) + Math.abs(rightZ)) *
+                VoxelWorld.CHUNK_XZ * 0.5f;
+
         int best = -1;
         float bestDistance = Float.MAX_VALUE;
-        // Keep progressing the current mesh job while its chunk remains visible.
-        // Re-selecting the nearest dirty chunk every frame can otherwise abandon
-        // a partially meshed chunk whenever the player/camera moves slightly.
         boolean pendingVisible = false;
 
-        // Search only the active window, then use the circle/AABB and
-        // camera-frustum tests below to reject corner sectors before meshing.
-        for (int cy = 0; cy < 1; cy++) {
-            for (int rz = firstRz; rz <= lastRz; rz++) {
-                for (int rx = firstRx; rx <= lastRx; rx++) {
-                    int cx = centerX + rx - MAX_STREAM_RADIUS;
-                    int cz = centerZ + rz - MAX_STREAM_RADIUS;
-                    // Finite Old coordinates are already 0..14, so their
-                    // cache address is a direct row-major lookup. Infinite
-                    // worlds retain the wrapping ring used by streamed chunks.
-                    int i = world.worldSize == VoxelWorld.SIZE_OLD ?
-                            (cy * span + cz) * span + cx :
-                            (cy * span + floorMod(cz, span)) * span + floorMod(cx, span);
-                    float dx = cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeX;
-                    float dy = CHUNK_FULL_HEIGHT * 0.5f - eyeY;
-                    float dz = cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
+        for (int cz = firstZ; cz <= lastZ; cz++) {
+            for (int cx = firstX; cx <= lastX; cx++) {
+                // The finite old world uses direct addressing; infinite worlds wrap.
+                int slot = world.worldSize == VoxelWorld.SIZE_OLD ?
+                        cz * span + cx :
+                        floorMod(cz, span) * span + floorMod(cx, span);
 
-                    boolean visible = shortestDistance;
-                    if (shortestDistance) {
-                        // A horizontal cylinder gives the old circular render
-                        // boundary. Keep 16x16 columns intact, then use the
-                        // camera frustum to avoid building vertical slices that
-                        // cannot contribute to the current view.
-                        float nearX = Math.abs(dx) - VoxelWorld.CHUNK_XZ * 0.5f;
-                        float nearZ = Math.abs(dz) - VoxelWorld.CHUNK_XZ * 0.5f;
-                        if (nearX < 0.0f) nearX = 0.0f;
-                        if (nearZ < 0.0f) nearZ = 0.0f;
-                        boolean insideCircle = nearX * nearX + nearZ * nearZ <=
-                                cameraFar * cameraFar;
-                        float depth = dx * forwardX + dy * forwardY + dz * forwardZ;
-                        float horizontal = dx * rightX + dz * rightZ;
-                        float vertical = dx * upX + dy * upY + dz * upZ;
-                        visible = insideCircle && depth + depthRadius >= 0.1f &&
-                            depth - depthRadius <= cameraFar &&
-                            Math.abs(horizontal) <= Math.max(0.0f, depth) * tanHorizontalFov + horizontalRadius &&
-                            Math.abs(vertical) <= Math.max(0.0f, depth) * tanVerticalFov + verticalRadius;
-                    } else {
-                        float depth = dx * forwardX + dy * forwardY + dz * forwardZ;
-                        float horizontal = dx * rightX + dz * rightZ;
-                        float vertical = dx * upX + dy * upY + dz * upZ;
-                        visible = depth + depthRadius >= 0.1f &&
-                            depth - depthRadius <= cameraFar &&
-                            Math.abs(horizontal) <= Math.max(0.0f, depth) * tanHorizontalFov + horizontalRadius &&
-                            Math.abs(vertical) <= Math.max(0.0f, depth) * tanVerticalFov + verticalRadius;
-                    }
+                float dx = cx * VoxelWorld.CHUNK_XZ +
+                        VoxelWorld.CHUNK_XZ * 0.5f - eyeX;
+                float dz = cz * VoxelWorld.CHUNK_XZ +
+                        VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
 
-                    int desiredLod = lodForChunk(cx, cz, eyeX, eyeZ);
-                    boolean sameChunk = assignedChunks[i] && chunkWorldX[i] == cx &&
-                        chunkWorldY[i] == cy && chunkWorldZ[i] == cz;
-                    if (sameChunk && chunks[i] != null && chunks[i].lodLevel != desiredLod)
-                        dirtyChunks[i] = true;
-                    // A slot can own a partially meshed chunk before it becomes
-                    // resident. Always detach that partial mesh before reusing
-                    // the ring slot for a different world coordinate.
-                    if (assignedChunks[i] && !sameChunk) removeChunk(i);
-                    visibleChunks[i] = visible;
-                    if (!visible) {
-                        if (pendingBuildSlot == i) {
-                            pendingBuild = null;
-                            pendingBuildSlot = -1;
-                        }
-                        if (pendingTargetSlot == i) pendingTargetSlot = -1;
-                        if (sameChunk && chunks[i] != null) setChunkAttached(i, false);
-                        continue;
-                    }
-                    if (sameChunk && chunks[i] != null) setChunkAttached(i, true);
-                    if (pendingBuild != null && pendingBuildSlot == i &&
-                            pendingBuild.x == cx && pendingBuild.y == cy && pendingBuild.z == cz)
-                        pendingVisible = true;
+                float nearX = Math.abs(dx) - VoxelWorld.CHUNK_XZ * 0.5f;
+                float nearZ = Math.abs(dz) - VoxelWorld.CHUNK_XZ * 0.5f;
+                if (nearX < 0.0f) nearX = 0.0f;
+                if (nearZ < 0.0f) nearZ = 0.0f;
 
-                    if (!sameChunk) {
-                        chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
-                        assignedChunks[i] = true;
-                        dirtyChunks[i] = true;
+                boolean inRange = !shortestDistance ||
+                        nearX * nearX + nearZ * nearZ <= cameraFar * cameraFar;
+                float depth = dx * forwardX + dz * forwardZ;
+                float side = dx * rightX + dz * rightZ;
+                boolean inView = depth + depthRadius >= 0.0f &&
+                        depth - depthRadius <= cameraFar &&
+                        Math.abs(side) <= Math.max(0.0f, depth) *
+                                tanHorizontalFov + sideRadius;
+                boolean visible = inRange && inView;
+
+                boolean sameChunk = assignedChunks[slot] &&
+                        chunkWorldX[slot] == cx && chunkWorldZ[slot] == cz;
+                int desiredLod = lodForChunk(cx, cz, eyeX, eyeZ);
+                if (sameChunk && chunks[slot] != null &&
+                        chunks[slot].lodLevel != desiredLod) dirtyChunks[slot] = true;
+
+                if (assignedChunks[slot] && !sameChunk) removeChunk(slot);
+                visibleChunks[slot] = visible;
+
+                if (!visible) {
+                    if (pendingBuildSlot == slot) {
+                        pendingBuild = null;
+                        pendingBuildSlot = -1;
                     }
-                    if (!sameChunk || dirtyChunks[i]) {
-                        // Show the block edit before remeshing unrelated chunks.
-                        float distance = i == pendingTargetSlot ? -1.0f :
-                                dx * dx + dz * dz + dy * dy * 2.0f;
-                        if (distance < bestDistance) {
-                            bestDistance = distance;
-                            best = i;
-                        }
+                    if (pendingTargetSlot == slot) pendingTargetSlot = -1;
+                    if (sameChunk && chunks[slot] != null)
+                        setChunkAttached(slot, false);
+                    continue;
+                }
+
+                if (!sameChunk) {
+                    chunkWorldX[slot] = cx;
+                    chunkWorldY[slot] = 0;
+                    chunkWorldZ[slot] = cz;
+                    assignedChunks[slot] = true;
+                    dirtyChunks[slot] = true;
+                } else if (chunks[slot] != null) {
+                    setChunkAttached(slot, true);
+                }
+
+                if (pendingBuild != null && pendingBuildSlot == slot &&
+                        pendingBuild.x == cx && pendingBuild.z == cz)
+                    pendingVisible = true;
+
+                if (dirtyChunks[slot]) {
+                    float distance = slot == pendingTargetSlot ? -1.0f :
+                            dx * dx + dz * dz;
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        best = slot;
                     }
                 }
             }
         }
 
-        // Finish a visible in-progress job before switching to another chunk.
-        // This is the streaming equivalent of Minicraft 3D's load-shedding:
-        // avoid throwing away expensive partial work when frame priorities change.
+        // Finish the current visible job first; otherwise build the nearest dirty chunk.
         if (pendingVisible && pendingBuild != null) {
-            int slot = pendingBuildSlot;
-            advanceChunkBuild(world, slot, pendingBuild.x, pendingBuild.y, pendingBuild.z);
+            advanceChunkBuild(world, pendingBuildSlot,
+                    pendingBuild.x, pendingBuild.y, pendingBuild.z);
         } else if (best >= 0) {
-            advanceChunkBuild(world, best, chunkWorldX[best], chunkWorldY[best], chunkWorldZ[best]);
+            advanceChunkBuild(world, best,
+                    chunkWorldX[best], chunkWorldY[best], chunkWorldZ[best]);
         }
-        pendingViewCenterX = centerX; pendingViewCenterZ = centerZ;
-        pendingViewX = eyeX; pendingViewY = eyeY; pendingViewZ = eyeZ;
-        pendingViewYaw = world.yaw; pendingViewPitch = cameraPitch;
-        pendingViewFar = cameraFar; pendingViewShortest = shortestDistance;
-        pendingViewRadius = streamRadius;
+
         if (best >= 0 && dirtyChunks[best]) {
             pendingTargetSlot = best;
             pendingTargetX = chunkWorldX[best];
@@ -1713,9 +1618,6 @@ final class ChunkRenderer {
         } else if (pendingBuild == null) {
             pendingTargetSlot = -1;
         }
-        // Keep the view cached while a dirty chunk waits for procedural neighbors;
-        // retry the selected target without rescanning the stream window.
-        pendingViewKeyValid = true;
     }
 
     private static int lodForChunk(int cx, int cz, float playerX, float playerZ) {
