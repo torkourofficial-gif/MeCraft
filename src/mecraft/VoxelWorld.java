@@ -90,6 +90,15 @@ final class VoxelWorld {
     private final int[] proceduralChunkZ = new int[PROCEDURAL_CACHE_SIZE];
     private final int[] proceduralHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     private final byte[] proceduralBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
+    // Small persistent ring for two terrain columns prepared ahead of the player.
+    private static final int PREFETCH_STORE_MAGIC = 0x4D435043; // MCPC
+    private static final int PREFETCH_RECORDS = 4;
+    private static final int PREFETCH_HEADER_BYTES = 19;
+    private int prefetchCenterX = Integer.MIN_VALUE, prefetchCenterZ = Integer.MIN_VALUE;
+    private int prefetchStep = 1, prefetchDirectionX, prefetchDirectionZ;
+    private int prefetchDimension = -1;
+    private int prefetchWriteSlot;
+
     private int[] editX = new int[128];
     private int[] editY = new int[128];
     private int[] editZ = new int[128];
@@ -200,16 +209,117 @@ final class VoxelWorld {
         return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
     }
 
-    /** Prepare one procedural column-chunk ahead of the renderer's mesh pass. */
+    /** Prepare one procedural column-chunk, preferring the persistent RMS cache. */
     boolean prepareProceduralChunk(int cx, int cz) {
         int x = cx * CHUNK_XZ, z = cz * CHUNK_XZ;
         if (inside(x, z) || outsideWorld(x, z)) return false;
         int cache = proceduralCacheSlot(cx, cz);
         if (proceduralChunkX[cache] == cx && proceduralChunkZ[cache] == cz) return false;
-        generateChunk(cx, cz, proceduralChunks[cache]);
+        if (!loadPrefetchedChunk(cx, cz, proceduralChunks[cache]))
+            generateChunk(cx, cz, proceduralChunks[cache]);
         proceduralChunkX[cache] = cx;
         proceduralChunkZ[cache] = cz;
         return true;
+    }
+
+    /** Prepare at most one of the next two forward chunks per game tick. */
+    void prefetchAhead() {
+        if (saveStoreName == null) return;
+        int blockX = (int)playerX, blockZ = (int)playerZ;
+        if (playerX < blockX) blockX--;
+        if (playerZ < blockZ) blockZ--;
+        int centerX = floorChunk(blockX);
+        int centerZ = floorChunk(blockZ);
+        int dimension = nether ? 1 : 0;
+        if (centerX != prefetchCenterX || centerZ != prefetchCenterZ ||
+                dimension != prefetchDimension) {
+            prefetchCenterX = centerX;
+            prefetchCenterZ = centerZ;
+            prefetchDimension = dimension;
+            prefetchStep = 1;
+            double angle = yaw * Math.PI / 180.0;
+            float fx = (float)Math.sin(angle), fz = (float)Math.cos(angle);
+            prefetchDirectionX = 0;
+            prefetchDirectionZ = 0;
+            if (Math.abs(fx) > Math.abs(fz))
+                prefetchDirectionX = fx >= 0.0f ? 1 : -1;
+            else
+                prefetchDirectionZ = fz >= 0.0f ? 1 : -1;
+        }
+        if (prefetchStep > 2) return;
+        int cx = centerX + prefetchDirectionX * prefetchStep;
+        int cz = centerZ + prefetchDirectionZ * prefetchStep;
+        prefetchStep++;
+        int x = cx * CHUNK_XZ, z = cz * CHUNK_XZ;
+        if (inside(x, z) || outsideWorld(x, z)) return;
+        int cache = proceduralCacheSlot(cx, cz);
+        if (proceduralChunkX[cache] != cx || proceduralChunkZ[cache] != cz) {
+            if (!loadPrefetchedChunk(cx, cz, proceduralChunks[cache]))
+                generateChunk(cx, cz, proceduralChunks[cache]);
+            proceduralChunkX[cache] = cx;
+            proceduralChunkZ[cache] = cz;
+        }
+        savePrefetchedChunk(cx, cz, proceduralChunks[cache]);
+    }
+
+    private String prefetchStoreName() {
+        return saveStoreName == null ? null : saveStoreName + "-chunks";
+    }
+
+    private boolean loadPrefetchedChunk(int cx, int cz, byte[] target) {
+        String name = prefetchStoreName();
+        if (name == null) return false;
+        RecordStore store = null;
+        try {
+            store = RecordStore.openRecordStore(name, false);
+            int count = store.getNumRecords();
+            for (int id = 1; id <= count; id++) {
+                byte[] data;
+                try { data = store.getRecord(id); } catch (RecordStoreException missing) { continue; }
+                if (data == null || data.length != PREFETCH_HEADER_BYTES + target.length) continue;
+                DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
+                if (in.readInt() != PREFETCH_STORE_MAGIC) continue;
+                if (in.readInt() != seed || in.readUnsignedByte() != noiseVersion ||
+                        in.readUnsignedByte() != worldType ||
+                        in.readUnsignedByte() != (nether ? 1 : 0) ||
+                        in.readInt() != cx || in.readInt() != cz) continue;
+                in.readFully(target);
+                return true;
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (store != null) try { store.closeRecordStore(); } catch (RecordStoreException ignored) { }
+        }
+        return false;
+    }
+
+    private void savePrefetchedChunk(int cx, int cz, byte[] source) {
+        String name = prefetchStoreName();
+        if (name == null) return;
+        RecordStore store = null;
+        try {
+            store = RecordStore.openRecordStore(name, true);
+            while (store.getNumRecords() < PREFETCH_RECORDS)
+                store.addRecord(new byte[0], 0, 0);
+            int slot = prefetchWriteSlot++ % PREFETCH_RECORDS;
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream(PREFETCH_HEADER_BYTES + source.length);
+            DataOutputStream out = new DataOutputStream(bytes);
+            out.writeInt(PREFETCH_STORE_MAGIC);
+            out.writeInt(seed);
+            out.writeByte(noiseVersion);
+            out.writeByte(worldType);
+            out.writeByte(nether ? 1 : 0);
+            out.writeInt(cx);
+            out.writeInt(cz);
+            out.write(source);
+            out.flush();
+            byte[] data = bytes.toByteArray();
+            store.setRecord(slot + 1, data, 0, data.length);
+        } catch (Exception ignored) {
+        } catch (OutOfMemoryError ignored) {
+        } finally {
+            if (store != null) try { store.closeRecordStore(); } catch (RecordStoreException ignored) { }
+        }
     }
 
     private int findEdit(int x, int y, int z) {
