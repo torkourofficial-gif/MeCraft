@@ -71,7 +71,6 @@ final class InfdevTerrain {
         int originZ = chunkZ * CHUNK_SIZE;
 
         for (int z = 0; z < CHUNK_SIZE; z++) {
-            VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: procesando fila z=" + z + " del chunk " + chunkX + "," + chunkZ);
             int worldZ = originZ + z;
             for (int x = 0; x < CHUNK_SIZE; x++) {
                 int worldX = originX + x;
@@ -159,7 +158,6 @@ final class InfdevTerrain {
         int originX = chunkX * CHUNK_SIZE;
         int originZ = chunkZ * CHUNK_SIZE;
         for (int z = 0; z < CHUNK_SIZE; z++) {
-            VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generateNether: fila z=" + z);
             for (int x = 0; x < CHUNK_SIZE; x++) {
                 int wx = originX + x, wz = originZ + z;
                 int column = z * CHUNK_SIZE + x;
@@ -719,7 +717,6 @@ final class InfdevTerrain {
         int lastCellZ = floorDiv(originZ + CHUNK_SIZE + 1 - 4, 9);
         for (int rz = firstCellZ; rz <= lastCellZ; rz++) {
             for (int rx = firstCellX; rx <= lastCellX; rx++) {
-                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.decorate: revisando árbol rx=" + rx + ", rz=" + rz);
                 int tx = rx * 9 + 4, tz = rz * 9 + 4;
                 int biome = biomeAt(seed, tx, tz);
                 if (biome == OCEAN) continue;
@@ -753,7 +750,6 @@ final class InfdevTerrain {
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.decorate: colocando cactus y flores");
         for (int z = 0; z < CHUNK_SIZE; z++) {
             for (int x = 0; x < CHUNK_SIZE; x++) {
-                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.decorate: columna de flora x=" + x + ", z=" + z);
                 int column = z * CHUNK_SIZE + x;
                 int height = heights[column];
                 int biome = biomes[column] & 255;
