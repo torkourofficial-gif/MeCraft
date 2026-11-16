@@ -177,6 +177,15 @@ final class ChunkRenderer {
     private boolean playerVisible = true;
     private float thirdPersonDistance = 3.8f;
     private PlayerModel playerModel;
+    private final PlayerModel[] lanPlayerModels = new PlayerModel[LanProtocol.MAX_PLAYERS];
+    private final float[] lanPlayerX = new float[LanProtocol.MAX_PLAYERS];
+    private final float[] lanPlayerY = new float[LanProtocol.MAX_PLAYERS];
+    private final float[] lanPlayerZ = new float[LanProtocol.MAX_PLAYERS];
+    private final float[] lanPlayerYaw = new float[LanProtocol.MAX_PLAYERS];
+    private final float[] lanPlayerPitch = new float[LanProtocol.MAX_PLAYERS];
+    private final float[] lanPlayerPreviousX = new float[LanProtocol.MAX_PLAYERS];
+    private final float[] lanPlayerPreviousZ = new float[LanProtocol.MAX_PLAYERS];
+    private final boolean[] lanPlayerHasPrevious = new boolean[LanProtocol.MAX_PLAYERS];
     private float previousPlayerX, previousPlayerZ;
     private boolean hasPreviousPlayerPosition;
     private float currentDaylight = 1.0f;
@@ -974,6 +983,63 @@ final class ChunkRenderer {
         }
     }
 
+
+    /** Creates and animates a remote avatar using the same biped rig as third/second person. */
+    void updateLanPlayer(int playerId, int skinIndex, float x, float y, float z,
+            float yaw, float pitch) {
+        if (playerId < 0 || playerId >= LanProtocol.MAX_PLAYERS) return;
+        PlayerModel model = lanPlayerModels[playerId];
+        if (model == null) {
+            Image skin;
+            try {
+                if (skinIndex < 0 || skinIndex > 4) skinIndex = 0;
+                skin = GameAssets.image("skin" + (skinIndex + 1) + ".png");
+            } catch (IOException missingSkin) {
+                try { skin = GameAssets.image("char.png"); }
+                catch (IOException missingDefault) { return; }
+            }
+            model = new PlayerModel(skin);
+            lanPlayerModels[playerId] = model;
+            scene.addChild(model.root);
+        }
+        float dx = lanPlayerHasPrevious[playerId] ? x - lanPlayerPreviousX[playerId] : 0.0f;
+        float dz = lanPlayerHasPrevious[playerId] ? z - lanPlayerPreviousZ[playerId] : 0.0f;
+        boolean moving = dx * dx + dz * dz > 0.0004f;
+        // Smooth network jitter without delaying the first authoritative position.
+        if (lanPlayerHasPrevious[playerId]) {
+            lanPlayerX[playerId] += (x - lanPlayerX[playerId]) * 0.62f;
+            lanPlayerY[playerId] += (y - lanPlayerY[playerId]) * 0.62f;
+            lanPlayerZ[playerId] += (z - lanPlayerZ[playerId]) * 0.62f;
+            lanPlayerYaw[playerId] += wrapLanAngle(yaw - lanPlayerYaw[playerId]) * 0.62f;
+            lanPlayerPitch[playerId] += (pitch - lanPlayerPitch[playerId]) * 0.62f;
+        } else {
+            lanPlayerX[playerId] = x; lanPlayerY[playerId] = y; lanPlayerZ[playerId] = z;
+            lanPlayerYaw[playerId] = yaw; lanPlayerPitch[playerId] = pitch;
+            lanPlayerHasPrevious[playerId] = true;
+        }
+        lanPlayerPreviousX[playerId] = x;
+        lanPlayerPreviousZ[playerId] = z;
+        model.root.setRenderingEnable(true);
+        model.update(lanPlayerX[playerId], lanPlayerY[playerId], lanPlayerZ[playerId],
+                lanPlayerYaw[playerId], dx, dz, lanPlayerPitch[playerId],
+                1.0f, moving, false, true);
+    }
+
+    void removeLanPlayer(int playerId) {
+        if (playerId < 0 || playerId >= LanProtocol.MAX_PLAYERS) return;
+        PlayerModel model = lanPlayerModels[playerId];
+        if (model != null) {
+            scene.removeChild(model.root);
+            lanPlayerModels[playerId] = null;
+        }
+        lanPlayerHasPrevious[playerId] = false;
+    }
+
+    private float wrapLanAngle(float angle) {
+        while (angle > 180.0f) angle -= 360.0f;
+        while (angle < -180.0f) angle += 360.0f;
+        return angle;
+    }
 
     /** Extract the ten classic destroy-stage tiles from the bottom-left atlas strip. */
     private void makeCrackFrames(Image source) {
