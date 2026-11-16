@@ -9,6 +9,7 @@ import javax.microedition.m3g.Camera;
 import javax.microedition.m3g.Graphics3D;
 import javax.microedition.m3g.Group;
 import javax.microedition.m3g.Image2D;
+import javax.microedition.m3g.Light;
 import javax.microedition.m3g.Material;
 import javax.microedition.m3g.Mesh;
 import javax.microedition.m3g.PolygonMode;
@@ -45,6 +46,10 @@ final class MenuPanorama {
         background.setColor(0xFF000000);
         background.setDepthClearEnable(true);
         world.setBackground(background);
+        Light ambient = new Light();
+        ambient.setMode(Light.AMBIENT);
+        ambient.setIntensity(1.0f);
+        world.addChild(ambient);
     }
 
     void resize(int width, int height) {
