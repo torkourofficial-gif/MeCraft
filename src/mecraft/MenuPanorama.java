@@ -92,7 +92,8 @@ final class MenuPanorama {
         float timer = (float)tick;
         baseRotation.setOrientation(180.0f, 1.0f, 0.0f, 0.0f);
         cube.setOrientation(timer * 0.1f, 0.0f, 1.0f, 0.0f);
-        float pitch = (float)Math.sin(timer / 400.0f) * 25.0f + 20.0f;
+        // Keep the classic slow bob, but make it subtle on small portrait displays.
+        float pitch = (float)Math.sin(timer / 400.0f) * 6.0f + 20.0f;
         tilt.setOrientation(-pitch, 1.0f, 0.0f, 0.0f);
         graphics.bindTarget(target);
         try {
