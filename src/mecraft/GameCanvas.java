@@ -4104,7 +4104,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         g.setColor(195, 185, 165);
         g.drawString(lanLabel("Comparte el codigo en tu Wi-Fi", "Share the code on your Wi-Fi"),
                 w / 2, h / 2 + 63, Graphics.TOP | Graphics.HCENTER);
-        g.drawString(lanLabel("0: cerrar sala", "0: close room"),
+        g.drawString(lanLabel("5: iniciar   0: cerrar", "5: start   0: close"),
                 w / 2, h / 2 + 82, Graphics.TOP | Graphics.HCENTER);
     }
 
