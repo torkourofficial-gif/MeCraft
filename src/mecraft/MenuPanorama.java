@@ -62,19 +62,27 @@ final class MenuPanorama {
     }
 
     /*
-     * M3G takes a vertical FOV. Derive it from a stable horizontal FOV so
-     * portrait J2ME screens show more sky vertically without stretching the
-     * panorama; landscape screens keep the same horizontal framing.
+     * M3G takes a vertical FOV. Use aspect-ratio bands instead of trigonometric
+     * functions so this projection remains compatible with older Java ME VMs.
      */
     private void setScreenProjection(int width, int height) {
         if (width <= 0 || height <= 0) return;
-        float aspect = (float)width / (float)height;
-        float horizontalFov = 110.0f;
-        float verticalFov = (float)(2.0 * Math.atan(
-                Math.tan(horizontalFov * Math.PI / 360.0) / aspect)
-                * 180.0 / Math.PI);
-        if (verticalFov < 65.0f) verticalFov = 65.0f;
-        if (verticalFov > 150.0f) verticalFov = 150.0f;
+
+        float aspect = (float) width / (float) height;
+        float verticalFov;
+
+        if (aspect < 0.60f) {
+            verticalFov = 125.0f;
+        } else if (aspect < 0.80f) {
+            verticalFov = 115.0f;
+        } else if (aspect < 1.10f) {
+            verticalFov = 100.0f;
+        } else if (aspect < 1.60f) {
+            verticalFov = 80.0f;
+        } else {
+            verticalFov = 65.0f;
+        }
+
         camera.setPerspective(verticalFov, aspect, 0.05f, 10.0f);
     }
 
