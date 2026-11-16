@@ -73,6 +73,8 @@ El objetivo es ejecutarse en un heap Java de **4 MiB o más**. Las decisiones pa
 
 El heap de 4 MiB es el mínimo de diseño, no una garantía para cada implementación: M3G puede reservar memoria nativa además del heap Java, y cada fabricante fija sus propios límites. El teléfono debe incluir JSR-184 y permitir el uso de la textura/M3G con un heap de al menos 4 MiB. Java ME sin M3G no puede ejecutar este renderizador.
 
+Consulta [OPTIMIZATION.md](OPTIMIZATION.md) para las optimizaciones de rendimiento aplicadas, los límites conocidos y el plan de perfilado M3G.
+
 ## Compilar en NetBeans
 
 El repositorio es un proyecto Java ME de NetBeans; no necesita `build.bat`. Abre la carpeta del repositorio como proyecto y usa **Build** o **Clean and Build**. NetBeans genera `MeCraft.jar` y `MeCraft.jad` dentro de `dist/`; **Run** lo inicia en el emulador seleccionado.

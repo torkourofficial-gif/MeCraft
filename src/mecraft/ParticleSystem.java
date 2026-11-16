@@ -30,6 +30,8 @@ final class ParticleSystem {
     private final int[] tileOffsetX = new int[CAPACITY];
     private final int[] tileOffsetY = new int[CAPACITY];
     private final boolean[] deathDust = new boolean[CAPACITY];
+    private final boolean[] active = new boolean[CAPACITY];
+    private int activeCount;
     private final short[] positions = new short[VERTICES * 3];
     private final short[] texCoords = new short[VERTICES * 2];
     private final byte[] colors = new byte[VERTICES * 4];
@@ -93,6 +95,7 @@ final class ParticleSystem {
                 for (int gx = 0; gx < 4; gx++) {
                     int i = cursor++;
                     if (cursor == CAPACITY) cursor = 0;
+                    activate(i);
                     float rx = (gx + 0.5f) * 0.25f;
                     float ry = (gy + 0.5f) * 0.5f;
                     float rz = (gz + 0.5f) * 0.5f;
@@ -115,6 +118,7 @@ final class ParticleSystem {
                     tile[i] = blockTile;
                     tileOffsetX[i] = (int)(nextRandom() * 4.0f);
                     tileOffsetY[i] = (int)(nextRandom() * 4.0f);
+                    writeTileUV(i, tile[i], tileOffsetX[i], tileOffsetY[i]);
                     deathDust[i] = false;
                     setParticleColor(i, 255);
                 }
@@ -127,6 +131,7 @@ final class ParticleSystem {
         for (int n = 0; n < 16; n++) {
             int i = cursor++;
             if (cursor == CAPACITY) cursor = 0;
+            activate(i);
             x[i] = px + (nextRandom() - 0.5f) * 0.42f;
             y[i] = py + 0.2f + nextRandom() * 0.9f;
             z[i] = pz + (nextRandom() - 0.5f) * 0.42f;
@@ -139,12 +144,32 @@ final class ParticleSystem {
             tile[i] = Block.sideTile(Block.DIRT);
             tileOffsetX[i] = (int)(nextRandom() * 12.0f);
             tileOffsetY[i] = (int)(nextRandom() * 12.0f);
+            writeTileUV(i, tile[i], tileOffsetX[i], tileOffsetY[i]);
             deathDust[i] = true;
             setParticleColor(i, 165, 132, 91, 230);
         }
     }
 
+    private void activate(int particle) {
+        if (!active[particle]) {
+            active[particle] = true;
+            activeCount++;
+        }
+    }
+
+    /** Texture coordinates are immutable for a particle's lifetime. */
+    private void writeTileUV(int particle, int blockTile, int offsetX, int offsetY) {
+        int tileX = (blockTile & 15) * 16 + offsetX;
+        int tileY = (blockTile >> 4) * 16 + offsetY;
+        int at = particle * 8;
+        texCoords[at] = (short)tileX; texCoords[at + 1] = (short)(tileY + 4);
+        texCoords[at + 2] = (short)(tileX + 4); texCoords[at + 3] = (short)(tileY + 4);
+        texCoords[at + 4] = (short)tileX; texCoords[at + 5] = (short)tileY;
+        texCoords[at + 6] = (short)(tileX + 4); texCoords[at + 7] = (short)tileY;
+    }
+
     void update(VoxelWorld world, float yawDegrees, float pitchDegrees) {
+        if (activeCount == 0) return;
         // Particle vertices are stored as signed 16-bit fixed-point values.
         // Keep them near the origin so they remain representable after the
         // player has flown far from the initial spawn in an infinite world.
@@ -160,6 +185,7 @@ final class ParticleSystem {
         float upY = (float)Math.cos(pitch);
         float upZ = -(float)(Math.cos(yaw) * Math.sin(pitch));
         for (int i = 0; i < CAPACITY; i++) {
+            if (!active[i]) continue;
             if (age[i] < lifetime[i]) {
                 age[i]++;
                 if (deathDust[i]) vy[i] += 0.001f;
@@ -188,13 +214,19 @@ final class ParticleSystem {
                     setParticleColor(i, alpha);
                 }
             } else {
+                active[i] = false;
+                activeCount--;
                 setParticleColor(i, 0);
+                continue;
             }
             writeQuad(i, rightX, rightZ, upX, upY, upZ,
                     originX, originY, originZ);
+            if (age[i] >= lifetime[i]) {
+                active[i] = false;
+                activeCount--;
+            }
         }
         positionArray.set(0, VERTICES, positions);
-        texCoordArray.set(0, VERTICES, texCoords);
         colorArray.set(0, VERTICES, colors);
     }
 
@@ -216,13 +248,7 @@ final class ParticleSystem {
         int v = particle * 12;
         putPosition(v, x0, y0, z0); putPosition(v + 3, x1, y1, z1);
         putPosition(v + 6, x2, y2, z2); putPosition(v + 9, x3, y3, z3);
-        int tileX = (tile[particle] & 15) * 16 + tileOffsetX[particle];
-        int tileY = (tile[particle] >> 4) * 16 + tileOffsetY[particle];
-        int t = particle * 8;
-        texCoords[t] = (short)tileX; texCoords[t + 1] = (short)(tileY + 4);
-        texCoords[t + 2] = (short)(tileX + 4); texCoords[t + 3] = (short)(tileY + 4);
-        texCoords[t + 4] = (short)tileX; texCoords[t + 5] = (short)tileY;
-        texCoords[t + 6] = (short)(tileX + 4); texCoords[t + 7] = (short)tileY;
+
     }
 
     private void putPosition(int at, float px, float py, float pz) {
