@@ -1387,16 +1387,19 @@ final class ChunkRenderer {
         }
 
         if (!pendingMeshReady) {
-            int prepareX = targetX;
-            int prepareZ = targetZ;
-            if (pendingPrepareStep == 1) prepareX++;
-            else if (pendingPrepareStep == 2) prepareX--;
-            else if (pendingPrepareStep == 3) prepareZ++;
-            else if (pendingPrepareStep == 4) prepareZ--;
-            world.prepareProceduralChunk(prepareX, prepareZ);
-            pendingPrepareStep++;
-            if (pendingPrepareStep > PREPARE_NEIGHBORS) pendingMeshReady = true;
-            return;
+            while (pendingPrepareStep <= PREPARE_NEIGHBORS) {
+                int prepareX = targetX;
+                int prepareZ = targetZ;
+                if (pendingPrepareStep == 1) prepareX++;
+                else if (pendingPrepareStep == 2) prepareX--;
+                else if (pendingPrepareStep == 3) prepareZ++;
+                else if (pendingPrepareStep == 4) prepareZ--;
+                pendingPrepareStep++;
+                // At most one cache miss (one full terrain generation) per sync.
+                // Already-cached or saved-area sectors are skipped immediately.
+                if (world.prepareProceduralChunk(prepareX, prepareZ)) return;
+            }
+            pendingMeshReady = true;
         }
 
         // Exactly one M3G sector is built per sync, independent of frame time.
