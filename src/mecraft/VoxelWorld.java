@@ -205,25 +205,41 @@ final class VoxelWorld {
         return (cx * 73428767 ^ cz * 912931) & (PROCEDURAL_CACHE_SIZE - 1);
     }
 
-    private synchronized byte proceduralBlock(int x, int y, int z) {
+    /**
+     * Procedural cache miss generation must never hold the world monitor.
+     * Chunk meshing runs on a worker, but gameplay also reads world.get(); the
+     * old synchronized method held this monitor for the entire terrain pass,
+     * making the foreground thread wait for seconds.
+     */
+    private byte proceduralBlock(int x, int y, int z) {
         int cx = floorChunk(x), cz = floorChunk(z);
-        prepareProceduralChunk(cx, cz);
         int cache = proceduralCacheSlot(cx, cz);
-        int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
-        return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
-    }
+        boolean dimension;
+        synchronized (this) {
+            if (proceduralChunkX[cache] == cx && proceduralChunkZ[cache] == cz) {
+                int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
+                return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
+            }
+            dimension = nether;
+        }
 
-    /** Prepare one procedural column-chunk, preferring the persistent RMS cache. */
-    synchronized boolean prepareProceduralChunk(int cx, int cz) {
-        int x = cx * CHUNK_XZ, z = cz * CHUNK_XZ;
-        if (inside(x, z) || outsideWorld(x, z)) return false;
-        int cache = proceduralCacheSlot(cx, cz);
-        if (proceduralChunkX[cache] == cx && proceduralChunkZ[cache] == cz) return false;
-        if (!loadPrefetchedChunk(cx, cz, proceduralChunks[cache]))
-            generateChunk(cx, cz, proceduralChunks[cache]);
-        proceduralChunkX[cache] = cx;
-        proceduralChunkZ[cache] = cz;
-        return true;
+        // Use private scratch arrays: the prefetch worker and foreground may
+        // generate different columns concurrently without corrupting each other.
+        byte[] generated = new byte[InfdevTerrain.CHUNK_VOLUME];
+        int[] heights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
+        byte[] biomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
+        generateChunk(cx, cz, generated, heights, biomes, dimension);
+
+        synchronized (this) {
+            // Another thread may have populated this cache slot while we worked.
+            if (proceduralChunkX[cache] != cx || proceduralChunkZ[cache] != cz) {
+                System.arraycopy(generated, 0, proceduralChunks[cache], 0, generated.length);
+                proceduralChunkX[cache] = cx;
+                proceduralChunkZ[cache] = cz;
+            }
+            int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
+            return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
+        }
     }
 
     /** Prepare at most one of the next two forward chunks per game tick. */
