@@ -165,7 +165,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private Image title;
     private Image skybox;
     private Image menuPanorama;
-    private int panoramaTick;
     private int panoramaWidth;
     private int panoramaHeight;
     private Image guiTexture;
@@ -294,7 +293,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             if (visible && state == PLAYING) updateGame();
             if (visible && state == FURNACE_INVENTORY) { updateFurnace(); repaint(); }
             if (visible && state == GAME_OVER && gameOverTicks < 12) gameOverTicks++;
-            if (visible && (state == MENU || state == TOUCH_SETUP)) panoramaTick++;
             if (visible && (state != PLAYING || renderFrame++ % (frameSkip + 1) == 0)) repaint();
             long elapsed = System.currentTimeMillis() - start;
             long wait = 50L - elapsed;
@@ -4008,8 +4006,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             drawDirtBackground(g);
             return;
         }
-        // Refresh the perspective cube view periodically instead of allocating
-        // a new frame on every repaint.
+        // Build once; subsequent menu repaints only blit the cached 2D image.
         if (menuPanorama == null || panoramaWidth != w || panoramaHeight != h) {
             try {
                 menuPanorama = buildMenuPanorama(h);
@@ -4043,23 +4040,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         // the "Panorama" header and credits footer; sample the six 257px faces.
         int faceSize = Math.min(sw / 3, (sh - 24) / 2);
         if (faceSize < 32) return null;
-        int[] src = new int[sw * sh];
-        skybox.getRGB(src, 0, sw, 0, 0, sw, sh);
+        // Read each atlas face directly into its destination. Avoids a second
+        // full-atlas pixel buffer, which matters on small Java ME heaps.
         int[] faces = new int[6 * faceSize * faceSize];
         int[] cellX = new int[] { 0, 258, 515, 0, 258, 515 };
         int[] cellY = new int[] { 12, 12, 12, 269, 269, 269 };
         for (int f = 0; f < 6; f++) {
-            for (int y = 0; y < faceSize; y++) {
-                int sy = cellY[f] + y;
-                if (sy >= sh) sy = sh - 1;
-                for (int x = 0; x < faceSize; x++) {
-                    int sx = cellX[f] + x;
-                    if (sx >= sw) sx = sw - 1;
-                    faces[f * faceSize * faceSize + y * faceSize + x] = src[sy * sw + sx];
-                }
-            }
+            skybox.getRGB(faces, f * faceSize * faceSize, faceSize,
+                    cellX[f], cellY[f], faceSize, faceSize);
         }
-        src = null;
 
         // Render at quarter resolution: MIDP has no hardware cube mapping, so
         // reducing ray samples is the main way to avoid stalling old devices.
