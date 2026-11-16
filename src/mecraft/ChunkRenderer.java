@@ -56,8 +56,10 @@ final class ChunkRenderer {
     // One geometry batch per atlas tile, matching the compact legacy renderer.
     private static final int FACE_TILE_COUNT = TILE_COUNT;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
-    // Half-diagonal of a 16x64x16 full-height chunk, rounded up for safe frustum tests.
-    private static final float CHUNK_RADIUS = 34.0f;
+    // Half extents of a full-height chunk. Frustum culling projects each axis
+    // separately so the tall Y dimension does not inflate horizontal visibility.
+    private static final float CHUNK_HALF_XZ = VoxelWorld.CHUNK_XZ * 0.5f;
+    private static final float CHUNK_HALF_Y = VoxelWorld.HEIGHT * 0.5f;
     private static final float NORMAL_FOV = 68.0f;
     private static final float SPRINT_FOV = 76.0f;
     private float cameraFov = NORMAL_FOV;
@@ -1564,6 +1566,11 @@ final class ChunkRenderer {
         int lastChunkX = centerX + shortestChunkRadius;
         int firstChunkZ = centerZ - shortestChunkRadius;
         int lastChunkZ = centerZ + shortestChunkRadius;
+        float depthRadius = Math.abs(forwardX) * CHUNK_HALF_XZ +
+                Math.abs(forwardY) * CHUNK_HALF_Y + Math.abs(forwardZ) * CHUNK_HALF_XZ;
+        float horizontalRadius = (Math.abs(rightX) + Math.abs(rightZ)) * CHUNK_HALF_XZ;
+        float verticalRadius = Math.abs(upX) * CHUNK_HALF_XZ +
+                Math.abs(upY) * CHUNK_HALF_Y + Math.abs(upZ) * CHUNK_HALF_XZ;
         // Old worlds have a hard 240x240 border (15x15 chunks). Clamp the
         // candidate rectangle before scanning or assigning cache slots: the
         // infinite-world path still streams freely, while finite worlds avoid
@@ -1628,18 +1635,18 @@ final class ChunkRenderer {
                         float depth = dx * forwardX + dy * forwardY + dz * forwardZ;
                         float horizontal = dx * rightX + dz * rightZ;
                         float vertical = dx * upX + dy * upY + dz * upZ;
-                        visible = insideCircle && depth + CHUNK_RADIUS >= 0.1f &&
-                            depth - CHUNK_RADIUS <= cameraFar &&
-                            Math.abs(horizontal) <= Math.max(0.0f, depth) * tanHorizontalFov + CHUNK_RADIUS &&
-                            Math.abs(vertical) <= Math.max(0.0f, depth) * tanVerticalFov + CHUNK_RADIUS;
+                        visible = insideCircle && depth + depthRadius >= 0.1f &&
+                            depth - depthRadius <= cameraFar &&
+                            Math.abs(horizontal) <= Math.max(0.0f, depth) * tanHorizontalFov + horizontalRadius &&
+                            Math.abs(vertical) <= Math.max(0.0f, depth) * tanVerticalFov + verticalRadius;
                     } else {
                         float depth = dx * forwardX + dy * forwardY + dz * forwardZ;
                         float horizontal = dx * rightX + dz * rightZ;
                         float vertical = dx * upX + dy * upY + dz * upZ;
-                        visible = depth + CHUNK_RADIUS >= 0.1f &&
-                            depth - CHUNK_RADIUS <= cameraFar &&
-                            Math.abs(horizontal) <= Math.max(0.0f, depth) * tanHorizontalFov + CHUNK_RADIUS &&
-                            Math.abs(vertical) <= Math.max(0.0f, depth) * tanVerticalFov + CHUNK_RADIUS;
+                        visible = depth + depthRadius >= 0.1f &&
+                            depth - depthRadius <= cameraFar &&
+                            Math.abs(horizontal) <= Math.max(0.0f, depth) * tanHorizontalFov + horizontalRadius &&
+                            Math.abs(vertical) <= Math.max(0.0f, depth) * tanVerticalFov + verticalRadius;
                     }
 
                     int desiredLod = lodForChunk(cx, cz, eyeX, eyeZ);
