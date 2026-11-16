@@ -52,11 +52,11 @@ final class MenuPanorama {
             camera.setPerspective(64.0f, (float)width / (float)height, 0.1f, 8.0f);
     }
 
-    void render(Graphics3D graphics, Graphics target, int tick) {
+    void render(Graphics3D graphics, Graphics target, int tick, int width, int height) {
         cube.setOrientation(tick * 0.04f, 0.0f, 1.0f, 0.0f);
         graphics.bindTarget(target);
         try {
-            graphics.setViewport(0, 0, target.getClipWidth(), target.getClipHeight());
+            graphics.setViewport(0, 0, width, height);
             graphics.render(world);
         } finally {
             graphics.releaseTarget();
