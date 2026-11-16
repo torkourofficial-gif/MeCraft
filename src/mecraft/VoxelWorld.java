@@ -347,6 +347,58 @@ final class VoxelWorld {
         return edit >= 0 ? editId[edit] : Block.AIR;
     }
 
+    /**
+     * Collect sparse light sources without probing every coordinate in the
+     * surrounding 3D box. Saved terrain is scanned directly; infinite-world
+     * edits are enumerated from their compact edit list.
+     */
+    int collectLightSources(int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+            int[] sourceX, int[] sourceY, int[] sourceZ, byte[] radii,
+            boolean[] lavaSources, int limit, int torchRadius, int lavaRadius) {
+        int count = 0;
+        int y0 = Math.max(0, minY);
+        int y1 = Math.min(HEIGHT, maxY);
+        int x0 = Math.max(0, minX);
+        int x1 = Math.min(WIDTH, maxX);
+        int z0 = Math.max(0, minZ);
+        int z1 = Math.min(DEPTH, maxZ);
+
+        // The finite saved array is contiguous and cheap to scan directly.
+        for (int y = y0; y < y1 && count < limit; y++) {
+            for (int z = z0; z < z1 && count < limit; z++) {
+                int row = index(x0, y, z);
+                for (int x = x0; x < x1 && count < limit; x++) {
+                    byte id = blocks[row + (x - x0)];
+                    if (id != Block.TORCH && id != Block.LAVA) continue;
+                    sourceX[count] = x;
+                    sourceY[count] = y;
+                    sourceZ[count] = z;
+                    lavaSources[count] = id == Block.LAVA;
+                    radii[count] = (byte)(id == Block.LAVA ? lavaRadius : torchRadius);
+                    count++;
+                }
+            }
+        }
+
+        // Beyond the saved array, player-placed sources are sparse edits.
+        for (int i = 0; i < editCount && count < limit; i++) {
+            if (editNether[i] != nether) continue;
+            int x = editX[i], y = editY[i], z = editZ[i];
+            if (inside(x, z) || outsideWorld(x, z) ||
+                    x < minX || x >= maxX || y < y0 || y >= y1 ||
+                    z < minZ || z >= maxZ) continue;
+            byte id = editId[i];
+            if (id != Block.TORCH && id != Block.LAVA) continue;
+            sourceX[count] = x;
+            sourceY[count] = y;
+            sourceZ[count] = z;
+            lavaSources[count] = id == Block.LAVA;
+            radii[count] = (byte)(id == Block.LAVA ? lavaRadius : torchRadius);
+            count++;
+        }
+        return count;
+    }
+
     boolean set(int x, int y, int z, byte id) {
         return setBlock(x, y, z, id, 0);
     }
