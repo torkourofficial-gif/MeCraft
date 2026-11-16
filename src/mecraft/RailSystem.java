@@ -23,6 +23,11 @@ final class RailSystem {
     private static final int WINDOW_RADIUS = 2;
     private static final int WINDOW_SIZE = WINDOW_RADIUS * 2 + 1;
     private final Mesh[] meshes = new Mesh[WINDOW_SIZE * WINDOW_SIZE * VoxelWorld.CHUNKS_Y];
+    // Reused Java-side staging arrays. Grow only to the largest rail chunk
+    // actually encountered; never reserve the theoretical maximum at startup.
+    private short[] railPositionScratch = new short[0];
+    private short[] railUvScratch = new short[0];
+    private int railScratchCapacity;
     private int builtRevision = Integer.MIN_VALUE;
     private int builtCenterX = Integer.MIN_VALUE, builtCenterZ = Integer.MIN_VALUE;
 
@@ -154,8 +159,13 @@ final class RailSystem {
                     if (world.getTorchCandidate(x, y, z) == Block.RAIL) count++;
         if (count == 0) return;
 
-        short[] positions = new short[count * 12];
-        short[] uv = new short[count * 8];
+        if (count > railScratchCapacity) {
+            railPositionScratch = new short[count * 12];
+            railUvScratch = new short[count * 8];
+            railScratchCapacity = count;
+        }
+        short[] positions = railPositionScratch;
+        short[] uv = railUvScratch;
         int rail = 0;
         for (int y = y0; y < y0 + VoxelWorld.CHUNK_Y; y++) {
             for (int z = z0; z < z0 + VoxelWorld.CHUNK_XZ; z++) {
