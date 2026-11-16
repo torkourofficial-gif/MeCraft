@@ -56,8 +56,8 @@ final class ChunkRenderer {
     // One geometry batch per atlas tile, matching the compact legacy renderer.
     private static final int FACE_TILE_COUNT = TILE_COUNT;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
-    // Half-diagonal of a 16x16x16 chunk, rounded up to avoid false culls.
-    private static final float CHUNK_RADIUS = 14.0f;
+    // Half-diagonal of a 16x64x16 full-height chunk, rounded up for safe frustum tests.
+    private static final float CHUNK_RADIUS = 34.0f;
     private static final float NORMAL_FOV = 68.0f;
     private static final float SPRINT_FOV = 76.0f;
     private float cameraFov = NORMAL_FOV;
@@ -1935,7 +1935,7 @@ final class ChunkRenderer {
      * vertical faces now share one 2D mask per chunk plane, allowing adjacent
      * rectangles to merge across layer boundaries when tile and light match.
      * Every mask key includes both values, so shading and atlas selection stay
-     * identical to the previous per-layer renderer.
+     * identical to the previous sectional renderer.
      */
     private void buildChunkFaces(VoxelWorld world, int cx, int cy, int cz, int lodLevel) {
         if (chunkNonAirBlocks == 0) return;
