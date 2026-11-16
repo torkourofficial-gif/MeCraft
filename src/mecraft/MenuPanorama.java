@@ -74,13 +74,13 @@ final class MenuPanorama {
         float verticalFov;
 
         if (aspect < 0.60f) {
-            verticalFov = 125.0f;
-        } else if (aspect < 0.80f) {
-            verticalFov = 115.0f;
-        } else if (aspect < 1.10f) {
             verticalFov = 100.0f;
+        } else if (aspect < 0.80f) {
+            verticalFov = 90.0f;
+        } else if (aspect < 1.10f) {
+            verticalFov = 85.0f;
         } else if (aspect < 1.60f) {
-            verticalFov = 80.0f;
+            verticalFov = 75.0f;
         } else {
             verticalFov = 65.0f;
         }
