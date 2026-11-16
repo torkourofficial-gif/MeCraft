@@ -771,6 +771,7 @@ final class VoxelWorld {
     }
 
     private void generateChunk(int cx, int cz, byte[] target) {
+        InfdevTerrain.prepareNoise(seed, noiseVersion);
         setGenerationDiagnosticStage("VoxelWorld.generateChunk: validando dimensión; chunk cx=" + cx + ", cz=" + cz);
         if (!nether && worldType == TYPE_FLAT) {
             for (int z = 0; z < CHUNK_XZ; z++) for (int x = 0; x < CHUNK_XZ; x++) {
