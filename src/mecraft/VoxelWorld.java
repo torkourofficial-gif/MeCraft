@@ -242,9 +242,11 @@ final class VoxelWorld {
             storeName = saveStoreName;
         }
 
-        byte[] generated = new byte[InfdevTerrain.CHUNK_VOLUME];
-        int[] heights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
-        byte[] biomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
+        // Reuse the world's private worker buffers: one worker serializes all
+        // terrain requests, so these arrays never race with gameplay reads.
+        byte[] generated = prefetchChunk;
+        int[] heights = prefetchHeights;
+        byte[] biomes = prefetchBiomes;
         boolean loaded = loadPrefetchedChunk(cx, cz, generated, dimension, storeName);
         if (!loaded) {
             generateChunk(cx, cz, generated, heights, biomes, dimension);
