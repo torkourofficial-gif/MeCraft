@@ -4038,7 +4038,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
         // This asset is a screenshot/export of a 3x2 cubemap atlas. Exclude
         // the "Panorama" header and credits footer; sample the six 257px faces.
-        int faceSize = Math.min(sw / 3, (sh - 24) / 2);
+        int faceSize = Math.min(Math.min(sw / 3, (sh - 24) / 2), Math.min(sw - 515, sh - 269));
         if (faceSize < 32) return null;
         // Read each atlas face directly into its destination. Avoids a second
         // full-atlas pixel buffer, which matters on small Java ME heaps.
