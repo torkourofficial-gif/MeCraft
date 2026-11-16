@@ -98,6 +98,12 @@ final class ChunkRenderer {
     private int torchScanZ = Integer.MIN_VALUE;
     private int torchScanRevision = Integer.MIN_VALUE;
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
+    // Geometry is prepared by a low-priority worker; M3G objects are created
+    // incrementally by sync() on the rendering thread.
+    private volatile ChunkBuildResult completedChunkBuild;
+    private volatile boolean chunkBuildRunning;
+    private Thread chunkBuildThread;
+    private ChunkBuildResult pendingChunkMeshes;
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
     private final int[] chunkWorldX = new int[CACHE_SIZE];
@@ -1232,10 +1238,7 @@ final class ChunkRenderer {
         return result < 0 ? result + divisor : result;
     }
 
-    private void replaceChunk(VoxelWorld world, int i, int cx, int cy, int cz) {
-        // Build the replacement before removing the old mesh. If meshing fails,
-        // the previous terrain remains visible instead of leaving a hole.
-        Chunk replacement = buildChunk(world, cx, cy, cz);
+    private void installChunk(int i, int cx, int cy, int cz, Chunk replacement) {
         Chunk previous = chunks[i];
         if (previous != null) {
             for (int m = 0; m < previous.meshes.length; m++) terrain.removeChild(previous.meshes[m]);
@@ -1379,24 +1382,115 @@ final class ChunkRenderer {
             }
         }
 
-        // Build the nearest missing sector immediately. The historical
-        // streamer generated procedural neighbors on demand while meshing;
-        // this avoids spending several complete frames prefetching every side.
-        if (best >= 0) {
-            int targetX = chunkWorldX[best];
-            int targetY = chunkWorldY[best];
-            int targetZ = chunkWorldZ[best];
-            replaceChunk(world, best, targetX, targetY, targetZ);
+        // Poll completed geometry and advance only one M3G mesh per frame.
+        pollChunkBuild(world);
+        if (pendingChunkMeshes != null) {
+            if (pendingChunkMeshes.world != world || pendingChunkMeshes.revision != world.revision) {
+                dirtyChunks[pendingChunkMeshes.slot] = true;
+                pendingChunkMeshes = null;
+            } else if (finishChunkMeshStep(pendingChunkMeshes.chunk)) {
+                ChunkBuildResult ready = pendingChunkMeshes;
+                pendingChunkMeshes = null;
+                installChunk(ready.slot, ready.cx, ready.cy, ready.cz, ready.chunk);
+            }
+        }
+        // Never build terrain synchronously here. The worker prepares plain
+        // geometry arrays while gameplay/rendering continues normally.
+        if (!chunkBuildRunning && completedChunkBuild == null && pendingChunkMeshes == null && best >= 0) {
+            requestChunkBuild(world, best, chunkWorldX[best], chunkWorldY[best], chunkWorldZ[best]);
         }
     }
+
+    private void requestChunkBuild(final VoxelWorld world, final int slot,
+                                   final int cx, final int cy, final int cz) {
+        chunkBuildRunning = true;
+        final int revision = world.revision;
+        chunkBuildThread = new Thread(new Runnable() {
+            public void run() {
+                Chunk data = null;
+                Throwable failure = null;
+                try { data = buildChunk(world, cx, cy, cz); }
+                catch (Throwable problem) { failure = problem; }
+                completedChunkBuild = new ChunkBuildResult(world, revision, slot, cx, cy, cz, data, failure);
+                chunkBuildRunning = false;
+            }
+        });
+        try { chunkBuildThread.setPriority(Thread.MIN_PRIORITY); } catch (Throwable ignored) { }
+        chunkBuildThread.start();
+    }
+
+    private void pollChunkBuild(VoxelWorld world) {
+        ChunkBuildResult result = completedChunkBuild;
+        if (result == null) return;
+        completedChunkBuild = null;
+        if (result.failure != null || result.world != world || result.revision != world.revision ||
+                result.slot < 0 || result.slot >= CACHE_SIZE ||
+                chunkWorldX[result.slot] != result.cx || chunkWorldY[result.slot] != result.cy ||
+                chunkWorldZ[result.slot] != result.cz) {
+            if (result.slot >= 0 && result.slot < CACHE_SIZE) dirtyChunks[result.slot] = true;
+            return;
+        }
+        result.chunk = result.chunk == null ? new Chunk() : result.chunk;
+        result.chunk.worldX = result.cx * VoxelWorld.CHUNK_XZ;
+        result.chunk.worldY = result.cy * VoxelWorld.CHUNK_Y;
+        result.chunk.worldZ = result.cz * VoxelWorld.CHUNK_XZ;
+        pendingChunkMeshes = result;
+    }
+
+    /** Creates at most one M3G mesh per call, keeping frame time bounded. */
+    private boolean finishChunkMeshStep(Chunk chunk) {
+        if (chunk.meshes == null) {
+            int count = 0;
+            for (int i = 0; i < chunk.faceBuilders.length; i++) if (chunk.faceBuilders[i] != null) count++;
+            if (chunk.flowers != null && chunk.flowers.vertexCount > 0) count++;
+            if (chunk.fires != null && chunk.fires.vertexCount > 0) count++;
+            if (chunk.portals != null && chunk.portals.vertexCount > 0) count++;
+            chunk.meshes = new Mesh[count];
+        }
+        while (chunk.meshBuildCursor < TILE_COUNT) {
+            int i = chunk.meshBuildCursor++;
+            FaceBuilder builder = chunk.faceBuilders[i];
+            if (builder == null) continue;
+            int tile = i;
+            float scale = tile == Block.sideTile(Block.GRASS) ? 0.999f / 16.0f : 1.0f / 16.0f;
+            chunk.meshes[chunk.meshBuildCount++] = makeMesh(builder, tileAppearance(tile), scale);
+            chunk.faceBuilders[i] = null;
+            if (freeFaceBuilderCount < freeFaceBuilders.length && builder.p.length <= 1536) {
+                builder.reset(0);
+                freeFaceBuilders[freeFaceBuilderCount++] = builder;
+            }
+            return false;
+        }
+        if (chunk.flowers != null) {
+            chunk.meshes[chunk.meshBuildCount++] = makeFlowerMesh(chunk.flowers, flowerAppearance);
+            chunk.flowers = null;
+            return false;
+        }
+        if (chunk.fires != null) {
+            chunk.fires.setFrame(fireAnimationFrame);
+            chunk.meshes[chunk.meshBuildCount++] = makeFireMesh(chunk.fires, worldFireAppearance);
+            chunk.fires = null;
+            return false;
+        }
+        if (chunk.portals != null) {
+            chunk.meshes[chunk.meshBuildCount++] = makePortalMesh(chunk.portals);
+            chunk.portals = null;
+            return false;
+        }
+        for (int i = 0; i < chunk.meshBuildCount; i++)
+            chunk.meshes[i].setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
+        return true;
+    }
+
+    private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {    }
 
     private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {
         FaceBuilder[] builders = chunkFaceBuilders;
         FlowerBuilder flowers = null;
         FireBuilder fires = null;
         PortalBuilder portals = null;
-        reusableFlowerBuilder.reset();
-        reusablePortalBuilder.reset();
+        FlowerBuilder reusableFlowers = null;
+        PortalBuilder reusablePortals = null;
         int x0 = cx * VoxelWorld.CHUNK_XZ;
         int y0 = cy * VoxelWorld.CHUNK_Y;
         int z0 = cz * VoxelWorld.CHUNK_XZ;
@@ -1420,14 +1514,14 @@ final class ChunkRenderer {
                     chunkVoxelScratch[localIndex] = id;
                     chunkLightScratch[localIndex] = (byte)(id == Block.LAVA ? 14 : torchLightAt(x, y, z));
                     if (id == Block.PORTAL) {
-                        if (portals == null) portals = reusablePortalBuilder;
+                        if (portals == null) portals = new PortalBuilder();
                         portals.add(x - x0, y - y0, z - z0,
                                 world.portalAxisAt(x, y, z), portalFrameSize);
                     } else if (id == Block.FIRE) {
                         if (fires == null) fires = new FireBuilder();
                         fires.add(x - x0, y - y0, z - z0);
                     } else if (Block.isFlower(id)) {
-                        if (flowers == null) flowers = reusableFlowerBuilder;
+                        if (flowers == null) flowers = new FlowerBuilder();
                         flowers.add(x - x0, y - y0, z - z0, Block.sideTile(id));
                     } else if (Block.isDoor(id)) {
                         if (flowers == null) flowers = new FlowerBuilder();
@@ -1554,35 +1648,15 @@ final class ChunkRenderer {
         int fireCount = fires == null ? 0 : 1;
         int portalCount = portals == null ? 0 : 1;
         if (count + flowerCount + fireCount + portalCount == 0) return null;
-        Mesh[] meshes = new Mesh[count + flowerCount + fireCount + portalCount];
-        int at = 0;
-        for (int i = 0; i < builders.length; i++) {
-            if (builders[i] == null) continue;
-            int tile = i % TILE_COUNT;
-            float textureScale = tile == Block.sideTile(Block.GRASS) ? 0.999f / 16.0f : 1.0f / 16.0f;
-            FaceBuilder builder = builders[i];
-            meshes[at++] = makeMesh(builder, tileAppearance(tile), textureScale);
-            builders[i] = null;
-            // Retain at most 128 reusable builders. Oversized/extra builders
-            // naturally become collectible instead of growing the pool forever.
-            if (freeFaceBuilderCount < freeFaceBuilders.length &&
-                    builder.p.length <= 1536) {
-                builder.reset(0);
-                freeFaceBuilders[freeFaceBuilderCount] = builder;
-                freeFaceBuilderCount++;
-            }
-        }
-        if (flowers != null) meshes[at++] = makeFlowerMesh(flowers, flowerAppearance);
-        if (fires != null) {
-            fires.setFrame(fireAnimationFrame);
-            meshes[at++] = makeFireMesh(fires, worldFireAppearance);
-        }
-        if (portals != null) meshes[at++] = makePortalMesh(portals);
         Chunk chunk = new Chunk();
-        chunk.meshes = meshes;
+        chunk.faceBuilders = new FaceBuilder[TILE_COUNT];
+        for (int i = 0; i < builders.length; i++) {
+            chunk.faceBuilders[i] = builders[i];
+            builders[i] = null;
+        }
+        chunk.flowers = flowers;
         chunk.fires = fires;
-        int wx = x0, wy = y0, wz = z0;
-        for (int i = 0; i < meshes.length; i++) meshes[i].setTranslation(wx, wy, wz);
+        chunk.portals = portals;
         return chunk;
     }
 
@@ -1880,7 +1954,25 @@ final class ChunkRenderer {
         }
     }
 
-    private static final class Chunk { Mesh[] meshes; FireBuilder fires; }
+    private static final class Chunk {
+        Mesh[] meshes;
+        FaceBuilder[] faceBuilders;
+        FlowerBuilder flowers;
+        FireBuilder fires;
+        PortalBuilder portals;
+        int meshBuildCursor, meshBuildCount;
+        int worldX, worldY, worldZ;
+    }
+
+    private static final class ChunkBuildResult {
+        final VoxelWorld world;
+        final int revision, slot, cx, cy, cz;
+        Chunk chunk;
+        final Throwable failure;
+        ChunkBuildResult(VoxelWorld w, int r, int s, int x, int y, int z, Chunk c, Throwable f) {
+            world=w; revision=r; slot=s; cx=x; cy=y; cz=z; chunk=c; failure=f;
+        }
+    }
 
     /** One full-cell portal plane, sharing the eight-frame portal material. */
     private static final class PortalBuilder {
