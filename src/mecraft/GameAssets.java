@@ -7,6 +7,9 @@ import javax.microedition.lcdui.Image;
 /** Loads resources from either NetBeans' /mecraft package or a flat JAR root. */
 final class GameAssets {
     private static Image terrain;
+    private static final Image[] playerSkins = new Image[5];
+    private static final boolean[] playerSkinFallback = new boolean[5];
+    private static Image defaultPlayerSkin;
 
     private GameAssets() { }
 
@@ -26,6 +29,31 @@ final class GameAssets {
                 throw new IOException("Recurso no encontrado: " + packaged + " ni /" + fileName);
             }
         }
+    }
+
+    /**
+     * Loads each player skin at most once. Missing numbered skins share the
+     * single decoded default image instead of decoding char.png repeatedly.
+     */
+    static synchronized Image playerSkin(int index) throws IOException {
+        if (index < 0 || index >= playerSkins.length) index = 0;
+        if (playerSkins[index] == null) {
+            try {
+                playerSkins[index] = image("skin" + (index + 1) + ".png");
+            } catch (IOException missingSkin) {
+                if (defaultPlayerSkin == null) defaultPlayerSkin = image("char.png");
+                playerSkins[index] = defaultPlayerSkin;
+                playerSkinFallback[index] = true;
+            }
+        }
+        return playerSkins[index];
+    }
+
+    static synchronized boolean playerSkinFallback(int index) {
+        if (index < 0 || index >= playerSkins.length) index = 0;
+        try { playerSkin(index); }
+        catch (IOException missingDefault) { return true; }
+        return playerSkinFallback[index];
     }
 
     static InputStream stream(String fileName) throws IOException {
