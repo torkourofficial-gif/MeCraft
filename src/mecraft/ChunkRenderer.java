@@ -1522,33 +1522,36 @@ final class ChunkRenderer {
         int z1 = z0 + VoxelWorld.CHUNK_XZ;
 
         collectChunkTorches(world, x0, y0, z0, x1, y1, z1);
+        prepareChunkLightMap(x0, y0, z0, x1, y1, z1);
 
-        // Crossed flowers do not form cube faces, so collect them separately.
-        // Empty vertical sections are common above the terrain: detect them during
-        // the voxel copy and avoid allocating face builders/M3G meshes for them.
+        // Copy voxels once into a compact linear buffer. Special geometry is
+        // collected in the same pass, avoiding repeated coordinate arithmetic.
         int nonAirBlocks = 0;
+        int localIndex = 0;
         for (int y = y0; y < y1; y++) {
+            int localY = y - y0;
             for (int z = z0; z < z1; z++) {
-                for (int x = x0; x < x1; x++) {
+                int localZ = z - z0;
+                int localX = 0;
+                for (int x = x0; x < x1; x++, localIndex++, localX++) {
                     byte id = world.get(x, y, z);
-                    if (id != Block.AIR) nonAirBlocks++;
-                    int localIndex = (((y - y0) * VoxelWorld.CHUNK_XZ) + (z - z0)) *
-                            VoxelWorld.CHUNK_XZ + (x - x0);
                     chunkVoxelScratch[localIndex] = id;
-                    chunkLightScratch[localIndex] = (byte)(id == Block.LAVA ? 14 : torchLightAt(x, y, z));
+                    chunkLightScratch[localIndex] = (byte)(id == Block.LAVA ? 14 : torchLightAt(localIndex));
+                    if (id == Block.AIR) continue;
+                    nonAirBlocks++;
                     if (id == Block.PORTAL) {
                         if (portals == null) portals = new PortalBuilder();
-                        portals.add(x - x0, y - y0, z - z0,
+                        portals.add(localX, localY, localZ,
                                 world.portalAxisAt(x, y, z), portalFrameSize);
                     } else if (id == Block.FIRE) {
                         if (fires == null) fires = new FireBuilder();
-                        fires.add(x - x0, y - y0, z - z0);
+                        fires.add(localX, localY, localZ);
                     } else if (Block.isFlower(id)) {
                         if (flowers == null) flowers = new FlowerBuilder();
-                        flowers.add(x - x0, y - y0, z - z0, Block.sideTile(id));
+                        flowers.add(localX, localY, localZ, Block.sideTile(id));
                     } else if (Block.isDoor(id)) {
                         if (flowers == null) flowers = new FlowerBuilder();
-                        flowers.addDoor(x - x0, y - y0, z - z0, id,
+                        flowers.addDoor(localX, localY, localZ, id,
                                 world.doorMetadata(x, y, z));
                     }
                 }
@@ -1864,22 +1867,52 @@ final class ChunkRenderer {
                 chunkLavaSource, MAX_CHUNK_TORCHES, TORCH_LIGHT_RADIUS, LAVA_LIGHT_RADIUS);
     }
 
-    /** Block-quantized torch falloff: each Manhattan step loses one brightness level. */
-    private int torchLightAt(int x, int y, int z) {
-        // Most chunks have no torches nearby. Avoid entering the per-block
-        // torch loop entirely in that common case.
-        if (chunkTorchCount == 0) return 0;
-        int best = 0;
-        for (int i = 0; i < chunkTorchCount; i++) {
-            int distance = Math.abs(x - chunkTorchX[i]) +
-                    Math.abs(y - chunkTorchY[i]) + Math.abs(z - chunkTorchZ[i]);
-            int radius = chunkLightRadius[i] & 255;
-            int level = (radius + 1 - distance) * (chunkLavaSource[i] ? 2 : 3);
-            if (level > 14) level = 14;
-            if (level > best) best = level;
-            if (best >= 14) return 14;
+    /**
+     * Rasterize each sparse light source into the chunk buffer once. This
+     * changes lighting lookup from "all sources per voxel" to one byte read.
+     */
+    private void prepareChunkLightMap(int x0, int y0, int z0,
+                                      int x1, int y1, int z1) {
+        int volume = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ;
+        for (int i = 0; i < volume; i++) chunkLightScratch[i] = 0;
+        for (int source = 0; source < chunkTorchCount; source++) {
+            int sx = chunkTorchX[source];
+            int sy = chunkTorchY[source];
+            int sz = chunkTorchZ[source];
+            int radius = chunkLightRadius[source] & 255;
+            int minX = sx - radius, maxX = sx + radius;
+            int minY = sy - radius, maxY = sy + radius;
+            int minZ = sz - radius, maxZ = sz + radius;
+            if (minX < x0) minX = x0;
+            if (maxX >= x1) maxX = x1 - 1;
+            if (minY < y0) minY = y0;
+            if (maxY >= y1) maxY = y1 - 1;
+            if (minZ < z0) minZ = z0;
+            if (maxZ >= z1) maxZ = z1 - 1;
+            int multiplier = chunkLavaSource[source] ? 2 : 3;
+            for (int y = minY; y <= maxY; y++) {
+                int dy = Math.abs(y - sy);
+                int yBase = (y - y0) * CHUNK_AREA;
+                for (int z = minZ; z <= maxZ; z++) {
+                    int dz = dy + Math.abs(z - sz);
+                    int row = yBase + (z - z0) * VoxelWorld.CHUNK_XZ;
+                    for (int x = minX; x <= maxX; x++) {
+                        int distance = dz + Math.abs(x - sx);
+                        if (distance > radius) continue;
+                        int level = (radius + 1 - distance) * multiplier;
+                        if (level > 14) level = 14;
+                        int index = row + x - x0;
+                        if ((chunkLightScratch[index] & 255) < level)
+                            chunkLightScratch[index] = (byte)level;
+                    }
+                }
+            }
         }
-        return best;
+    }
+
+    /** O(1) block-quantized light lookup from the precomputed chunk map. */
+    private int torchLightAt(int localIndex) {
+        return chunkLightScratch[localIndex] & 255;
     }
 
     private int renderWorldTile(VoxelWorld world, byte id, int face,
