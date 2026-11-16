@@ -127,6 +127,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private int newWorldType;
     private int newWorldDifficulty = VoxelWorld.DIFFICULTY_NORMAL;
     private String newWorldName = "Mundo 1";
+    private String newWorldSeed = "";
+    private boolean editingWorldSeed;
     private TextBox worldNameInput;
     private Command acceptWorldName;
     private Command cancelWorldName;
@@ -622,6 +624,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         System.gc();
         if (gameOverSelection == 0) {
             newWorldName = defaultWorldName(savedWorlds.length + 1);
+            newWorldSeed = "";
             newWorldMode = mode;
             createSelection = 0;
             state = WORLD_CREATE;
@@ -634,7 +637,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         repaint();
     }
 
-    private void startNewWorld(int mode, int size, int type, int difficulty, String name) {
+    private void startNewWorld(int mode, int size, int type, int difficulty, String name, int seed) {
         if (state == LOADING) return;
         state = LOADING;
         loadingMessage = Language.text("Preparando mundo...");
@@ -646,13 +649,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         final int requestedType = type;
         final int requestedDifficulty = difficulty;
         final String requestedName = name;
+        final int requestedSeed = seed;
         Thread loader = new Thread(new Runnable() {
-            public void run() { createNewWorldNow(requestedMode, requestedSize, requestedType, requestedDifficulty, requestedName); }
+            public void run() { createNewWorldNow(requestedMode, requestedSize, requestedType, requestedDifficulty, requestedName, requestedSeed); }
         });
         loader.start();
     }
 
-    private void createNewWorldNow(int mode, int size, int type, int difficulty, String name) {
+    private void createNewWorldNow(int mode, int size, int type, int difficulty, String name, int seed) {
         String stage = "preparando mundo";
         try {
             title = null;
@@ -663,7 +667,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             }
             stage = "generando el terreno";
             loadingMessage = Language.text("Generando terreno...");
-            world = new VoxelWorld((int)(System.currentTimeMillis() ^ System.currentTimeMillis() >>> 32), mode, size, type);
+            world = new VoxelWorld(seed, mode, size, type);
             world.difficulty = difficulty < VoxelWorld.DIFFICULTY_PEACEFUL || difficulty > VoxelWorld.DIFFICULTY_HARD ? VoxelWorld.DIFFICULTY_NORMAL : difficulty;
             stage = "inicializando inventario y posición";
             world.worldName = name == null || name.trim().length() == 0 ? "Mundo" : name.trim();
@@ -2174,7 +2178,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 if (createSelection > 0) createSelection--;
                 repaint();
             } else if (keyCode == KEY_NUM8 || action == DOWN) {
-                if (createSelection < 6) createSelection++;
+                if (createSelection < 7) createSelection++;
                 repaint();
             } else if (keyCode == KEY_NUM4 || action == LEFT) changeCreateOption(-1);
             else if (keyCode == KEY_NUM6 || action == RIGHT) changeCreateOption(1);
@@ -2671,6 +2675,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             openSavedWorld(savedWorlds[worldSelection]);
         } else if (worldSelection == savedWorlds.length) {
             newWorldName = defaultWorldName(savedWorlds.length + 1);
+            newWorldSeed = "";
             newWorldMode = 0;
             newWorldSize = VoxelWorld.SIZE_INFINITE;
             newWorldType = VoxelWorld.TYPE_STANDARD;
@@ -2685,20 +2690,24 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void activateCreateSelection() {
         if (createSelection == 0) {
+            editingWorldSeed = false;
+            openNativeWorldNameInput();
+        } else if (createSelection == 5) {
+            editingWorldSeed = true;
             openNativeWorldNameInput();
         } else if (createSelection >= 1 && createSelection <= 4) {
             changeCreateOption(1);
-        } else if (createSelection == 5) {
+        } else if (createSelection == 6) {
             String name = newWorldName == null ? "" : newWorldName.trim();
             if (name.length() == 0) name = defaultWorldName(savedWorlds.length + 1);
-            startNewWorld(newWorldMode, newWorldSize, newWorldType, newWorldDifficulty, name);
+            startNewWorld(newWorldMode, newWorldSize, newWorldType, newWorldDifficulty, name, parseWorldSeed(newWorldSeed));
         } else {
             state = WORLD_SELECT;
             repaint();
         }
     }
 
-    private void changeCreateOption(int delta) {
+    private int parseWorldSeed(String value) {\n        if (value == null || value.trim().length() == 0)\n            return (int)(System.currentTimeMillis() ^ (System.currentTimeMillis() >>> 32));\n        String seedText = value.trim();\n        try { return Integer.parseInt(seedText); }\n        catch (NumberFormatException notNumeric) { return seedText.hashCode(); }\n    }\n\n    private void changeCreateOption(int delta) {
         if (createSelection == 1) newWorldMode = 1 - newWorldMode;
         else if (createSelection == 2) newWorldSize = 1 - newWorldSize;
         else if (createSelection == 3) newWorldType = newWorldType == VoxelWorld.TYPE_FLAT ?
@@ -2710,9 +2719,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     /** Opens MIDP's native text editor so hardware QWERTY keyboards work. */
     private void openNativeWorldNameInput() {
         try {
-            String initialName = newWorldName == null ? "" : newWorldName;
-            if (initialName.length() > 24) initialName = initialName.substring(0, 24);
-            worldNameInput = new TextBox(Language.text("Nombre del mundo"), initialName, 24, TextField.ANY);
+            String initialName = editingWorldSeed ? (newWorldSeed == null ? "" : newWorldSeed) :
+                    (newWorldName == null ? "" : newWorldName);
+            if (initialName.length() > 32) initialName = initialName.substring(0, 32);
+            worldNameInput = new TextBox(Language.text(editingWorldSeed ? "Semilla del mundo" : "Nombre del mundo"),
+                    initialName, 32, TextField.ANY);
             acceptWorldName = new Command(Language.text("Aceptar"), Command.OK, 1);
             cancelWorldName = new Command(Language.text("Cancelar"), Command.CANCEL, 2);
             worldNameInput.addCommand(acceptWorldName);
@@ -2746,7 +2757,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (displayable != worldNameInput || state != WORLD_NAME) return;
         if (command == acceptWorldName) {
             String value = worldNameInput.getString().trim();
-            newWorldName = value.length() == 0 ? defaultWorldName(savedWorlds.length + 1) : value;
+            if (editingWorldSeed) newWorldSeed = value;
+            else newWorldName = value.length() == 0 ? defaultWorldName(savedWorlds.length + 1) : value;
         } else if (command != cancelWorldName) return;
         worldNameInput = null;
         acceptWorldName = null;
@@ -3428,7 +3440,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             } else if (y >= h - 36) backToMainMenu();
         } else if (state == WORLD_CREATE) {
             int row = (y - 70 + 17) / 34;
-            if (row >= 0 && row <= 6) { createSelection = row; activateCreateSelection(); }
+            if (row >= 0 && row <= 7) { createSelection = row; activateCreateSelection(); }
         } else if (state == PAUSED) {
             int row = (y - (h / 2 - 75 + 40) + 13) / 27;
             if (row >= 0 && row < 3) { pauseSelection = row; activateSelection(); }
@@ -4051,18 +4063,20 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private void drawWorldCreate(Graphics g) {
         int w = getWidth();
         drawDirtBackground(g);
-        drawInsetPanel(g, 8, 34, w - 16, 258);
+        drawInsetPanel(g, 8, 20, w - 16, 282);
         g.setColor(255, 255, 255);
-        g.drawString(Language.text("Crear mundo"), w / 2, 40, Graphics.TOP | Graphics.HCENTER);
-        drawMenuItem(g, "Nombre: " + trimText(newWorldName, 17), 70, createSelection == 0);
-        drawMenuItem(g, "Modo: " + (newWorldMode == 0 ? "Supervivencia" : "Creativo"), 104, createSelection == 1);
-        drawMenuItem(g, "Tamaño: " + (newWorldSize == VoxelWorld.SIZE_OLD ? "Old 240x240" : "Infinite"), 138, createSelection == 2);
-        String worldTypeName = newWorldType == VoxelWorld.TYPE_FLAT ? "Plano" : "Standard";
-        drawMenuItem(g, "Tipo: " + worldTypeName, 172, createSelection == 3);
+        g.drawString(Language.text("Crear mundo"), w / 2, 25, Graphics.TOP | Graphics.HCENTER);
+        drawMenuItem(g, "Nombre: " + trimText(newWorldName, 17), 55, createSelection == 0);
+        drawMenuItem(g, "Modo: " + (newWorldMode == 0 ? "Supervivencia" : "Creativo"), 84, createSelection == 1);
+        drawMenuItem(g, "Tamaño: " + (newWorldSize == VoxelWorld.SIZE_OLD ? "Old 240x240" : "Infinite"), 113, createSelection == 2);
+        String worldTypeName = newWorldType == VoxelWorld.TYPE_FLAT ? "Plano" :
+                (newWorldType == VoxelWorld.TYPE_ECONOMIC ? "Economic" : "Standard");
+        drawMenuItem(g, "Tipo: " + worldTypeName, 142, createSelection == 3);
         String[] difficultyNames = new String[] { "Pacifico", "Facil", "Normal", "Dificil" };
-        drawMenuItem(g, "Dificultad: " + difficultyNames[clamp(newWorldDifficulty, 0, 3)], 206, createSelection == 4);
-        drawMenuItem(g, "Crear mundo", 240, createSelection == 5);
-        drawMenuItem(g, "Volver", 274, createSelection == 6);
+        drawMenuItem(g, "Dificultad: " + difficultyNames[clamp(newWorldDifficulty, 0, 3)], 171, createSelection == 4);
+        drawMenuItem(g, "Semilla: " + trimText(newWorldSeed.length() == 0 ? "Aleatoria" : newWorldSeed, 17), 200, createSelection == 5);
+        drawMenuItem(g, "Crear mundo", 229, createSelection == 6);
+        drawMenuItem(g, "Volver", 258, createSelection == 7);
     }
 
     private String trimText(String text, int maxChars) {
