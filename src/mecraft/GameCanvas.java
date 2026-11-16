@@ -3881,6 +3881,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 ByteArrayOutputStream bytes = new ByteArrayOutputStream(24);
                 DataOutputStream out = new DataOutputStream(bytes);
                 out.writeByte(LanProtocol.PLAYER_STATE);
+                out.writeByte(lanLocalPlayerId);
                 out.writeFloat(world.playerX);
                 out.writeFloat(world.playerY);
                 out.writeFloat(world.playerZ);
@@ -3933,18 +3934,20 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             try {
                 DataInputStream in = new DataInputStream(new ByteArrayInputStream(packet));
                 int opcode = in.readUnsignedByte();
-                if (opcode == LanProtocol.PLAYER_STATE && packet.length == 22 &&
-                        playerId >= 0 && playerId < LanProtocol.MAX_PLAYERS &&
-                        playerId != lanLocalPlayerId) {
-                    lanRemoteX[playerId] = in.readFloat();
-                    lanRemoteY[playerId] = in.readFloat();
-                    lanRemoteZ[playerId] = in.readFloat();
-                    lanRemoteYaw[playerId] = in.readFloat();
-                    lanRemotePitch[playerId] = in.readFloat();
-                    lanRemoteHealth[playerId] = in.readUnsignedByte();
-                    lanRemotePresent[playerId] = true;
-                    if (lanLocalPlayerId == 0 && lanTransport != null)
-                        lanTransport.broadcast(packet);
+                if (opcode == LanProtocol.PLAYER_STATE && packet.length == 23) {
+                    int statePlayerId = in.readUnsignedByte();
+                    if (statePlayerId >= 0 && statePlayerId < LanProtocol.MAX_PLAYERS &&
+                            statePlayerId != lanLocalPlayerId) {
+                        lanRemoteX[statePlayerId] = in.readFloat();
+                        lanRemoteY[statePlayerId] = in.readFloat();
+                        lanRemoteZ[statePlayerId] = in.readFloat();
+                        lanRemoteYaw[statePlayerId] = in.readFloat();
+                        lanRemotePitch[statePlayerId] = in.readFloat();
+                        lanRemoteHealth[statePlayerId] = in.readUnsignedByte();
+                        lanRemotePresent[statePlayerId] = true;
+                        if (lanLocalPlayerId == 0 && lanTransport != null)
+                            lanTransport.broadcast(packet);
+                    }
                 } else if (opcode == LanProtocol.BLOCK_CHANGE && packet.length == 12) {
                     if (lanLocalPlayerId == 0 || playerId == 0) {
                         int x = in.readInt(), y = in.readUnsignedShort(), z = in.readInt();
