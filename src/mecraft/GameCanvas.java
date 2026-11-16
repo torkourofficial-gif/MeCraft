@@ -3995,7 +3995,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                                 id >= Block.AIR && id < Block.COUNT)
                             world.setNetworkBlock(x, y, z, id, metadata);
                     }
-                    orldRevision = world.revision;
+                    lanLastWorldRevision = world.revision;
                     lanApplyingPacket = false;
                     if (lanLocalPlayerId == 0 && lanTransport != null)
                         lanTransport.broadcast(packet);
