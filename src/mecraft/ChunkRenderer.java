@@ -1291,7 +1291,6 @@ final class ChunkRenderer {
             // Build a 2x2 square from the player's chunk, the chunk ahead,
             // the chunk to the camera-right, and the forward-right corner.
             // Quantize yaw to its dominant axis to keep the window stable.
-            float yaw = (float)(world.yaw * Math.PI / 180.0);
             float facingX = (float)Math.sin(yaw);
             float facingZ = (float)Math.cos(yaw);
             int forwardChunkX = 0;
