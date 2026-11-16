@@ -153,6 +153,7 @@ final class VoxelWorld {
     private final int[] lanChangeY = new int[LAN_CHANGE_CAPACITY];
     private final int[] lanChangeZ = new int[LAN_CHANGE_CAPACITY];
     private int lanChangeHead, lanChangeCount;
+    private boolean suppressLanJournal;
 
     void tickTime() {
         dayTime += DAY_TICKS_PER_UPDATE;
@@ -517,6 +518,7 @@ final class VoxelWorld {
     }
 
     private void recordLanChange(int x, int y, int z) {
+        if (suppressLanJournal) return;
         if (lanChangeCount >= LAN_CHANGE_CAPACITY) {
             lanChangeHead = (lanChangeHead + 1) % LAN_CHANGE_CAPACITY;
             lanChangeCount--;
@@ -912,19 +914,25 @@ final class VoxelWorld {
     /** Applies one authoritative LAN block state, including its metadata. */
     boolean setNetworkBlock(int x, int y, int z, byte id, int metadata) {
         if (y <= 0 || y >= HEIGHT || id < Block.AIR || id >= Block.COUNT) return false;
-        if (id == Block.WOOL) return setWool(x, y, z, metadata & 15);
-        int oldMeta = metadataAt(x, y, z);
-        boolean changed = setBlock(x, y, z, id, Block.isFluid(id) ? metadata : 0);
-        if (!Block.isFluid(id) && oldMeta != metadata) {
-            setMetadata(x, y, z, metadata);
-            if (!changed) {
-                changedOldId = id;
-                changedX = x; changedY = y; changedZ = z;
-                revision++;
-                changed = true;
+        boolean previousSuppress = suppressLanJournal;
+        suppressLanJournal = true;
+        try {
+            if (id == Block.WOOL) return setWool(x, y, z, metadata & 15);
+            int oldMeta = metadataAt(x, y, z);
+            boolean changed = setBlock(x, y, z, id, Block.isFluid(id) ? metadata : 0);
+            if (!Block.isFluid(id) && oldMeta != metadata) {
+                setMetadata(x, y, z, metadata);
+                if (!changed) {
+                    changedOldId = id;
+                    changedX = x; changedY = y; changedZ = z;
+                    revision++;
+                    changed = true;
+                }
             }
+            return changed;
+        } finally {
+            suppressLanJournal = previousSuppress;
         }
-        return changed;
     }
 
     int fluidLevel(int x, int y, int z) {
