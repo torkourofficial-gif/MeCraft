@@ -362,12 +362,12 @@ final class ChunkRenderer {
     void setRenderDistance(int setting) {
         if (setting < 0) setting = 0;
         if (setting > 4) setting = 4;
-        // Shortest is the emergency low-memory preset: one chunk under the
-        // player plus exactly one chunk ahead in the direction they are facing.
+        // Shortest is the emergency low-memory preset: a compact 2x2
+        // square aligned to the player's facing direction.
         shortestDistance = setting == 4;
         streamRadius = setting == 0 ? 1 : setting + 1;
         if (streamRadius > MAX_STREAM_RADIUS) streamRadius = MAX_STREAM_RADIUS;
-        cameraFar = shortestDistance ? 16.0f :
+        cameraFar = shortestDistance ? 28.0f :
                 ((streamRadius * 2 + 1) * (float)VoxelWorld.CHUNK_XZ) + 8.0f;
         camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
                 0.1f, cameraFar);
@@ -1274,7 +1274,7 @@ final class ChunkRenderer {
         int centerZ = floorDiv((int)eyeZ, VoxelWorld.CHUNK_XZ);
         int span = MAX_STREAM_SPAN;
 
-        // Shortest uses a narrow 1x2 corridor, so no frustum math is needed.
+        // Shortest uses a compact 2x2 forward-facing window, so no frustum math is needed.
         float sinYaw = 0.0f, cosYaw = 1.0f;
         float sinPitch = 0.0f, cosPitch = 1.0f;
         float forwardX = 0.0f, forwardY = 0.0f, forwardZ = 1.0f;
@@ -1295,20 +1295,29 @@ final class ChunkRenderer {
         int firstChunkZ = centerZ - streamRadius;
         int lastChunkZ = centerZ + streamRadius;
         if (shortestDistance) {
-            // Follow the dominant horizontal facing axis. Once the player
-            // crosses into the forward chunk, the corridor advances with them.
+            // Build a 2x2 square from the player's chunk, the chunk ahead,
+            // the chunk to the camera-right, and the forward-right corner.
+            // Quantize yaw to its dominant axis to keep the window stable.
             float yaw = (float)(world.yaw * Math.PI / 180.0);
             float facingX = (float)Math.sin(yaw);
             float facingZ = (float)Math.cos(yaw);
-            firstChunkX = lastChunkX = centerX;
-            firstChunkZ = lastChunkZ = centerZ;
+            int forwardChunkX = 0;
+            int forwardChunkZ = 0;
+            int rightChunkX = 0;
+            int rightChunkZ = 0;
             if (Math.abs(facingX) > Math.abs(facingZ)) {
-                if (facingX >= 0.0f) lastChunkX++;
-                else firstChunkX--;
+                forwardChunkX = facingX >= 0.0f ? 1 : -1;
+                rightChunkZ = facingX >= 0.0f ? -1 : 1;
             } else {
-                if (facingZ >= 0.0f) lastChunkZ++;
-                else firstChunkZ--;
+                forwardChunkZ = facingZ >= 0.0f ? 1 : -1;
+                rightChunkX = facingZ >= 0.0f ? 1 : -1;
             }
+            int cornerX = forwardChunkX + rightChunkX;
+            int cornerZ = forwardChunkZ + rightChunkZ;
+            firstChunkX = centerX + Math.min(0, Math.min(forwardChunkX, cornerX));
+            lastChunkX = centerX + Math.max(0, Math.max(forwardChunkX, cornerX));
+            firstChunkZ = centerZ + Math.min(0, Math.min(forwardChunkZ, cornerZ));
+            lastChunkZ = centerZ + Math.max(0, Math.max(forwardChunkZ, cornerZ));
         }
 
         // Evict only chunks that have actually left the horizontal stream window.
@@ -1326,7 +1335,7 @@ final class ChunkRenderer {
         float bestDistance = Float.MAX_VALUE;
 
         // Search and rank candidates only in the active window, not all 648
-        // cache slots. In shortest mode this is 72 sectors (3x3x8).
+        // cache slots. In shortest mode this is 32 sectors (2x2x8).
         for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++) {
             for (int rz = firstRz; rz <= lastRz; rz++) {
                 for (int rx = firstRx; rx <= lastRx; rx++) {
