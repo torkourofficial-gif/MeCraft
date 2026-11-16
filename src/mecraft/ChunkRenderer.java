@@ -360,16 +360,12 @@ final class ChunkRenderer {
     void setRenderDistance(int setting) {
         if (setting < 0) setting = 0;
         if (setting > 4) setting = 4;
-        // Shortest keeps a stable 3x3 neighborhood around the player.
-        // The grid is biased toward the player's half of the current chunk,
-        // keeping the player near its centre without allocating distant meshes.
+        // Shortest is the emergency low-memory preset: one chunk under the
+        // player plus exactly one chunk ahead in the direction they are facing.
         shortestDistance = setting == 4;
         streamRadius = setting == 0 ? 1 : setting + 1;
         if (streamRadius > MAX_STREAM_RADIUS) streamRadius = MAX_STREAM_RADIUS;
-        // Shortest keeps exactly the same 3x3 chunk streaming window.
-        // Only the camera far plane is shortened, so distant geometry is clipped
-        // earlier without reducing the number of loaded/resident chunks.
-        cameraFar = shortestDistance ? 28.0f :
+        cameraFar = shortestDistance ? 16.0f :
                 ((streamRadius * 2 + 1) * (float)VoxelWorld.CHUNK_XZ) + 8.0f;
         camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
                 0.1f, cameraFar);
@@ -379,8 +375,8 @@ final class ChunkRenderer {
     }
 
     private void updateTerrainFog() {
-        float start = cameraFar * 0.58f;
-        float end = cameraFar * 0.94f;
+        float start = shortestDistance ? 5.5f : cameraFar * 0.58f;
+        float end = shortestDistance ? cameraFar - 0.5f : cameraFar * 0.94f;
         if (end <= start) end = start + 1.0f;
         terrainFog.setColor(currentSkyColor & 0x00FFFFFF);
         terrainFog.setLinear(start, end);
@@ -1274,8 +1270,7 @@ final class ChunkRenderer {
         int centerZ = floorDiv((int)eyeZ, VoxelWorld.CHUNK_XZ);
         int span = MAX_STREAM_SPAN;
 
-        // The shortest preset always keeps a complete 3x3 window. Do not
-        // calculate a camera frustum for sectors that will be selected anyway.
+        // Shortest uses a narrow 1x2 corridor, so no frustum math is needed.
         float sinYaw = 0.0f, cosYaw = 1.0f;
         float sinPitch = 0.0f, cosPitch = 1.0f;
         float forwardX = 0.0f, forwardY = 0.0f, forwardZ = 1.0f;
@@ -1291,10 +1286,26 @@ final class ChunkRenderer {
             upX = -sinYaw * sinPitch; upY = cosPitch; upZ = -cosYaw * sinPitch;
         }
 
-        int firstChunkX = shortestDistance ? centerX - 1 : centerX - streamRadius;
-        int lastChunkX = shortestDistance ? centerX + 1 : centerX + streamRadius;
-        int firstChunkZ = shortestDistance ? centerZ - 1 : centerZ - streamRadius;
-        int lastChunkZ = shortestDistance ? centerZ + 1 : centerZ + streamRadius;
+        int firstChunkX = centerX - streamRadius;
+        int lastChunkX = centerX + streamRadius;
+        int firstChunkZ = centerZ - streamRadius;
+        int lastChunkZ = centerZ + streamRadius;
+        if (shortestDistance) {
+            // Follow the dominant horizontal facing axis. Once the player
+            // crosses into the forward chunk, the corridor advances with them.
+            float yaw = (float)(world.yaw * Math.PI / 180.0);
+            float facingX = (float)Math.sin(yaw);
+            float facingZ = (float)Math.cos(yaw);
+            firstChunkX = lastChunkX = centerX;
+            firstChunkZ = lastChunkZ = centerZ;
+            if (Math.abs(facingX) > Math.abs(facingZ)) {
+                if (facingX >= 0.0f) lastChunkX++;
+                else firstChunkX--;
+            } else {
+                if (facingZ >= 0.0f) lastChunkZ++;
+                else firstChunkZ--;
+            }
+        }
 
         // Evict only chunks that have actually left the horizontal stream window.
         for (int i = 0; i < CACHE_SIZE; i++) {
