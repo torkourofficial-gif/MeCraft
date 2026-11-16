@@ -109,7 +109,7 @@ final class ChunkRenderer {
     private final int[] chunkWorldX = new int[CACHE_SIZE];
     private final int[] chunkWorldY = new int[CACHE_SIZE];
     private final int[] chunkWorldZ = new int[CACHE_SIZE];
-    // Reused by the synchronous chunk mesher to avoid short-lived arrays.
+    // Scratch arrays belong exclusively to the single chunk-build worker.
     private final byte[] chunkVoxelScratch = new byte[VoxelWorld.CHUNK_XZ *
             VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
     private final byte[] chunkLightScratch = new byte[VoxelWorld.CHUNK_XZ *
@@ -122,8 +122,6 @@ final class ChunkRenderer {
     // chunk without retaining one builder for every possible tile/light pair.
     private final FaceBuilder[] freeFaceBuilders = new FaceBuilder[32];
     private int freeFaceBuilderCount;
-    private final FlowerBuilder reusableFlowerBuilder = new FlowerBuilder();
-    private final PortalBuilder reusablePortalBuilder = new PortalBuilder();
     private final Image terrainImage;
     private final Texture2D atlas;
     private final Texture2D itemAtlas;
@@ -1430,7 +1428,10 @@ final class ChunkRenderer {
             if (result.slot >= 0 && result.slot < CACHE_SIZE) dirtyChunks[result.slot] = true;
             return;
         }
-        result.chunk = result.chunk == null ? new Chunk() : result.chunk;
+        if (result.chunk == null) {
+            result.chunk = new Chunk();
+            result.chunk.faceBuilders = new FaceBuilder[TILE_COUNT];
+        }
         result.chunk.worldX = result.cx * VoxelWorld.CHUNK_XZ;
         result.chunk.worldY = result.cy * VoxelWorld.CHUNK_Y;
         result.chunk.worldZ = result.cz * VoxelWorld.CHUNK_XZ;
@@ -1482,15 +1483,11 @@ final class ChunkRenderer {
         return true;
     }
 
-    private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {    }
-
     private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {
         FaceBuilder[] builders = chunkFaceBuilders;
         FlowerBuilder flowers = null;
         FireBuilder fires = null;
         PortalBuilder portals = null;
-        FlowerBuilder reusableFlowers = null;
-        PortalBuilder reusablePortals = null;
         int x0 = cx * VoxelWorld.CHUNK_XZ;
         int y0 = cy * VoxelWorld.CHUNK_Y;
         int z0 = cz * VoxelWorld.CHUNK_XZ;
@@ -1534,7 +1531,11 @@ final class ChunkRenderer {
 
         // An all-air section has no geometry at all. Returning null still marks
         // the slot resident in replaceChunk(), so it will not be retried every frame.
-        if (nonAirBlocks == 0) return null;
+        if (nonAirBlocks == 0) {
+            Chunk empty = new Chunk();
+            empty.faceBuilders = new FaceBuilder[TILE_COUNT];
+            return empty;
+        }
 
         // Mine64-style greedy meshing: combine adjacent visible faces on each
         // chunk plane when their atlas tile matches. Tile textures repeat, so
@@ -1647,7 +1648,11 @@ final class ChunkRenderer {
         int flowerCount = flowers == null ? 0 : 1;
         int fireCount = fires == null ? 0 : 1;
         int portalCount = portals == null ? 0 : 1;
-        if (count + flowerCount + fireCount + portalCount == 0) return null;
+        if (count + flowerCount + fireCount + portalCount == 0) {
+            Chunk empty = new Chunk();
+            empty.faceBuilders = new FaceBuilder[TILE_COUNT];
+            return empty;
+        }
         Chunk chunk = new Chunk();
         chunk.faceBuilders = new FaceBuilder[TILE_COUNT];
         for (int i = 0; i < builders.length; i++) {
