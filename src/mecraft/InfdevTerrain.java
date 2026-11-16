@@ -13,6 +13,29 @@ final class InfdevTerrain {
     private static final int[] latticeZCache = new int[LATTICE_CACHE_SIZE];
     private static final byte[] latticeValueCache = new byte[LATTICE_CACHE_SIZE];
     private static final boolean[] latticeCacheValid = new boolean[LATTICE_CACHE_SIZE];
+    // Seeded 256-entry permutation table: 512 bytes, generated once per world.
+    // Version 0 retains the original coordinate hash for existing saves.
+    private static final byte[] seededPermutation = new byte[512];
+    private static int preparedNoiseSeed = Integer.MIN_VALUE;
+    private static int preparedNoiseVersion = -1;
+
+    static void prepareNoise(int seed, int version) {
+        int selectedVersion = version <= 0 ? 0 : 1;
+        if (preparedNoiseSeed == seed && preparedNoiseVersion == selectedVersion) return;
+        preparedNoiseSeed = seed;
+        preparedNoiseVersion = selectedVersion;
+        if (selectedVersion == 0) return;
+        int state = seed ^ 0x6D2B79F5;
+        for (int i = 0; i < 256; i++) seededPermutation[i] = (byte)i;
+        for (int i = 255; i > 0; i--) {
+            state = state * 1664525 + 1013904223;
+            int j = (state >>> 1) % (i + 1);
+            byte value = seededPermutation[i];
+            seededPermutation[i] = seededPermutation[j];
+            seededPermutation[j] = value;
+        }
+        for (int i = 0; i < 256; i++) seededPermutation[i + 256] = seededPermutation[i];
+    }
 
     private static final int OCEAN = 0;
     private static final int PLAINS = 1;
@@ -249,6 +272,13 @@ final class InfdevTerrain {
     }
 
     private static int lattice(int seed, int x, int z) {
+        if (preparedNoiseSeed != seed || preparedNoiseVersion < 0)
+            prepareNoise(seed, 1);
+        if (preparedNoiseVersion != 0) {
+            int px = x & 255;
+            int pz = z & 255;
+            return seededPermutation[px + (seededPermutation[pz] & 255)] & 255;
+        }
         int base = seed ^ x * 73428767 ^ z * 42317861;
         int slot = base & LATTICE_CACHE_MASK;
         if (latticeCacheValid[slot] && latticeSeedCache[slot] == seed &&
