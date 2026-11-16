@@ -1,67 +1,95 @@
 package mecraft;
 
 /**
- * Single-slot background terrain prefetcher.
- *
- * Only procedural voxel generation and RMS I/O run here. The renderer still
- * creates all M3G objects on the game thread, which is safer for MIDP devices
- * whose M3G implementations are not thread-safe.
+ * Dedicated asynchronous terrain generator. Requests are coalesced by world
+ * and chunk coordinate; neither procedural generation nor RMS I/O runs on the
+ * game or chunk-meshing thread.
  */
 final class ChunkPrefetchWorker implements Runnable {
+    private static final int QUEUE_SIZE = 16;
     private static ChunkPrefetchWorker instance;
 
-    private VoxelWorld pendingWorld;
+    private final VoxelWorld[] worlds = new VoxelWorld[QUEUE_SIZE];
+    private final int[] chunkX = new int[QUEUE_SIZE];
+    private final int[] chunkZ = new int[QUEUE_SIZE];
+    private int count;
     private boolean running = true;
     private final Thread thread;
 
     private ChunkPrefetchWorker() {
         thread = new Thread(this);
-        thread.setPriority(Thread.MIN_PRIORITY);
+        try { thread.setPriority(Thread.MIN_PRIORITY); } catch (Throwable ignored) { }
         thread.start();
     }
 
-    static void request(VoxelWorld world) {
-        if (world == null || world.saveStoreName == null) return;
-        ChunkPrefetchWorker worker;
+    private static ChunkPrefetchWorker worker() {
         synchronized (ChunkPrefetchWorker.class) {
             if (instance == null) instance = new ChunkPrefetchWorker();
-            worker = instance;
+            return instance;
         }
-        worker.enqueue(world);
     }
 
-    private synchronized void enqueue(VoxelWorld world) {
+    /** Keep the worker alive for worlds that have not requested an outer chunk yet. */
+    static void request(VoxelWorld world) {
+        if (world != null) worker();
+    }
+
+    static void requestChunk(VoxelWorld world, int cx, int cz) {
+        if (world == null) return;
+        worker().enqueue(world, cx, cz);
+    }
+
+    private synchronized void enqueue(VoxelWorld world, int cx, int cz) {
         if (!running) return;
-        // A one-slot queue intentionally coalesces rapid updates. The worker
-        // always handles the newest active world instead of building a backlog.
-        pendingWorld = world;
+        for (int i = 0; i < count; i++) {
+            if (worlds[i] == world && chunkX[i] == cx && chunkZ[i] == cz) return;
+        }
+
+        // Keep the queue bounded. When full, discard its oldest request so
+        // chunks around the player's current position take priority.
+        if (count == QUEUE_SIZE) {
+            for (int i = 1; i < count; i++) {
+                worlds[i - 1] = worlds[i];
+                chunkX[i - 1] = chunkX[i];
+                chunkZ[i - 1] = chunkZ[i];
+            }
+            count--;
+        }
+        worlds[count] = world;
+        chunkX[count] = cx;
+        chunkZ[count] = cz;
+        count++;
         notifyAll();
     }
 
     public void run() {
         while (true) {
             VoxelWorld world;
+            int cx, cz;
             synchronized (this) {
-                while (running && pendingWorld == null) {
-                    try {
-                        wait();
-                    } catch (InterruptedException ignored) {
-                        if (!running) return;
-                    }
+                while (running && count == 0) {
+                    try { wait(); }
+                    catch (InterruptedException ignored) { if (!running) return; }
                 }
                 if (!running) return;
-                world = pendingWorld;
-                pendingWorld = null;
+                world = worlds[0];
+                cx = chunkX[0];
+                cz = chunkZ[0];
+                for (int i = 1; i < count; i++) {
+                    worlds[i - 1] = worlds[i];
+                    chunkX[i - 1] = chunkX[i];
+                    chunkZ[i - 1] = chunkZ[i];
+                }
+                count--;
+                worlds[count] = null;
             }
 
             try {
-                // VoxelWorld serializes this operation with procedural reads,
-                // so the shared 16-slot terrain cache cannot be corrupted.
-                world.prefetchAhead();
+                world.generateRequestedChunk(cx, cz);
             } catch (OutOfMemoryError exhausted) {
-                // Prefetch is optional; leave normal on-demand generation intact.
+                // Keep the game alive; a later lookup can enqueue the chunk again.
             } catch (RuntimeException unavailable) {
-                // A failed background request must never stop the game loop.
+                // A failed chunk request must not terminate the worker.
             }
         }
     }
@@ -77,7 +105,7 @@ final class ChunkPrefetchWorker implements Runnable {
 
     private synchronized void stopWorker() {
         running = false;
-        pendingWorld = null;
+        count = 0;
         notifyAll();
         thread.interrupt();
     }
