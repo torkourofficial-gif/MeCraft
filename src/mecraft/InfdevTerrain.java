@@ -48,7 +48,7 @@ final class InfdevTerrain {
         int originZ = chunkZ * CHUNK_SIZE;
 
         for (int z = 0; z < CHUNK_SIZE; z++) {
-            VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: terreno base");
+            VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: procesando fila z=" + z + " del chunk " + chunkX + "," + chunkZ);
             int worldZ = originZ + z;
             for (int x = 0; x < CHUNK_SIZE; x++) {
                 int worldX = originX + x;
@@ -62,27 +62,19 @@ final class InfdevTerrain {
                     biome == SNOWY ? Block.SNOW : Block.GRASS;
                 int fill = biome == DESERT || biome == OCEAN ? Block.SAND : Block.DIRT;
                 int at = column * WORLD_HEIGHT;
-                boolean ocean = biome == OCEAN;
-                int stoneEnd = height - 3;
-                blocks[at] = Block.BEDROCK;
-                // Split the column into ranges to remove repeated surface and air tests.
-                for (int y = 1; y < stoneEnd; y++) {
-                    byte id = Block.STONE;
-                    if (y < 8 &&
-                        (hash(seed ^ 0x5F356495, worldX, y, worldZ) & 31) == 0)
-                        id = Block.COAL;
-                    else if (y < 5 &&
-                        (hash(seed ^ 0x4B1D2A37, worldX, y, worldZ) & 95) == 0)
-                        id = Block.IRON;
+                for (int y = 0; y < WORLD_HEIGHT; y++) {
+                    byte id;
+                    if (y == 0) id = Block.BEDROCK;
+                    else if (y > height) id = biome == OCEAN && y <= SEA_LEVEL ?
+                        Block.WATER : Block.AIR;
+                    else if (y == height) id = (byte)top;
+                    else if (y >= height - 3) id = (byte)fill;
+                    else if (y < 8 && (hash(seed ^ 0x5F356495, worldX, y, worldZ) & 31) == 0) id = Block.COAL;
+                    else if (y < 5 && (hash(seed ^ 0x4B1D2A37, worldX, y, worldZ) & 95) == 0) id = Block.IRON;
+                    else id = Block.STONE;
                     blocks[at + y] = id;
                 }
-                for (int y = stoneEnd; y < height; y++)
-                    blocks[at + y] = (byte)fill;
-                blocks[at + height] = (byte)top;
-                for (int y = height + 1; y < WORLD_HEIGHT; y++)
-                    blocks[at + y] = ocean && y <= SEA_LEVEL ? Block.WATER : Block.AIR;
             }
-            yieldGenerationSlice();
         }
 
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: generando vetas minerales");
@@ -98,112 +90,6 @@ final class InfdevTerrain {
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: decorando terreno");
         decorate(seed, originX, originZ, heights, biomes, blocks, economic);
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generate: chunk completado " + chunkX + "," + chunkZ);
-    }
-
-    /**
-     * Resumable streamed-chunk generator. The expensive column fill advances
-     * one Z row per step; later deterministic passes are separate steps.
-     * The worker can yield between steps without exposing a partial chunk.
-     */
-    static final class GenerationTask {
-        private final int seed, chunkX, chunkZ, originX, originZ;
-        private final byte[] blocks, biomes;
-        private final int[] heights;
-        private final boolean economic, nether;
-        private int row;
-        private int phase;
-
-        GenerationTask(int seed, int chunkX, int chunkZ, byte[] blocks,
-                       int[] heights, byte[] biomes, boolean economic, boolean nether) {
-            this.seed = seed;
-            this.chunkX = chunkX;
-            this.chunkZ = chunkZ;
-            this.originX = chunkX * CHUNK_SIZE;
-            this.originZ = chunkZ * CHUNK_SIZE;
-            this.blocks = blocks;
-            this.heights = heights;
-            this.biomes = biomes;
-            this.economic = economic;
-            this.nether = nether;
-        }
-
-        /** Returns true only after the complete chunk is ready for publication. */
-        boolean step() {
-            if (phase == 0 && nether && row < CHUNK_SIZE) {
-                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.GenerationTask: Nether");
-                generateNetherRow(seed, originX, originZ, row, blocks, heights, economic);
-                row++;
-                if (row == CHUNK_SIZE) phase = 5;
-                return false;
-            }
-            if (phase == 0 && row < CHUNK_SIZE) {
-                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.GenerationTask: terreno base");
-                int worldZ = originZ + row;
-                for (int x = 0; x < CHUNK_SIZE; x++) {
-                    int worldX = originX + x;
-                    int column = row * CHUNK_SIZE + x;
-                    int biome = biomeAt(seed, worldX, worldZ);
-                    int height = economic ? economicSurfaceHeight(seed, worldX, worldZ, biome) :
-                        surfaceHeight(seed, worldX, worldZ, biome);
-                    heights[column] = height;
-                    biomes[column] = (byte)biome;
-                    int top = biome == DESERT || biome == OCEAN ? Block.SAND :
-                        biome == SNOWY ? Block.SNOW : Block.GRASS;
-                    int fill = biome == DESERT || biome == OCEAN ? Block.SAND : Block.DIRT;
-                    int at = column * WORLD_HEIGHT;
-                    boolean ocean = biome == OCEAN;
-                    int stoneEnd = height - 3;
-                    blocks[at] = Block.BEDROCK;
-                    // Split the column into ranges to remove repeated surface and air tests.
-                    for (int y = 1; y < stoneEnd; y++) {
-                        byte id = Block.STONE;
-                        if (y < 8 &&
-                            (hash(seed ^ 0x5F356495, worldX, y, worldZ) & 31) == 0)
-                            id = Block.COAL;
-                        else if (y < 5 &&
-                            (hash(seed ^ 0x4B1D2A37, worldX, y, worldZ) & 95) == 0)
-                            id = Block.IRON;
-                        blocks[at + y] = id;
-                    }
-                    for (int y = stoneEnd; y < height; y++)
-                        blocks[at + y] = (byte)fill;
-                    blocks[at + height] = (byte)top;
-                    for (int y = height + 1; y < WORLD_HEIGHT; y++)
-                        blocks[at + y] = ocean && y <= SEA_LEVEL ? Block.WATER : Block.AIR;
-                }
-                row++;
-                if (row == CHUNK_SIZE) phase = 1;
-                return false;
-            }
-            if (phase == 1) {
-                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.GenerationTask: vetas minerales");
-                if (economic) generateEconomicOreVeins(seed, originX, originZ, blocks);
-                else generateOreVeins(seed, originX, originZ, blocks);
-                phase = 2;
-                return false;
-            }
-            if (phase == 2) {
-                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.GenerationTask: cuevas");
-                if (economic) carveEconomicCaves(seed, originX, originZ, heights, blocks);
-                else carveCaves(seed, originX, originZ, heights, blocks);
-                phase = 3;
-                return false;
-            }
-            if (phase == 3) {
-                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.GenerationTask: ravines");
-                if (economic) carveEconomicRavines(seed, originX, originZ, heights, blocks);
-                else carveRavines(seed, originX, originZ, heights, blocks);
-                phase = 4;
-                return false;
-            }
-            if (phase == 4) {
-                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.GenerationTask: decoración");
-                decorate(seed, originX, originZ, heights, biomes, blocks, economic);
-                phase = 5;
-                return false;
-            }
-            return phase == 5;
-        }
     }
 
     static int surfaceHeight(int seed, int x, int z) {
@@ -250,64 +136,49 @@ final class InfdevTerrain {
         int originX = chunkX * CHUNK_SIZE;
         int originZ = chunkZ * CHUNK_SIZE;
         for (int z = 0; z < CHUNK_SIZE; z++) {
-            VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generateNether: terreno base");
-            generateNetherRow(seed, originX, originZ, z, blocks, floorHeights, economic);
-            yieldGenerationSlice();
-        }
-    }
+            VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generateNether: fila z=" + z);
+            for (int x = 0; x < CHUNK_SIZE; x++) {
+                int wx = originX + x, wz = originZ + z;
+                int column = z * CHUNK_SIZE + x;
+                int floor = economic ? economicNetherFloorHeight(seed, wx, wz) : netherFloorHeight(seed, wx, wz);
+                int roof = economic ? 18 + (valueNoise(seed ^ 0x3B91, wx, wz, 64) >> 5) :
+                    16 + (valueNoise(seed ^ 0x3B91, wx, wz, 40) >> 5);
+                if (roof > WORLD_HEIGHT - 2) roof = WORLD_HEIGHT - 2;
+                floorHeights[column] = floor;
+                int base = column * WORLD_HEIGHT;
+                for (int y = 0; y < WORLD_HEIGHT; y++) {
+                    byte block;
+                    if (y == 0 || y == WORLD_HEIGHT - 1) block = Block.BEDROCK;
+                    else if (y <= floor || y >= roof) block = Block.STONE;
+                    else if (y <= 5) block = Block.LAVA;
+                    else block = Block.AIR;
+                    blocks[base + y] = block;
+                }
 
-    /** Generates one Nether row so streamed tasks can resume between rows. */
-    private static void generateNetherRow(int seed, int originX, int originZ, int z,
-                                          byte[] blocks, int[] floorHeights, boolean economic) {
-        for (int x = 0; x < CHUNK_SIZE; x++) {
-            int wx = originX + x, wz = originZ + z;
-            int column = z * CHUNK_SIZE + x;
-            int floor = economic ? economicNetherFloorHeight(seed, wx, wz) : netherFloorHeight(seed, wx, wz);
-            int roof = economic ? 18 + (valueNoise(seed ^ 0x3B91, wx, wz, 64) >> 5) :
-                16 + (valueNoise(seed ^ 0x3B91, wx, wz, 40) >> 5);
-            if (roof > WORLD_HEIGHT - 2) roof = WORLD_HEIGHT - 2;
-            floorHeights[column] = floor;
-            int base = column * WORLD_HEIGHT;
-            for (int y = 0; y < WORLD_HEIGHT; y++) {
-                byte block;
-                if (y == 0 || y == WORLD_HEIGHT - 1) block = Block.BEDROCK;
-                else if (y <= floor || y >= roof) block = Block.STONE;
-                else if (y <= 5) block = Block.LAVA;
-                else block = Block.AIR;
-                blocks[base + y] = block;
-            }
-            int surface = base + floor;
-            int surfaceHash = hash(seed ^ 0x5A17, wx, floor, wz);
-            if ((surfaceHash & 15) == 0) blocks[surface] = Block.SAND;
-            if ((surfaceHash & 63) == 1 && floor + 2 < roof) {
-                blocks[surface + 1] = Block.STONE;
-                if ((surfaceHash & 128) != 0 && floor + 3 < roof)
-                    blocks[surface + 2] = Block.STONE;
-            }
-            int riverField = valueNoise(seed ^ 0x4C415641, wx, wz, economic ? 72 : 56);
-            if (floor > 2 && Math.abs(riverField - 128) <= (economic ? 5 : 7)) {
-                blocks[base + floor] = Block.LAVA;
-                blocks[base + floor - 1] = Block.LAVA;
-            }
-            int roofHash = hash(seed ^ 0x1057, wx, roof, wz);
-            if ((roofHash & 31) == 0 && roof > floor + 2) {
-                blocks[base + (roof - 1)] = Block.COAL;
-                if (x > 0) blocks[(column - 1) * WORLD_HEIGHT + roof - 1] = Block.COAL;
-                if (z > 0) blocks[(column - CHUNK_SIZE) * WORLD_HEIGHT + roof - 1] = Block.COAL;
+                int surface = base + floor;
+                int surfaceHash = hash(seed ^ 0x5A17, wx, floor, wz);
+                if ((surfaceHash & 15) == 0) blocks[surface] = Block.SAND;
+                if ((surfaceHash & 63) == 1 && floor + 2 < roof) {
+                    blocks[surface + 1] = Block.STONE;
+                    if ((surfaceHash & 128) != 0 && floor + 3 < roof)
+                        blocks[surface + 2] = Block.STONE;
+                }
+                // A low-frequency contour creates continuous, winding lava rivers
+                // across chunk borders. World-coordinate sampling prevents seams.
+                int riverField = valueNoise(seed ^ 0x4C415641, wx, wz, economic ? 72 : 56);
+                if (floor > 2 && Math.abs(riverField - 128) <= (economic ? 5 : 7)) {
+                    blocks[base + floor] = Block.LAVA;
+                    blocks[base + floor - 1] = Block.LAVA;
+                }
+
+                int roofHash = hash(seed ^ 0x1057, wx, roof, wz);
+                if ((roofHash & 31) == 0 && roof > floor + 2) {
+                    blocks[base + (roof - 1)] = Block.COAL;
+                    if (x > 0) blocks[(column - 1) * WORLD_HEIGHT + roof - 1] = Block.COAL;
+                    if (z > 0) blocks[(column - CHUNK_SIZE) * WORLD_HEIGHT + roof - 1] = Block.COAL;
+                }
             }
         }
-    }
-
-    /**
-     * Cooperative pause between terrain rows. The worker stays low-priority,
-     * and this gives the game/render threads regular CPU time on slow devices.
-     * The chunk is still published atomically only after every terrain pass.
-     */
-    private static void yieldGenerationSlice() {
-        // Cooperative yield without forcing a 1 ms timer tick for every row.
-        // The low-priority worker naturally yields to the game thread; synchronous
-        // initial generation avoids accumulating hundreds of milliseconds of sleeps.
-        Thread.yield();
     }
 
     static int economicNetherFloorHeight(int seed, int x, int z) {
@@ -335,12 +206,16 @@ final class InfdevTerrain {
     }
 
     private static int surfaceHeight(int seed, int x, int z, int biome) {
-        // Two 2D noise samples are enough for the standard terrain profile.
-        // Dropping the extra detail and ridge octaves cuts repeated lattice
-        // lookups while keeping broad hills, biome height and seeded variation.
+        // Alpha-inspired continental shape: broad low-frequency terrain, a
+        // medium ridge field and a small detail octave. All work is 2D and
+        // performed once per column (never a full 3D noise volume).
         int broad = valueNoise(seed ^ 0x1A2B3C, x, z, 96) - 128;
         int medium = valueNoise(seed ^ 0x4D5E6F, x, z, 32) - 128;
-        int variation = (broad * 30 + medium * 12) >> 8;
+        int detail = valueNoise(seed ^ 0x778899, x, z, 10) - 128;
+        int ridgeNoise = valueNoise(seed ^ 0x13579B, x, z, 72);
+        int ridge = 128 - Math.abs(ridgeNoise - 128);
+        int variation = (broad * 30 + medium * 12 + detail * 4) >> 8;
+        variation += (ridge - 64) >> 2;
         int height;
         if (biome == OCEAN) height = 12 + (variation >> 2);
         else if (biome == SNOWY) height = 20 + variation;
@@ -360,15 +235,10 @@ final class InfdevTerrain {
         int gx = floorDiv(x, scale), gz = floorDiv(z, scale);
         int fx = smooth((x - gx * scale) * 256 / scale);
         int fz = smooth((z - gz * scale) * 256 / scale);
-        int a, b, c, d;
-        // Protect the shared direct-mapped cache once per four-corner sample.
-        // The old implementation entered/exited the monitor four times.
-        synchronized (latticeCacheValid) {
-            a = lattice(seed, gx, gz);
-            b = lattice(seed, gx + 1, gz);
-            c = lattice(seed, gx, gz + 1);
-            d = lattice(seed, gx + 1, gz + 1);
-        }
+        int a = lattice(seed, gx, gz);
+        int b = lattice(seed, gx + 1, gz);
+        int c = lattice(seed, gx, gz + 1);
+        int d = lattice(seed, gx + 1, gz + 1);
         int top = a + ((b - a) * fx >> 8);
         int bottom = c + ((d - c) * fx >> 8);
         return top + ((bottom - top) * fz >> 8);
@@ -430,8 +300,7 @@ final class InfdevTerrain {
                                       x, y, z, 1, 1);
                 }
             }
-        
-            yieldGenerationSlice();}
+        }
     }
 
     private static void carveCaves(int seed, int originX, int originZ, int[] heights, byte[] blocks) {
@@ -525,8 +394,7 @@ final class InfdevTerrain {
                     }
                 }
             }
-        
-            yieldGenerationSlice();}
+        }
     }
 
     /** Very occasional narrow fissures; avoids the wide ravine pass in Economic. */
@@ -560,8 +428,7 @@ final class InfdevTerrain {
                                      x, y, z, 1, 4);
                 }
             }
-        
-            yieldGenerationSlice();}
+        }
     }
 
     /**
@@ -622,8 +489,7 @@ final class InfdevTerrain {
                                      x, y, z, width, verticalRadius);
                 }
             }
-        
-            yieldGenerationSlice();}
+        }
     }
 
     private static void carveRavineSlice(int originX, int originZ, int[] heights,
@@ -746,8 +612,6 @@ final class InfdevTerrain {
                                      Block.DIAMOND_ORE, 2, Math.min(14, WORLD_HEIGHT - 3), 2, 2, h);
                 }
             }
-        
-            yieldGenerationSlice();
         }
     }
 
@@ -786,7 +650,6 @@ final class InfdevTerrain {
                                      Block.DIAMOND_ORE, 2, Math.min(20, WORLD_HEIGHT - 3), 2, 4, diamondHash);
                 }
             }
-            yieldGenerationSlice();
         }
     }
 
@@ -826,7 +689,7 @@ final class InfdevTerrain {
         int lastCellZ = floorDiv(originZ + CHUNK_SIZE + 1 - 4, 9);
         for (int rz = firstCellZ; rz <= lastCellZ; rz++) {
             for (int rx = firstCellX; rx <= lastCellX; rx++) {
-                // Keep diagnostics phase-based; per-region strings caused avoidable allocation.
+                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.decorate: revisando árbol rx=" + rx + ", rz=" + rz);
                 int tx = rx * 9 + 4, tz = rz * 9 + 4;
                 int biome = biomeAt(seed, tx, tz);
                 if (biome == OCEAN) continue;
@@ -855,13 +718,12 @@ final class InfdevTerrain {
                     }
                 }
             }
-        
-            yieldGenerationSlice();}
+        }
 
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.decorate: colocando cactus y flores");
         for (int z = 0; z < CHUNK_SIZE; z++) {
             for (int x = 0; x < CHUNK_SIZE; x++) {
-                // Per-column diagnostic strings are intentionally omitted.
+                VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.decorate: columna de flora x=" + x + ", z=" + z);
                 int column = z * CHUNK_SIZE + x;
                 int height = heights[column];
                 int biome = biomes[column] & 255;
@@ -896,8 +758,6 @@ final class InfdevTerrain {
 
     private static int floorDiv(int value, int divisor) {
         int result = value / divisor;
-        // Reuse the quotient to detect a negative remainder. This avoids a
-        // second integer division/modulo in the hot valueNoise coordinate path.
-        return value < 0 && value - result * divisor != 0 ? result - 1 : result;
+        return value < 0 && value % divisor != 0 ? result - 1 : result;
     }
 }

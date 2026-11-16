@@ -59,8 +59,6 @@ final class DroppedItemSystem {
     private final VertexArray tntFlashPositionArray;
     private int cursor;
     private int activeCount;
-    private final int[] activeSlots = new int[CAPACITY];
-    private final int[] activePosition = new int[CAPACITY];
     private int random = 0x2468ACE1;
     private boolean explosionPending;
     private int explosionX, explosionY, explosionZ;
@@ -76,7 +74,6 @@ final class DroppedItemSystem {
         initializeDynamicBounds(positions);
         initializeDynamicBounds(spritePositions);
         initializeDynamicBounds(tntFlashPositions);
-        for (int i = 0; i < CAPACITY; i++) activePosition[i] = -1;
         positionArray.set(0, VERTEX_COUNT, positions);
         texCoordArray.set(0, VERTEX_COUNT, texCoords);
         colorArray.set(0, VERTEX_COUNT, colors);
@@ -168,7 +165,7 @@ final class DroppedItemSystem {
         if (slot < 0) return -1;
         cursor = slot + 1;
         if (cursor == CAPACITY) cursor = 0;
-        if (itemId[slot] == 0) addActiveSlot(slot);
+        if (itemId[slot] == 0) activeCount++;
 
         itemId[slot] = id;
         age[slot] = 0;
@@ -191,32 +188,7 @@ final class DroppedItemSystem {
 
     boolean spawnPrimedTnt(int bx, int by, int bz, int fuse) {
         int slot = spawn(Block.TNT, bx, by, bz);
-        if (slot < 0) {
-            // Explosion debris shares this bounded pool with primed TNT.
-            // Reclaim the oldest ordinary drop before refusing to ignite a
-            // TNT block; otherwise a few explosions can fill all 32 slots
-            // with debris and make every later TNT impossible to activate.
-            int oldestAge = -1;
-            for (int n = 0; n < CAPACITY; n++) {
-                int candidate = (cursor + n) % CAPACITY;
-                if (itemId[candidate] != 0 && tntFuse[candidate] <= 0 &&
-                    age[candidate] > oldestAge) {
-                    oldestAge = age[candidate];
-                    slot = candidate;
-                }
-            }
-            if (slot < 0) return false;
-            cursor = slot + 1;
-            if (cursor == CAPACITY) cursor = 0;
-            itemId[slot] = Block.TNT;
-            age[slot] = 0;
-            tntFuse[slot] = 0;
-            pickupDelay[slot] = 10;
-            setVertexColor(slot, 0);
-            setAlphaVertexTint(slot, Block.TNT);
-            writeTexture(slot, Block.TNT);
-            // activeCount is unchanged: an ordinary drop was replaced.
-        }
+        if (slot < 0) return false;
         tntFuse[slot] = fuse;
         pickupDelay[slot] = fuse + 20;
         // Indev replaces the block with an EntityTNTPrimed, not a collectible
@@ -245,9 +217,10 @@ final class DroppedItemSystem {
         boolean hasBlocks = false;
         boolean hasSprites = false;
         boolean hasTntFlash = false;
-        int activeIndex = 0;
-        while (activeIndex < activeCount) {
-            int i = activeSlots[activeIndex];
+        for (int i = 0; i < CAPACITY; i++) {
+            if (itemId[i] == 0) {
+                continue;
+            }
             age[i]++;
             if (pickupDelay[i] > 0) pickupDelay[i]--;
             if (y[i] < -2.0f && tntFuse[i] > 0) {
@@ -259,8 +232,8 @@ final class DroppedItemSystem {
             } else if (y[i] < -2.0f) {
                 itemId[i] = 0;
                 tntFuse[i] = 0;
+                activeCount--;
                 writeItem(i);
-                removeActiveAt(activeIndex);
                 continue;
             }
 
@@ -287,26 +260,16 @@ final class DroppedItemSystem {
             // tick. Post-decrement left it at 0, where primedTnt became false
             // on the next tick, so the explosion was never reached.
             if (primedTnt && --tntFuse[i] <= 0) {
-                // Save the blast position before releasing this entity slot.
-                // Chain reactions may immediately reuse the freed slot, so
-                // remove the exploding TNT BEFORE world.explode().
-                float blastX = x[i];
-                float blastY = y[i];
-                float blastZ = z[i];
-                explosionX = floorBlock(blastX);
-                explosionY = floorBlock(blastY);
-                explosionZ = floorBlock(blastZ);
+                explosionX = floorBlock(x[i]);
+                explosionY = floorBlock(y[i]);
+                explosionZ = floorBlock(z[i]);
                 explosionPending = true;
-
-                // Do not touch slot i after the explosion: a chained TNT
-                // may already have claimed it.
+                damagePlayerFromExplosion(world, x[i], y[i], z[i], physics);
+                world.explode(x[i], y[i], z[i], 4.0f, this);
                 itemId[i] = 0;
                 tntFuse[i] = 0;
+                activeCount--;
                 writeItem(i);
-                removeActiveAt(activeIndex);
-
-                damagePlayerFromExplosion(world, blastX, blastY, blastZ, physics);
-                world.explode(blastX, blastY, blastZ, 4.0f, this);
                 continue;
             }
 
@@ -315,23 +278,13 @@ final class DroppedItemSystem {
             float dy = y[i] - (world.playerY + 0.9f);
             float dz = z[i] - world.playerZ;
             boolean inPickupRange = dx * dx + dy * dy + dz * dz <= PICKUP_RADIUS_SQUARED;
-            if (world.mode == 1 && !primedTnt && inPickupRange) {
-                // Creative players absorb ordinary drops on contact, but do
-                // not add them to inventory. Primed TNT remains untouched.
-                itemId[i] = 0;
-                tntFuse[i] = 0;
-                writeItem(i);
-                removeActiveAt(activeIndex);
-                continue;
-            } else if (world.mode != 1 && pickupDelay[i] == 0 && picked < 0 &&
-                       inventory[id] < ItemCatalog.maxStack(id) && inPickupRange) {
+            if (pickupDelay[i] == 0 && picked < 0 && inventory[id] < ItemCatalog.maxStack(id) && inPickupRange) {
                 inventory[id]++;
                 itemId[i] = 0;
                 tntFuse[i] = 0;
+                activeCount--;
                 picked = id;
                 writeItem(i);
-                removeActiveAt(activeIndex);
-                continue;
             } else {
                 writeItem(i);
             }
@@ -339,7 +292,6 @@ final class DroppedItemSystem {
                 if (itemId[i] < Block.COUNT || ItemCatalog.isColoredWool(itemId[i])) hasBlocks = true;
                 else hasSprites = true;
             }
-            activeIndex++;
         }
         if (activeCount == 0) {
             mesh.setRenderingEnable(false);
@@ -418,20 +370,6 @@ final class DroppedItemSystem {
                 world.isSolidAt(minX, by, maxZ) || world.isSolidAt(maxX, by, maxZ)) return true;
         }
         return false;
-    }
-
-    private void addActiveSlot(int slot) {
-        if (activePosition[slot] >= 0) return;
-        activePosition[slot] = activeCount;
-        activeSlots[activeCount++] = slot;
-    }
-
-    private void removeActiveAt(int index) {
-        int removed = activeSlots[index];
-        int last = activeSlots[--activeCount];
-        activeSlots[index] = last;
-        activePosition[last] = index;
-        activePosition[removed] = -1;
     }
 
     private void initializeDynamicBounds(short[] vertices) {

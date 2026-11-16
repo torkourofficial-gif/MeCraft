@@ -51,33 +51,13 @@ final class PlayerPhysics {
     }
 
     boolean isInWater(VoxelWorld world) {
-        return intersectsFluid(world, world.playerX, world.playerY + 0.4f,
-                world.playerZ, world.playerY + HEIGHT - 0.4f, Block.WATER);
-    }
-
-    boolean isInLava(VoxelWorld world) {
-        return intersectsFluid(world, world.playerX, world.playerY + 0.4f,
-                world.playerZ, world.playerY + HEIGHT - 0.4f, Block.LAVA);
+        return intersectsWater(world, world.playerX, world.playerY + 0.4f,
+                world.playerZ, world.playerY + HEIGHT - 0.4f);
     }
 
     /** Returns Indev fall damage, if a landing occurred this tick. */
     int update(VoxelWorld world, float forward, float strafe, boolean jumping,
                boolean flying, boolean descending, boolean sprinting) {
-        // Never run collision resolution against an unloaded procedural area:
-        // getCollision intentionally returns AIR for missing cache entries.
-        // Freeze physics briefly while the persistent terrain worker fills it.
-        if (!world.isCollisionAreaReady(world.playerX, world.playerZ, RADIUS)) {
-            motionX = motionY = motionZ = 0.0f;
-            horizontalCollision = false;
-            onGround = false;
-            fallDistance = 0.0f;
-            return 0;
-        }
-        // Recover from stale/spawned positions that begin inside a solid voxel.
-        // The swept-axis clips below only stop movement at a face; they cannot
-        // eject an AABB that was already intersecting a block.
-        resolvePlayerOverlap(world);
-
         float inputLength = (float)Math.sqrt(forward * forward + strafe * strafe);
         if (inputLength > 1.0f) {
             forward /= inputLength;
@@ -106,17 +86,17 @@ final class PlayerPhysics {
             return 0;
         }
 
-        boolean inLiquid = isInWater(world) || isInLava(world);
+        boolean inWater = isInWater(world);
         if (jumping) {
-            if (inLiquid) motionY += 0.04f;
+            if (inWater) motionY += 0.04f;
             else if (onGround) motionY = 0.42f;
         }
 
         float radians = world.yaw * (float)Math.PI / 180.0f;
         float sin = (float)Math.sin(radians);
         float cos = (float)Math.cos(radians);
-        float acceleration = inLiquid ? 0.02f : (onGround ? 0.10f : 0.02f);
-        if (sprinting && !inLiquid) acceleration *= 1.6f;
+        float acceleration = inWater ? 0.02f : (onGround ? 0.10f : 0.02f);
+        if (sprinting && !inWater) acceleration *= 1.6f;
         // The view uses yaw zero facing +Z, so its screen-right basis is -X.
         motionX += (forward * sin - strafe * cos) * acceleration;
         motionZ += (forward * cos + strafe * sin) * acceleration;
@@ -127,20 +107,20 @@ final class PlayerPhysics {
         onGround = requestedY < 0.0f && movedY != requestedY;
         if (movedY != requestedY) motionY = 0.0f;
         if (onGround) {
-            boolean landedInLiquid = isInWater(world) || isInLava(world);
+            boolean landedInWater = isInWater(world);
             int damage = fallDistance > 3.0f ? (int)Math.ceil(fallDistance - 3.0f) : 0;
             fallDistance = 0.0f;
-            if (inLiquid || landedInLiquid) damage = 0;
+            if (inWater || landedInWater) damage = 0;
             moveHorizontally(world);
-            applyDrag(inLiquid || landedInLiquid);
+            applyDrag(inWater || landedInWater);
             return damage;
         }
         if (movedY < 0.0f) fallDistance -= movedY;
 
         moveHorizontally(world);
-        boolean nowInLiquid = isInWater(world) || isInLava(world);
-        if (nowInLiquid) fallDistance = 0.0f;
-        applyDrag(nowInLiquid);
+        boolean nowInWater = isInWater(world);
+        if (nowInWater) fallDistance = 0.0f;
+        applyDrag(nowInWater);
         if (world.playerY < 1.0f) {
             world.playerX = VoxelWorld.WIDTH / 2 + 0.5f;
             world.playerZ = VoxelWorld.DEPTH / 2 + 0.5f;
@@ -148,65 +128,6 @@ final class PlayerPhysics {
             reset();
         }
         return 0;
-    }
-
-    /**
-     * Resolve pre-existing player/block intersections before applying movement.
-     * This is deliberately bounded (small player AABB, at most a few voxels)
-     * and uses no temporary allocations.
-     */
-    private void resolvePlayerOverlap(VoxelWorld world) {
-        for (int pass = 0; pass < 4; pass++) {
-            float x = world.playerX, y = world.playerY, z = world.playerZ;
-            int minX = floor(x - RADIUS + EPSILON);
-            int maxX = floor(x + RADIUS - EPSILON);
-            int minY = floor(y + EPSILON);
-            int maxY = floor(y + HEIGHT - EPSILON);
-            int minZ = floor(z - RADIUS + EPSILON);
-            int maxZ = floor(z + RADIUS - EPSILON);
-            float best = Float.MAX_VALUE;
-            int pushAxis = -1;
-            float push = 0.0f;
-
-            for (int by = minY; by <= maxY; by++) {
-                for (int bx = minX; bx <= maxX; bx++) {
-                    for (int bz = minZ; bz <= maxZ; bz++) {
-                        byte block = world.getCollision(bx, by, bz);
-                        if (!Block.solid(block)) continue;
-                        if (block == Block.DOOR && (world.doorMetadata(bx, by, bz) & 4) != 0)
-                            continue;
-
-                        float px = x + RADIUS - bx;
-                        float nx = bx + 1.0f - (x - RADIUS);
-                        float py = y + HEIGHT - by;
-                        float ny = by + 1.0f - y;
-                        float pz = z + RADIUS - bz;
-                        float nz = bz + 1.0f - (z - RADIUS);
-
-                        if (px > 0.0f && px < best) { best = px; pushAxis = 0; push = -px - EPSILON; }
-                        if (nx > 0.0f && nx < best) { best = nx; pushAxis = 0; push = nx + EPSILON; }
-                        if (py > 0.0f && py < best) { best = py; pushAxis = 1; push = py + EPSILON; }
-                        if (ny > 0.0f && ny < best) { best = ny; pushAxis = 1; push = -ny - EPSILON; }
-                        if (pz > 0.0f && pz < best) { best = pz; pushAxis = 2; push = -pz - EPSILON; }
-                        if (nz > 0.0f && nz < best) { best = nz; pushAxis = 2; push = nz + EPSILON; }
-                    }
-                }
-            }
-
-            if (pushAxis < 0 || best == Float.MAX_VALUE) break;
-            if (pushAxis == 0) {
-                world.playerX += push;
-                motionX = 0.0f;
-            } else if (pushAxis == 1) {
-                world.playerY += push;
-                motionY = 0.0f;
-                if (push > 0.0f) onGround = true;
-                fallDistance = 0.0f;
-            } else {
-                world.playerZ += push;
-                motionZ = 0.0f;
-            }
-        }
     }
 
     private void moveHorizontally(VoxelWorld world) {
@@ -257,9 +178,8 @@ final class PlayerPhysics {
         horizontalCollision = hitX || hitZ;
         if (hitX) motionX = 0.0f;
         if (hitZ) motionZ = 0.0f;
-        if (horizontalCollision && (isInWater(world) || isInLava(world)) &&
-                !intersectsSolid(world, world.playerX, world.playerY + 0.6f, world.playerZ))
-            motionY = 0.3f;
+        if (horizontalCollision && isInWater(world) && !intersectsSolid(world,
+                world.playerX, world.playerY + 0.6f, world.playerZ)) motionY = 0.3f;
     }
 
     private void applyDrag(boolean inWater) {
@@ -289,7 +209,7 @@ final class PlayerPhysics {
         for (int by = fromY; by <= toY; by++) {
             for (int bx = minX; bx <= maxX; bx++) {
                 for (int bz = minZ; bz <= maxZ; bz++) {
-                    byte block = world.getCollision(bx, by, bz);
+                    byte block = world.get(bx, by, bz);
                     if (block == Block.DOOR) {
                         int state = world.doorState(bx, by, bz);
                         float doorMinX = bx + (state == 1 ? 13.0f / 16.0f : 0.0f);
@@ -314,7 +234,6 @@ final class PlayerPhysics {
 
     private float clipX(VoxelWorld world, float x, float y, float z, float dx) {
         if (dx == 0.0f) return 0.0f;
-        if (!world.isCollisionAreaReady(x + dx, z, RADIUS)) return 0.0f;
         int minY = floor(y + EPSILON), maxY = floor(y + HEIGHT - EPSILON);
         int minZ = floor(z - RADIUS + EPSILON), maxZ = floor(z + RADIUS - EPSILON);
         int fromX = floor(x - RADIUS + Math.min(0.0f, dx));
@@ -322,7 +241,7 @@ final class PlayerPhysics {
         for (int bx = fromX; bx <= toX; bx++) {
             for (int by = minY; by <= maxY; by++) {
                 for (int bz = minZ; bz <= maxZ; bz++) {
-                    byte block = world.getCollision(bx, by, bz);
+                    byte block = world.get(bx, by, bz);
                     if (block == Block.DOOR) {
                         int state = world.doorState(bx, by, bz);
                         float doorMinX = bx + (state == 1 ? 13.0f / 16.0f : 0.0f);
@@ -356,7 +275,6 @@ final class PlayerPhysics {
 
     private float clipZ(VoxelWorld world, float x, float y, float z, float dz) {
         if (dz == 0.0f) return 0.0f;
-        if (!world.isCollisionAreaReady(x, z + dz, RADIUS)) return 0.0f;
         int minY = floor(y + EPSILON), maxY = floor(y + HEIGHT - EPSILON);
         int minX = floor(x - RADIUS + EPSILON), maxX = floor(x + RADIUS - EPSILON);
         int fromZ = floor(z - RADIUS + Math.min(0.0f, dz));
@@ -364,7 +282,7 @@ final class PlayerPhysics {
         for (int bz = fromZ; bz <= toZ; bz++) {
             for (int by = minY; by <= maxY; by++) {
                 for (int bx = minX; bx <= maxX; bx++) {
-                    byte block = world.getCollision(bx, by, bz);
+                    byte block = world.get(bx, by, bz);
                     if (block == Block.DOOR) {
                         int state = world.doorState(bx, by, bz);
                         float doorMinX = bx + (state == 1 ? 13.0f / 16.0f : 0.0f);
@@ -396,8 +314,7 @@ final class PlayerPhysics {
         return dz;
     }
 
-    private boolean intersectsFluid(VoxelWorld world, float x, float minY, float z,
-                                    float maxY, byte fluid) {
+    private boolean intersectsWater(VoxelWorld world, float x, float minY, float z, float maxY) {
         int minX = floor(x - RADIUS + EPSILON), maxX = floor(x + RADIUS - EPSILON);
         int minZ = floor(z - RADIUS + EPSILON), maxZ = floor(z + RADIUS - EPSILON);
         int fromY = floor(minY), toY = floor(maxY);
@@ -405,7 +322,7 @@ final class PlayerPhysics {
             for (int bx = minX; bx <= maxX; bx++) {
                 for (int bz = minZ; bz <= maxZ; bz++) {
                     byte id = world.get(bx, by, bz);
-                    if (id == fluid && minY < by + 0.91f && maxY > by) return true;
+                    if (id == Block.WATER && minY < by + 0.91f && maxY > by) return true;
                 }
             }
         }

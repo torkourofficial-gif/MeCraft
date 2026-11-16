@@ -63,7 +63,6 @@ final class VoxelWorld {
     private static final int INFDEV_EDIT_PAGE_MAGIC = 0x49465047;
     private static final int INFDEV_EDIT_PAGE_MAGIC_V2 = 0x49464432;
     private static final int DIMENSION_STORE_MAGIC = 0x4D43444D; // MCDM
-    private static final int PROCEDURAL_CACHE_SAVE_MAGIC = 0x4D434350; // MCCP
     private static final int DIMENSION_PAGE_MAGIC = 0x4D434450; // MCDP
     private static final int DIMENSION_PAGE_BYTES = 16000;
     private static final int INFDEV_EDITS_PER_PAGE = 128;
@@ -81,39 +80,14 @@ final class VoxelWorld {
     private static final int FLUID_QUEUE_SIZE = 2048;
     private final int[] fluidQueue = new int[FLUID_QUEUE_SIZE];
     private final byte[] fluidQueued = new byte[(BLOCK_COUNT + 7) / 8];
-    // Fixed 3x3 ring: the active chunk and its four face-neighbors always fit.
-    private static final int PROCEDURAL_CACHE_SPAN = 3;
-    private static final int PROCEDURAL_CACHE_SIZE = PROCEDURAL_CACHE_SPAN * PROCEDURAL_CACHE_SPAN;
+    // Power-of-two ring cache; eight chunks reduce regeneration while meshing neighbors.
+    private static final int PROCEDURAL_CACHE_SIZE = 8;
     private final byte[][] proceduralChunks =
             new byte[PROCEDURAL_CACHE_SIZE][InfdevTerrain.CHUNK_VOLUME];
     private final int[] proceduralChunkX = new int[PROCEDURAL_CACHE_SIZE];
     private final int[] proceduralChunkZ = new int[PROCEDURAL_CACHE_SIZE];
     private final int[] proceduralHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     private final byte[] proceduralBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
-    // One background worker owns these scratch arrays.
-    private byte[] proceduralWorkerBuffer = new byte[InfdevTerrain.CHUNK_VOLUME];
-    private final int[] proceduralWorkerHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
-    private final byte[] proceduralWorkerBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
-    private final int[] proceduralQueueX = new int[PROCEDURAL_CACHE_SIZE];
-    private final int[] proceduralQueueZ = new int[PROCEDURAL_CACHE_SIZE];
-    private final boolean[] proceduralQueueNether = new boolean[PROCEDURAL_CACHE_SIZE];
-    private int proceduralQueueCount;
-    private int proceduralQueueFocusX = Integer.MIN_VALUE;
-    private int proceduralQueueFocusZ = Integer.MIN_VALUE;
-    private boolean proceduralQueueFocusNether;
-    private int proceduralGenerationEpoch;
-    private boolean proceduralWorkerRunning;
-    private boolean proceduralWorkerBusy;
-    private boolean proceduralWorkerStop;
-    private boolean proceduralInitialNeighborhoodLock;
-    private Thread proceduralWorkerThread;
-    private int proceduralWorkerX, proceduralWorkerZ;
-    private boolean proceduralWorkerNether;
-    private int proceduralChunksGenerated;
-    private int proceduralChunksLoadedFromStorage;
-    private int proceduralChunksStored;
-    private long lastProceduralGenerationMillis;
-    private ChunkStorageManager proceduralStorage;
     private int[] editX = new int[128];
     private int[] editY = new int[128];
     private int[] editZ = new int[128];
@@ -154,8 +128,6 @@ final class VoxelWorld {
     private int fluidTickDelay;
     private int lavaTickCounter;
     private int fluidDirection;
-    // Shared portal coordinates; callers consume them immediately and never retain them.
-    private final int[] portalFrameScratch = new int[4];
 
     void tickTime() {
         dayTime += DAY_TICKS_PER_UPDATE;
@@ -170,12 +142,6 @@ final class VoxelWorld {
     VoxelWorld(int seed, int mode) { this(seed, mode, SIZE_INFINITE, TYPE_STANDARD); }
 
     VoxelWorld(int seed, int mode, int worldSize, int worldType) {
-        this(seed, mode, worldSize, worldType, true);
-    }
-
-    /** Loading a save restores its voxel arrays; do not generate terrain first. */
-    private VoxelWorld(int seed, int mode, int worldSize, int worldType,
-                       boolean generateInitialTerrain) {
         setGenerationDiagnosticStage("VoxelWorld: asignando semilla");
         this.seed = seed;
         setGenerationDiagnosticStage("VoxelWorld: asignando modo");
@@ -190,11 +156,9 @@ final class VoxelWorld {
             proceduralChunkX[i] = Integer.MIN_VALUE;
             proceduralChunkZ[i] = Integer.MIN_VALUE;
         }
-        if (generateInitialTerrain) {
-            setGenerationDiagnosticStage("VoxelWorld: entrando en generate()");
-            generate();
-            setGenerationDiagnosticStage("VoxelWorld: generate() terminó; posicionando jugador");
-        }
+        setGenerationDiagnosticStage("VoxelWorld: entrando en generate()");
+        generate();
+        setGenerationDiagnosticStage("VoxelWorld: generate() terminó; posicionando jugador");
     }
 
     private int index(int x, int y, int z) {
@@ -214,370 +178,21 @@ final class VoxelWorld {
         return value < 0 && value % CHUNK_XZ != 0 ? result - 1 : result;
     }
 
-    /** Stable ring address: a 3x3 active window maps to nine unique slots. */
-    private int proceduralSlot(int cx, int cz) {
-        int x = cx % PROCEDURAL_CACHE_SPAN;
-        int z = cz % PROCEDURAL_CACHE_SPAN;
-        if (x < 0) x += PROCEDURAL_CACHE_SPAN;
-        if (z < 0) z += PROCEDURAL_CACHE_SPAN;
-        return z * PROCEDURAL_CACHE_SPAN + x;
-    }
-
-    private int findProceduralChunk(int cx, int cz) {
-        int slot = proceduralSlot(cx, cz);
-        return proceduralChunkX[slot] == cx && proceduralChunkZ[slot] == cz ? slot : -1;
+    /** Power-of-two direct-mapped cache: one hash and two coordinate checks per lookup. */
+    private int proceduralCacheSlot(int cx, int cz) {
+        return (cx * 73428767 ^ cz * 912931) & (PROCEDURAL_CACHE_SIZE - 1);
     }
 
     private byte proceduralBlock(int x, int y, int z) {
         int cx = floorChunk(x), cz = floorChunk(z);
-        synchronized (this) {
-            int cache = findProceduralChunk(cx, cz);
-            if (cache >= 0) {
-
-                int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
-                return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
-            }
+        int cache = proceduralCacheSlot(cx, cz);
+        if (proceduralChunkX[cache] != cx || proceduralChunkZ[cache] != cz) {
+            generateChunk(cx, cz, proceduralChunks[cache]);
+            proceduralChunkX[cache] = cx;
+            proceduralChunkZ[cache] = cz;
         }
-        // Never generate terrain on the caller thread. A missing sector is
-        // requested from the low-priority worker and remains temporarily empty.
-        enqueueProceduralChunk(cx, cz, true);
-        return Block.AIR;
-    }
-
-    /**
-     * Keep only the current 3x3 neighborhood. The center is queued first,
-     * followed by its four face-neighbors.
-     */
-    void requestProceduralChunk(int cx, int cz) {
-        boolean initialLock;
-        synchronized (this) {
-            initialLock = proceduralInitialNeighborhoodLock;
-            if (!initialLock && (proceduralQueueFocusX != cx || proceduralQueueFocusZ != cz ||
-                proceduralQueueFocusNether != nether)) {
-                int kept = 0;
-                for (int i = 0; i < proceduralQueueCount; i++) {
-                    if (proceduralQueueNether[i] == nether &&
-                        Math.abs(proceduralQueueX[i] - cx) <= 1 &&
-                        Math.abs(proceduralQueueZ[i] - cz) <= 1) {
-                        proceduralQueueX[kept] = proceduralQueueX[i];
-                        proceduralQueueZ[kept] = proceduralQueueZ[i];
-                        proceduralQueueNether[kept] = proceduralQueueNether[i];
-                        kept++;
-                    }
-                }
-                proceduralQueueCount = kept;
-                proceduralQueueFocusX = cx;
-                proceduralQueueFocusZ = cz;
-                proceduralQueueFocusNether = nether;
-            }
-        }
-        // During spawn warm-up keep the 3x3 cache pinned to the spawn center.
-        // The renderer may promote the chunk it is currently meshing, but must
-        // not move the generation focus and evict the other spawn neighbors.
-        if (initialLock) {
-            enqueueProceduralChunk(cx, cz, true);
-            return;
-        }
-        // Generate the visible chunk first, then its four neighbors.
-        enqueueProceduralChunk(cx, cz, true);
-        enqueueProceduralChunk(cx - 1, cz, false);
-        enqueueProceduralChunk(cx + 1, cz, false);
-        enqueueProceduralChunk(cx, cz - 1, false);
-        enqueueProceduralChunk(cx, cz + 1, false);
-    }
-
-    /**
-     * Prime the complete 3x3 terrain neighborhood before the first frame.
-     * The fixed cache and request queue both hold exactly these nine chunks.
-     */
-    void requestProceduralNeighborhood(int cx, int cz) {
-        synchronized (this) {
-            proceduralInitialNeighborhoodLock = true;
-            proceduralQueueFocusX = cx;
-            proceduralQueueFocusZ = cz;
-            proceduralQueueFocusNether = nether;
-            proceduralQueueCount = 0;
-        }
-        enqueueProceduralChunk(cx, cz, true);
-        enqueueProceduralChunk(cx - 1, cz, false);
-        enqueueProceduralChunk(cx + 1, cz, false);
-        enqueueProceduralChunk(cx, cz - 1, false);
-        enqueueProceduralChunk(cx, cz + 1, false);
-        enqueueProceduralChunk(cx - 1, cz - 1, false);
-        enqueueProceduralChunk(cx + 1, cz - 1, false);
-        enqueueProceduralChunk(cx - 1, cz + 1, false);
-        enqueueProceduralChunk(cx + 1, cz + 1, false);
-    }
-
-    void finishProceduralNeighborhood() {
-        synchronized (this) {
-            proceduralInitialNeighborhoodLock = false;
-        }
-    }
-
-    boolean isProceduralNeighborhoodReady(int cx, int cz) {
-        for (int dz = -1; dz <= 1; dz++) {
-            for (int dx = -1; dx <= 1; dx++) {
-                if (!isProceduralChunkReady(cx + dx, cz + dz)) return false;
-            }
-        }
-        return true;
-    }
-
-    boolean isProceduralChunkReady(int cx, int cz) {
-        int x0 = cx * CHUNK_XZ, z0 = cz * CHUNK_XZ;
-        if (worldSize == SIZE_OLD &&
-            (outsideWorld(x0, z0) || outsideWorld(x0 + CHUNK_XZ - 1, z0 + CHUNK_XZ - 1)))
-            return true;
-        if (x0 >= 0 && x0 + CHUNK_XZ <= WIDTH && z0 >= 0 && z0 + CHUNK_XZ <= DEPTH)
-            return true;
-        synchronized (this) { return findProceduralChunk(cx, cz) >= 0; }
-    }
-
-    /**
-     * Physics must not interpret an ungenerated procedural chunk as empty space.
-     * Check every chunk touched by the player's horizontal collision footprint;
-     * missing chunks are queued and movement waits until their voxel data exists.
-     */
-    boolean isCollisionAreaReady(float x, float z, float radius) {
-        int minX = floorChunk((int)Math.floor(x - radius));
-        int maxX = floorChunk((int)Math.floor(x + radius));
-        int minZ = floorChunk((int)Math.floor(z - radius));
-        int maxZ = floorChunk((int)Math.floor(z + radius));
-        boolean ready = true;
-        for (int cz = minZ; cz <= maxZ; cz++) {
-            for (int cx = minX; cx <= maxX; cx++) {
-                if (!isProceduralChunkReady(cx, cz)) {
-                    enqueueProceduralChunk(cx, cz, true);
-                    ready = false;
-                }
-            }
-        }
-        return ready;
-    }
-
-    /** A mesh is safe to finalize only after every horizontal face-neighbor exists. */
-    boolean areProceduralChunkNeighborsReady(int cx, int cz) {
-        return isProceduralChunkReady(cx, cz) &&
-                isProceduralChunkReady(cx - 1, cz) &&
-                isProceduralChunkReady(cx + 1, cz) &&
-                isProceduralChunkReady(cx, cz - 1) &&
-                isProceduralChunkReady(cx, cz + 1);
-    }
-
-    private void enqueueProceduralChunk(final int cx, final int cz, boolean priority) {
-        int x0 = cx * CHUNK_XZ, z0 = cz * CHUNK_XZ;
-        if (worldSize == SIZE_OLD &&
-            (outsideWorld(x0, z0) || outsideWorld(x0 + CHUNK_XZ - 1, z0 + CHUNK_XZ - 1))) return;
-        if (x0 >= 0 && x0 + CHUNK_XZ <= WIDTH && z0 >= 0 && z0 + CHUNK_XZ <= DEPTH) return;
-        synchronized (this) {
-            // A gameplay lookup can be the first request after loading or a
-            // dimension change. Establish a focus only when none exists;
-            // later lookups must not steal the renderer's streaming focus.
-            if (proceduralQueueFocusX == Integer.MIN_VALUE ||
-                proceduralQueueFocusNether != nether) {
-                proceduralQueueFocusX = cx;
-                proceduralQueueFocusZ = cz;
-                proceduralQueueFocusNether = nether;
-            }
-            if (findProceduralChunk(cx, cz) >= 0) return;
-            if (proceduralWorkerBusy && proceduralWorkerX == cx &&
-                proceduralWorkerZ == cz && proceduralWorkerNether == nether) return;
-            for (int i = 0; i < proceduralQueueCount; i++) {
-                if (proceduralQueueX[i] == cx && proceduralQueueZ[i] == cz &&
-                    proceduralQueueNether[i] == nether) {
-                    // A queued neighbor may become the new focus. Promote it
-                    // instead of leaving urgent work behind older prefetches.
-                    if (priority && i > 0) {
-                        for (int j = i; j > 0; j--) {
-                            proceduralQueueX[j] = proceduralQueueX[j - 1];
-                            proceduralQueueZ[j] = proceduralQueueZ[j - 1];
-                            proceduralQueueNether[j] = proceduralQueueNether[j - 1];
-                        }
-                        proceduralQueueX[0] = cx;
-                        proceduralQueueZ[0] = cz;
-                        proceduralQueueNether[0] = nether;
-                    }
-                    return;
-                }
-            }
-            if (priority) {
-                if (proceduralQueueCount == proceduralQueueX.length) proceduralQueueCount--;
-                for (int i = proceduralQueueCount; i > 0; i--) {
-                    proceduralQueueX[i] = proceduralQueueX[i - 1];
-                    proceduralQueueZ[i] = proceduralQueueZ[i - 1];
-                    proceduralQueueNether[i] = proceduralQueueNether[i - 1];
-                }
-                proceduralQueueX[0] = cx;
-                proceduralQueueZ[0] = cz;
-                proceduralQueueNether[0] = nether;
-                proceduralQueueCount++;
-            } else {
-                if (proceduralQueueCount == proceduralQueueX.length) return;
-                proceduralQueueX[proceduralQueueCount] = cx;
-                proceduralQueueZ[proceduralQueueCount] = cz;
-                proceduralQueueNether[proceduralQueueCount] = nether;
-                proceduralQueueCount++;
-            }
-            // Reuse one low-priority worker for this world. Spawning a new
-            // thread whenever the short queue drains adds avoidable VM/stack
-            // overhead on CLDC devices.
-            if (proceduralWorkerThread == null) {
-                proceduralWorkerStop = false;
-                proceduralWorkerRunning = true;
-                proceduralWorkerThread = new Thread(new Runnable() {
-                    public void run() { runProceduralWorker(); }
-                });
-                proceduralWorkerThread.setPriority(Thread.MIN_PRIORITY);
-                proceduralWorkerThread.start();
-            } else {
-                notifyAll();
-            }
-        }
-    }
-
-    /**
-     * Once a chunk has started generating, let its bounded task finish.
-     * The streaming focus may move while the worker is yielding between rows;
-     * cancelling on every focus shift leaves repeated partial generations and
-     * starves chunks at the edge of the active window. The completed result is
-     * still checked against the current 3x3 focus before it can enter the cache.
-     */
-    private synchronized boolean isProceduralGenerationCurrent(int epoch, boolean dimension,
-                                                                 int cx, int cz) {
-        return epoch == proceduralGenerationEpoch && dimension == nether;
-    }
-
-    /** Create the persistent second-level cache only after this world has a save identity. */
-    private synchronized ChunkStorageManager getProceduralStorage() {
-        if (saveStoreName == null || saveStoreName.length() == 0) return null;
-        if (proceduralStorage == null) {
-            proceduralStorage = new ChunkStorageManager(saveStoreName, seed,
-                    worldType, economicMode);
-        }
-        return proceduralStorage;
-    }
-
-    private void runProceduralWorker() {
-        while (true) {
-            int cx, cz;
-            boolean dimension;
-            int epoch;
-            synchronized (this) {
-                // Keep one worker parked while idle. New requests wake it;
-                // there is no polling sleep and no thread churn between bursts.
-                while (proceduralQueueCount == 0 && !proceduralWorkerStop) {
-                    try { wait(); } catch (InterruptedException ignored) { }
-                }
-                if (proceduralWorkerStop) {
-                    proceduralWorkerBusy = false;
-                    proceduralWorkerRunning = false;
-                    proceduralWorkerThread = null;
-                    notifyAll();
-                    return;
-                }
-                cx = proceduralQueueX[0]; cz = proceduralQueueZ[0];
-                dimension = proceduralQueueNether[0];
-                proceduralWorkerBusy = true;
-                proceduralWorkerX = cx; proceduralWorkerZ = cz;
-                proceduralWorkerNether = dimension;
-                for (int i = 1; i < proceduralQueueCount; i++) {
-                    proceduralQueueX[i - 1] = proceduralQueueX[i];
-                    proceduralQueueZ[i - 1] = proceduralQueueZ[i];
-                    proceduralQueueNether[i - 1] = proceduralQueueNether[i];
-                }
-                proceduralQueueCount--;
-                epoch = proceduralGenerationEpoch;
-            }
-            if (dimension != nether) {
-                synchronized (this) { proceduralWorkerBusy = false; }
-                continue;
-            }
-            long generationStarted = System.currentTimeMillis();
-            ChunkStorageManager storage = null;
-            boolean restoredFromStorage = false;
-            try {
-                storage = getProceduralStorage();
-                restoredFromStorage = storage != null &&
-                        storage.load(cx, cz, dimension, proceduralWorkerBuffer);
-                if (restoredFromStorage) {
-                    synchronized (this) { proceduralChunksLoadedFromStorage++; }
-                }
-                boolean completed = restoredFromStorage;
-                if (!completed && worldType == TYPE_FLAT && !dimension) {
-                    generateFlatChunkInSlices(proceduralWorkerBuffer, proceduralWorkerHeights,
-                                              proceduralWorkerBiomes);
-                    completed = true;
-                } else if (!completed) {
-                    InfdevTerrain.GenerationTask task = new InfdevTerrain.GenerationTask(
-                            seed, cx, cz, proceduralWorkerBuffer, proceduralWorkerHeights,
-                            proceduralWorkerBiomes, economicMode, dimension);
-                    completed = false;
-                    while (isProceduralGenerationCurrent(epoch, dimension, cx, cz)) {
-                        if (task.step()) {
-                            completed = true;
-                            break;
-                        }
-                        Thread.yield();
-                    }
-                }
-                if (!completed) {
-                    synchronized (this) { proceduralWorkerBusy = false; }
-                    continue;
-                }
-                // Persist only completed base terrain. Player edits remain in the
-                // existing edit journal and are overlaid by getLoaded/getCollision.
-                if (!restoredFromStorage && storage != null &&
-                        storage.store(cx, cz, dimension, proceduralWorkerBuffer)) {
-                    synchronized (this) { proceduralChunksStored++; }
-                }
-            } catch (Throwable failure) {
-                synchronized (this) {
-                    proceduralWorkerBusy = false;
-                    proceduralQueueCount = 0;
-                }
-                setGenerationDiagnosticStage("VoxelWorld: falló la generación procedural en segundo plano");
-                // Keep the reusable worker alive; a later valid request can
-                // still be processed instead of permanently disabling streaming.
-                continue;
-            }
-            synchronized (this) {
-                proceduralWorkerBusy = false;
-                if (epoch != proceduralGenerationEpoch || dimension != nether) continue;
-                // Drop stale work instead of overwriting a chunk in the new
-                // active window. Each coordinate has one deterministic slot.
-                if (Math.abs(cx - proceduralQueueFocusX) > 1 ||
-                    Math.abs(cz - proceduralQueueFocusZ) > 1 ||
-                    proceduralQueueFocusNether != dimension) continue;
-                int slot = proceduralSlot(cx, cz);
-                byte[] recycled = proceduralChunks[slot];
-                proceduralChunks[slot] = proceduralWorkerBuffer;
-                proceduralWorkerBuffer = recycled;
-                proceduralChunkX[slot] = cx;
-                proceduralChunkZ[slot] = cz;
-
-                proceduralChunksGenerated++;
-                lastProceduralGenerationMillis =
-                        System.currentTimeMillis() - generationStarted;
-            }
-        }
-    }
-
-    /** Debug-only snapshot; never called from the gameplay or rendering hot path. */
-    synchronized String getStreamingDiagnostics() {
-        int resident = 0;
-        for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++)
-            if (proceduralChunkX[i] != Integer.MIN_VALUE) resident++;
-        Runtime runtime = Runtime.getRuntime();
-        long total = runtime.totalMemory();
-        long used = total - runtime.freeMemory();
-        return "Heap " + (used / 1024L) + "/" + (total / 1024L) +
-                "K C" + resident + "/" + PROCEDURAL_CACHE_SIZE +
-                " Q" + proceduralQueueCount +
-                " G" + proceduralChunksGenerated +
-                " D" + proceduralChunksLoadedFromStorage +
-                " W" + proceduralChunksStored +
-                " " + lastProceduralGenerationMillis + "ms";
+        int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
+        return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
     }
 
     private int findEdit(int x, int y, int z) {
@@ -702,104 +317,6 @@ final class VoxelWorld {
         return edit >= 0 ? editId[edit] : proceduralBlock(x, y, z);
     }
 
-    /**
-     * Collision lookup that never generates terrain on the physics thread.
-     * Missing procedural voxels stay non-solid until their real terrain has
-     * been generated and published. A fabricated solid here becomes an
-     * invisible wall/floor because the renderer correctly sees air meanwhile.
-     */
-    byte getCollision(int x, int y, int z) {
-        if (y < 0 || y >= HEIGHT || outsideWorld(x, z)) return Block.AIR;
-        if (inside(x, z)) return blocks[index(x, y, z)];
-        int edit = findEdit(x, y, z);
-        if (edit >= 0) return editId[edit];
-        int cx = floorChunk(x), cz = floorChunk(z);
-        synchronized (this) {
-            int cache = findProceduralChunk(cx, cz);
-            if (cache >= 0) {
-                int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
-                return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
-            }
-        }
-        enqueueProceduralChunk(cx, cz, true);
-        return Block.AIR;
-    }
-
-    /**
-     * Non-blocking terrain lookup for rendering. Unlike get(), this never
-     * generates a missing procedural chunk on the caller thread.
-     */
-    byte getLoaded(int x, int y, int z) {
-        if (y < 0 || y >= HEIGHT || outsideWorld(x, z)) return Block.AIR;
-        if (inside(x, z)) return blocks[index(x, y, z)];
-        int edit = findEdit(x, y, z);
-        if (edit >= 0) return editId[edit];
-        int cx = floorChunk(x), cz = floorChunk(z);
-        synchronized (this) {
-            int cache = findProceduralChunk(cx, cz);
-            if (cache < 0) return Block.AIR;
-
-            int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
-            return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
-        }
-    }
-
-    /**
-     * Copy one 16x16 horizontal layer for the chunk mesher. Resolve the
-     * procedural cache slot once per layer instead of performing a synchronized
-     * LRU lookup for every voxel. The destination uses z*CHUNK_XZ+x ordering.
-     */
-    void copyLoadedChunkLayer(int x0, int y, int z0, byte[] target) {
-        copyLoadedChunkLayer(x0, y, z0, target, 0);
-    }
-
-    /** Copy directly into a chunk snapshot at the requested layer offset. */
-    void copyLoadedChunkLayer(int x0, int y, int z0, byte[] target, int targetOffset) {
-        int layerSize = CHUNK_XZ * CHUNK_XZ;
-        if (target == null || targetOffset < 0 ||
-                target.length - targetOffset < layerSize) return;
-        if (y < 0 || y >= HEIGHT) {
-            for (int i = 0; i < layerSize; i++) target[targetOffset + i] = Block.AIR;
-            return;
-        }
-        // The saved starting area is already one contiguous voxel array.
-        // A complete 16x16 layer inside it needs no cache lookup, edit lookup,
-        // bounds checks per voxel, or monitor: copy each row directly.
-        if (x0 >= 0 && x0 + CHUNK_XZ <= WIDTH &&
-            z0 >= 0 && z0 + CHUNK_XZ <= DEPTH) {
-            int source = index(x0, y, z0);
-            for (int z = 0; z < CHUNK_XZ; z++) {
-                System.arraycopy(blocks, source, target, targetOffset + z * CHUNK_XZ, CHUNK_XZ);
-                source += WIDTH;
-            }
-            return;
-        }
-
-        int cx = floorChunk(x0), cz = floorChunk(z0);
-        synchronized (this) {
-            int cache = findProceduralChunk(cx, cz);
-            for (int z = 0; z < CHUNK_XZ; z++) {
-                for (int x = 0; x < CHUNK_XZ; x++) {
-                    int wx = x0 + x, wz = z0 + z;
-                    int at = targetOffset + z * CHUNK_XZ + x;
-                    if (outsideWorld(wx, wz)) {
-                        target[at] = Block.AIR;
-                    } else if (inside(wx, wz)) {
-                        target[at] = blocks[index(wx, y, wz)];
-                    } else {
-                        int edit = findEdit(wx, y, wz);
-                        if (edit >= 0) target[at] = editId[edit];
-                        else if (cache >= 0) {
-                            int lx = wx - cx * CHUNK_XZ;
-                            int lz = wz - cz * CHUNK_XZ;
-                            target[at] = proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
-                        } else target[at] = Block.AIR;
-                    }
-                }
-            }
-
-        }
-    }
 
     /**
      * Fast lookup for light-source discovery. Torches can only be placed as
@@ -811,100 +328,6 @@ final class VoxelWorld {
         if (inside(x, z)) return blocks[index(x, y, z)];
         int edit = findEdit(x, y, z);
         return edit >= 0 ? editId[edit] : Block.AIR;
-    }
-
-    /** Collect rails in one chunk without querying/generating procedural terrain. */
-    int collectRailsInChunk(int chunkX, int chunkY, int chunkZ,
-                            int[] outX, int[] outY, int[] outZ,
-                            int[] outMetadata, int capacity) {
-        if (capacity <= 0) return 0;
-        int x0 = chunkX * CHUNK_XZ, y0 = chunkY * CHUNK_Y, z0 = chunkZ * CHUNK_XZ;
-        int x1 = x0 + CHUNK_XZ - 1, y1 = Math.min(HEIGHT - 1, y0 + CHUNK_Y - 1);
-        int z1 = z0 + CHUNK_XZ - 1;
-        if (y0 < 0 || y0 >= HEIGHT) return 0;
-        int count = 0;
-        int minX = Math.max(0, x0), maxX = Math.min(WIDTH - 1, x1);
-        int minZ = Math.max(0, z0), maxZ = Math.min(DEPTH - 1, z1);
-        if (minX <= maxX && minZ <= maxZ) {
-            for (int y = y0; y <= y1 && count < capacity; y++) {
-                for (int z = minZ; z <= maxZ && count < capacity; z++) {
-                    int at = index(minX, y, z);
-                    for (int x = minX; x <= maxX && count < capacity; x++, at++) {
-                        if (blocks[at] != Block.RAIL) continue;
-                        outX[count] = x;
-                        outY[count] = y;
-                        outZ[count] = z;
-                        outMetadata[count] = metadataAt(x, y, z) & 15;
-                        count++;
-                    }
-                }
-            }
-        }
-        for (int i = 0; i < editCount && count < capacity; i++) {
-            if (editNether[i] != nether || editId[i] != Block.RAIL ||
-                editX[i] < x0 || editX[i] > x1 ||
-                editY[i] < y0 || editY[i] > y1 ||
-                editZ[i] < z0 || editZ[i] > z1) continue;
-            outX[count] = editX[i];
-            outY[count] = editY[i];
-            outZ[count] = editZ[i];
-            outMetadata[count] = editMeta[i] & 15;
-            count++;
-        }
-        return count;
-    }
-
-    /**
-     * Enumerates nearby light sources without probing every voxel in the
-     * surrounding volume. Procedural terrain cannot contain player torches;
-     * those are sparse edits. Only the finite starter area needs a voxel scan
-     * because it can contain naturally generated lava.
-     */
-    int collectTorchSources(int minX, int minY, int minZ,
-                            int maxX, int maxY, int maxZ,
-                            int[] outX, int[] outY, int[] outZ,
-                            boolean[] outLava, int capacity) {
-        int count = 0;
-        int lowY = Math.max(0, minY);
-        int highY = Math.min(HEIGHT - 1, maxY);
-        if (lowY > highY || capacity <= 0) return 0;
-
-        int localMinX = Math.max(0, minX);
-        int localMaxX = Math.min(WIDTH - 1, maxX);
-        int localMinZ = Math.max(0, minZ);
-        int localMaxZ = Math.min(DEPTH - 1, maxZ);
-        if (localMinX <= localMaxX && localMinZ <= localMaxZ) {
-            for (int y = lowY; y <= highY && count < capacity; y++) {
-                for (int z = localMinZ; z <= localMaxZ && count < capacity; z++) {
-                    int at = index(localMinX, y, z);
-                    for (int x = localMinX; x <= localMaxX && count < capacity; x++, at++) {
-                        byte id = blocks[at];
-                        if (id != Block.TORCH && id != Block.LAVA) continue;
-                        outX[count] = x;
-                        outY[count] = y;
-                        outZ[count] = z;
-                        outLava[count] = id == Block.LAVA;
-                        count++;
-                    }
-                }
-            }
-        }
-
-        // The edit table is sparse and already contains every placed torch
-        // in the infinite world. Ignore edits belonging to the other dimension.
-        for (int i = 0; i < editCount && count < capacity; i++) {
-            if (editNether[i] != nether || editY[i] < lowY || editY[i] > highY ||
-                editX[i] < minX || editX[i] > maxX ||
-                editZ[i] < minZ || editZ[i] > maxZ) continue;
-            byte id = editId[i];
-            if (id != Block.TORCH && id != Block.LAVA) continue;
-            outX[count] = editX[i];
-            outY[count] = editY[i];
-            outZ[count] = editZ[i];
-            outLava[count] = id == Block.LAVA;
-            count++;
-        }
-        return count;
     }
 
     boolean set(int x, int y, int z, byte id) {
@@ -978,6 +401,7 @@ final class VoxelWorld {
         int metadata = orientation & 7;
         setMetadata(x, y, z, metadata);
         setMetadata(x, y + 1, z, metadata | 8);
+        fullRebuild = true;
         revision++;
         changedX = x; changedY = y; changedZ = z;
         return true;
@@ -991,6 +415,7 @@ final class VoxelWorld {
         metadata ^= 4;
         setMetadata(x, y, z, metadata);
         setMetadata(x, y + 1, z, metadata | 8);
+        fullRebuild = true;
         revision++;
         changedX = x; changedY = y; changedZ = z;
         return true;
@@ -1004,6 +429,7 @@ final class VoxelWorld {
         boolean hasUpper = y + 1 < HEIGHT && get(x, y + 1, z) == doorBlock;
         if (!setBlock(x, y, z, Block.AIR, 0)) return false;
         if (hasUpper && !setBlock(x, y + 1, z, Block.AIR, 0)) return false;
+        fullRebuild = true;
         return true;
     }
 
@@ -1184,11 +610,8 @@ final class VoxelWorld {
 
         // Process only the queue snapshot so newly scheduled neighbors are
         // handled on a later tick, keeping the work bounded on small devices.
-        // Bound each fluid update to avoid a large saved queue monopolizing
-        // a game tick on low-clock Java ME devices.
         int pending = fluidQueueCount;
-        int budget = pending > 96 ? 96 : pending;
-        while (budget-- > 0 && fluidQueueCount > 0) {
+        while (pending-- > 0 && fluidQueueCount > 0) {
             int i = fluidQueue[fluidQueueHead];
             fluidQueueHead++;
             if (fluidQueueHead == FLUID_QUEUE_SIZE) fluidQueueHead = 0;
@@ -1298,56 +721,17 @@ final class VoxelWorld {
         }
     }
 
-    /** Flat chunks use the same bounded row scheduling as procedural terrain. */
-    private void generateFlatChunkInSlices(byte[] target, int[] heights, byte[] biomes) {
-        for (int z = 0; z < CHUNK_XZ; z++) {
-            for (int x = 0; x < CHUNK_XZ; x++) {
-                int base = (z * CHUNK_XZ + x) * HEIGHT;
-                for (int y = 0; y < HEIGHT; y++)
-                    target[base + y] = y == 0 ? Block.BEDROCK :
-                        (y <= 3 ? Block.DIRT : (y == 4 ? Block.GRASS : Block.AIR));
-                heights[z * CHUNK_XZ + x] = 4;
-                biomes[z * CHUNK_XZ + x] = 0;
-            }
-            yieldInitialGenerationSlice();
-        }
-    }
-
-    /** Cooperative scheduling point; unlike sleep, it does not impose a timer delay. */
-    private void yieldInitialGenerationSlice() {
-        Thread.yield();
-    }
-
     private void generate() {
         setGenerationDiagnosticStage("VoxelWorld.generate: preparando bucle de chunks");
         for (int cz = 0; cz < CHUNKS_Z; cz++) {
             setGenerationDiagnosticStage("VoxelWorld.generate: comenzando fila de chunks cz=" + cz);
             for (int cx = 0; cx < CHUNKS_X; cx++) {
                 setGenerationDiagnosticStage("VoxelWorld.generate: reservando caché para chunk cx=" + cx + ", cz=" + cz);
-                int cache = proceduralSlot(cx, cz);
-                setGenerationDiagnosticStage("VoxelWorld.generate: generando chunk por tareas cx=" + cx + ", cz=" + cz);
-                if (worldType == TYPE_FLAT && !nether) {
-                    // Flat terrain is also filled in bounded Z rows.
-                    for (int z = 0; z < CHUNK_XZ; z++) {
-                        for (int x = 0; x < CHUNK_XZ; x++) {
-                            int base = (z * CHUNK_XZ + x) * HEIGHT;
-                            for (int y = 0; y < HEIGHT; y++)
-                                proceduralChunks[cache][base + y] = y == 0 ? Block.BEDROCK :
-                                    (y <= 3 ? Block.DIRT : (y == 4 ? Block.GRASS : Block.AIR));
-                            proceduralHeights[z * CHUNK_XZ + x] = 4;
-                            proceduralBiomes[z * CHUNK_XZ + x] = 0;
-                        }
-                        yieldInitialGenerationSlice();
-                    }
-                } else {
-                    InfdevTerrain.GenerationTask initialTask = new InfdevTerrain.GenerationTask(
-                            seed, cx, cz, proceduralChunks[cache], proceduralHeights,
-                            proceduralBiomes, economicMode, nether);
-                    while (!initialTask.step()) yieldInitialGenerationSlice();
-                }
+                int cache = proceduralCacheSlot(cx, cz);
+                setGenerationDiagnosticStage("VoxelWorld.generate: generando chunk cx=" + cx + ", cz=" + cz);
+                generateChunk(cx, cz, proceduralChunks[cache]);
                 setGenerationDiagnosticStage("VoxelWorld.generate: guardando coordenadas del chunk cx=" + cx + ", cz=" + cz);
                 proceduralChunkX[cache] = cx; proceduralChunkZ[cache] = cz;
-
                 for (int z = 0; z < CHUNK_XZ; z++) {
                     setGenerationDiagnosticStage("VoxelWorld.generate: copiando chunk cx=" + cx + ", cz=" + cz + ", z=" + z);
                     for (int x = 0; x < CHUNK_XZ; x++) {
@@ -1356,7 +740,6 @@ final class VoxelWorld {
                             blocks[index(wx, y, wz)] = proceduralChunks[cache][(z * CHUNK_XZ + x) * HEIGHT + y];
                         }
                     }
-                    yieldInitialGenerationSlice();
                 }
             }
         }
@@ -1379,40 +762,30 @@ final class VoxelWorld {
     }
 
     private void generateChunk(int cx, int cz, byte[] target) {
-        generateChunk(cx, cz, target, proceduralHeights, proceduralBiomes, nether);
-    }
-
-    private void generateChunk(int cx, int cz, byte[] target, int[] heights,
-                               byte[] biomes, boolean dimensionNether) {
         setGenerationDiagnosticStage("VoxelWorld.generateChunk: validando dimensión; chunk cx=" + cx + ", cz=" + cz);
-        if (!dimensionNether && worldType == TYPE_FLAT) {
+        if (!nether && worldType == TYPE_FLAT) {
             for (int z = 0; z < CHUNK_XZ; z++) for (int x = 0; x < CHUNK_XZ; x++) {
                 int base = (z * CHUNK_XZ + x) * HEIGHT;
                 for (int y = 0; y < HEIGHT; y++)
                     target[base + y] = y == 0 ? Block.BEDROCK : (y <= 3 ? Block.DIRT : (y == 4 ? Block.GRASS : Block.AIR));
-                heights[z * CHUNK_XZ + x] = 4;
-                biomes[z * CHUNK_XZ + x] = 0;
+                proceduralHeights[z * CHUNK_XZ + x] = 4;
+                proceduralBiomes[z * CHUNK_XZ + x] = 0;
             }
-        } else if (dimensionNether) {
+        } else if (nether) {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generateNether; cx=" + cx + ", cz=" + cz);
-            if (economicMode) InfdevTerrain.generateEconomicNether(seed, cx, cz, target, heights);
-            else InfdevTerrain.generateNether(seed, cx, cz, target, heights);
+            if (economicMode) InfdevTerrain.generateEconomicNether(seed, cx, cz, target, proceduralHeights);
+            else InfdevTerrain.generateNether(seed, cx, cz, target, proceduralHeights);
         } else if (economicMode) {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generateEconomic; cx=" + cx + ", cz=" + cz);
-            InfdevTerrain.generateEconomic(seed, cx, cz, target, heights, biomes);
+            InfdevTerrain.generateEconomic(seed, cx, cz, target, proceduralHeights, proceduralBiomes);
         } else {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generate; cx=" + cx + ", cz=" + cz);
-            InfdevTerrain.generate(seed, cx, cz, target, heights, biomes);
+            InfdevTerrain.generate(seed, cx, cz, target, proceduralHeights, proceduralBiomes);
         }
     }
 
     void setNetherDimension(boolean enabled) {
         if (nether == enabled) return;
-        synchronized (this) {
-            proceduralGenerationEpoch++;
-            proceduralQueueCount = 0;
-            notifyAll();
-        }
         if (otherDimensionBlocks != null && otherDimensionIsNether == enabled) {
             byte[] oldBlocks = blocks;
             byte[] oldWater = waterLevels;
@@ -1437,8 +810,6 @@ final class VoxelWorld {
             proceduralChunkX[i] = Integer.MIN_VALUE;
             proceduralChunkZ[i] = Integer.MIN_VALUE;
         }
-        proceduralQueueFocusX = Integer.MIN_VALUE;
-        proceduralQueueFocusZ = Integer.MIN_VALUE;
 
         fluidQueueHead = fluidQueueTail = fluidQueueCount = fluidTickDelay = fluidDirection = 0;
         lavaTickCounter = 0;
@@ -1451,16 +822,6 @@ final class VoxelWorld {
 
     void switchDimension() { setNetherDimension(!nether); }
 
-    /** Stop the world-owned streaming worker before this world is discarded. */
-    void shutdownProceduralWorker() {
-        synchronized (this) {
-            proceduralWorkerStop = true;
-            proceduralGenerationEpoch++;
-            proceduralQueueCount = 0;
-            notifyAll();
-        }
-    }
-
     private void convertLegacyNetherWater() {
         for (int i = 0; i < blocks.length; i++)
             if (blocks[i] == Block.WATER) blocks[i] = Block.LAVA;
@@ -1471,8 +832,8 @@ final class VoxelWorld {
     /** Activates a black-wool 4x5 frame when the player uses a diamond sword. */
     boolean activatePortalAtWool(int x, int y, int z) {
         if (get(x, y, z) != Block.WOOL) return false;
-        int[] frame = portalFrameScratch;
-        if (!findPortalFrameForWool(x, y, z, frame)) return false;
+        int[] frame = findPortalFrameForWool(x, y, z);
+        if (frame == null) return false;
         for (int v = 1; v <= 3; v++) {
             for (int u = 1; u <= 2; u++) {
                 int px = frame[3] == 0 ? frame[0] + u : frame[0];
@@ -1504,40 +865,39 @@ final class VoxelWorld {
         return false;
     }
 
-    boolean portalFrameAt(int x, int y, int z, int[] out) {
-        if (out == null || out.length < 4 || get(x, y, z) != Block.PORTAL) return false;
+    int[] portalFrameAt(int x, int y, int z) {
+        if (get(x, y, z) != Block.PORTAL) return null;
         for (int axis = 0; axis < 2; axis++) {
             for (int u = 1; u <= 2; u++) {
                 int bx = axis == 0 ? x - u : x;
                 int bz = axis == 0 ? z : z - u;
                 for (int v = 1; v <= 3; v++) {
                     int by = y - v;
-                    if (matchesPortalFrame(bx, by, bz, axis)) {
-                        out[0] = bx; out[1] = by; out[2] = bz; out[3] = axis;
-                        return true;
-                    }
+                    if (matchesPortalFrame(bx, by, bz, axis))
+                        return new int[] { bx, by, bz, axis };
                 }
             }
         }
-        return false;
+        return null;
     }
 
-    boolean findPortalNear(int x, int z, int[] out) {
+    int[] findPortalNear(int x, int z) {
         for (int radius = 0; radius <= 8; radius++) {
             for (int dz = -radius; dz <= radius; dz++) {
                 for (int dx = -radius; dx <= radius; dx++) {
                     if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
                     for (int y = 1; y < HEIGHT - 1; y++) {
-                        if (portalFrameAt(x + dx, y, z + dz, out)) return true;
+                        int[] frame = portalFrameAt(x + dx, y, z + dz);
+                        if (frame != null) return frame;
                     }
                 }
             }
         }
-        return false;
+        return null;
     }
 
-    boolean createPortalAt(int baseX, int baseY, int baseZ, int axis, int[] out) {
-        if (out == null || out.length < 4 || (axis != 0 && axis != 1)) return false;
+    int[] createPortalAt(int baseX, int baseY, int baseZ, int axis) {
+        if (axis != 0 && axis != 1) return null;
         // The terrain height can differ between the four columns of a portal.
         // A portal placed one block above only its center column can intersect
         // a neighboring hill/wall and fail halfway through construction. Try
@@ -1569,19 +929,18 @@ final class VoxelWorld {
                             if (frameBlock) {
                                 if (get(x, candidateY + v, z) != Block.WOOL ||
                                         woolColor(x, candidateY + v, z) != WoolColors.BLACK) {
-                                    if (!setWool(x, candidateY + v, z, WoolColors.BLACK)) return false;
+                                    if (!setWool(x, candidateY + v, z, WoolColors.BLACK)) return null;
                                 }
                             } else if (!set(x, candidateY + v, z, Block.PORTAL) &&
-                                    get(x, candidateY + v, z) != Block.PORTAL) return false;
+                                    get(x, candidateY + v, z) != Block.PORTAL) return null;
                         }
                     }
                     fullRebuild = true;
-                    out[0] = bx; out[1] = candidateY; out[2] = bz; out[3] = axis;
-                    return true;
+                    return new int[] { bx, candidateY, bz, axis };
                 }
             }
         }
-        return false;
+        return null;
     }
 
     private boolean canPlacePortalFrame(int bx, int by, int bz, int axis) {
@@ -1600,7 +959,7 @@ final class VoxelWorld {
         return true;
     }
 
-    private boolean findPortalFrameForWool(int x, int y, int z, int[] out) {
+    private int[] findPortalFrameForWool(int x, int y, int z) {
         for (int axis = 0; axis < 2; axis++) {
             int firstU = axis == 0 ? x - 3 : z - 3;
             int lastU = axis == 0 ? x : z;
@@ -1609,14 +968,12 @@ final class VoxelWorld {
                     int bx = axis == 0 ? baseU : x;
                     int bz = axis == 0 ? z : baseU;
                     if (baseY <= 0 || baseY + 4 >= HEIGHT) continue;
-                    if (matchesPortalFrame(bx, baseY, bz, axis)) {
-                        out[0] = bx; out[1] = baseY; out[2] = bz; out[3] = axis;
-                        return true;
-                    }
+                    if (matchesPortalFrame(bx, baseY, bz, axis))
+                        return new int[] { bx, baseY, bz, axis };
                 }
             }
         }
-        return false;
+        return null;
     }
 
     private boolean matchesPortalFrame(int bx, int by, int bz, int axis) {
@@ -1711,19 +1068,6 @@ final class VoxelWorld {
             out.writeInt(INFDEV_EDIT_POINTER_MAGIC);
             out.writeInt(generation);
             out.writeInt(pageCount);
-            synchronized (this) {
-                int cachedCount = 0;
-                for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++)
-                    if (proceduralChunkX[i] != Integer.MIN_VALUE) cachedCount++;
-                out.writeInt(PROCEDURAL_CACHE_SAVE_MAGIC);
-                out.writeByte(cachedCount);
-                for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
-                    if (proceduralChunkX[i] == Integer.MIN_VALUE) continue;
-                    out.writeInt(proceduralChunkX[i]);
-                    out.writeInt(proceduralChunkZ[i]);
-                    out.write(proceduralChunks[i]);
-                }
-            }
             out.flush();
             byte[] data = bytes.toByteArray();
             store.setRecord(1, data, 0, data.length);
@@ -1923,20 +1267,14 @@ final class VoxelWorld {
             int mode = in.readByte();
             boolean namedFormat = format == 0x4D434642 || format == 0x4D434643 ||
                                   format == 0x4D434644 || format == ALPHA_ITEM_SAVE_MAGIC || deepWorldFormat;
-            // Saved voxel data is read below. Generating a fresh 3x3 area here
-            // would waste nine complete chunk generations (and another nine
-            // when the save belongs to the Nether).
-            VoxelWorld world = new VoxelWorld(seed, mode, savedWorldSize, savedWorldType, false);
+            VoxelWorld world = new VoxelWorld(seed, mode, savedWorldSize, savedWorldType);
             world.worldName = namedFormat ? in.readUTF() : "Mundo guardado";
             world.difficulty = savedDifficulty < DIFFICULTY_PEACEFUL || savedDifficulty > DIFFICULTY_HARD ? DIFFICULTY_NORMAL : savedDifficulty;
             boolean alphaItemFormat = format == ALPHA_ITEM_SAVE_MAGIC || deepWorldFormat;
             boolean explicitDimensionFormat = format == 0x4D434644 || alphaItemFormat;
             boolean savedNether = explicitDimensionFormat ? in.readBoolean() :
                                   "NETHER".equalsIgnoreCase(world.worldName);
-            // The primary block arrays will be restored from this save record.
-            // Set the dimension flag directly instead of generating a throwaway
-            // dimension before loading the saved blocks.
-            world.nether = savedNether;
+            world.setNetherDimension(savedNether);
             world.saveStoreName = storeName;
             world.selectedSlot = in.readByte();
             boolean currentFormat = format == 0x4D434641 || format == 0x4D434642 ||
@@ -2037,19 +1375,6 @@ final class VoxelWorld {
                 if (in.available() >= 12 && in.readInt() == INFDEV_EDIT_POINTER_MAGIC) {
                     editGeneration = in.readInt();
                     editPageCount = in.readInt();
-                }
-            }
-            // Persist the small outer-terrain cache so the first nearby streamed
-            // sectors can be restored directly instead of regenerated on load.
-            if (in.available() >= 5 && in.readInt() == PROCEDURAL_CACHE_SAVE_MAGIC) {
-                int cachedCount = in.readUnsignedByte();
-                if (cachedCount > PROCEDURAL_CACHE_SIZE) throw new IOException("Invalid chunk cache");
-                for (int i = 0; i < cachedCount; i++) {
-                    int cx = in.readInt(), cz = in.readInt();
-                    int slot = world.proceduralSlot(cx, cz);
-                    in.readFully(world.proceduralChunks[slot]);
-                    world.proceduralChunkX[slot] = cx;
-                    world.proceduralChunkZ[slot] = cz;
                 }
             }
             if (editPageCount > 0 && editPageCount <= store.getNumRecords())
@@ -2167,8 +1492,6 @@ final class VoxelWorld {
         try {
             RecordStore.deleteRecordStore(storeName);
             try { RecordStore.deleteRecordStore(storeName + "-dim"); } catch (RecordStoreException ignored) { }
-            try { RecordStore.deleteRecordStore("mcc-" + storeName); } catch (RecordStoreException ignored) { }
-            try { RecordStore.deleteRecordStore(storeName + "-chunks"); } catch (RecordStoreException ignored) { }
             return true;
         } catch (RecordStoreException ignored) {
             return false;

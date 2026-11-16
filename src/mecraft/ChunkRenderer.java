@@ -7,10 +7,8 @@ import javax.microedition.m3g.Background;
 import javax.microedition.m3g.Camera;
 import javax.microedition.m3g.CompositingMode;
 import javax.microedition.m3g.Graphics3D;
-import javax.microedition.m3g.Fog;
 import javax.microedition.m3g.Group;
 import javax.microedition.m3g.Image2D;
-import javax.microedition.m3g.IndexBuffer;
 import javax.microedition.m3g.Light;
 import javax.microedition.m3g.Mesh;
 import javax.microedition.m3g.Material;
@@ -24,28 +22,27 @@ import javax.microedition.m3g.World;
 
 /** Builds shared-texture chunk meshes on demand for the visible part of the world. */
 final class ChunkRenderer {
-    // The fixed slot ring supports the largest normal stream window. Shortest
-    // distance scans only the chunk columns whose bounds can intersect its
-    // 24-block (1.5-chunk) radius; it does not need an extra candidate ring.
-    private static final int MAX_STREAM_RADIUS = 7;
-    // One rendered chunk spans the complete world height; vertical sections are not separate scene objects.
-    private ChunkBuild pendingBuild;
-    private int pendingBuildSlot = -1;
-    // One complete chunk is built synchronously per renderer update.
-    // Remember the next dirty chunk so paint calls can reuse the stream scan.
-    private int pendingTargetSlot = -1;
-    private int pendingTargetX, pendingTargetY, pendingTargetZ;
+    private static final int MAX_STREAM_RADIUS = 4;
+    // A full chunk build is still a costly operation on constrained MIDP/M3G
+    // devices. Keep streaming strictly single-chunk-per-sync; never catch up by
+    // building multiple chunks after a slow frame.
+    private static final int CHUNKS_PER_FRAME = 1;
+    // Avoid rebuilding the same dirty chunk repeatedly while edits arrive.
+    private int lastBuildFrameChunk = -1;
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
-    static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN;
-    private static final int CHUNK_FULL_HEIGHT = VoxelWorld.HEIGHT;
+    static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
-    // One geometry batch per atlas tile, matching the compact legacy renderer.
-    private static final int FACE_TILE_COUNT = TILE_COUNT;
+    private static final int TORCH_LIGHT_RADIUS = 4;
+    private static final int LAVA_LIGHT_RADIUS = 6;
+    private static final int MAX_CHUNK_TORCHES = 128;
+    private final int[] chunkTorchX = new int[MAX_CHUNK_TORCHES];
+    private final int[] chunkTorchY = new int[MAX_CHUNK_TORCHES];
+    private final int[] chunkTorchZ = new int[MAX_CHUNK_TORCHES];
+    private final byte[] chunkLightRadius = new byte[MAX_CHUNK_TORCHES];
+    private final boolean[] chunkLavaSource = new boolean[MAX_CHUNK_TORCHES];
+    private int chunkTorchCount;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
-    // Half extents of a full-height chunk. Frustum culling projects each axis
-    // separately so the tall Y dimension does not inflate horizontal visibility.
-    private static final float CHUNK_HALF_XZ = VoxelWorld.CHUNK_XZ * 0.5f;
-    private static final float CHUNK_HALF_Y = VoxelWorld.HEIGHT * 0.5f;
+    private static final float CHUNK_RADIUS = 12.0f;
     private static final float NORMAL_FOV = 68.0f;
     private static final float SPRINT_FOV = 76.0f;
     private float cameraFov = NORMAL_FOV;
@@ -91,52 +88,32 @@ final class ChunkRenderer {
     private final Group handModelOffset = new Group();
     private final Group terrain = new Group();
     private final Background sky = new Background();
-    // Shared linear fog softens the edge of the compact radial view.
-    private final Fog terrainFog = new Fog();
     private final SkySystem skyObjects;
     private final Light sunlight = new Light();
+    private final Light[] torchLights = new Light[3];
+    private final float[] nearestTorchDistance = new float[] { 65.0f, 65.0f, 65.0f };
+    private final int[] nearestTorchX = new int[3];
+    private final int[] nearestTorchY = new int[3];
+    private final int[] nearestTorchZ = new int[3];
+    private int torchScanX = Integer.MIN_VALUE;
+    private int torchScanY = Integer.MIN_VALUE;
+    private int torchScanZ = Integer.MIN_VALUE;
+    private int torchScanRevision = Integer.MIN_VALUE;
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
-    // Assigned slots include chunks whose first mesh is still being built.
-    private final boolean[] assignedChunks = new boolean[CACHE_SIZE];
+    private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
-    // A resident chunk may keep its M3G meshes cached while detached from the
-    // scene graph. This avoids both draw traversal and costly remeshing when
-    // the player turns back toward a previously visited direction.
-    private final boolean[] visibleChunks = new boolean[CACHE_SIZE];
     private final int[] chunkWorldX = new int[CACHE_SIZE];
     private final int[] chunkWorldY = new int[CACHE_SIZE];
     private final int[] chunkWorldZ = new int[CACHE_SIZE];
-    // Full voxel snapshot for one full-height chunk; each source layer is copied into place once.
-    private final byte[] chunkVoxelScratch = new byte[CHUNK_AREA * CHUNK_FULL_HEIGHT];
-    // Side-face greedy masks are 16xworld-height; top/bottom use only 16x16.
-    private final int[] greedyMaskScratch = new int[VoxelWorld.CHUNK_XZ * CHUNK_FULL_HEIGHT];
+    // Reused by the synchronous chunk mesher to avoid short-lived arrays.
+    private final byte[] chunkVoxelScratch = new byte[VoxelWorld.CHUNK_XZ *
+            VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
+    private final byte[] chunkLightScratch = new byte[VoxelWorld.CHUNK_XZ *
+            VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
+    private final int[] greedyMaskScratch = new int[CHUNK_AREA];
     // One chunk is meshed at a time; reuse the large material lookup table to
     // avoid allocating thousands of references every time the player moves.
-    // One reusable geometry builder per atlas tile. Different face directions
-    // share a mesh again; face shading remains encoded in each rectangle's colors.
-    private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[FACE_TILE_COUNT];
-    private final int[] activeFaceBuilderIndices = new int[FACE_TILE_COUNT];
-    private int activeFaceBuilderCount;
-    private int chunkNonAirBlocks;
-    // LOD 0 = full geometry; LOD 1 = distant terrain (top surfaces only).
-    private int completedChunkBuilds;
-    private int completedDirtyRebuilds;
-    private long lastChunkBuildMillis;
-    private long lastSnapshotBuildMillis;
-    private long lastMeshAssemblyMillis;
-    private long lastSyncMillis;
-    private long lastVisibilityMillis;
-    private int lastAttachedChunkCount;
-    // Cached geometry totals for meshes currently attached to the terrain group.
-    private long lastTerrainTriangles;
-    private long lastTerrainVertices;
-    private long lastSceneRenderMillis;
-    private long lastHandRenderMillis;
-    private long chunkBuildStartedAt;
-    // Per-chunk accumulators: tile geometry is retained across every vertical layer.
-    private FlowerBuilder buildingFlowers;
-    private FireBuilder buildingFires;
-    private PortalBuilder buildingPortals;
+    private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[TILE_COUNT * 15];
     // A bounded pool avoids allocating FaceBuilder arrays for every streamed
     // chunk without retaining one builder for every possible tile/light pair.
     private final FaceBuilder[] freeFaceBuilders = new FaceBuilder[32];
@@ -154,15 +131,10 @@ final class ChunkRenderer {
     private final Texture2D[] portalFrames = new Texture2D[8];
     private final Texture2D[] crackFrames = new Texture2D[10];
     private final Appearance crackAppearance;
-    private final VertexArray crackUV;
+    private final Mesh crackMesh;
+    private final VertexArray crackPositions;
+    private final short[] crackPositionData = new short[] { 0,0,0, 0,1,0, 1,0,0, 1,1,0 };
     private final short[] crackUVData = new short[] { 0,16, 0,0, 16,16, 16,0 };
-    private int activeMiningChunkSlot = -1;
-    private int activeCrackChunkSlot = -1;
-    // Keep the crack overlay's world-space target so a chunk remesh can refresh
-    // its separate M3G mesh in the same frame as the terrain replacement.
-    private int activeCrackX = -1, activeCrackY = -1, activeCrackZ = -1;
-    private int activeCrackFaceX, activeCrackFaceY, activeCrackFaceZ;
-    private int activeCrackStage = -1;
     private final Appearance portalAppearance;
     private final Texture2D worldFireTexture;
     private final Appearance worldFireAppearance;
@@ -194,8 +166,6 @@ final class ChunkRenderer {
     private boolean handLooping;
     private float handHorizontalScale = 1.0f;
     private int builtRevision = -1;
-    private boolean builtNether;
-    private boolean hasBuiltDimension;
     private int builtWidth;
     private int builtHeight;
     private float tanHorizontalFov;
@@ -235,8 +205,16 @@ final class ChunkRenderer {
         crackCompositing.setAlphaThreshold(0.1f);
         crackCompositing.setBlending(CompositingMode.ALPHA);
         crackAppearance.setCompositingMode(crackCompositing);
-        crackUV = new VertexArray(4, 2, 2);
+        VertexArray crackUV = new VertexArray(4, 2, 2);
         crackUV.set(0, 4, crackUVData);
+        crackPositions = new VertexArray(4, 3, 2);
+        crackPositions.set(0, 4, crackPositionData);
+        VertexBuffer crackBuffer = new VertexBuffer();
+        crackBuffer.setPositions(crackPositions, 1.0f, null);
+        crackBuffer.setTexCoords(0, crackUV, 1.0f / 16.0f, null);
+        crackMesh = new Mesh(crackBuffer, new TriangleStripArray(0, new int[] { 4 }), crackAppearance);
+        crackMesh.setRenderingEnable(false);
+        scene.addChild(crackMesh);
         portalAppearance = createPortalAppearance(portalFrames[0]);
         Image fireImage = GameAssets.image("fire.png");
         worldFireTexture = new Texture2D(new Image2D(Image2D.RGBA, fireImage));
@@ -326,6 +304,15 @@ final class ChunkRenderer {
         sunlight.setMode(Light.AMBIENT);
         sunlight.setIntensity(1.0f);
         scene.addChild(sunlight);
+        for (int i = 0; i < torchLights.length; i++) {
+            Light light = new Light();
+            light.setMode(Light.OMNI);
+            light.setColor(0xFFFFC46B);
+            light.setAttenuation(1.0f, 0.10f, 0.035f);
+            light.setIntensity(0.0f);
+            torchLights[i] = light;
+            scene.addChild(light);
+        }
         builtWidth = width;
         builtHeight = height;
         tanHorizontalFov = tanVerticalFov * (float)width / (float)height;
@@ -368,34 +355,18 @@ final class ChunkRenderer {
     void setRenderDistance(int setting) {
         if (setting < 0) setting = 0;
         if (setting > 4) setting = 4;
-        // Shortest keeps the world's 16x16 generation chunks and admits
-        // only chunk columns intersecting the 1.5-chunk circular view radius.
+        // Shortest keeps a stable 3x3 neighborhood around the player.
+        // The grid is biased toward the player's half of the current chunk,
+        // keeping the player near its centre without allocating distant meshes.
         shortestDistance = setting == 4;
         streamRadius = setting == 0 ? 1 : setting + 1;
         if (streamRadius > MAX_STREAM_RADIUS) streamRadius = MAX_STREAM_RADIUS;
-        // Keep world chunks at 16x16. Shortest is a true 1.5-chunk (24-block)
-        // radial admission distance, not a smaller chunk size or a 1-chunk grid.
-        cameraFar = shortestDistance ? 1.5f * (float)VoxelWorld.CHUNK_XZ :
+        cameraFar = shortestDistance ? 40.0f :
                 ((streamRadius * 2 + 1) * (float)VoxelWorld.CHUNK_XZ) + 8.0f;
-        terrainFog.setColor(currentSkyColor);
-        terrainFog.setMode(Fog.LINEAR);
-        // Match Alpha's linear fog: fade begins at one quarter of view distance.
-        terrainFog.setLinear(cameraFar * 0.25f, cameraFar);
         camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
                 0.1f, cameraFar);
         externalCamera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
                 0.1f, cameraFar);
-        updateTerrainFog();
-    }
-
-    private void updateTerrainFog() {
-        Fog fog = terrainFog;
-        for (int i = 0; i < tileAppearances.length; i++) {
-            if (tileAppearances[i] != null) tileAppearances[i].setFog(fog);
-        }
-        flowerAppearance.setFog(fog);
-        worldFireAppearance.setFog(fog);
-        portalAppearance.setFog(fog);
     }
 
     float fieldOfView() { return cameraFov; }
@@ -531,25 +502,16 @@ final class ChunkRenderer {
     void render(Graphics3D graphics) {
         boolean showHand = cameraMode == 0;
         if (showHand) handPivot.setRenderingEnable(false);
-        long sceneStarted = System.currentTimeMillis();
         try {
             graphics.render(scene);
         } finally {
-            lastSceneRenderMillis = System.currentTimeMillis() - sceneStarted;
             handPivot.setRenderingEnable(showHand);
         }
         if (showHand) {
-            long handStarted = System.currentTimeMillis();
-            try {
-                camera.getTransformTo(scene, cameraTransform);
-                handPivot.getTransformTo(scene, handTransform);
-                graphics.setCamera(camera, cameraTransform);
-                graphics.render(handPivot, handTransform);
-            } finally {
-                lastHandRenderMillis = System.currentTimeMillis() - handStarted;
-            }
-        } else {
-            lastHandRenderMillis = 0L;
+            camera.getTransformTo(scene, cameraTransform);
+            handPivot.getTransformTo(scene, handTransform);
+            graphics.setCamera(camera, cameraTransform);
+            graphics.render(handPivot, handTransform);
         }
     }
 
@@ -654,28 +616,14 @@ final class ChunkRenderer {
             fireAnimationFrame = (fireAnimationFrame + 1) & 7;
             updateFireMeshes();
         }
-        boolean chunkLooping = false;
-        if (activeMiningChunkSlot >= 0 && activeMiningChunkSlot < chunks.length) {
-            Chunk miningChunk = chunks[activeMiningChunkSlot];
-            if (miningChunk != null) {
-                if (miningChunk.handSwinging) {
-                    miningChunk.handSwingTicks++;
-                    if (miningChunk.handSwingTicks >= 8) {
-                        if (miningChunk.handLooping) miningChunk.handSwingTicks = 0;
-                        else { miningChunk.handSwingTicks = 8; miningChunk.handSwinging = false; }
-                    }
-                }
-                handSwingTicks = miningChunk.handSwingTicks;
-                handSwinging = miningChunk.handSwinging;
-                chunkLooping = miningChunk.handLooping;
-            }
-        }
-        if (!chunkLooping && (activeMiningChunkSlot < 0 || chunks[activeMiningChunkSlot] == null)) {
-            if (handSwinging) {
-                handSwingTicks++;
-                if (handSwingTicks >= 8) {
-                    if (handLooping) handSwingTicks = 0;
-                    else { handSwingTicks = 8; handSwinging = false; }
+        if (handSwinging) {
+            handSwingTicks++;
+            if (handSwingTicks >= 8) {
+                if (handLooping) {
+                    handSwingTicks = 0;
+                } else {
+                    handSwingTicks = 8;
+                    handSwinging = false;
                 }
             }
         }
@@ -733,6 +681,13 @@ final class ChunkRenderer {
     private boolean usesSpriteHandPose(int itemId) {
         return (itemId < Block.COUNT && Block.isDoor((byte)itemId)) || itemId >= ItemCatalog.STICK ||
                (itemId > Block.AIR && itemId < Block.COUNT && Block.isFlower((byte)itemId));
+    }
+
+    private void setRestHandPose() {
+        armSwingOffset.setTranslation(-0.08f * handHorizontalScale, 0.15f, 0.0f);
+        armSwingYaw.setOrientation(45.0f, 0.0f, 1.0f, 0.0f);
+        armSwingRoll.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
+        setRestHeldItemPose();
     }
 
     private void setRestHeldItemPose() {
@@ -1011,93 +966,40 @@ final class ChunkRenderer {
         }
     }
 
-    /** Find the resident chunk that owns a world-space mining target. */
-    private int findChunkSlot(int x, int y, int z) {
-        int cx = floorDiv(x, VoxelWorld.CHUNK_XZ);
-        int cy = 0;
-        int cz = floorDiv(z, VoxelWorld.CHUNK_XZ);
-        for (int i = 0; i < chunks.length; i++) {
-            if (assignedChunks[i] && chunkWorldX[i] == cx &&
-                    chunkWorldY[i] == cy && chunkWorldZ[i] == cz) return i;
-        }
-        return -1;
-    }
-
-    private void ensureChunkCrackMesh(Chunk chunk) {
-        if (chunk.crackMesh != null) return;
-        chunk.crackPositionData = new short[] { 0,0,0, 0,1,0, 1,0,0, 1,1,0 };
-        chunk.crackPositions = new VertexArray(4, 3, 2);
-        chunk.crackPositions.set(0, 4, chunk.crackPositionData);
-        VertexBuffer buffer = new VertexBuffer();
-        buffer.setPositions(chunk.crackPositions, 1.0f, null);
-        buffer.setTexCoords(0, crackUV, 1.0f / 16.0f, null);
-        chunk.crackMesh = new Mesh(buffer, new TriangleStripArray(0, new int[] { 4 }), crackAppearance);
-        chunk.crackMesh.setRenderingEnable(false);
-        scene.addChild(chunk.crackMesh);
-    }
-
-    /** Mining overlay belongs to the resident chunk, not to a global world-space mesh. */
+    /** Update the transparent crack quad on the selected block face; stage is 0..9. */
     void setMiningCracks(int x, int y, int z, int faceX, int faceY, int faceZ, int stage) {
-        if (activeCrackChunkSlot >= 0 && activeCrackChunkSlot < chunks.length &&
-                chunks[activeCrackChunkSlot] != null &&
-                chunks[activeCrackChunkSlot].crackMesh != null)
-            chunks[activeCrackChunkSlot].crackMesh.setRenderingEnable(false);
-        activeCrackChunkSlot = -1;
-        activeCrackX = activeCrackY = activeCrackZ = -1;
-        activeCrackStage = -1;
-        if (x < 0 || stage < 0) return;
-        int slot = findChunkSlot(x, y, z);
-        if (slot < 0 || chunks[slot] == null) return;
-        Chunk chunk = chunks[slot];
-        ensureChunkCrackMesh(chunk);
+        if (x < 0 || stage < 0) {
+            crackMesh.setRenderingEnable(false);
+            return;
+        }
         if (stage > 9) stage = 9;
         crackAppearance.setTexture(0, crackFrames[stage]);
-        short[] p = chunk.crackPositionData;
+
+        // Keep the quad vertices local (0..1) and position the mesh at the
+        // selected world block. This avoids truncating world coordinates into
+        // short vertex values, which made overlays fail outside the origin chunk.
         float offset = 0.01f;
         if (Math.abs(faceY) >= Math.abs(faceX) && Math.abs(faceY) >= Math.abs(faceZ)) {
-            p[0]=0; p[1]=0; p[2]=0; p[3]=0; p[4]=0; p[5]=1;
-            p[6]=1; p[7]=0; p[8]=0; p[9]=1; p[10]=0; p[11]=1;
-            chunk.crackMesh.setTranslation(x, y + (faceY > 0 ? 1.0f + offset : -offset), z);
+            crackPositionData[0] = 0; crackPositionData[1] = 0; crackPositionData[2] = 0;
+            crackPositionData[3] = 0; crackPositionData[4] = 0; crackPositionData[5] = 1;
+            crackPositionData[6] = 1; crackPositionData[7] = 0; crackPositionData[8] = 0;
+            crackPositionData[9] = 1; crackPositionData[10] = 0; crackPositionData[11] = 1;
+            crackMesh.setTranslation(x, y + (faceY > 0 ? 1.0f + offset : -offset), z);
         } else if (Math.abs(faceX) >= Math.abs(faceZ)) {
-            p[0]=0; p[1]=0; p[2]=0; p[3]=0; p[4]=1; p[5]=0;
-            p[6]=0; p[7]=1; p[8]=0; p[9]=0; p[10]=1; p[11]=1;
-            chunk.crackMesh.setTranslation(x + (faceX > 0 ? 1.0f + offset : -offset), y, z);
+            crackPositionData[0] = 0; crackPositionData[1] = 0; crackPositionData[2] = 0;
+            crackPositionData[3] = 0; crackPositionData[4] = 0; crackPositionData[5] = 1;
+            crackPositionData[6] = 0; crackPositionData[7] = 1; crackPositionData[8] = 0;
+            crackPositionData[9] = 0; crackPositionData[10] = 1; crackPositionData[11] = 1;
+            crackMesh.setTranslation(x + (faceX > 0 ? 1.0f + offset : -offset), y, z);
         } else {
-            p[0]=0; p[1]=0; p[2]=0; p[3]=0; p[4]=1; p[5]=0;
-            p[6]=1; p[7]=0; p[8]=0; p[9]=1; p[10]=1; p[11]=0;
-            chunk.crackMesh.setTranslation(x, y, z + (faceZ > 0 ? 1.0f + offset : -offset));
+            crackPositionData[0] = 0; crackPositionData[1] = 0; crackPositionData[2] = 0;
+            crackPositionData[3] = 0; crackPositionData[4] = 1; crackPositionData[5] = 0;
+            crackPositionData[6] = 1; crackPositionData[7] = 0; crackPositionData[8] = 0;
+            crackPositionData[9] = 1; crackPositionData[10] = 1; crackPositionData[11] = 0;
+            crackMesh.setTranslation(x, y, z + (faceZ > 0 ? 1.0f + offset : -offset));
         }
-        chunk.crackPositions.set(0, 4, p);
-        chunk.crackMesh.setRenderingEnable(true);
-        activeCrackChunkSlot = slot;
-        activeCrackX = x; activeCrackY = y; activeCrackZ = z;
-        activeCrackFaceX = faceX; activeCrackFaceY = faceY; activeCrackFaceZ = faceZ;
-        activeCrackStage = stage;
-    }
-
-    /** The loop timer is stored by chunk, while the visible first-person arm
-     * samples only the currently mined chunk's timer. */
-    void setHandLooping(int x, int y, int z, boolean looping) {
-        if (playerModel != null) playerModel.setActionLooping(looping);
-        // The global first-person arm must never retain a mining loop after the
-        // target is released or its chunk leaves the streaming cache.
-        handLooping = looping;
-        int slot = x < 0 ? -1 : findChunkSlot(x, y, z);
-        if (activeMiningChunkSlot >= 0 && activeMiningChunkSlot < chunks.length &&
-                chunks[activeMiningChunkSlot] != null && activeMiningChunkSlot != slot)
-            chunks[activeMiningChunkSlot].handLooping = false;
-        if (slot >= 0 && chunks[slot] != null) {
-            Chunk chunk = chunks[slot];
-            chunk.handLooping = looping;
-            if (looping && !chunk.handSwinging) {
-                chunk.handSwingTicks = 0;
-                chunk.handSwinging = true;
-            }
-            activeMiningChunkSlot = slot;
-        } else if (!looping) {
-            activeMiningChunkSlot = -1;
-            handLooping = false;
-        }
+        crackPositions.set(0, 4, crackPositionData);
+        crackMesh.setRenderingEnable(true);
     }
 
     private Appearance createFirstPersonAppearance(Texture2D texture,
@@ -1221,8 +1123,8 @@ final class ChunkRenderer {
         if (world.nether) {
             currentDaylight = 0.32f;
             currentSkyColor = 0xFF4A1717;
-            terrainFog.setColor(currentSkyColor);
             sunlight.setIntensity(0.45f);
+            updateTorchLights(world);
             return;
         }
         float angle = ((float)world.dayTime / (float)VoxelWorld.DAY_LENGTH - 0.15f) *
@@ -1234,7 +1136,7 @@ final class ChunkRenderer {
         // Keep moonlight visible on small, low-brightness phone displays.
         sunlight.setIntensity(0.28f + sun * 0.72f);
         currentSkyColor = blendColor(0xFF26354A, 0xFF82B8E8, sun);
-        terrainFog.setColor(currentSkyColor);
+        updateTorchLights(world);
     }
 
     private int blendColor(int night, int day, float amount) {
@@ -1247,6 +1149,12 @@ final class ChunkRenderer {
         return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
 
+    private void updateTorchLights(VoxelWorld world) {
+        // No M3G point lights: nearby blocks receive discrete brightness levels
+        // in torchLightAt() while their chunk meshes are built.
+        for (int i = 0; i < torchLights.length; i++) torchLights[i].setIntensity(0.0f);
+    }
+
     int hitMob(VoxelWorld world, float pitch, int damage) {
         return mobs.hit(world, pitch, damage);
     }
@@ -1255,117 +1163,49 @@ final class ChunkRenderer {
         return mobs.shootPlayerArrow(world, pitch);
     }
 
-    /**
-     * Only the spawn chunk and its face-neighbor terrain data are required
-     * before play. Neighbor meshes and diagonal chunks stream in afterwards.
-     */
-    boolean isInitialNeighborhoodReady(VoxelWorld world) {
-        int centerX = (int)Math.floor(world.playerX / (float)VoxelWorld.CHUNK_XZ);
-        int centerZ = (int)Math.floor(world.playerZ / (float)VoxelWorld.CHUNK_XZ);
-        if (!world.isProceduralChunkReady(centerX, centerZ) ||
-            !world.isProceduralChunkReady(centerX - 1, centerZ) ||
-            !world.isProceduralChunkReady(centerX + 1, centerZ) ||
-            !world.isProceduralChunkReady(centerX, centerZ - 1) ||
-            !world.isProceduralChunkReady(centerX, centerZ + 1)) return false;
-        for (int i = 0; i < CACHE_SIZE; i++) {
-            if (!assignedChunks[i] || chunkWorldX[i] != centerX ||
-                chunkWorldZ[i] != centerZ) continue;
-            if (chunks[i] != null && !dirtyChunks[i]) return true;
-        }
-        return false;
-    }
-
     void sync(VoxelWorld world) {
-        long syncStarted = System.currentTimeMillis();
         if (world.revision != builtRevision || world.fullRebuild) {
-            // changedX/Y/Z stores only the latest edit. If several voxels changed
-            // between renderer syncs (doors, support cascades, fluid spread), a
-            // single-coordinate invalidation would leave stale meshes behind.
-            if (builtRevision < 0 || world.fullRebuild ||
-                    world.revision != builtRevision + 1) {
-                rebuildWorld(world);
-                prioritizeChangedChunk(world);
-            } else {
-                // Drop the previous cached target before invalidating meshes.
-                // The edited chunk must be selected again even if the old target
-                // was a different chunk that finished between two paint calls.
-                pendingTargetSlot = -1;
-                rebuildChanged(world);
-            }
+            if (builtRevision < 0 || world.fullRebuild) rebuildWorld(world);
+            else rebuildChanged(world);
             builtRevision = world.revision;
         }
-        builtNether = world.nether;
-        hasBuiltDimension = true;
         // Rail meshes also have a camera-centered streaming window, so they
         // must be refreshed when the player crosses chunk boundaries even if
         // no block in the world changed.
         railSystem.update(world);
         world.fullRebuild = false;
-        long visibilityStarted = System.currentTimeMillis();
         updateVisibleChunks(world);
-        lastVisibilityMillis = System.currentTimeMillis() - visibilityStarted;
-        lastSyncMillis = System.currentTimeMillis() - syncStarted;
-    }
-
-    /** Ensure the latest changed coordinate wins even after a multi-edit revision. */
-    private void prioritizeChangedChunk(VoxelWorld world) {
-        int cx = floorDiv(world.changedX, VoxelWorld.CHUNK_XZ);
-        int cy = 0;
-        int cz = floorDiv(world.changedZ, VoxelWorld.CHUNK_XZ);
-        for (int i = 0; i < CACHE_SIZE; i++) {
-            if (!assignedChunks[i] || chunkWorldX[i] != cx ||
-                    chunkWorldY[i] != cy || chunkWorldZ[i] != cz) continue;
-            dirtyChunks[i] = true;
-            pendingTargetSlot = i;
-            pendingTargetX = cx;
-            pendingTargetY = cy;
-            pendingTargetZ = cz;
-            return;
-        }
     }
 
     private void rebuildChanged(VoxelWorld world) {
         int x = world.changedX, y = world.changedY, z = world.changedZ;
         int cx = floorDiv(x, VoxelWorld.CHUNK_XZ);
-        int cy = 0;
+        int cy = y / VoxelWorld.CHUNK_Y;
         int cz = floorDiv(z, VoxelWorld.CHUNK_XZ);
         int lx = x - cx * VoxelWorld.CHUNK_XZ;
+        int ly = y % VoxelWorld.CHUNK_Y;
         int lz = z - cz * VoxelWorld.CHUNK_XZ;
-        // Keep an in-progress mesh job when this edit is elsewhere. Throwing
-        // away a partially meshed visible chunk on every world revision caused
-        // the renderer to repeat expensive M3G work while the player was moving.
-        if (pendingBuild != null && pendingBuildSlot >= 0) {
-            boolean affectsPending;
-            affectsPending =
-                    Math.abs(pendingBuild.x - cx) <=
-                            (lx == 0 || lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0) &&
-                    Math.abs(pendingBuild.z - cz) <=
-                            (lz == 0 || lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0);
-            if (affectsPending) {
-                // Discard the stale in-progress build and rebuild this chunk
-                // once from the current world state.
-                dirtyChunks[pendingBuildSlot] = true;
-                pendingBuild = null;
-                pendingBuildSlot = -1;
-            }
-        }
-
+        boolean torchChanged = world.changedOldId == Block.TORCH ||
+                world.get(x, y, z) == Block.TORCH;
         for (int i = 0; i < CACHE_SIZE; i++) {
-            // Include a chunk whose first mesh is still being built. Such a
-            // slot already has world coordinates but is not resident yet.
-            if (!assignedChunks[i]) continue;
+            if (!residentChunks[i]) continue;
+            if (torchChanged) {
+                int bx0 = chunkWorldX[i] * VoxelWorld.CHUNK_XZ;
+                int by0 = chunkWorldY[i] * VoxelWorld.CHUNK_Y;
+                int bz0 = chunkWorldZ[i] * VoxelWorld.CHUNK_XZ;
+                if (x < bx0 - TORCH_LIGHT_RADIUS || x >= bx0 + VoxelWorld.CHUNK_XZ + TORCH_LIGHT_RADIUS ||
+                    y < by0 - TORCH_LIGHT_RADIUS || y >= by0 + VoxelWorld.CHUNK_Y + TORCH_LIGHT_RADIUS ||
+                    z < bz0 - TORCH_LIGHT_RADIUS || z >= bz0 + VoxelWorld.CHUNK_XZ + TORCH_LIGHT_RADIUS)
+                    continue;
+                dirtyChunks[i] = true;
+                continue;
+            }
             if (Math.abs(chunkWorldX[i] - cx) > (lx == 0 || lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0) ||
+                Math.abs(chunkWorldY[i] - cy) > (ly == 0 || ly == VoxelWorld.CHUNK_Y - 1 ? 1 : 0) ||
                 Math.abs(chunkWorldZ[i] - cz) > (lz == 0 || lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0)) continue;
-            // Rebuild the full chunk; horizontal boundary edits also invalidate
-            // the adjacent chunk whose shared face may have changed.
             dirtyChunks[i] = true;
-            // Prioritize the exact edited chunk. Otherwise a nearby dirty
-            // neighbor can win the distance scan and delay the visible edit.
-            if (chunkWorldX[i] == cx && chunkWorldY[i] == cy &&
-                    chunkWorldZ[i] == cz) pendingTargetSlot = i;
         }
     }
-
 
     private int floorDiv(int value, int divisor) {
         int result = value / divisor;
@@ -1378,668 +1218,344 @@ final class ChunkRenderer {
         return result < 0 ? result + divisor : result;
     }
 
+    private void replaceChunk(VoxelWorld world, int i, int cx, int cy, int cz) {
+        // Build the replacement before removing the old mesh. If meshing fails,
+        // the previous terrain remains visible instead of leaving a hole.
+        Chunk replacement = buildChunk(world, cx, cy, cz);
+        Chunk previous = chunks[i];
+        if (previous != null) {
+            for (int m = 0; m < previous.meshes.length; m++) terrain.removeChild(previous.meshes[m]);
+        }
+        chunks[i] = replacement;
+        chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
+        residentChunks[i] = true;
+        dirtyChunks[i] = false;
+        if (replacement != null) {
+            for (int m = 0; m < replacement.meshes.length; m++) terrain.addChild(replacement.meshes[m]);
+        }
+    }
+
     private void rebuildWorld(VoxelWorld world) {
-        // A dimension swap changes every voxel. Old-dimension meshes must be
-        // removed immediately; ordinary full invalidations can be rebuilt in
-        // slices while keeping their previous meshes visible.
-        if (hasBuiltDimension && builtNether != world.nether) {
-            pendingBuild = null;
-            pendingBuildSlot = -1;
-            for (int i = 0; i < chunks.length; i++) removeChunk(i);
-            return;
-        }
-        if (pendingBuild != null && pendingBuildSlot >= 0)
-            dirtyChunks[pendingBuildSlot] = true;
-        pendingBuild = null;
-        pendingBuildSlot = -1;
-        for (int i = 0; i < chunks.length; i++) {
-            if (!assignedChunks[i]) continue;
-            dirtyChunks[i] = true;
-        }
-    }
-
-    /** Recount attached terrain geometry only when scene membership changes. */
-    private void recountTerrainGeometry() {
-        long triangles = 0L;
-        long vertices = 0L;
-        int children = terrain.getChildCount();
-        for (int i = 0; i < children; i++) {
-            Mesh mesh = (Mesh)terrain.getChild(i);
-            // Directional face buckets disabled by camera culling are excluded.
-            if (!mesh.isRenderingEnabled()) continue;
-            vertices += mesh.getVertexBuffer().getVertexCount();
-            int submeshes = mesh.getSubmeshCount();
-            for (int sub = 0; sub < submeshes; sub++) {
-                IndexBuffer indices = mesh.getIndexBuffer(sub);
-                if (indices != null) triangles += indices.getIndexCount() / 3;
-            }
-        }
-        lastTerrainTriangles = triangles;
-        lastTerrainVertices = vertices;
-    }
-
-    private void setChunkAttached(int slot, boolean attached) {
-        Chunk chunk = chunks[slot];
-        if (chunk == null || chunk.attached == attached) return;
-        if (chunk.meshes != null) {
-            for (int m = 0; m < chunk.meshes.length; m++) {
-                if (attached) terrain.addChild(chunk.meshes[m]);
-                else terrain.removeChild(chunk.meshes[m]);
-            }
-        }
-        chunk.attached = attached;
-        recountTerrainGeometry();
-        if (chunk.crackMesh != null)
-            chunk.crackMesh.setRenderingEnable(attached &&
-                    activeCrackChunkSlot == slot && activeCrackStage >= 0);
+        for (int i = 0; i < chunks.length; i++) removeChunk(i);
     }
 
     private void removeChunk(int i) {
-        if (pendingBuildSlot == i) { pendingBuild = null; pendingBuildSlot = -1; }
         if (chunks[i] != null) {
-            if (chunks[i].attached && chunks[i].meshes != null) {
-                for (int m = 0; m < chunks[i].meshes.length; m++)
-                    terrain.removeChild(chunks[i].meshes[m]);
-            }
-            if (chunks[i].crackMesh != null) scene.removeChild(chunks[i].crackMesh);
+            for (int m = 0; m < chunks[i].meshes.length; m++) terrain.removeChild(chunks[i].meshes[m]);
             chunks[i] = null;
-            recountTerrainGeometry();
         }
-        if (activeMiningChunkSlot == i) {
-            activeMiningChunkSlot = -1;
-            handLooping = false;
-            handSwinging = false;
-            handSwingTicks = 8;
-        }
-        if (activeCrackChunkSlot == i) activeCrackChunkSlot = -1;
-        assignedChunks[i] = false;
+        residentChunks[i] = false;
         dirtyChunks[i] = false;
-        visibleChunks[i] = false;
-        chunkWorldX[i] = Integer.MIN_VALUE;
-        chunkWorldY[i] = Integer.MIN_VALUE;
-        chunkWorldZ[i] = Integer.MIN_VALUE;
     }
 
-    /** Keep only nearby chunks that can contribute to the horizontal camera view. */
+    /** Keep M3G buffers only for chunks intersecting the camera frustum. */
     private void updateVisibleChunks(VoxelWorld world) {
-        final float eyeX = world.playerX;
-        final float eyeZ = world.playerZ;
-        final int centerX = floorDiv((int)eyeX, VoxelWorld.CHUNK_XZ);
-        final int centerZ = floorDiv((int)eyeZ, VoxelWorld.CHUNK_XZ);
-        final int span = MAX_STREAM_SPAN;
+        float eyeX = world.playerX, eyeY = world.playerY + 1.62f, eyeZ = world.playerZ;
+        int centerX = floorDiv((int)eyeX, VoxelWorld.CHUNK_XZ);
+        int centerZ = floorDiv((int)eyeZ, VoxelWorld.CHUNK_XZ);
+        int span = MAX_STREAM_SPAN;
 
-        // One simple square candidate window; shortest mode adds a circular limit.
-        int radius = shortestDistance ?
-                (int)Math.ceil(cameraFar / (float)VoxelWorld.CHUNK_XZ) : streamRadius;
-        if (radius < 0) radius = 0;
-        if (radius > MAX_STREAM_RADIUS) radius = MAX_STREAM_RADIUS;
-
-        int firstX = centerX - radius;
-        int lastX = centerX + radius;
-        int firstZ = centerZ - radius;
-        int lastZ = centerZ + radius;
-
-        if (world.worldSize == VoxelWorld.SIZE_OLD) {
-            int maxChunk = 240 / VoxelWorld.CHUNK_XZ - 1;
-            if (firstX < 0) firstX = 0;
-            if (firstZ < 0) firstZ = 0;
-            if (lastX > maxChunk) lastX = maxChunk;
-            if (lastZ > maxChunk) lastZ = maxChunk;
+        // The shortest preset always keeps a complete 3x3 window. Do not
+        // calculate a camera frustum for sectors that will be selected anyway.
+        float sinYaw = 0.0f, cosYaw = 1.0f;
+        float sinPitch = 0.0f, cosPitch = 1.0f;
+        float forwardX = 0.0f, forwardY = 0.0f, forwardZ = 1.0f;
+        float rightX = 1.0f, rightZ = 0.0f;
+        float upX = 0.0f, upY = 1.0f, upZ = 0.0f;
+        if (!shortestDistance) {
+            float yaw = (float)(world.yaw * Math.PI / 180.0);
+            float pitch = (float)(cameraPitch * Math.PI / 180.0);
+            sinYaw = (float)Math.sin(yaw); cosYaw = (float)Math.cos(yaw);
+            sinPitch = (float)Math.sin(pitch); cosPitch = (float)Math.cos(pitch);
+            forwardX = sinYaw * cosPitch; forwardY = sinPitch; forwardZ = cosYaw * cosPitch;
+            rightX = cosYaw; rightZ = -sinYaw;
+            upX = -sinYaw * sinPitch; upY = cosPitch; upZ = -cosYaw * sinPitch;
         }
 
-        // Forget chunks that have left the active window.
+        int firstChunkX = shortestDistance ? centerX - 1 : centerX - streamRadius;
+        int lastChunkX = shortestDistance ? centerX + 1 : centerX + streamRadius;
+        int firstChunkZ = shortestDistance ? centerZ - 1 : centerZ - streamRadius;
+        int lastChunkZ = shortestDistance ? centerZ + 1 : centerZ + streamRadius;
+
+        // Evict only chunks that have actually left the horizontal stream window.
         for (int i = 0; i < CACHE_SIZE; i++) {
-            if (assignedChunks[i] &&
-                    (chunkWorldX[i] < firstX || chunkWorldX[i] > lastX ||
-                     chunkWorldZ[i] < firstZ || chunkWorldZ[i] > lastZ)) {
-                removeChunk(i);
-            }
+            if (residentChunks[i] &&
+                    (chunkWorldX[i] < firstChunkX || chunkWorldX[i] > lastChunkX ||
+                     chunkWorldZ[i] < firstChunkZ || chunkWorldZ[i] > lastChunkZ)) removeChunk(i);
         }
 
-        // A horizontal yaw-only frustum is enough for full-height columns.
-        // It avoids the old per-frame 3D camera-basis and pitch calculations.
-        float yaw = (float)(world.yaw * Math.PI / 180.0);
-        float sinYaw = (float)Math.sin(yaw);
-        float cosYaw = (float)Math.cos(yaw);
-        float forwardX = sinYaw;
-        float forwardZ = cosYaw;
-        float rightX = cosYaw;
-        float rightZ = -sinYaw;
-        float depthRadius = (Math.abs(forwardX) + Math.abs(forwardZ)) *
-                VoxelWorld.CHUNK_XZ * 0.5f;
-        float sideRadius = (Math.abs(rightX) + Math.abs(rightZ)) *
-                VoxelWorld.CHUNK_XZ * 0.5f;
-
+        int firstRx = firstChunkX - centerX + MAX_STREAM_RADIUS;
+        int lastRx = lastChunkX - centerX + MAX_STREAM_RADIUS;
+        int firstRz = firstChunkZ - centerZ + MAX_STREAM_RADIUS;
+        int lastRz = lastChunkZ - centerZ + MAX_STREAM_RADIUS;
         int best = -1;
         float bestDistance = Float.MAX_VALUE;
-        boolean pendingVisible = false;
 
-        for (int cz = firstZ; cz <= lastZ; cz++) {
-            for (int cx = firstX; cx <= lastX; cx++) {
-                // The finite old world uses direct addressing; infinite worlds wrap.
-                int slot = world.worldSize == VoxelWorld.SIZE_OLD ?
-                        cz * span + cx :
-                        floorMod(cz, span) * span + floorMod(cx, span);
+        // Search and rank candidates only in the active window, not all 648
+        // cache slots. In shortest mode this is 72 sectors (3x3x8).
+        for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++) {
+            for (int rz = firstRz; rz <= lastRz; rz++) {
+                for (int rx = firstRx; rx <= lastRx; rx++) {
+                    int cx = centerX + rx - MAX_STREAM_RADIUS;
+                    int cz = centerZ + rz - MAX_STREAM_RADIUS;
+                    int i = (cy * span + floorMod(cz, span)) * span + floorMod(cx, span);
+                    float dx = cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeX;
+                    float dy = cy * VoxelWorld.CHUNK_Y + VoxelWorld.CHUNK_Y * 0.5f - eyeY;
+                    float dz = cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
 
-                float dx = cx * VoxelWorld.CHUNK_XZ +
-                        VoxelWorld.CHUNK_XZ * 0.5f - eyeX;
-                float dz = cz * VoxelWorld.CHUNK_XZ +
-                        VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
-
-                float nearX = Math.abs(dx) - VoxelWorld.CHUNK_XZ * 0.5f;
-                float nearZ = Math.abs(dz) - VoxelWorld.CHUNK_XZ * 0.5f;
-                if (nearX < 0.0f) nearX = 0.0f;
-                if (nearZ < 0.0f) nearZ = 0.0f;
-
-                boolean inRange = !shortestDistance ||
-                        nearX * nearX + nearZ * nearZ <= cameraFar * cameraFar;
-                float depth = dx * forwardX + dz * forwardZ;
-                float side = dx * rightX + dz * rightZ;
-                boolean inView = depth + depthRadius >= 0.0f &&
-                        depth - depthRadius <= cameraFar &&
-                        Math.abs(side) <= Math.max(0.0f, depth) *
-                                tanHorizontalFov + sideRadius;
-                boolean visible = inRange && inView;
-
-                boolean sameChunk = assignedChunks[slot] &&
-                        chunkWorldX[slot] == cx && chunkWorldZ[slot] == cz;
-                int desiredLod = lodForChunk(cx, cz, eyeX, eyeZ);
-                if (sameChunk && chunks[slot] != null &&
-                        chunks[slot].lodLevel != desiredLod) dirtyChunks[slot] = true;
-
-                if (assignedChunks[slot] && !sameChunk) removeChunk(slot);
-                visibleChunks[slot] = visible;
-
-                if (!visible) {
-                    if (pendingBuildSlot == slot) {
-                        pendingBuild = null;
-                        pendingBuildSlot = -1;
+                    boolean visible = shortestDistance;
+                    if (!shortestDistance) {
+                        float depth = dx * forwardX + dy * forwardY + dz * forwardZ;
+                        float horizontal = dx * rightX + dz * rightZ;
+                        float vertical = dx * upX + dy * upY + dz * upZ;
+                        visible = depth + CHUNK_RADIUS >= 0.1f &&
+                            depth - CHUNK_RADIUS <= cameraFar &&
+                            Math.abs(horizontal) <= Math.max(0.0f, depth) * tanHorizontalFov + CHUNK_RADIUS &&
+                            Math.abs(vertical) <= Math.max(0.0f, depth) * tanVerticalFov + CHUNK_RADIUS;
                     }
-                    if (pendingTargetSlot == slot) pendingTargetSlot = -1;
-                    if (sameChunk && chunks[slot] != null)
-                        setChunkAttached(slot, false);
-                    continue;
-                }
 
-                if (!sameChunk) {
-                    chunkWorldX[slot] = cx;
-                    chunkWorldY[slot] = 0;
-                    chunkWorldZ[slot] = cz;
-                    assignedChunks[slot] = true;
-                    dirtyChunks[slot] = true;
-                } else if (chunks[slot] != null) {
-                    setChunkAttached(slot, true);
-                }
+                    boolean sameChunk = residentChunks[i] && chunkWorldX[i] == cx &&
+                        chunkWorldY[i] == cy && chunkWorldZ[i] == cz;
+                    if (residentChunks[i] && !sameChunk) removeChunk(i);
+                    if (!visible) continue;
 
-                if (pendingBuild != null && pendingBuildSlot == slot &&
-                        pendingBuild.x == cx && pendingBuild.z == cz)
-                    pendingVisible = true;
-
-                if (dirtyChunks[slot]) {
-                    float distance = slot == pendingTargetSlot ? -1.0f :
-                            dx * dx + dz * dz;
-                    if (distance < bestDistance) {
-                        bestDistance = distance;
-                        best = slot;
+                    if (!sameChunk) {
+                        chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
+                        dirtyChunks[i] = false;
+                    }
+                    if (!sameChunk || dirtyChunks[i]) {
+                        float distance = dx * dx + dz * dz + dy * dy * 2.0f;
+                        if (distance < bestDistance) {
+                            bestDistance = distance;
+                            best = i;
+                        }
                     }
                 }
             }
         }
 
-        // Finish the current visible job first; otherwise build the nearest dirty chunk.
-        if (pendingVisible && pendingBuild != null) {
-            advanceChunkBuild(world, pendingBuildSlot,
-                    pendingBuild.x, pendingBuild.y, pendingBuild.z);
-        } else if (best >= 0) {
-            advanceChunkBuild(world, best,
-                    chunkWorldX[best], chunkWorldY[best], chunkWorldZ[best]);
-        }
-
-        if (best >= 0 && dirtyChunks[best]) {
-            pendingTargetSlot = best;
-            pendingTargetX = chunkWorldX[best];
-            pendingTargetY = chunkWorldY[best];
-            pendingTargetZ = chunkWorldZ[best];
-        } else if (pendingBuild == null) {
-            pendingTargetSlot = -1;
-        }
-    }
-
-    private static int lodForChunk(int cx, int cz, float playerX, float playerZ) {
-        float centerX = cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f;
-        float centerZ = cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f;
-        float nearX = Math.max(0.0f, Math.abs(centerX - playerX) - VoxelWorld.CHUNK_XZ * 0.5f);
-        float nearZ = Math.max(0.0f, Math.abs(centerZ - playerZ) - VoxelWorld.CHUNK_XZ * 0.5f);
-        return nearX * nearX + nearZ * nearZ > 40.0f * 40.0f ? 1 : 0;
-    }
-
-    private void advanceChunkBuild(VoxelWorld world, int slot, int cx, int cy, int cz) {
-        // Do not bake exposed faces against procedural neighbors that have not
-        // finished loading yet.
-        world.requestProceduralChunk(cx, cz);
-        if (!world.areProceduralChunkNeighborsReady(cx, cz)) return;
-
-        if (pendingBuild == null || pendingBuildSlot != slot ||
-            pendingBuild.x != cx || pendingBuild.y != cy || pendingBuild.z != cz ||
-            pendingBuild.lodLevel != lodForChunk(cx, cz, world.playerX, world.playerZ)) {
-            chunkBuildStartedAt = System.currentTimeMillis();
-            int lodLevel = lodForChunk(cx, cz, world.playerX, world.playerZ);
-            pendingBuild = new ChunkBuild(slot, cx, cy, cz, lodLevel);
-            pendingBuildSlot = slot;
-            resetChunkMeshAccumulators();
-            // Take one compact snapshot of the chunk. The mesher reads this
-            // snapshot directly, avoiding a separate cave flood-fill pass.
-            long caveStartedAt = System.currentTimeMillis();
-            for (int layer = 0; layer < CHUNK_FULL_HEIGHT; layer++) {
-                world.copyLoadedChunkLayer(cx * VoxelWorld.CHUNK_XZ,
-                        layer,
-                        cz * VoxelWorld.CHUNK_XZ, chunkVoxelScratch,
-                        layer * CHUNK_AREA);
-            }
-            lastSnapshotBuildMillis = System.currentTimeMillis() - caveStartedAt;
-        }
-        ChunkBuild job = pendingBuild;
-        // A chunk is one render unit: rebuild all of its vertical slices into
-        // one replacement mesh, rather than tracking masks that were never used
-        // to avoid the full mesh assembly.
-        while (job.nextLayer < CHUNK_FULL_HEIGHT) {
-            buildChunkLayer(world, cx, cy, cz, job.nextLayer++);
-        }
-
-        FireBuilder completedFireBuilder = buildingFires;
-        long meshStartedAt = System.currentTimeMillis();
-        Chunk previousChunk = chunks[slot];
-        Chunk complete = previousChunk == null ? new Chunk() : previousChunk;
-        Mesh[] meshes = finishChunkMeshes(world, cx, cy, cz, complete, job.lodLevel);
-        lastMeshAssemblyMillis = System.currentTimeMillis() - meshStartedAt;
-        // Remove the old scene nodes before replacing the mesh reference.
-        // The resident wrapper is reused, so assigning complete.meshes first
-        // would overwrite the only references to the old meshes and orphan
-        // them in the terrain group permanently.
-        if (previousChunk != null && previousChunk.attached && previousChunk.meshes != null) {
-            for (int i = 0; i < previousChunk.meshes.length; i++)
-                terrain.removeChild(previousChunk.meshes[i]);
-        }
-        // Reuse the resident chunk wrapper on remesh instead of allocating a new
-        // object for every block edit; crack and hand-animation state stays attached.
-        complete.meshes = meshes;
-        complete.lodLevel = job.lodLevel;
-        complete.fires = completedFireBuilder == null ? null :
-                new FireBuilder[] { completedFireBuilder };
-        complete.attached = visibleChunks[slot];
-        if (complete.attached) {
-            for (int i = 0; i < meshes.length; i++) terrain.addChild(meshes[i]);
-        }
-        recountTerrainGeometry();
-        chunks[slot] = complete;
-        chunkWorldX[slot] = cx; chunkWorldY[slot] = cy; chunkWorldZ[slot] = cz;
-        dirtyChunks[slot] = false;
-        completedChunkBuilds++;
-        if (previousChunk != null) completedDirtyRebuilds++;
-        lastChunkBuildMillis = System.currentTimeMillis() - chunkBuildStartedAt;
-        pendingBuild = null;
-        pendingBuildSlot = -1;
-        // Crack overlay is a separate M3G mesh. Re-upload its vertex positions
-        // after terrain replacement so both meshes stay visually synchronized.
-        if (activeCrackChunkSlot == slot && activeCrackStage >= 0) {
-            int crackX = activeCrackX, crackY = activeCrackY, crackZ = activeCrackZ;
-            int faceX = activeCrackFaceX, faceY = activeCrackFaceY, faceZ = activeCrackFaceZ;
-            int stage = activeCrackStage;
-            setMiningCracks(crackX, crackY, crackZ, faceX, faceY, faceZ, stage);
-        }
-    }
-
-    /** Last completed chunk timings, shown only while the pause menu is open. */
-    String performanceStats() {
-        return "B" + completedChunkBuilds + " R" + completedDirtyRebuilds +
-                " T" + lastChunkBuildMillis + " S" + lastSnapshotBuildMillis +
-                " M" + lastMeshAssemblyMillis + "ms";
-    }
-
-    /** Per-frame timings and scene-graph counters for M3G profiling. */
-    String renderStats() {
-        int terrainMeshes = terrain.getChildCount();
-        return "S" + lastSyncMillis + " V" + lastVisibilityMillis +
-                " W" + lastSceneRenderMillis + " H" + lastHandRenderMillis +
-                " C" + lastAttachedChunkCount + " M" + terrainMeshes + "ms";
-    }
-
-    /** Live M3G submission counters for the currently enabled terrain meshes. */
-    String geometryStats() {
-        long triangles = 0L;
-        long indices = 0L;
-        int enabledMeshes = 0;
-        int submeshes = 0;
-        int children = terrain.getChildCount();
-        for (int i = 0; i < children; i++) {
-            Mesh mesh = (Mesh)terrain.getChild(i);
-            if (!mesh.isRenderingEnabled()) continue;
-            enabledMeshes++;
-            int count = mesh.getSubmeshCount();
-            submeshes += count;
-            for (int sub = 0; sub < count; sub++) {
-                IndexBuffer buffer = mesh.getIndexBuffer(sub);
-                if (buffer == null) continue;
-                int indexCount = buffer.getIndexCount();
-                indices += indexCount;
-                triangles += indexCount / 3;
+        // Build one nearest sector per frame; no second full-cache scan needed.
+        for (int build = 0; build < CHUNKS_PER_FRAME && best >= 0; build++) {
+            replaceChunk(world, best, chunkWorldX[best], chunkWorldY[best], chunkWorldZ[best]);
+            best = -1;
+            bestDistance = Float.MAX_VALUE;
+            // A second candidate is only needed if CHUNKS_PER_FRAME is raised.
+            if (build + 1 < CHUNKS_PER_FRAME) {
+                for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++)
+                    for (int rz = firstRz; rz <= lastRz; rz++)
+                        for (int rx = firstRx; rx <= lastRx; rx++) {
+                            int cx = centerX + rx - MAX_STREAM_RADIUS;
+                            int cz = centerZ + rz - MAX_STREAM_RADIUS;
+                            int i = (cy * span + floorMod(cz, span)) * span + floorMod(cx, span);
+                            if (!residentChunks[i] || dirtyChunks[i]) {
+                                float dx = cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeX;
+                                float dy = cy * VoxelWorld.CHUNK_Y + VoxelWorld.CHUNK_Y * 0.5f - eyeY;
+                                float dz = cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
+                                float distance = dx * dx + dz * dz + dy * dy * 2.0f;
+                                if (distance < bestDistance) { bestDistance = distance; best = i; }
+                            }
+                        }
             }
         }
-        return "TRI:" + triangles + " VTX:" + lastTerrainVertices +
-                " MSH:" + enabledMeshes + " SUB:" + submeshes + " IDX:" + indices;
     }
 
-    /** Start clean per-chunk geometry accumulators before reading its first layer. */
-    private void resetChunkMeshAccumulators() {
-        activeFaceBuilderCount = 0;
-        chunkNonAirBlocks = 0;
-        for (int i = 0; i < FACE_TILE_COUNT; i++) chunkFaceBuilders[i] = null;
-        buildingFlowers = null;
-        buildingFires = null;
-        buildingPortals = null;
+    private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {
+        FaceBuilder[] builders = chunkFaceBuilders;
+        FlowerBuilder flowers = null;
+        FireBuilder fires = null;
+        PortalBuilder portals = null;
         reusableFlowerBuilder.reset();
         reusablePortalBuilder.reset();
-    }
-
-    /** Assemble the chunk as simple per-material M3G meshes plus special geometry. */
-    private Mesh[] finishChunkMeshes(VoxelWorld world, int cx, int cy, int cz,
-                                     Chunk targetChunk, int lodLevel) {
-        buildChunkFaces(world, cx, cy, cz, lodLevel);
-        int count = activeFaceBuilderCount;
-        int flowerCount = buildingFlowers == null ? 0 : 1;
-        int fireCount = buildingFires == null ? 0 : 1;
-        int portalCount = buildingPortals == null ? 0 : 1;
-        Mesh[] blockMeshes = count > 0 ? makeChunkBlockMeshes() : new Mesh[0];
-        if (blockMeshes.length + flowerCount + fireCount + portalCount == 0)
-            return new Mesh[0];
-
-        Mesh[] meshes = new Mesh[blockMeshes.length + flowerCount + fireCount + portalCount];
-        int at = 0;
-        for (int i = 0; i < blockMeshes.length; i++) meshes[at++] = blockMeshes[i];
-        if (buildingFlowers != null)
-            meshes[at++] = makeFlowerMesh(buildingFlowers, flowerAppearance);
-        if (buildingFires != null) {
-            buildingFires.setFrame(fireAnimationFrame);
-            meshes[at++] = makeFireMesh(buildingFires, worldFireAppearance);
-        }
-        if (buildingPortals != null)
-            meshes[at++] = makePortalMesh(buildingPortals);
-
-        int x = cx * VoxelWorld.CHUNK_XZ;
-        int y = 0;
-        int z = cz * VoxelWorld.CHUNK_XZ;
-        for (int i = 0; i < meshes.length; i++) meshes[i].setTranslation(x, y, z);
-        // Return material builders to the bounded pool only after makeMesh has
-        // copied their vertex data into the corresponding M3G arrays.
-        for (int active = 0; active < activeFaceBuilderCount; active++) {
-            int index = activeFaceBuilderIndices[active];
-            FaceBuilder builder = chunkFaceBuilders[index];
-            chunkFaceBuilders[index] = null;
-            if (freeFaceBuilderCount < freeFaceBuilders.length &&
-                    builder.p.length <= 1536) {
-                builder.reset(0);
-                freeFaceBuilders[freeFaceBuilderCount++] = builder;
-            }
-        }
-        buildingFlowers = null;
-        return meshes;
-    }
-
-    /**
-     * Collects non-cube geometry and the per-voxel light field for one layer.
-     * Cube faces are deliberately postponed until all eight layers are ready:
-     * this lets the greedy mesher merge matching faces vertically as well as
-     * horizontally, instead of restarting its mask at every Y coordinate.
-     */
-    private void buildChunkLayer(VoxelWorld world, int cx, int cy, int cz,
-                                   int layer) {
         int x0 = cx * VoxelWorld.CHUNK_XZ;
-        int y0 = layer;
+        int y0 = cy * VoxelWorld.CHUNK_Y;
         int z0 = cz * VoxelWorld.CHUNK_XZ;
-        int voxelLayerOffset = layer * CHUNK_AREA;
+        int x1 = x0 + VoxelWorld.CHUNK_XZ;
+        int y1 = y0 + VoxelWorld.CHUNK_Y;
+        int z1 = z0 + VoxelWorld.CHUNK_XZ;
 
-        for (int z = 0; z < VoxelWorld.CHUNK_XZ; z++) {
-            int row = voxelLayerOffset + z * VoxelWorld.CHUNK_XZ;
-            for (int x = 0; x < VoxelWorld.CHUNK_XZ; x++) {
-                byte id = chunkVoxelScratch[row + x];
-                if (id == Block.AIR) continue;
-                chunkNonAirBlocks++;
+        collectChunkTorches(world, x0, y0, z0, x1, y1, z1);
 
-                if (id == Block.PORTAL) {
-                    if (buildingPortals == null) buildingPortals = reusablePortalBuilder;
-                    buildingPortals.add(x, layer, z,
-                            world.portalAxisAt(x0 + x, y0, z0 + z), portalFrameSize);
-                } else if (id == Block.FIRE) {
-                    if (buildingFires == null) buildingFires = new FireBuilder();
-                    buildingFires.add(x, layer, z);
-                } else if (Block.isFlower(id)) {
-                    if (buildingFlowers == null) buildingFlowers = reusableFlowerBuilder;
-                    buildingFlowers.add(x, layer, z, Block.sideTile(id));
-                } else if (Block.isDoor(id)) {
-                    if (buildingFlowers == null) buildingFlowers = reusableFlowerBuilder;
-                    buildingFlowers.addDoor(x, layer, z, id,
-                            world.doorMetadata(x0 + x, y0, z0 + z));
+        // Crossed flowers do not form cube faces, so collect them separately.
+        // Empty vertical sections are common above the terrain: detect them during
+        // the voxel copy and avoid allocating face builders/M3G meshes for them.
+        int nonAirBlocks = 0;
+        for (int y = y0; y < y1; y++) {
+            for (int z = z0; z < z1; z++) {
+                for (int x = x0; x < x1; x++) {
+                    byte id = world.get(x, y, z);
+                    if (id != Block.AIR) nonAirBlocks++;
+                    int localIndex = (((y - y0) * VoxelWorld.CHUNK_XZ) + (z - z0)) *
+                            VoxelWorld.CHUNK_XZ + (x - x0);
+                    chunkVoxelScratch[localIndex] = id;
+                    chunkLightScratch[localIndex] = (byte)(id == Block.LAVA ? 14 : torchLightAt(x, y, z));
+                    if (id == Block.PORTAL) {
+                        if (portals == null) portals = reusablePortalBuilder;
+                        portals.add(x - x0, y - y0, z - z0,
+                                world.portalAxisAt(x, y, z), portalFrameSize);
+                    } else if (id == Block.FIRE) {
+                        if (fires == null) fires = new FireBuilder();
+                        fires.add(x - x0, y - y0, z - z0);
+                    } else if (Block.isFlower(id)) {
+                        if (flowers == null) flowers = reusableFlowerBuilder;
+                        flowers.add(x - x0, y - y0, z - z0, Block.sideTile(id));
+                    } else if (Block.isDoor(id)) {
+                        if (flowers == null) flowers = new FlowerBuilder();
+                        flowers.addDoor(x - x0, y - y0, z - z0, id,
+                                world.doorMetadata(x, y, z));
+                    }
                 }
             }
         }
-    }
 
-    /**
-     * Greedy meshing over the complete 16x64x16 snapshot. Horizontal and
-     * vertical faces now share one 2D mask per chunk plane, allowing adjacent
-     * rectangles to merge across layer boundaries when tile and light match.
-     * Every mask key includes both values, so shading and atlas selection stay
-     * identical to the previous sectional renderer.
-     */
-    private void buildChunkFaces(VoxelWorld world, int cx, int cy, int cz, int lodLevel) {
-        if (chunkNonAirBlocks == 0) return;
+        // An all-air section has no geometry at all. Returning null still marks
+        // the slot resident in replaceChunk(), so it will not be retried every frame.
+        if (nonAirBlocks == 0) return null;
 
-        final int x0 = cx * VoxelWorld.CHUNK_XZ;
-        final int y0 = 0;
-        final int z0 = cz * VoxelWorld.CHUNK_XZ;
-        final int width = VoxelWorld.CHUNK_XZ;
-        final int[] mask = greedyMaskScratch;
-        final FaceBuilder[] builders = chunkFaceBuilders;
-
+        // Mine64-style greedy meshing: combine adjacent visible faces on each
+        // chunk plane when their atlas tile matches. Tile textures repeat, so
+        // the merged rectangles preserve the original per-block texture scale.
+        int[] mask = greedyMaskScratch;
         for (int face = 0; face < 6; face++) {
-            // Distant chunks keep only upward-facing surfaces. Neighbor checks
-            // still prevent internal tops from appearing through solid terrain.
-            if (lodLevel > 0 && face != 0) continue;
-            boolean horizontalFace = face == 0 || face == 5;
-            int slices = horizontalFace ? CHUNK_FULL_HEIGHT : VoxelWorld.CHUNK_XZ;
-            int height = horizontalFace ? VoxelWorld.CHUNK_XZ : CHUNK_FULL_HEIGHT;
-
+            int slices = face == 0 || face == 5 ? VoxelWorld.CHUNK_Y : VoxelWorld.CHUNK_XZ;
+            int width = VoxelWorld.CHUNK_XZ;
+            int height = face == 0 || face == 5 ? VoxelWorld.CHUNK_XZ : VoxelWorld.CHUNK_Y;
             for (int slice = 0; slice < slices; slice++) {
                 for (int b = 0; b < height; b++) {
                     int row = b * width;
                     for (int a = 0; a < width; a++) {
-                        int lx, ly, lz;
-                        if (horizontalFace) {
-                            lx = a;
-                            ly = slice;
-                            lz = b;
+                        int x, y, z;
+                        if (face == 0 || face == 5) {
+                            x = x0 + a; y = y0 + slice; z = z0 + b;
                         } else if (face == 1 || face == 2) {
-                            lx = slice;
-                            ly = b;
-                            lz = a;
+                            x = x0 + slice; y = y0 + b; z = z0 + a;
                         } else {
-                            lx = a;
-                            ly = b;
-                            lz = slice;
+                            x = x0 + a; y = y0 + b; z = z0 + slice;
                         }
-
-                        int voxelIndex = (ly * width + lz) * width + lx;
+                        int voxelIndex = (((y - y0) * VoxelWorld.CHUNK_XZ) + (z - z0)) *
+                                VoxelWorld.CHUNK_XZ + (x - x0);
                         byte id = chunkVoxelScratch[voxelIndex];
                         int key = 0;
-
-                        if (id != Block.AIR && id != Block.RAIL &&
-                                !Block.isFlower(id) && !Block.isDoor(id) &&
-                                !(face == 5 && y0 + ly == 0)) {
-                            int nx = lx, ny = ly, nz = lz;
+                        if (id != Block.AIR && id != Block.RAIL && !Block.isFlower(id) && !Block.isDoor(id) &&
+                            !(face == 5 && y == 0)) {
+                            int nx = x, ny = y, nz = z;
                             if (face == 0) ny++;
                             else if (face == 1) nx--;
                             else if (face == 2) nx++;
                             else if (face == 3) nz--;
                             else if (face == 4) nz++;
                             else ny--;
-
                             byte neighbor;
-                            if (face == 0 && ly + 1 < CHUNK_FULL_HEIGHT)
+                            if (face == 0 && y + 1 < y1)
                                 neighbor = chunkVoxelScratch[voxelIndex + CHUNK_AREA];
-                            else if (face == 5 && ly > 0)
-                                neighbor = chunkVoxelScratch[voxelIndex - CHUNK_AREA];
-                            else if (face == 1 && lx > 0)
+                            else if (face == 1 && x > x0)
                                 neighbor = chunkVoxelScratch[voxelIndex - 1];
-                            else if (face == 2 && lx + 1 < width)
+                            else if (face == 2 && x + 1 < x1)
                                 neighbor = chunkVoxelScratch[voxelIndex + 1];
-                            else if (face == 3 && lz > 0)
-                                neighbor = chunkVoxelScratch[voxelIndex - width];
-                            else if (face == 4 && lz + 1 < width)
-                                neighbor = chunkVoxelScratch[voxelIndex + width];
-                            else
-                                neighbor = world.getLoaded(x0 + nx, y0 + ny, z0 + nz);
-
+                            else if (face == 3 && z > z0)
+                                neighbor = chunkVoxelScratch[voxelIndex - VoxelWorld.CHUNK_XZ];
+                            else if (face == 4 && z + 1 < z1)
+                                neighbor = chunkVoxelScratch[voxelIndex + VoxelWorld.CHUNK_XZ];
+                            else if (face == 5 && y > y0)
+                                neighbor = chunkVoxelScratch[voxelIndex - CHUNK_AREA];
+                            else neighbor = world.get(nx, ny, nz);
                             if (Block.faceVisible(id, neighbor)) {
-                                int wx = x0 + lx, wy = y0 + ly, wz = z0 + lz;
-                                int woolColor = id == Block.WOOL ?
-                                        world.woolColor(wx, wy, wz) : 0;
-                                int tile = renderWorldTile(world, id, face,
-                                        wx, wy, wz, woolColor);
-                                // Local light propagation is intentionally disabled:
-                                // global ambient light handles the scene; lava stays emissive.
-                                int light = id == Block.LAVA ? 14 : 0;
+                                int tile = renderWorldTile(world, id, face, x, y, z, world.woolColor(x, y, z));
+                                int light = chunkLightScratch[voxelIndex] & 255;
                                 key = light * TILE_COUNT + tile + 1;
                             }
                         }
                         mask[row + a] = key;
                     }
                 }
-
                 for (int b = 0; b < height; b++) {
-                    int row = b * width;
                     for (int a = 0; a < width; ) {
-                        int key = mask[row + a];
-                        if (key == 0) {
-                            a++;
-                            continue;
-                        }
-
+                        int key = mask[b * width + a];
+                        if (key == 0) { a++; continue; }
                         int rectWidth = 1;
-                        while (a + rectWidth < width &&
-                                mask[row + a + rectWidth] == key)
+                        while (a + rectWidth < width && mask[b * width + a + rectWidth] == key)
                             rectWidth++;
-
                         int rectHeight = 1;
                         boolean extend = true;
                         while (b + rectHeight < height && extend) {
                             int nextRow = (b + rectHeight) * width + a;
                             for (int k = 0; k < rectWidth; k++) {
-                                if (mask[nextRow + k] != key) {
-                                    extend = false;
-                                    break;
-                                }
+                                if (mask[nextRow + k] != key) { extend = false; break; }
                             }
                             if (extend) rectHeight++;
                         }
-
                         for (int clearY = 0; clearY < rectHeight; clearY++) {
                             int clearRow = (b + clearY) * width + a;
-                            for (int clearX = 0; clearX < rectWidth; clearX++)
-                                mask[clearRow + clearX] = 0;
+                            for (int clearX = 0; clearX < rectWidth; clearX++) mask[clearRow + clearX] = 0;
                         }
-
-                        int x, y, z;
-                        if (horizontalFace) {
-                            x = a;
-                            y = slice;
-                            z = b;
+                        int x, y, z, faceWidth, faceHeight;
+                        if (face == 0 || face == 5) {
+                            x = a; y = slice; z = b;
+                            faceWidth = rectWidth; faceHeight = rectHeight;
                         } else if (face == 1 || face == 2) {
-                            x = slice;
-                            y = b;
-                            z = a;
+                            x = slice; y = b; z = a;
+                            faceWidth = rectWidth; faceHeight = rectHeight;
                         } else {
-                            x = a;
-                            y = b;
-                            z = slice;
+                            x = a; y = b; z = slice;
+                            faceWidth = rectWidth; faceHeight = rectHeight;
                         }
-
                         int encoded = key - 1;
-                        int tile = encoded & (TILE_COUNT - 1);
+                        int tile = encoded % TILE_COUNT;
                         int light = encoded / TILE_COUNT;
-                        // Keep all six directions for this tile in one batch.
-                        // Water still uses its translucent Appearance, but no
-                        // longer needs a separate always-visible scene node.
-                        int builderIndex = tile;
+                        int builderIndex = light * TILE_COUNT + tile;
                         if (builders[builderIndex] == null) {
                             FaceBuilder builder = freeFaceBuilderCount > 0 ?
                                     freeFaceBuilders[--freeFaceBuilderCount] : null;
-                            if (builder == null) builder = new FaceBuilder(tile, face);
-                            else builder.reset(tile, face);
+                            if (builder == null) builder = new FaceBuilder(tile, light);
+                            else builder.reset(tile, light);
                             builders[builderIndex] = builder;
-                            activeFaceBuilderIndices[activeFaceBuilderCount++] = builderIndex;
                         }
-                        builders[builderIndex].addRect(x, y, z, rectWidth,
-                                rectHeight, face, light);
+                        builders[builderIndex].addRect(x, y, z, faceWidth, faceHeight, face);
                         a += rectWidth;
                     }
                 }
             }
         }
-    }
 
-    /** Apply an Alpha-era biome tint to the vertex colors of a held block mesh. */
-    private void tintFaceBuilder(FaceBuilder builder, int tint) {
-        int red = (tint >> 16) & 255;
-        int green = (tint >> 8) & 255;
-        int blue = tint & 255;
-        for (int vertex = 0; vertex < builder.vertexCount; vertex++) {
-            int color = vertex * 4;
-            builder.c[color] = (byte)((builder.c[color] & 255) * red / 255);
-            builder.c[color + 1] = (byte)((builder.c[color + 1] & 255) * green / 255);
-            builder.c[color + 2] = (byte)((builder.c[color + 2] & 255) * blue / 255);
-            // Keep the original vertex alpha (including water/transparency).
+        int count = 0;
+        for (int i = 0; i < builders.length; i++) if (builders[i] != null) count++;
+        int flowerCount = flowers == null ? 0 : 1;
+        int fireCount = fires == null ? 0 : 1;
+        int portalCount = portals == null ? 0 : 1;
+        if (count + flowerCount + fireCount + portalCount == 0) return null;
+        Mesh[] meshes = new Mesh[count + flowerCount + fireCount + portalCount];
+        int at = 0;
+        for (int i = 0; i < builders.length; i++) {
+            if (builders[i] == null) continue;
+            int tile = i % TILE_COUNT;
+            float textureScale = tile == Block.sideTile(Block.GRASS) ? 0.999f / 16.0f : 1.0f / 16.0f;
+            FaceBuilder builder = builders[i];
+            meshes[at++] = makeMesh(builder, tileAppearance(tile), textureScale);
+            builders[i] = null;
+            // Retain at most 128 reusable builders. Oversized/extra builders
+            // naturally become collectible instead of growing the pool forever.
+            if (freeFaceBuilderCount < freeFaceBuilders.length &&
+                    builder.p.length <= 1536) {
+                builder.reset(0, 0);
+                freeFaceBuilders[freeFaceBuilderCount++] = builder;
+            }
         }
+        if (flowers != null) meshes[at++] = makeFlowerMesh(flowers, flowerAppearance);
+        if (fires != null) {
+            fires.setFrame(fireAnimationFrame);
+            meshes[at++] = makeFireMesh(fires, worldFireAppearance);
+        }
+        if (portals != null) meshes[at++] = makePortalMesh(portals);
+        Chunk chunk = new Chunk();
+        chunk.meshes = meshes;
+        chunk.fires = fires;
+        int wx = x0, wy = y0, wz = z0;
+        for (int i = 0; i < meshes.length; i++) meshes[i].setTranslation(wx, wy, wz);
+        return chunk;
     }
 
     private void add(FaceBuilder[] builders, int tile, int x, int y, int z, int face) {
-        if (builders[tile] == null) builders[tile] = new FaceBuilder(tile);
+        if (builders[tile] == null) builders[tile] = new FaceBuilder(tile, 0);
         builders[tile].add(x, y, z, face);
-    }
-
-    /**
-     * Build one ordinary M3G Mesh per atlas tile, following the simple 1.5
-     * renderer layout. Each mesh owns a compact VertexBuffer and one
-     * TriangleStripArray; current lighting, greedy rectangles and tile
-     * appearances are retained.
-     */
-    /**
-     * Packs every opaque tile batch in this chunk into one M3G Mesh node.
-     * Each tile remains a separate submesh with its original cropped texture,
-     * while all submeshes share one position/UV/color VertexBuffer.
-     */
-    /**
-     * Builds six directional buckets plus an always-enabled water bucket.
-     * Each bucket retains tile-specific submeshes; directional buckets can be
-     * disabled when their outward normals face away from the camera.
-     */
-    /**
-     * Legacy-style M3G assembly: one ordinary Mesh and one VertexBuffer per
-     * atlas tile. All six face directions for a tile share that mesh; their
-     * individual shade values remain in the vertex-color array.
-     */
-    private Mesh[] makeChunkBlockMeshes() {
-        Mesh[] result = new Mesh[activeFaceBuilderCount];
-        int count = 0;
-        for (int active = 0; active < activeFaceBuilderCount; active++) {
-            int tile = activeFaceBuilderIndices[active];
-            FaceBuilder builder = chunkFaceBuilders[tile];
-            if (builder == null || builder.vertexCount == 0) continue;
-            result[count++] = makeMesh(builder, tileAppearance(tile), 1.0f / 16.0f);
-        }
-        if (count == result.length) return result;
-        Mesh[] compact = new Mesh[count];
-        System.arraycopy(result, 0, compact, 0, count);
-        return compact;
     }
 
     private Mesh makeMesh(FaceBuilder data, Appearance appearance) {
@@ -2187,11 +1703,52 @@ final class ChunkRenderer {
         texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         texture.setWrapping(Texture2D.WRAP_REPEAT, Texture2D.WRAP_REPEAT);
         appearance = createBlockAppearance(texture, tile == Block.atlasTile(Block.WATER));
-        appearance.setFog(terrainFog);
         if (tile == 234 && appearance.getMaterial() != null)
             appearance.getMaterial().setColor(Material.EMISSIVE, 0xFFFF6A18);
         tileAppearances[tile] = appearance;
         return appearance;
+    }
+
+    /** Gather nearby torch blocks once per chunk build; lighting stays block-quantized. */
+    private void collectChunkTorches(VoxelWorld world, int x0, int y0, int z0,
+                                     int x1, int y1, int z1) {
+        chunkTorchCount = 0;
+        int scanRadius = LAVA_LIGHT_RADIUS;
+        int minX = x0 - scanRadius, maxX = x1 + scanRadius;
+        int minY = y0 - scanRadius, maxY = y1 + scanRadius;
+        int minZ = z0 - scanRadius, maxZ = z1 + scanRadius;
+        if (minY < 0) minY = 0;
+        if (maxY > VoxelWorld.HEIGHT) maxY = VoxelWorld.HEIGHT;
+        for (int y = minY; y < maxY && chunkTorchCount < MAX_CHUNK_TORCHES; y++)
+            for (int z = minZ; z < maxZ && chunkTorchCount < MAX_CHUNK_TORCHES; z++)
+                for (int x = minX; x < maxX && chunkTorchCount < MAX_CHUNK_TORCHES; x++) {
+                    byte source = world.getTorchCandidate(x, y, z);
+                    if (source != Block.TORCH && source != Block.LAVA) continue;
+                    chunkTorchX[chunkTorchCount] = x;
+                    chunkTorchY[chunkTorchCount] = y;
+                    chunkTorchZ[chunkTorchCount] = z;
+                    chunkLavaSource[chunkTorchCount] = source == Block.LAVA;
+                    chunkLightRadius[chunkTorchCount] = (byte)(source == Block.LAVA ? LAVA_LIGHT_RADIUS : TORCH_LIGHT_RADIUS);
+                    chunkTorchCount++;
+                }
+    }
+
+    /** Block-quantized torch falloff: each Manhattan step loses one brightness level. */
+    private int torchLightAt(int x, int y, int z) {
+        // Most chunks have no torches nearby. Avoid entering the per-block
+        // torch loop entirely in that common case.
+        if (chunkTorchCount == 0) return 0;
+        int best = 0;
+        for (int i = 0; i < chunkTorchCount; i++) {
+            int distance = Math.abs(x - chunkTorchX[i]) +
+                    Math.abs(y - chunkTorchY[i]) + Math.abs(z - chunkTorchZ[i]);
+            int radius = chunkLightRadius[i] & 255;
+            int level = (radius + 1 - distance) * (chunkLavaSource[i] ? 2 : 3);
+            if (level > 14) level = 14;
+            if (level > best) best = level;
+            if (best >= 14) return 14;
+        }
+        return best;
     }
 
     private int renderWorldTile(VoxelWorld world, byte id, int face,
@@ -2213,6 +1770,19 @@ final class ChunkRenderer {
         return Block.renderTile(id, face, woolColor);
     }
 
+    private void tintFaceBuilder(FaceBuilder data, int tint) {
+        int tr = (tint >> 16) & 255;
+        int tg = (tint >> 8) & 255;
+        int tb = tint & 255;
+        for (int i = 0; i < data.vertexCount; i++) {
+            int at = i * 4;
+            int shade = data.c[at] & 255;
+            data.c[at] = (byte)(shade * tr / 255);
+            data.c[at + 1] = (byte)(shade * tg / 255);
+            data.c[at + 2] = (byte)(shade * tb / 255);
+        }
+    }
+
     private Appearance createBlockAppearance(Texture2D texture, boolean translucent) {
         Appearance appearance = new Appearance();
         appearance.setTexture(0, texture);
@@ -2230,10 +1800,7 @@ final class ChunkRenderer {
             appearance.setCompositingMode(compositing);
         }
         PolygonMode polygon = new PolygonMode();
-        // Chunk block quads are wound outwards on all six faces. Opaque terrain
-        // can therefore discard back-facing triangles before rasterization.
-        // Keep translucent water double-sided to preserve its existing behavior.
-        polygon.setCulling(translucent ? PolygonMode.CULL_NONE : PolygonMode.CULL_BACK);
+        polygon.setCulling(PolygonMode.CULL_NONE);
         polygon.setShading(PolygonMode.SHADE_FLAT);
         appearance.setPolygonMode(polygon);
         return appearance;
@@ -2280,33 +1847,11 @@ final class ChunkRenderer {
     private void updateFireMeshes() {
         for (int i = 0; i < chunks.length; i++) {
             Chunk chunk = chunks[i];
-            if (chunk == null || chunk.fires == null) continue;
-            for (int f = 0; f < chunk.fires.length; f++)
-                if (chunk.fires[f] != null) chunk.fires[f].setFrame(fireAnimationFrame);
+            if (chunk != null && chunk.fires != null) chunk.fires.setFrame(fireAnimationFrame);
         }
     }
 
-    private static final class Chunk {
-        Mesh[] meshes;
-        int lodLevel;
-        boolean attached;
-        FireBuilder[] fires;
-        Mesh crackMesh;
-        VertexArray crackPositions;
-        short[] crackPositionData;
-        int handSwingTicks = 8;
-        boolean handSwinging;
-        boolean handLooping;
-    }
-
-    private static final class ChunkBuild {
-        final int slot, x, y, z, lodLevel;
-        int nextLayer;
-        ChunkBuild(int slot, int x, int y, int z, int lodLevel) {
-            this.slot = slot; this.x = x; this.y = y; this.z = z;
-            this.lodLevel = lodLevel;
-        }
-    }
+    private static final class Chunk { Mesh[] meshes; FireBuilder fires; }
 
     /** One full-cell portal plane, sharing the eight-frame portal material. */
     private static final class PortalBuilder {
@@ -2484,28 +2029,25 @@ final class ChunkRenderer {
     /** Reuses one short position array per material; no per-block scene nodes. */
     private static final class FaceBuilder {
         int tile;
+        int lightLevel;
         short[] p = new short[192];
         short[] uv = new short[128];
         byte[] c = new byte[256];
         int vertexCount;
         int faceCount;
 
-        int faceGroup;
+        FaceBuilder(int tile) { this(tile, 0); }
+        FaceBuilder(int tile, int lightLevel) { reset(tile, lightLevel); }
 
-        FaceBuilder(int tile) { reset(tile, -1); }
-        FaceBuilder(int tile, int face) { reset(tile, face); }
-
-        void reset(int nextTile) { reset(nextTile, -1); }
-
-        void reset(int nextTile, int nextFace) {
+        void reset(int nextTile, int nextLightLevel) {
             tile = nextTile;
-            faceGroup = nextFace;
+            lightLevel = nextLightLevel;
             vertexCount = 0;
             faceCount = 0;
         }
 
         /** Add one tiled rectangle produced by the chunk's greedy face scan. */
-        void addRect(int x, int y, int z, int width, int height, int face, int light) {
+        void addRect(int x, int y, int z, int width, int height, int face) {
             ensure(vertexCount + 4);
             int u0 = 1, v0 = 1;
             int u1 = 1 + width * 16, v1 = 1 + height * 16;
@@ -2516,7 +2058,7 @@ final class ChunkRenderer {
                 u0 = 0; v0 = 0;
                 u1 = width * 16; v1 = height * 16;
             }
-            int shade = litShade(face, light);
+            int shade = litShade(face);
             if (face == 0) {
                 vertex(x,y+1,z, u0,v1,shade); vertex(x,y+1,z+height, u0,v0,shade);
                 vertex(x+width,y+1,z, u1,v1,shade); vertex(x+width,y+1,z+height, u1,v0,shade);
@@ -2568,9 +2110,9 @@ final class ChunkRenderer {
             faceCount++;
         }
 
-        private int litShade(int face, int light) {
+        private int litShade(int face) {
             int shade = face == 0 ? 255 : (face == 5 ? 135 : (face <= 2 ? 205 : 180));
-            return shade + (255 - shade) * light / 14;
+            return shade + (255 - shade) * lightLevel / 14;
         }
 
         private void vertex(int x, int y, int z, int u, int v, int shade) {

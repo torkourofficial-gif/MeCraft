@@ -106,11 +106,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private int touchSetupSelection;
     private int language = Language.ENGLISH;
     private int cameraSensitivity = 2;
-    private int renderDistance = 4;
+    private int renderDistance = 1;
     private boolean economicMode;
-    private boolean fpsEnabled;
-    private int fpsFrameCount, displayedFps;
-    private long fpsWindowStart;
     private boolean controlsReturnSettings;
     private final int[] controlCodes = new int[CONTROL_COUNT];
     private final boolean[] customControls = new boolean[CONTROL_COUNT];
@@ -160,9 +157,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private float cameraPitch = -5.0f;
     private boolean lookUp, lookDown, lookLeft, lookRight;
     private VoxelWorld world;
-    private final int[] portalSourceScratch = new int[4];
-    private final int[] portalDestinationScratch = new int[4];
     private ChunkRenderer renderer;
+    private MenuDiorama menuDiorama;
     private boolean ridingBoat;
     private boolean ridingMinecart;
     private MusicController music;
@@ -242,16 +238,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     GameCanvas(MeCraft app) {
         this.app = app;
         int[] settings = new int[] { GameSettings.loadFrameSkip(), cameraSensitivity,
-                                     selectedPlayerSkin, language, renderDistance, -1, 0, 0 };
+                                     selectedPlayerSkin, language, renderDistance, -1, 0 };
         GameSettings.load(settings, controlCodes, customControls);
-        frameSkip = 0; // Rendering frameskip is intentionally disabled.
+        frameSkip = clamp(settings[0], 0, 2);
         cameraSensitivity = clamp(settings[1], 0, 4);
         selectedPlayerSkin = clamp(settings[2], 0, 4);
         language = clamp(settings[3], Language.ENGLISH, Language.SPANISH);
         renderDistance = clamp(settings[4], 0, 4);
         touchEnabled = settings[5] == 1;
         economicMode = settings[6] == 1;
-        fpsEnabled = settings[7] == 1;
         VoxelWorld.economicModeEnabled = economicMode;
         Language.set(language);
         try { music = new MusicController(); }
@@ -293,45 +288,19 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         visible = true;
     }
 
-    private static final long FRAME_MILLIS = 33L;
-    private static final long TICK_MILLIS = 50L;
-
     public void run() {
-        long previousTime = System.currentTimeMillis();
-        long nextFrameTime = previousTime;
-        long tickAccumulator = 0L;
         while (running) {
-            long now = System.currentTimeMillis();
-            long elapsed = now - previousTime;
-            previousTime = now;
-            // Avoid a huge catch-up after pause, debugger stops or a slow frame.
-            if (elapsed < 0L) elapsed = 0L;
-            if (elapsed > 100L) elapsed = 100L;
-            if (visible) tickAccumulator += elapsed;
-            else tickAccumulator = 0L;
-
-            while (visible && tickAccumulator >= TICK_MILLIS) {
-                if (state == PLAYING) updateGame();
-                if (state == FURNACE_INVENTORY) updateFurnace();
-                if (state == GAME_OVER && gameOverTicks < 12) gameOverTicks++;
-                if (state == MENU || state == TOUCH_SETUP) panoramaTick++;
-                tickAccumulator -= TICK_MILLIS;
-            }
-
+            long start = System.currentTimeMillis();
             if (music != null) music.update(visible ? musicModeForState() : MusicController.OFF);
-            if (visible) repaint();
-
-            // Render at a maximum of 30 FPS while gameplay remains fixed at 20 ticks/s.
-            nextFrameTime += FRAME_MILLIS;
-            now = System.currentTimeMillis();
-            long wait = nextFrameTime - now;
-            if (wait > 0L) {
-                try { Thread.sleep(wait); } catch (InterruptedException ignored) { }
-            } else {
-                // Do not accumulate missed frames: resume from now instead of
-                // running a burst of back-to-back paints on a slow device.
-                nextFrameTime = now;
-            }
+            if (visible && state == PLAYING) updateGame();
+            if (visible && state == FURNACE_INVENTORY) { updateFurnace(); repaint(); }
+            if (visible && state == GAME_OVER && gameOverTicks < 12) gameOverTicks++;
+            if (visible && (state == MENU || state == TOUCH_SETUP)) panoramaTick++;
+            if (visible && (state != PLAYING || renderFrame++ % (frameSkip + 1) == 0)) repaint();
+            long elapsed = System.currentTimeMillis() - start;
+            long wait = 50L - elapsed;
+            if (wait < 8L) wait = 8L;
+            try { Thread.sleep(wait); } catch (InterruptedException ignored) { }
         }
     }
 
@@ -590,7 +559,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     /** Lava leaves a longer, more dangerous burn than ordinary fire. */
     private void tickPlayerLavaBurn() {
-        boolean touchingLava = playerTouchesLava() || playerPhysics.isInLava(world);
+        boolean touchingLava = playerTouchesLava() ||
+                (world.nether && playerPhysics.isInWater(world));
         if (touchingLava) {
             if (playerLavaBurnTicks <= 0) playerLavaDamageTicks = 20;
             playerLavaBurnTicks = 300;
@@ -652,7 +622,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         respawn();
         saveIfNeeded();
         renderer = null;
-        if (world != null) world.shutdownProceduralWorker();
         world = null;
         System.gc();
         if (gameOverSelection == 0) {
@@ -730,8 +699,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             stage = "configurando cámara M3G";
             renderer.updateCamera(world, cameraPitch);
             stage = "construyendo sectores visibles M3G";
-            loadingMessage = Language.text("Cargando chunks cercanos...");
-            waitForInitialNeighborhood(world, renderer);
+            loadingMessage = Language.text("Construyendo chunks visibles...");
+            renderer.sync(world);
             state = PLAYING;
             repaint();
         } catch (OutOfMemoryError exhausted) {
@@ -741,34 +710,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 stage = VoxelWorld.getGenerationDiagnosticStage();
             }
             showDiagnostic(stage, problem);
-        }
-    }
-
-    /**
-     * Prepare spawn without allowing a slow or failed neighbor generation to
-     * trap the game on the loading screen forever.
-     */
-    private void waitForInitialNeighborhood(VoxelWorld targetWorld, ChunkRenderer targetRenderer) {
-        int centerX = (int)Math.floor(targetWorld.playerX / (float)VoxelWorld.CHUNK_XZ);
-        int centerZ = (int)Math.floor(targetWorld.playerZ / (float)VoxelWorld.CHUNK_XZ);
-        targetWorld.requestProceduralNeighborhood(centerX, centerZ);
-        try {
-            int waitSteps = 0;
-            while (!targetRenderer.isInitialNeighborhoodReady(targetWorld) &&
-                   waitSteps < 1200) {
-                targetRenderer.sync(targetWorld);
-                loadingMessage = Language.text("Preparando chunks cercanos...");
-                repaint();
-                serviceRepaints();
-                try { Thread.sleep(10L); } catch (InterruptedException ignored) { }
-                waitSteps++;
-            }
-            // Even on very slow devices, enter the world and let streaming
-            // finish in the background instead of waiting indefinitely.
-            targetRenderer.sync(targetWorld);
-            repaint();
-        } finally {
-            targetWorld.finishProceduralNeighborhood();
         }
     }
 
@@ -787,8 +728,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void loadSavedWorldNow(VoxelWorld.SavedWorld savedWorld) {
         title = null;
-        loadingMessage = Language.text("Leyendo datos guardados...");
-        repaint();
         System.gc();
         VoxelWorld saved = VoxelWorld.load(savedWorld.storeName);
         if (saved == null) {
@@ -797,10 +736,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
         String stage = "restaurando partida guardada";
         try {
-            loadingMessage = Language.text("Restaurando terreno y modificaciones...");
-            repaint();
             if (renderer != null) { renderer = null; System.gc(); }
-            if (world != null && world != saved) world.shutdownProceduralWorker();
             world = saved;
             world.health = clamp(world.health, 0, 20);
             playerPhysics.reset();
@@ -818,8 +754,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             resetInventory(world.mode);
             for (int i = 0; i < inventory.length; i++) inventory[i] = world.inventory[i];
             world.selectedSlot = clamp(world.selectedSlot, 0, hotbar.length - 1);
-            loadingMessage = Language.text("Preparando escena 3D...");
-            repaint();
             stage = "cargando /mecraft/textures.png y creando escena M3G";
             renderer = new ChunkRenderer(getWidth(), getHeight());
             renderer.setPlayerSkinIndex(selectedPlayerSkin);
@@ -827,9 +761,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             stage = "configurando cámara M3G";
             renderer.updateCamera(world, cameraPitch);
             stage = "construyendo sectores visibles M3G";
-            loadingMessage = Language.text("Cargando chunks cercanos...");
-            repaint();
-            waitForInitialNeighborhood(world, renderer);
+            renderer.sync(world);
             state = world.mode == 0 && world.health <= 0 ? GAME_OVER : PLAYING;
             if (state == GAME_OVER) {
                 gameOverSelection = 0;
@@ -988,7 +920,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             return;
         }
         advanceMining(trace(5.0f));
-        renderer.setHandLooping(miningX, miningY, miningZ, miningX >= 0);
+        renderer.setHandLooping(miningX >= 0);
         if (miningX >= 0) {
             int stage = (int)(miningDamage * 10.0f);
             if (stage > 9) stage = 9;
@@ -1044,22 +976,17 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 miningDamage = 0.99f;
                 return;
             }
-            // Prefer priming TNT, as in Indev. If the bounded entity pool is
-            // full (for example during a large chain reaction), let the player
-            // safely recover the block instead of restoring an unremovable TNT.
+            // The entity pool is bounded. If it is full, restore the TNT block
+            // instead of silently deleting it without starting a fuse.
             if (!renderer.spawnPrimedTnt(x, y, z, 80)) {
-                if (inventory[Block.TNT] >= ItemCatalog.maxStack(Block.TNT)) {
-                    world.set(x, y, z, Block.TNT);
-                    renderer.sync(world);
-                    miningDamage = 0.99f;
-                    return;
-                }
-                inventory[Block.TNT]++;
-                copyInventoryToWorld();
+                world.set(x, y, z, Block.TNT);
+                renderer.sync(world);
+                miningDamage = 0.99f;
+                return;
             }
             renderer.swingHand();
-            resetMining();
             renderer.sync(world);
+            resetMining();
             miningHitWait = 5;
             return;
         }
@@ -1093,17 +1020,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             if (world.mode == 0)
                 damageTool(hotbar[world.selectedSlot],
                         ItemCatalog.durabilityCost(hotbar[world.selectedSlot]));
-            // Keep the actual removed block as the priority coordinate even though
-            // removing a two-part door increments the world revision more than once.
-            world.changedOldId = id;
-            world.changedX = x;
-            world.changedY = lowerY;
-            world.changedZ = z;
             // Rebuild the removed door first, then emit debris so the visual burst
             // cannot be lost behind a terrain rebuild on slower M3G implementations.
-            resetMining();
             renderer.sync(world);
             renderer.spawnBlockDestroy(x, lowerY, z, debrisTile);
+            resetMining();
             miningHitWait = 5;
             return;
         }
@@ -1154,17 +1075,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             }
             if (world.mode == 0 && id != Block.FIRE)
                 damageTool(heldItem, ItemCatalog.durabilityCost(heldItem));
-            // Attached blocks can be removed in the same operation. Preserve the
-            // primary edit as the renderer's priority target after those cascades.
-            world.changedOldId = id;
-            world.changedX = x;
-            world.changedY = y;
-            world.changedZ = z;
             // Sync the changed terrain before creating the burst. Fire vanishes
             // silently, while ordinary blocks retain their destruction particles.
-            resetMining();
             renderer.sync(world);
             if (id != Block.FIRE) renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
+            resetMining();
             miningHitWait = 5;
         }
     }
@@ -1173,7 +1088,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         miningX = miningY = miningZ = -1;
         miningFaceX = miningFaceY = miningFaceZ = 0;
         miningDamage = 0.0f;
-        if (renderer != null) { renderer.setHandLooping(-1, -1, -1, false); renderer.setMiningCracks(-1, -1, -1, 0, 0, 0, -1); }
+        if (renderer != null) { renderer.setHandLooping(false); renderer.setMiningCracks(-1, -1, -1, 0, 0, 0, -1); }
     }
 
     private void cancelMining() {
@@ -1667,13 +1582,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         boolean leavingNether = world.nether;
         float sourceX = world.playerX, sourceY = world.playerY, sourceZ = world.playerZ;
         int sx = (int)sourceX, sy = (int)sourceY, sz = (int)sourceZ;
-        int[] source = portalSourceScratch;
-        boolean hasSource = false;
-        for (int y = sy - 1; y <= sy + 2 && !hasSource; y++)
-            for (int z = sz - 1; z <= sz + 1 && !hasSource; z++)
-                for (int x = sx - 1; x <= sx + 1 && !hasSource; x++)
-                    hasSource = world.portalFrameAt(x, y, z, source);
-        int axis = hasSource ? source[3] : 0;
+        int[] source = null;
+        for (int y = sy - 1; y <= sy + 2 && source == null; y++)
+            for (int z = sz - 1; z <= sz + 1 && source == null; z++)
+                for (int x = sx - 1; x <= sx + 1 && source == null; x++)
+                    source = world.portalFrameAt(x, y, z);
+        int axis = source == null ? 0 : source[3];
 
         // Remember the exact position in the dimension being left, so the
         // return trip goes back to the same portal instead of relying on 8:1 rounding.
@@ -1701,9 +1615,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             world.playerY = world.nether ? netherPortalReturnY : overworldPortalReturnY;
             world.playerZ = world.nether ? netherPortalReturnZ : overworldPortalReturnZ;
         } else {
-            int[] destination = portalDestinationScratch;
-            boolean hasDestination = world.findPortalNear((int)tx, (int)tz, destination);
-            if (!hasDestination) {
+            int[] destination = world.findPortalNear((int)tx, (int)tz);
+            if (destination == null) {
                 int bx = (int)tx, bz = (int)tz;
                 if (bx < 2) bx = 2;
                 if (bz < 2) bz = 2;
@@ -1712,16 +1625,17 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 int by = world.surfaceY(bx + 1, bz + 1) + 1;
                 if (by < 1) by = 1;
                 if (by > VoxelWorld.HEIGHT - 6) by = VoxelWorld.HEIGHT - 6;
-                hasDestination = world.createPortalAt(bx, by, bz, axis, destination);
+                destination = world.createPortalAt(bx, by, bz, axis);
             }
-            if (!hasDestination) {
+            if (destination == null) {
                 world.switchDimension();
                 portalChargeTicks = 0;
                 return;
             }
-            world.playerX = destination[3] == 0 ? destination[0] + 2.5f : destination[0] + 0.5f;
-            world.playerZ = destination[3] == 0 ? destination[2] + 0.5f : destination[2] + 2.5f;
-            world.playerY = destination[1] + 1.05f;
+            int[] d = destination;
+            world.playerX = d[3] == 0 ? d[0] + 2.5f : d[0] + 0.5f;
+            world.playerZ = d[3] == 0 ? d[2] + 0.5f : d[2] + 2.5f;
+            world.playerY = d[1] + 1.05f;
         }
 
         // Keep the player above the destination floor if the saved Y is no
@@ -2278,10 +2192,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (state == SETTINGS) {
             int action = gameAction(keyCode);
             if (keyCode == KEY_NUM2 || action == UP) {
-                settingsSelection = (settingsSelection + 8) % 9;
+                settingsSelection = (settingsSelection + 7) % 8;
                 repaint();
             } else if (keyCode == KEY_NUM8 || action == DOWN) {
-                settingsSelection = (settingsSelection + 1) % 9;
+                settingsSelection = (settingsSelection + 1) % 8;
                 repaint();
             } else if (settingsSelection == 0 && (keyCode == KEY_NUM4 || action == LEFT)) changeFrameSkip(-1);
             else if (settingsSelection == 0 && (keyCode == KEY_NUM6 || action == RIGHT)) changeFrameSkip(1);
@@ -2307,14 +2221,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 VoxelWorld.economicModeEnabled = economicMode;
                 saveSettings();
                 repaint();
-            } else if (settingsSelection == 8 && (keyCode == KEY_NUM4 || action == LEFT ||
-                    keyCode == KEY_NUM6 || action == RIGHT || keyCode == KEY_NUM5 || action == FIRE)) {
-                fpsEnabled = !fpsEnabled;
-                fpsFrameCount = 0;
-                fpsWindowStart = 0L;
-                saveSettings();
-                repaint();
-            } else if (keyCode == KEY_NUM0 || keyCode == KEY_POUND) {
+            }
+            else if (keyCode == KEY_NUM0 || keyCode == KEY_POUND) {
                 state = MENU;
                 repaint();
             }
@@ -2579,8 +2487,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     private void changeFrameSkip(int delta) {
-        // Keep the legacy settings slot compatible, but never skip gameplay renders.
-        frameSkip = 0;
+        frameSkip += delta;
+        if (frameSkip < 0) frameSkip = 2;
+        if (frameSkip > 2) frameSkip = 0;
         saveSettings();
         repaint();
     }
@@ -2603,15 +2512,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         renderDistance += delta;
         if (renderDistance < 0) renderDistance = 4;
         if (renderDistance > 4) renderDistance = 0;
-        if (renderer != null) renderer.setRenderDistance(renderDistance);
         saveSettings();
         repaint();
     }
 
     private void saveSettings() {
         GameSettings.save(new int[] { frameSkip, cameraSensitivity, selectedPlayerSkin,
-                                      language, renderDistance, touchEnabled ? 1 : 0, economicMode ? 1 : 0,
-                                      fpsEnabled ? 1 : 0 },
+                                      language, renderDistance, touchEnabled ? 1 : 0, economicMode ? 1 : 0 },
                 controlCodes, customControls);
     }
 
@@ -2906,7 +2813,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         menuSelection = MENU_SINGLEPLAYER;
         clearKeys();
         renderer = null;
-        if (world != null) world.shutdownProceduralWorker();
         world = null;
         System.gc();
         loadTitle();
@@ -3187,35 +3093,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (state == MENU && width > 0 && height > 0) loadTitle();
     }
 
-    /**
-     * Prefer M3G 1.1 OVERWRITE only when the World fills the entire Canvas.
-     * Partial viewports (such as the skin preview) and partial repaint clips
-     * must preserve existing 2D pixels. Older M3G 1.0 runtimes reject bit 16.
-     */
-    private void bindPerformanceTarget(Graphics3D graphics3D, Graphics target,
-            boolean fullCanvasWorld) {
-        boolean fullClip = target.getClipX() == 0 && target.getClipY() == 0 &&
-                target.getClipWidth() >= getWidth() && target.getClipHeight() >= getHeight();
-        if (fullCanvasWorld && fullClip) {
-            try {
-                // JSR-184 M3G 1.1 OVERWRITE bit; discard old pixels only after full redraw.
-                // Keep the depth buffer enabled so nearer terrain hides farther faces.
-                graphics3D.bindTarget(target, true, 16);
-                return;
-            } catch (IllegalArgumentException unsupportedOverwrite) {
-                // M3G 1.0 rejects the 1.1-only hint.
-            }
-        }
-        // Depth buffering is required for correct hidden-surface removal.
-        graphics3D.bindTarget(target, true, 0);
-    }
-
     protected synchronized void paint(Graphics g) {
         if (state == TOUCH_SETUP) {
             drawTouchSetup(g);
         } else if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH ||
             state == CREATIVE_INVENTORY || state == GAME_OVER || state == CHEST_INVENTORY || state == FURNACE_INVENTORY) {
-            if (state == PLAYING && fpsEnabled) updateFpsCounter();
             String stage = "actualizando mallas M3G";
             try {
                 renderer.sync(world);
@@ -3225,7 +3107,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 stage = "obteniendo contexto Graphics3D";
                 Graphics3D graphics3D = Graphics3D.getInstance();
                 stage = "enlazando Graphics del Canvas a M3G";
-                                bindPerformanceTarget(graphics3D, g, true);
+                graphics3D.bindTarget(g);
                 try {
                     stage = "configurando viewport M3G";
                     graphics3D.setViewport(0, 0, getWidth(), getHeight());
@@ -3245,7 +3127,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     if (cameraUnderwater()) drawTint(g, waterTint);
                     if (hurtTicks > 0) drawTint(g, hurtTint);
                     drawHud(g);
-                    if (state == PLAYING && fpsEnabled) drawFpsCounter(g);
                     if (touchEnabled && state == PLAYING) drawTouchControls(g);
                 }
                 if (state == PAUSED) drawPause(g);
@@ -3329,7 +3210,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void drawTouchSetup(Graphics g) {
         int w = getWidth(), h = getHeight();
-        drawPanoramaBackground(g);
+        drawDioramaBackground(g);
         drawInsetPanel(g, 12, h / 2 - 76, w - 24, 152);
         g.setColor(255, 244, 210);
         g.drawString("MeCraft", w / 2, h / 2 - 61, Graphics.TOP | Graphics.HCENTER);
@@ -3556,11 +3437,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         } else if (state == SETTINGS) {
             int panelY = Math.max(8, (h - 242) / 2);
             int panelHeight = Math.min(h - panelY - 6, 242);
-            int rowStep = Math.min(22, Math.max(13, (panelHeight - 54) / 9));
+            int rowStep = Math.min(22, Math.max(13, (panelHeight - 54) / 8));
             int row = (y - (panelY + 32) + rowStep / 2) / rowStep;
-            if (row >= 0 && row < 9) {
+            if (row >= 0 && row < 8) {
                 settingsSelection = row;
-                if (row == 3 || row == 5 || row == 6 || row == 7 || row == 8) keyPressed(KEY_NUM5);
+                if (row == 3 || row == 5 || row == 6 || row == 7) keyPressed(KEY_NUM5);
                 else if (row == 4) changeLanguage();
                 else if (row == 0) changeFrameSkip(1);
                 else if (row == 1) changeSensitivity(1);
@@ -3662,9 +3543,34 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         g.setFont(old);
     }
 
+    /**
+     * Lightweight title scene: a tiny, prebuilt two-chunk landscape rendered
+     * by the same M3G chunk pipeline as gameplay. The camera circles it
+     * continuously instead of rebuilding a software cubemap every repaint.
+     */
+    private void drawDioramaBackground(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        if (w <= 0 || h <= 0) return;
+        try {
+            if (menuDiorama == null) menuDiorama = new MenuDiorama(w, h);
+            Graphics3D graphics3D = Graphics3D.getInstance();
+            graphics3D.bindTarget(g);
+            try {
+                graphics3D.setViewport(0, 0, w, h);
+                menuDiorama.render(graphics3D, w, h, panoramaTick);
+            } finally {
+                graphics3D.releaseTarget();
+            }
+        } catch (OutOfMemoryError exhausted) {
+            drawDirtBackground(g);
+        } catch (Throwable unavailable) {
+            drawDirtBackground(g);
+        }
+    }
+
     private void drawMenu(Graphics g) {
         int w = getWidth(), h = getHeight();
-        drawPanoramaBackground(g);
+        drawDioramaBackground(g);
         int logoY = Math.max(8, h / 12);
         if (title != null) g.drawImage(title, w / 2, logoY, Graphics.TOP | Graphics.HCENTER);
         else {
@@ -3697,15 +3603,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         drawInsetPanel(g, 5, 5, w - 10, h - 10);
         g.setColor(255, 255, 255);
         g.drawString(lanLabel("DEBUG: todos los items", "DEBUG: all items"),
-                w / 2, 7, Graphics.TOP | Graphics.HCENTER);
-        g.setColor(205, 190, 165);
-        String streamInfo = world == null ? "Streaming: no world" :
-                world.getStreamingDiagnostics();
-        g.drawString(streamInfo, w / 2, 21, Graphics.TOP | Graphics.HCENTER);
+                w / 2, 9, Graphics.TOP | Graphics.HCENTER);
 
         int rowHeight = 24;
-        int listTop = 37;
-        int visible = Math.max(1, (h - 48) / rowHeight);
+        int listTop = 25;
+        int visible = Math.max(1, (h - 34) / rowHeight);
         int total = ItemCatalog.COUNT - 1;
         int maxScroll = Math.max(0, total - visible);
         if (debugItemScroll > maxScroll) debugItemScroll = maxScroll;
@@ -3949,7 +3851,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         drawDirtBackground(g);
         int panelY = Math.max(8, (h - 242) / 2);
         int panelHeight = Math.min(h - panelY - 6, 242);
-        int rowStep = Math.min(22, Math.max(13, (panelHeight - 54) / 9));
+        int rowStep = Math.min(22, Math.max(13, (panelHeight - 54) / 8));
         int firstRowY = panelY + 32;
         drawInsetPanel(g, 12, panelY, w - 24, panelHeight);
         g.setColor(255, 244, 200);
@@ -3957,8 +3859,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         String value = Language.text(frameSkip == 0 ? "Desactivado" : (frameSkip == 1 ? "1 de cada 2" : "2 de cada 3"));
         String[] sensitivityNames = new String[] { "Muy baja", "Baja", "Normal", "Alta", "Muy alta" };
         String[] distanceNames = language == Language.ENGLISH ?
-                new String[] { "Short", "Normal", "Far", "Maximum", "Shortest (1.5)" } :
-                new String[] { "Corta", "Normal", "Lejana", "Máxima", "Mínima (1.5)" };
+                new String[] { "Short", "Normal", "Far", "Maximum", "Shortest" } :
+                new String[] { "Corta", "Normal", "Lejana", "Máxima", "Mínima" };
         drawMenuItem(g, "Frameskip: " + value, firstRowY, settingsSelection == 0);
         drawMenuItem(g, "Sensibilidad: " + sensitivityNames[cameraSensitivity], firstRowY + rowStep,
                 settingsSelection == 1);
@@ -3972,41 +3874,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 firstRowY + rowStep * 6, settingsSelection == 6);
         drawMenuItem(g, "Modo económico: " + (economicMode ? "Si" : "No"),
                 firstRowY + rowStep * 7, settingsSelection == 7);
-        drawMenuItem(g, "Mostrar FPS: " + (fpsEnabled ? "Si" : "No"),
-                firstRowY + rowStep * 8, settingsSelection == 8);
-    }
-
-    private void updateFpsCounter() {
-        long now = System.currentTimeMillis();
-        if (fpsWindowStart == 0L) {
-            fpsWindowStart = now;
-            fpsFrameCount = 0;
-        }
-        fpsFrameCount++;
-        long elapsed = now - fpsWindowStart;
-        if (elapsed >= 1000L) {
-            displayedFps = (int) ((fpsFrameCount * 1000L) / elapsed);
-            fpsFrameCount = 0;
-            fpsWindowStart = now;
-        }
-    }
-
-    private void drawFpsCounter(Graphics g) {
-        String value = "FPS: " + displayedFps;
-        String detail = renderer == null ? "" : renderer.renderStats();
-        String geometry = renderer == null ? "" : renderer.geometryStats();
-        Font font = Font.getDefaultFont();
-        int width = Math.max(font.stringWidth(value),
-                Math.max(font.stringWidth(detail), font.stringWidth(geometry))) + 8;
-        int height = detail.length() == 0 ? 16 : (geometry.length() == 0 ? 28 : 40);
-        g.setColor(0, 0, 0);
-        g.fillRect(4, 4, width, height);
-        g.setColor(255, 255, 255);
-        g.drawString(value, 8, 5, Graphics.TOP | Graphics.LEFT);
-        if (detail.length() > 0)
-            g.drawString(detail, 8, 17, Graphics.TOP | Graphics.LEFT);
-        if (geometry.length() > 0)
-            g.drawString(geometry, 8, 29, Graphics.TOP | Graphics.LEFT);
     }
 
     private void drawControls(Graphics g) {
@@ -4058,7 +3925,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (skinGallery != null && viewportWidth > 0) {
             try {
                 Graphics3D graphics3D = Graphics3D.getInstance();
-                                bindPerformanceTarget(graphics3D, g, false);
+                graphics3D.bindTarget(g);
                 try {
                     graphics3D.setViewport(viewportX, viewportY, viewportWidth, viewportHeight);
                     skinGallery.render(graphics3D, System.currentTimeMillis());
@@ -4391,30 +4258,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         int y = getHeight() - 32;
         for (int i = 0; i < 10; i++) {
             int x = getWidth() / 2 - 91 + i * 8;
-            int healthInHeart = world.health - i * 2;
             if (iconsTexture != null && iconsTexture.getWidth() >= 70 && iconsTexture.getHeight() >= 9) {
-                // Draw the empty heart first so a half-heart keeps its grey
-                // half and the shared dark outline instead of looking clipped.
-                g.drawRegion(iconsTexture, 16, 0, 9, 9, Sprite.TRANS_NONE,
-                        x, y, Graphics.TOP | Graphics.LEFT);
-                if (healthInHeart >= 2) {
-                    g.drawRegion(iconsTexture, 52, 0, 9, 9, Sprite.TRANS_NONE,
-                            x, y, Graphics.TOP | Graphics.LEFT);
-                } else if (healthInHeart == 1) {
-                    g.drawRegion(iconsTexture, 61, 0, 9, 9, Sprite.TRANS_NONE,
-                            x, y, Graphics.TOP | Graphics.LEFT);
-                }
+                int healthInHeart = world.health - i * 2;
+                int tileX = healthInHeart >= 2 ? 52 : (healthInHeart == 1 ? 61 : 16);
+                g.drawRegion(iconsTexture, tileX, 0, 9, 9, Sprite.TRANS_NONE, x, y, Graphics.TOP | Graphics.LEFT);
             } else {
-                g.setColor(55, 25, 25);
-                g.fillArc(x, y, 8, 8, 0, 360);
-                g.setColor(115, 115, 115);
-                g.fillArc(x + 1, y + 1, 6, 6, 0, 360);
-                g.setColor(202, 54, 47);
-                if (healthInHeart >= 2) {
-                    g.fillArc(x + 1, y + 1, 6, 6, 0, 360);
-                } else if (healthInHeart == 1) {
-                    g.fillArc(x + 1, y + 1, 6, 6, 90, 180);
-                }
+                g.setColor(world.health > i * 2 ? 202 : 100, world.health > i * 2 ? 54 : 100,
+                           world.health > i * 2 ? 47 : 100);
+                g.fillArc(x, y, 7, 7, 0, 360);
             }
         }
     }
@@ -4704,14 +4555,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         g.drawLine(panelX + 9, panelY + 35, panelX + panelWidth - 10, panelY + 35);
         for (int i = 0; i < PAUSE_ROWS.length; i++)
             drawMenuItem(g, PAUSE_ROWS[i], panelY + 40 + i * 27, i == pauseSelection);
-        if (renderer != null) {
-            Font menuFont = g.getFont();
-            g.setFont(Font.getFont(Font.FACE_SYSTEM, Font.STYLE_PLAIN, Font.SIZE_SMALL));
-            g.setColor(70, 55, 40);
-            g.drawString(renderer.performanceStats(), w / 2, panelY + panelHeight - 13,
-                    Graphics.HCENTER | Graphics.TOP);
-            g.setFont(menuFont);
-        }
     }
 
     private void drawGameOver(Graphics g) {
