@@ -85,7 +85,8 @@ final class MenuPanorama {
             { -1, 1,-1,  1, 1,-1, -1, 1, 1,  1, 1, 1 }, // up
             { -1,-1, 1,  1,-1, 1, -1,-1,-1,  1,-1,-1 }  // down
         };
-        short[] uv = new short[] { 0,256, 256,256, 0,0, 256,0 };
+        // M3G's texture V direction is opposite to the source Image's top-down pixel rows.
+        short[] uv = new short[] { 0,0, 256,0, 0,256, 256,256 };
 
         VertexArray positions = new VertexArray(4, 3, 2);
         positions.set(0, 4, vertices[face]);
