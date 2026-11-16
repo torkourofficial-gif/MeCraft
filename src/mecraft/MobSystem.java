@@ -29,6 +29,11 @@ final class MobSystem {
     private static final int GHAST = 9;
     private static final int PIG_ZOMBIE = 10;
     private static final int MOB_COUNT = 14;
+    private static final String[] MOB_TEXTURE_FILES = {
+        "pig.png", "sheep.png", "zombie.png", "creeper.png", "skeleton.png",
+        "cow.png", "alpha_chicken.png", "alpha_spider.png", "alpha_slime.png",
+        "alpha_ghast.png", "alpha_pigzombie.png"
+    };
     private static final float DESPAWN_DISTANCE_SQUARED = 32.0f * 32.0f;
     private static final int PASSIVE_RESPAWN_INTERVAL = 80;
     private static final int HOSTILE_RESPAWN_INTERVAL = 100;
@@ -45,7 +50,8 @@ final class MobSystem {
     private final DroppedItemSystem drops;
     private final ParticleSystem particles;
     private final Appearance fireAppearance;
-    private final Appearance spiderEyesAppearance;
+    private Appearance spiderEyesAppearance;
+    private Image fleeceImage;
     private final Texture2D[] mobTextures = new Texture2D[11];
     private final Texture2D[] fleeceTextures = new Texture2D[WoolColors.COUNT];
     private final Random random = new Random(1L);
@@ -63,23 +69,11 @@ final class MobSystem {
         this.drops = drops;
         this.particles = particles;
         fireAppearance = skin(texture(GameAssets.image("fire.png")));
-        spiderEyesAppearance = skin(texture("alpha_spider_eyes.png"));
-        spiderEyesAppearance.getMaterial().setColor(Material.EMISSIVE, 0xFFAA2222);
         fireballAppearance = createFireballAppearance();
-        Texture2D[] skinTextures = new Texture2D[] {
-            texture("pig.png"), texture("sheep.png"), texture("zombie.png"),
-            texture("creeper.png"), texture("skeleton.png"), texture("cow.png"),
-            texture("alpha_chicken.png"), texture("alpha_spider.png"),
-            texture("alpha_slime.png"), texture("alpha_ghast.png"),
-            texture("alpha_pigzombie.png")
-        };
-        System.arraycopy(skinTextures, 0, mobTextures, 0, skinTextures.length);
-        Image fleeceImage = GameAssets.image("sheep_fur.png");
-        fleeceTextures[0] = texture(fleeceImage);
-        fleeceTextures[WoolColors.LIGHT_GRAY] =
-                texture(recolor(fleeceImage, WoolColors.LIGHT_GRAY));
-        fleeceTextures[WoolColors.BLACK] = texture(recolor(fleeceImage, WoolColors.BLACK));
-        Appearance arrowAppearance = skin(skinTextures[SKELETON]);
+        // Skeleton texture is needed by the fixed arrow pool; other species
+        // are loaded only when that species first enters the active mob pool.
+        mobTextures[SKELETON] = texture("skeleton.png");
+        Appearance arrowAppearance = skin(mobTextures[SKELETON]);
         for (int i = 0; i < arrows.length; i++) {
             arrows[i] = new Arrow(arrowAppearance);
             scene.addChild(arrows[i].root);
@@ -515,9 +509,9 @@ final class MobSystem {
             mobs[slot] = null;
         }
         int woolColor = type == SHEEP ? naturalSheepColor() : 0;
-        Appearance fleece = type == SHEEP ? skin(fleeceTextures[woolColor]) : null;
-        mob = new Mob(type, skin(mobTextures[type]), fleece, fireAppearance,
-                      type == SPIDER ? spiderEyesAppearance : null);
+        Appearance fleece = type == SHEEP ? skin(fleeceTexture(woolColor)) : null;
+        Appearance eyes = type == SPIDER ? spiderEyesAppearance() : null;
+        mob = new Mob(type, skin(mobTexture(type)), fleece, fireAppearance, eyes);
         mob.woolColor = woolColor;
         mobs[slot] = mob;
         scene.addChild(mob.root);
@@ -1026,6 +1020,46 @@ final class MobSystem {
             mob.legs[2].setOrientation(stride, 1, 0, 0);
             mob.legs[3].setOrientation(-stride, 1, 0, 0);
         }
+    }
+
+    private Texture2D mobTexture(int type) {
+        if (mobTextures[type] == null) {
+            try { mobTextures[type] = texture(MOB_TEXTURE_FILES[type]); }
+            catch (IOException missingTexture) {
+                throw new RuntimeException("No se pudo cargar textura de criatura: " +
+                        MOB_TEXTURE_FILES[type]);
+            }
+        }
+        return mobTextures[type];
+    }
+
+    private Texture2D fleeceTexture(int color) {
+        if (fleeceTextures[0] == null) {
+            try {
+                fleeceImage = GameAssets.image("sheep_fur.png");
+                fleeceTextures[0] = texture(fleeceImage);
+            } catch (IOException missingTexture) {
+                throw new RuntimeException("No se pudo cargar sheep_fur.png");
+            }
+        }
+        if (color == WoolColors.LIGHT_GRAY || color == WoolColors.BLACK) {
+            if (fleeceTextures[color] == null)
+                fleeceTextures[color] = texture(recolor(fleeceImage, color));
+        }
+        return fleeceTextures[0] == null ? fleeceTextures[color] : fleeceTextures[color] == null
+                ? fleeceTextures[0] : fleeceTextures[color];
+    }
+
+    private Appearance spiderEyesAppearance() {
+        if (spiderEyesAppearance == null) {
+            try {
+                spiderEyesAppearance = skin(texture("alpha_spider_eyes.png"));
+                spiderEyesAppearance.getMaterial().setColor(Material.EMISSIVE, 0xFFAA2222);
+            } catch (IOException missingTexture) {
+                throw new RuntimeException("No se pudo cargar alpha_spider_eyes.png");
+            }
+        }
+        return spiderEyesAppearance;
     }
 
     private Texture2D texture(String resource) throws IOException {
