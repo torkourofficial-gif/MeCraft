@@ -167,6 +167,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private Image menuPanorama;
     private int panoramaWidth;
     private int panoramaHeight;
+    private int panoramaTick;
     private Image guiTexture;
     private Image iconsTexture;
     private Image containerTexture;
