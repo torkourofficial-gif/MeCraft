@@ -270,10 +270,12 @@ final class VoxelWorld {
             if (nether != (dimension != 0) || !sameStoreName(saveStoreName, storeName)) return;
             if (proceduralChunkX[cache] == cx && proceduralChunkZ[cache] == cz) return;
         }
-        boolean loaded = loadPrefetchedChunk(cx, cz, prefetchChunk, dimension != 0);
-        if (!loaded) generateChunk(cx, cz, prefetchChunk, prefetchHeights, prefetchBiomes, dimension != 0);
-        // Persist outside the world lock. RMS can be slow on feature phones.
-        savePrefetchedChunk(cx, cz, prefetchChunk, dimension != 0, storeName);
+        boolean loaded = loadPrefetchedChunk(cx, cz, prefetchChunk, dimension != 0, storeName);
+        if (!loaded) {
+            generateChunk(cx, cz, prefetchChunk, prefetchHeights, prefetchBiomes, dimension != 0);
+            // Persist outside the world lock. RMS can be slow on feature phones.
+            savePrefetchedChunk(cx, cz, prefetchChunk, dimension != 0, storeName);
+        }
         // Publish the finished data atomically so the game thread can use it
         // without waiting for generation or disk access.
         synchronized (this) {
@@ -299,7 +301,12 @@ final class VoxelWorld {
     }
 
     private boolean loadPrefetchedChunk(int cx, int cz, byte[] target, boolean dimension) {
-        String name = prefetchStoreName();
+        return loadPrefetchedChunk(cx, cz, target, dimension, saveStoreName);
+    }
+
+    private boolean loadPrefetchedChunk(int cx, int cz, byte[] target,
+                                        boolean dimension, String worldStoreName) {
+        String name = worldStoreName == null ? null : worldStoreName + "-chunks";
         if (name == null) return false;
         RecordStore store = null;
         try {
