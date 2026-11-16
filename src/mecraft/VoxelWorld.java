@@ -989,13 +989,6 @@ final class VoxelWorld {
 
     private void generateChunk(int cx, int cz, byte[] target, int[] heights,
                                byte[] biomes, boolean dimension) {
-        synchronized (InfdevTerrain.class) {
-            generateChunkLocked(cx, cz, target, heights, biomes, dimension);
-        }
-    }
-
-    private void generateChunkLocked(int cx, int cz, byte[] target, int[] heights,
-                                     byte[] biomes, boolean dimension) {
         InfdevTerrain.prepareNoise(seed, noiseVersion);
         setGenerationDiagnosticStage("VoxelWorld.generateChunk: validando dimensión; chunk cx=" + cx + ", cz=" + cz);
         if (!dimension && worldType == TYPE_FLAT) {
