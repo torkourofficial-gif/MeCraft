@@ -201,7 +201,7 @@ final class VoxelWorld {
         return (cx * 73428767 ^ cz * 912931) & (PROCEDURAL_CACHE_SIZE - 1);
     }
 
-    private byte proceduralBlock(int x, int y, int z) {
+    private synchronized byte proceduralBlock(int x, int y, int z) {
         int cx = floorChunk(x), cz = floorChunk(z);
         prepareProceduralChunk(cx, cz);
         int cache = proceduralCacheSlot(cx, cz);
@@ -210,7 +210,7 @@ final class VoxelWorld {
     }
 
     /** Prepare one procedural column-chunk, preferring the persistent RMS cache. */
-    boolean prepareProceduralChunk(int cx, int cz) {
+    synchronized boolean prepareProceduralChunk(int cx, int cz) {
         int x = cx * CHUNK_XZ, z = cz * CHUNK_XZ;
         if (inside(x, z) || outsideWorld(x, z)) return false;
         int cache = proceduralCacheSlot(cx, cz);
@@ -223,7 +223,7 @@ final class VoxelWorld {
     }
 
     /** Prepare at most one of the next two forward chunks per game tick. */
-    void prefetchAhead() {
+    synchronized void prefetchAhead() {
         if (saveStoreName == null) return;
         int blockX = (int)playerX, blockZ = (int)playerZ;
         if (playerX < blockX) blockX--;
@@ -964,7 +964,7 @@ final class VoxelWorld {
         }
     }
 
-    void setNetherDimension(boolean enabled) {
+    synchronized void setNetherDimension(boolean enabled) {
         if (nether == enabled) return;
         if (otherDimensionBlocks != null && otherDimensionIsNether == enabled) {
             byte[] oldBlocks = blocks;
