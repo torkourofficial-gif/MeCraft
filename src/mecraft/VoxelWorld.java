@@ -154,6 +154,7 @@ final class VoxelWorld {
     private final int[] lanChangeZ = new int[LAN_CHANGE_CAPACITY];
     private int lanChangeHead, lanChangeCount;
     private boolean suppressLanJournal;
+    private boolean lanTrackingEnabled;
 
     void tickTime() {
         dayTime += DAY_TICKS_PER_UPDATE;
@@ -518,7 +519,7 @@ final class VoxelWorld {
     }
 
     private void recordLanChange(int x, int y, int z) {
-        if (suppressLanJournal) return;
+        if (!lanTrackingEnabled || suppressLanJournal) return;
         if (lanChangeCount >= LAN_CHANGE_CAPACITY) {
             lanChangeHead = (lanChangeHead + 1) % LAN_CHANGE_CAPACITY;
             lanChangeCount--;
@@ -543,6 +544,11 @@ final class VoxelWorld {
 
     void clearLanChanges() {
         lanChangeHead = lanChangeCount = 0;
+    }
+
+    void setLanTrackingEnabled(boolean enabled) {
+        lanTrackingEnabled = enabled;
+        if (!enabled) clearLanChanges();
     }
 
     /** Four horizontal chest facings: 0=-Z, 1=+X, 2=+Z, 3=-X. */
