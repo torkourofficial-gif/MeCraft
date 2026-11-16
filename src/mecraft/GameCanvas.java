@@ -143,6 +143,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private String lanStatus = "";
     private int lanPlayerCount = 1;
     private LanTransport lanTransport;
+    private boolean lanGameActive;
+    private int lanLocalPlayerId = -1;
+    private int lanSyncTicks;
+    private int lanLastWorldRevision;
+    private final float[] lanRemoteX = new float[LanProtocol.MAX_PLAYERS];
+    private final float[] lanRemoteY = new float[LanProtocol.MAX_PLAYERS];
+    private final float[] lanRemoteZ = new float[LanProtocol.MAX_PLAYERS];
+    private final float[] lanRemoteYaw = new float[LanProtocol.MAX_PLAYERS];
+    private final float[] lanRemotePitch = new float[LanProtocol.MAX_PLAYERS];
+    private final int[] lanRemoteHealth = new int[LanProtocol.MAX_PLAYERS];
+    private final boolean[] lanRemotePresent = new boolean[LanProtocol.MAX_PLAYERS];
+    private final byte[][] lanPacketQueue = new byte[16][];
+    private final int[] lanPacketPlayers = new int[16];
+    private int lanPacketHead, lanPacketTail, lanPacketCount;
+    private boolean lanApplyingPacket;
     private int pauseSelection;
     private int gameOverSelection;
     private int gameOverTicks;
@@ -349,6 +364,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void updateGameLocked() {
         if (!visible || state != PLAYING || world == null || renderer == null) return;
+        if (lanGameActive) processLanPacketsLocked();
         if (sprintToggleTimer > 0) sprintToggleTimer--;
         if (pendingIronDoorTicks > 0 && --pendingIronDoorTicks == 0)
             pendingIronDoorX = Integer.MIN_VALUE;
@@ -526,6 +542,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         renderer.setHurtCameraRoll(hurtCameraRoll());
         renderer.updateParticles(world, world.yaw, cameraPitch);
         ChunkPrefetchWorker.request(world);
+        if (lanGameActive) updateLanSynchronization();
     }
 
     /** Indev drains 300 air ticks, waits another 20 ticks, then deals a heart. */
@@ -2126,6 +2143,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 closeLanSession();
                 state = LAN_MENU;
                 lanStatus = lanLabel("Sesion cerrada", "Session closed");
+                repaint();
+            } else if (keyCode == KEY_NUM5 || gameAction(keyCode) == FIRE) {
+                if (state == LAN_HOSTING && lanPlayerCount < 2) {
+                    lanStatus = lanLabel("Espera a que se una otro jugador.", "Waiting for another player.");
+                } else if (state == LAN_HOSTING || state == LAN_CONNECTED) {
+                    startLanWorld();
+                }
                 repaint();
             }
             return;
@@ -3778,6 +3802,174 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         lanTransport = null;
         if (current != null) current.stop();
         lanPlayerCount = 1;
+        lanGameActive = false;
+        lanLocalPlayerId = -1;
+        lanPacketHead = lanPacketTail = lanPacketCount = 0;
+        for (int i = 0; i < lanRemotePresent.length; i++) lanRemotePresent[i] = false;
+    }
+
+    private int lanWorldSeed() {
+        int value = 0x4D434C4E;
+        if (lanRoomCode != null) {
+            for (int i = 0; i < lanRoomCode.length(); i++)
+                value = value * 31 + lanRoomCode.charAt(i);
+        }
+        return value;
+    }
+
+    private void startLanWorld() {
+        if (lanTransport == null || lanGameActive || state == LOADING) return;
+        state = LOADING;
+        loadingMessage = lanLabel("Preparando mundo LAN...", "Preparing LAN world...");
+        clearKeys();
+        repaint();
+        serviceRepaints();
+        final int seed = lanWorldSeed();
+        Thread loader = new Thread(new Runnable() {
+            public void run() {
+                String stage = "generando mundo LAN";
+                try {
+                    title = null;
+                    if (renderer != null) { renderer = null; System.gc(); }
+                    world = new VoxelWorld(seed, 0, VoxelWorld.SIZE_INFINITE,
+                            VoxelWorld.TYPE_STANDARD);
+                    world.difficulty = VoxelWorld.DIFFICULTY_NORMAL;
+                    world.worldName = "LAN " + lanRoomCode;
+                    world.saveStoreName = "MeCraftLAN" + lanRoomCode;
+                    copyHotbarFromWorld();
+                    resetInventory(0);
+                    copyInventoryToWorld();
+                    playerPhysics.reset();
+                    flying = false;
+                    sprinting = false;
+                    sprintToggleTimer = 0;
+                    airTicks = MAX_AIR;
+                    hurtTicks = 0;
+                    cactusDamageCooldown = 0;
+                    netherLavaDamageCooldown = 0;
+                    playerFireTicks = 0;
+                    renderer = new ChunkRenderer(getWidth(), getHeight());
+                    renderer.setPlayerSkinIndex(selectedPlayerSkin);
+                    renderer.setRenderDistance(renderDistance);
+                    renderer.updateCamera(world, cameraPitch);
+                    renderer.sync(world);
+                    lanLocalPlayerId = lanTransport == null ? -1 : lanTransport.localPlayerId();
+                    if (lanLocalPlayerId < 0) throw new IOException("No se recibio la identidad LAN.");
+                    if (lanLocalPlayerId > 0) {
+                        world.playerX += lanLocalPlayerId * 1.5f;
+                        renderer.updateCamera(world, cameraPitch);
+                    }
+                    lanLastWorldRevision = world.revision;
+                    lanSyncTicks = 0;
+                    lanGameActive = true;
+                    state = PLAYING;
+                    repaint();
+                } catch (Throwable problem) {
+                    lanGameActive = false;
+                    showDiagnostic(stage, problem);
+                }
+            }
+        });
+        loader.start();
+    }
+
+    private void updateLanSynchronization() {
+        if (!lanGameActive || lanTransport == null || world == null) return;
+        lanSyncTicks++;
+        if ((lanSyncTicks & 1) == 0) {
+            try {
+                ByteArrayOutputStream bytes = new ByteArrayOutputStream(24);
+                DataOutputStream out = new DataOutputStream(bytes);
+                out.writeByte(LanProtocol.PLAYER_STATE);
+                out.writeFloat(world.playerX);
+                out.writeFloat(world.playerY);
+                out.writeFloat(world.playerZ);
+                out.writeFloat(world.yaw);
+                out.writeFloat(cameraPitch);
+                out.writeByte(world.health);
+                out.flush();
+                byte[] packet = bytes.toByteArray();
+                if (lanLocalPlayerId == 0) lanTransport.broadcast(packet);
+                else lanTransport.sendToHost(packet);
+            } catch (Throwable ignored) { }
+        }
+        if (lanLocalPlayerId == 0 && lanSyncTicks % 20 == 0) {
+            try {
+                ByteArrayOutputStream bytes = new ByteArrayOutputStream(8);
+                DataOutputStream out = new DataOutputStream(bytes);
+                out.writeByte(LanProtocol.WORLD_TIME);
+                out.writeInt(world.dayTime);
+                out.flush();
+                lanTransport.broadcast(bytes.toByteArray());
+            } catch (Throwable ignored) { }
+        }
+        if (!lanApplyingPacket && world.revision != lanLastWorldRevision) {
+            lanLastWorldRevision = world.revision;
+            int x = world.changedX, y = world.changedY, z = world.changedZ;
+            byte id = world.get(x, y, z);
+            if (y > 0 && y < VoxelWorld.HEIGHT) {
+                try {
+                    ByteArrayOutputStream bytes = new ByteArrayOutputStream(16);
+                    DataOutputStream out = new DataOutputStream(bytes);
+                    out.writeByte(LanProtocol.BLOCK_CHANGE);
+                    out.writeInt(x); out.writeShort(y); out.writeInt(z); out.writeByte(id);
+                    out.flush();
+                    byte[] packet = bytes.toByteArray();
+                    if (lanLocalPlayerId == 0) lanTransport.broadcast(packet);
+                    else lanTransport.sendToHost(packet);
+                } catch (Throwable ignored) { }
+            }
+        }
+    }
+
+    private void processLanPacketsLocked() {
+        while (lanPacketCount > 0 && lanGameActive && world != null) {
+            byte[] packet = lanPacketQueue[lanPacketHead];
+            int playerId = lanPacketPlayers[lanPacketHead];
+            lanPacketQueue[lanPacketHead] = null;
+            lanPacketHead = (lanPacketHead + 1) % lanPacketQueue.length;
+            lanPacketCount--;
+            if (packet == null || packet.length < 1) continue;
+            try {
+                DataInputStream in = new DataInputStream(new ByteArrayInputStream(packet));
+                int opcode = in.readUnsignedByte();
+                if (opcode == LanProtocol.PLAYER_STATE && packet.length == 22 &&
+                        playerId >= 0 && playerId < LanProtocol.MAX_PLAYERS &&
+                        playerId != lanLocalPlayerId) {
+                    lanRemoteX[playerId] = in.readFloat();
+                    lanRemoteY[playerId] = in.readFloat();
+                    lanRemoteZ[playerId] = in.readFloat();
+                    lanRemoteYaw[playerId] = in.readFloat();
+                    lanRemotePitch[playerId] = in.readFloat();
+                    lanRemoteHealth[playerId] = in.readUnsignedByte();
+                    lanRemotePresent[playerId] = true;
+                    if (lanLocalPlayerId == 0 && lanTransport != null)
+                        lanTransport.broadcast(packet);
+                } else if (opcode == LanProtocol.BLOCK_CHANGE && packet.length == 12) {
+                    if (lanLocalPlayerId == 0 || playerId == 0) {
+                        int x = in.readInt(), y = in.readUnsignedShort(), z = in.readInt();
+                        byte id = in.readByte();
+                        if (y > 0 && y < VoxelWorld.HEIGHT && id >= Block.AIR && id < Block.COUNT) {
+                            lanApplyingPacket = true;
+                            world.set(x, y, z, id);
+                            renderer.sync(world);
+                            lanLastWorldRevision = world.revision;
+                            lanApplyingPacket = false;
+                            if (lanLocalPlayerId == 0 && lanTransport != null)
+                                lanTransport.broadcast(packet);
+                        }
+                    }
+                } else if (opcode == LanProtocol.WORLD_TIME && packet.length == 5 &&
+                        playerId == 0 && lanLocalPlayerId != 0) {
+                    world.dayTime = in.readInt();
+                } else if (opcode == LanProtocol.PLAYER_LEAVE) {
+                    if (playerId >= 0 && playerId < lanRemotePresent.length)
+                        lanRemotePresent[playerId] = false;
+                }
+            } catch (Throwable malformed) {
+                lanApplyingPacket = false;
+            }
+        }
     }
 
     public synchronized void onLanStatus(String status) {
@@ -3791,15 +3983,23 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     public synchronized void onLanConnected(String hostName) {
-        lanStatus = lanLabel("Conectado al anfitrion.", "Connected to host.");
+        lanStatus = lanLabel("Conectado al anfitrion. Pulsa 5 para entrar.",
+                "Connected to host. Press 5 to join.");
         state = LAN_CONNECTED;
         repaint();
     }
 
     public synchronized void onLanPacket(int playerId, byte[] packet) {
-        // The gameplay layer consumes framed protocol payloads here. Keep
-        // packet decoding off the render loop and never mutate M3G from a
-        // network worker thread.
+        if (!lanGameActive || packet == null || packet.length < 1 ||
+                packet.length > LanProtocol.MAX_PACKET_SIZE) return;
+        if (lanPacketCount >= lanPacketQueue.length) {
+            lanPacketHead = (lanPacketHead + 1) % lanPacketQueue.length;
+            lanPacketCount--;
+        }
+        lanPacketQueue[lanPacketTail] = packet;
+        lanPacketPlayers[lanPacketTail] = playerId;
+        lanPacketTail = (lanPacketTail + 1) % lanPacketQueue.length;
+        lanPacketCount++;
     }
 
     public synchronized void onLanError(String message) {
@@ -3867,9 +4067,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void drawLanConnected(Graphics g) {
         drawLanMessage(g, lanLabel("Conexion establecida", "Connection established"),
-                lanLabel("Enlace LAN activo. La sincronizacion del mundo aun no esta integrada.",
-                        "LAN link is active. World synchronization is not integrated yet."),
-                lanLabel("0: desconectar", "0: disconnect"));
+                lanLabel("Pulsa 5 para entrar al mundo compartido.",
+                        "Press 5 to enter the shared world."),
+                lanLabel("5: jugar   0: desconectar", "5: play   0: disconnect"));
     }
 
     private void drawLanMessage(Graphics g, String title, String message, String hint) {
