@@ -24,12 +24,14 @@ import javax.microedition.m3g.World;
 /** Builds shared-texture chunk meshes on demand for the visible part of the world. */
 final class ChunkRenderer {
     private static final int MAX_STREAM_RADIUS = 4;
-    // Build a second chunk only when the first build leaves enough frame time.
-    // Slow MIDP devices therefore retain the one-chunk fallback automatically.
-    private static final int CHUNKS_PER_FRAME = 2;
-    private static final long CHUNK_SECOND_BUILD_BUDGET_MS = 42L;
-    // Avoid rebuilding the same dirty chunk repeatedly while edits arrive.
-    private int lastBuildFrameChunk = -1;
+    // Streaming is deliberately deterministic: one preparation step or one
+    // mesh build per sync. Never use elapsed frame time to decide extra work.
+    private static final int PREPARE_NEIGHBORS = 4;
+    private int pendingChunkX = Integer.MIN_VALUE;
+    private int pendingChunkY = Integer.MIN_VALUE;
+    private int pendingChunkZ = Integer.MIN_VALUE;
+    private int pendingPrepareStep;
+    private boolean pendingMeshReady;
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
@@ -1183,6 +1185,7 @@ final class ChunkRenderer {
             if (builtRevision < 0 || world.fullRebuild) rebuildWorld(world);
             else rebuildChanged(world);
             builtRevision = world.revision;
+            resetPendingChunk();
         }
         // Rail meshes also have a camera-centered streaming window, so they
         // must be refreshed when the player crosses chunk boundaries even if
@@ -1319,9 +1322,7 @@ final class ChunkRenderer {
         int firstRz = firstChunkZ - centerZ + MAX_STREAM_RADIUS;
         int lastRz = lastChunkZ - centerZ + MAX_STREAM_RADIUS;
         int best = -1;
-        int secondBest = -1;
         float bestDistance = Float.MAX_VALUE;
-        float secondBestDistance = Float.MAX_VALUE;
 
         // Search and rank candidates only in the active window, not all 648
         // cache slots. In shortest mode this is 72 sectors (3x3x8).
@@ -1358,31 +1359,57 @@ final class ChunkRenderer {
                     if (!sameChunk || dirtyChunks[i]) {
                         float distance = dx * dx + dz * dz + dy * dy * 2.0f;
                         if (distance < bestDistance) {
-                            secondBestDistance = bestDistance;
-                            secondBest = best;
                             bestDistance = distance;
                             best = i;
-                        } else if (distance < secondBestDistance) {
-                            secondBestDistance = distance;
-                            secondBest = i;
                         }
                     }
                 }
             }
         }
 
-        // Mesh the two nearest visible sectors when the first build is quick
-        // enough. On slower phones the elapsed-time guard keeps this to one.
-        if (best >= 0) {
-            long buildStart = System.currentTimeMillis();
-            replaceChunk(world, best, chunkWorldX[best], chunkWorldY[best], chunkWorldZ[best]);
-            if (CHUNKS_PER_FRAME > 1 && secondBest >= 0 &&
-                    System.currentTimeMillis() - buildStart < CHUNK_SECOND_BUILD_BUDGET_MS &&
-                    (!residentChunks[secondBest] || dirtyChunks[secondBest])) {
-                replaceChunk(world, secondBest, chunkWorldX[secondBest],
-                        chunkWorldY[secondBest], chunkWorldZ[secondBest]);
-            }
+        // Keep preparing the same nearest sector across frames. Its procedural
+        // center and four horizontal neighbors are generated in separate syncs,
+        // so mesh creation does not unexpectedly trigger several terrain builds.
+        if (best < 0) {
+            resetPendingChunk();
+            return;
         }
+        int targetX = chunkWorldX[best];
+        int targetY = chunkWorldY[best];
+        int targetZ = chunkWorldZ[best];
+        if (pendingChunkX != targetX || pendingChunkY != targetY ||
+                pendingChunkZ != targetZ || dirtyChunks[best]) {
+            pendingChunkX = targetX;
+            pendingChunkY = targetY;
+            pendingChunkZ = targetZ;
+            pendingPrepareStep = 0;
+            pendingMeshReady = false;
+        }
+
+        if (!pendingMeshReady) {
+            int prepareX = targetX;
+            int prepareZ = targetZ;
+            if (pendingPrepareStep == 1) prepareX++;
+            else if (pendingPrepareStep == 2) prepareX--;
+            else if (pendingPrepareStep == 3) prepareZ++;
+            else if (pendingPrepareStep == 4) prepareZ--;
+            world.prepareProceduralChunk(prepareX, prepareZ);
+            pendingPrepareStep++;
+            if (pendingPrepareStep > PREPARE_NEIGHBORS) pendingMeshReady = true;
+            return;
+        }
+
+        // Exactly one M3G sector is built per sync, independent of frame time.
+        replaceChunk(world, best, targetX, targetY, targetZ);
+        resetPendingChunk();
+    }
+
+    private void resetPendingChunk() {
+        pendingChunkX = Integer.MIN_VALUE;
+        pendingChunkY = Integer.MIN_VALUE;
+        pendingChunkZ = Integer.MIN_VALUE;
+        pendingPrepareStep = 0;
+        pendingMeshReady = false;
     }
 
     private Chunk buildChunk(VoxelWorld world, int cx, int cy, int cz) {
