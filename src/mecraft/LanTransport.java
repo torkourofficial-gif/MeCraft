@@ -84,7 +84,8 @@ final class LanTransport implements Runnable {
     private void runHost() throws IOException {
         ServerSocketConnection openedServer =
                 (ServerSocketConnection)Connector.open(
-                        "socket://:" + LanProtocol.GAME_PORT);
+                        "socket://:" + LanProtocol.GAME_PORT,
+                        Connector.READ_WRITE, true);
         synchronized (this) {
             if (!running) {
                 try { openedServer.close(); } catch (IOException ignored) { }
@@ -96,7 +97,8 @@ final class LanTransport implements Runnable {
         if (!running) return;
         final DatagramConnection openedDiscovery =
                 (DatagramConnection)Connector.open(
-                        "datagram://:" + LanProtocol.DISCOVERY_PORT);
+                        "datagram://:" + LanProtocol.DISCOVERY_PORT,
+                        Connector.READ_WRITE, true);
         synchronized (this) {
             if (!running) {
                 closeDatagram(openedDiscovery);
@@ -113,6 +115,7 @@ final class LanTransport implements Runnable {
         while (running) {
             SocketConnection accepted =
                     (SocketConnection)server.acceptAndOpen();
+            configureSocket(accepted);
             boolean allowed;
             synchronized (this) {
                 allowed = running && peerCount + pendingPeers <
@@ -185,7 +188,8 @@ final class LanTransport implements Runnable {
     private void runJoin() throws IOException {
         notifyStatus("Buscando la partida en esta red Wi-Fi...");
         DatagramConnection openedDiscovery =
-                (DatagramConnection)Connector.open("datagram://");
+                (DatagramConnection)Connector.open("datagram://",
+                        Connector.READ_WRITE, true);
         synchronized (this) {
             if (!running) {
                 closeDatagram(openedDiscovery);
@@ -252,14 +256,26 @@ final class LanTransport implements Runnable {
                 "No se encontro esa sala. Comprueba el codigo y la red Wi-Fi.");
 
         notifyStatus("Encontrada. Conectando...");
-        clientSocket = (SocketConnection)Connector.open(
-                "socket://" + hostAddress + ":" + LanProtocol.GAME_PORT);
-        DataOutputStream output = clientSocket.openDataOutputStream();
+        SocketConnection openedClient = (SocketConnection)Connector.open(
+                "socket://" + hostAddress + ":" + LanProtocol.GAME_PORT,
+                Connector.READ_WRITE, true);
+        configureSocket(openedClient);
         synchronized (this) {
-            if (!running) return;
+            if (!running) {
+                closeSocket(openedClient);
+                return;
+            }
+            clientSocket = openedClient;
+        }
+        DataInputStream input = openedClient.openDataInputStream();
+        DataOutputStream output = openedClient.openDataOutputStream();
+        synchronized (this) {
+            if (!running) {
+                closeSocket(openedClient);
+                return;
+            }
             clientOutput = output;
         }
-        DataInputStream input = clientSocket.openDataInputStream();
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DataOutputStream hello = new DataOutputStream(bytes);
         hello.writeByte(LanProtocol.HELLO);
@@ -279,6 +295,9 @@ final class LanTransport implements Runnable {
             throw new IOException(reason);
         }
         int playerId = accepted.readUnsignedByte();
+        if (accepted.available() != 0 || playerId < 1 ||
+                playerId >= LanProtocol.MAX_PLAYERS)
+            throw new IOException("Respuesta de conexion invalida.");
         notifyConnected("Anfitrion");
         while (running) {
             byte[] packet = LanProtocol.readFrame(input);
@@ -304,6 +323,7 @@ final class LanTransport implements Runnable {
             DataInputStream input = null;
             DataOutputStream output = null;
             try {
+                configureSocket(socket);
                 input = socket.openDataInputStream();
                 output = socket.openDataOutputStream();
                 byte[] packet = LanProtocol.readFrame(input);
@@ -316,7 +336,8 @@ final class LanTransport implements Runnable {
                 String name = hello.readUTF();
                 if (operation != LanProtocol.HELLO ||
                         version != LanProtocol.PROTOCOL_VERSION ||
-                        !roomCode.equals(code)) {
+                        !roomCode.equals(code) || hello.available() != 0 ||
+                        name == null || name.length() == 0 || name.length() > 24) {
                     sendReject(output, "Codigo o version incorrectos.");
                     return;
                 }
@@ -416,7 +437,9 @@ final class LanTransport implements Runnable {
                     }
                 }
                 catch (IOException problem) {
-                    // The peer reader will perform normal disconnect cleanup.
+                    SocketConnection failed;
+                    synchronized (this) { failed = peerSockets[i]; }
+                    closeSocket(failed);
                 }
             }
         }
@@ -471,6 +494,20 @@ final class LanTransport implements Runnable {
 
     private void notifyError(String message) {
         if (listener != null) listener.onLanError(message);
+    }
+
+    private void configureSocket(SocketConnection socket) {
+        if (socket == null) return;
+        // Small real-time packets should not wait for Nagle's coalescing delay.
+        // Socket options are optional on several older CLDC implementations.
+        try { socket.setSocketOption(SocketConnection.DELAY, 0); }
+        catch (Throwable ignored) { }
+        try { socket.setSocketOption(SocketConnection.KEEPALIVE, 1); }
+        catch (Throwable ignored) { }
+        try { socket.setSocketOption(SocketConnection.RCVBUF, 4096); }
+        catch (Throwable ignored) { }
+        try { socket.setSocketOption(SocketConnection.SNDBUF, 4096); }
+        catch (Throwable ignored) { }
     }
 
     private void closeSocket(SocketConnection socket) {
