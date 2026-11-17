@@ -2536,8 +2536,6 @@ final class ChunkRenderer {
 
         void reset() { vertexCount = 0; }
 
-        void reset() { vertexCount = 0; }
-
         void add(int x, int y, int z, int axis, int frameSize) {
             ensure(vertexCount + 4);
             int x0 = x * 256, x1 = x0 + 256;

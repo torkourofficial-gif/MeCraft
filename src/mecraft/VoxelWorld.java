@@ -530,7 +530,7 @@ final class VoxelWorld {
         return inNether ? hash ^ 0x6D2B79F5 : hash;
     }
 
-    private int metadataAt(int x, int y, int z) {
+    int metadataAt(int x, int y, int z) {
         if (inside(x, z)) return waterLevels[index(x, y, z)] & 255;
         int i = findEdit(x, y, z);
         return i < 0 ? 0 : editMeta[i] & 255;
