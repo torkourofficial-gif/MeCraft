@@ -30,7 +30,6 @@ public final class MeCraft extends MIDlet {
     void closeGame() {
         if (closing) return;
         closing = true;
-        ChunkPrefetchWorker.shutdown();
         if (canvas != null) canvas.stop();
         notifyDestroyed();
     }
