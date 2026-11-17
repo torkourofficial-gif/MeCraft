@@ -81,34 +81,15 @@ final class VoxelWorld {
     private static final int FLUID_QUEUE_SIZE = 2048;
     private final int[] fluidQueue = new int[FLUID_QUEUE_SIZE];
     private final byte[] fluidQueued = new byte[(BLOCK_COUNT + 7) / 8];
-    // Keep the same 16 chunk buffers, but use four-way set associativity to
-    // avoid deterministic direct-map collisions during adjacent chunk sampling.
-    private static final int PROCEDURAL_CACHE_WAYS = 4;
-    private static final int PROCEDURAL_CACHE_SETS = 4;
-    private static final int PROCEDURAL_CACHE_SIZE = PROCEDURAL_CACHE_WAYS * PROCEDURAL_CACHE_SETS;
+    // Same small ring cache used by the October 29 build.
+    private static final int PROCEDURAL_CACHE_SIZE = 8;
     private final byte[][] proceduralChunks =
             new byte[PROCEDURAL_CACHE_SIZE][InfdevTerrain.CHUNK_VOLUME];
     private final int[] proceduralChunkX = new int[PROCEDURAL_CACHE_SIZE];
     private final int[] proceduralChunkZ = new int[PROCEDURAL_CACHE_SIZE];
-    private final int[] proceduralCacheCursor = new int[PROCEDURAL_CACHE_SETS];
-    // Completed streamed chunks are queued separately from gameplay block edits.
-    private final int[] terrainReadyX = new int[16];
-    private final int[] terrainReadyZ = new int[16];
-    private int terrainReadyCount;
+    private int proceduralCacheCursor;
     private final int[] proceduralHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     private final byte[] proceduralBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
-    // Private scratch storage used only by the background prefetch worker.
-    private final byte[] prefetchChunk = new byte[InfdevTerrain.CHUNK_VOLUME];
-    private final int[] prefetchHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
-    private final byte[] prefetchBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
-    // Small persistent ring for two terrain columns prepared ahead of the player.
-    private static final int PREFETCH_STORE_MAGIC = 0x4D435043; // MCPC
-    private static final int PREFETCH_RECORDS = 4;
-    private static final int PREFETCH_HEADER_BYTES = 19;
-    private int prefetchCenterX = Integer.MIN_VALUE, prefetchCenterZ = Integer.MIN_VALUE;
-    private int prefetchStep = 1, prefetchDirectionX, prefetchDirectionZ;
-    private int prefetchDimension = -1;
-    private int prefetchWriteSlot;
 
     private int[] editX = new int[128];
     private int[] editY = new int[128];
@@ -214,255 +195,28 @@ final class VoxelWorld {
         return value < 0 && value % CHUNK_XZ != 0 ? result - 1 : result;
     }
 
-    /** Select a small set, then search its four ways to avoid direct-map thrashing. */
-    private int proceduralCacheSet(int cx, int cz) {
-        int hash = cx * 73428767 ^ cz * 912931;
-        hash ^= hash >>> 16;
-        return hash & (PROCEDURAL_CACHE_SETS - 1);
-    }
-
-    private int findProceduralCacheSlot(int set, int cx, int cz) {
-        int first = set * PROCEDURAL_CACHE_WAYS;
-        for (int way = 0; way < PROCEDURAL_CACHE_WAYS; way++) {
-            int slot = first + way;
-            if (proceduralChunkX[slot] == cx && proceduralChunkZ[slot] == cz) return slot;
-        }
-        return -1;
-    }
-
-    private int chooseProceduralCacheSlot(int set) {
-        int first = set * PROCEDURAL_CACHE_WAYS;
-        for (int way = 0; way < PROCEDURAL_CACHE_WAYS; way++) {
-            int slot = first + way;
-            if (proceduralChunkX[slot] == Integer.MIN_VALUE) return slot;
-        }
-        int way = proceduralCacheCursor[set]++ & (PROCEDURAL_CACHE_WAYS - 1);
-        return first + way;
-    }
-
     /**
-     * Procedural cache miss generation must never hold the world monitor.
-     * Chunk meshing runs on a worker, but gameplay also reads world.get(); the
-     * old synchronized method held this monitor for the entire terrain pass,
-     * making the foreground thread wait for seconds.
+     * Procedural chunks are generated on demand, as in the October 29 build.
+     * The eight-slot ring keeps adjacent chunk reads cheap without a worker,
+     * placeholder terrain, or a second invalidation pass.
      */
     private byte proceduralBlock(int x, int y, int z) {
         int cx = floorChunk(x), cz = floorChunk(z);
-        int set = proceduralCacheSet(cx, cz);
-        synchronized (this) {
-            int cache = findProceduralCacheSlot(set, cx, cz);
-            if (cache >= 0) {
-                int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
-                return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
+        int cache = -1;
+        for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
+            if (proceduralChunkX[i] == cx && proceduralChunkZ[i] == cz) {
+                cache = i;
+                break;
             }
         }
-
-        // A cache miss is never generated on the caller. The terrain worker
-        // prepares it independently while the game keeps running.
-        ChunkPrefetchWorker.requestChunk(this, cx, cz);
-
-        // Temporary collision/render floor while the real terrain is queued.
-        // The generated chunk replaces this placeholder and invalidates meshes.
-        int provisionalFloor = nether ? 23 : SEA_LEVEL - 1;
-        return y <= provisionalFloor ? Block.STONE : Block.AIR;
-    }
-
-    /** Consume one generated chunk notification for incremental renderer refresh. */
-    synchronized boolean consumeTerrainReadyChunk(int[] coordinates) {
-        if (terrainReadyCount == 0 || coordinates == null || coordinates.length < 2) return false;
-        coordinates[0] = terrainReadyX[0];
-        coordinates[1] = terrainReadyZ[0];
-        for (int i = 1; i < terrainReadyCount; i++) {
-            terrainReadyX[i - 1] = terrainReadyX[i];
-            terrainReadyZ[i - 1] = terrainReadyZ[i];
-        }
-        terrainReadyCount--;
-        return true;
-    }
-
-    /** Generate one requested chunk on the terrain worker, then publish atomically. */
-    void generateRequestedChunk(int cx, int cz) {
-        int set = proceduralCacheSet(cx, cz);
-        final boolean dimension;
-        final String storeName;
-        synchronized (this) {
-            if (findProceduralCacheSlot(set, cx, cz) >= 0) return;
-            dimension = nether;
-            storeName = saveStoreName;
-        }
-
-        // Reuse the world's private worker buffers: one worker serializes all
-        // terrain requests, so these arrays never race with gameplay reads.
-        byte[] generated = prefetchChunk;
-        int[] heights = prefetchHeights;
-        byte[] biomes = prefetchBiomes;
-        boolean loaded = loadPrefetchedChunk(cx, cz, generated, dimension, storeName);
-        if (!loaded) {
-            generateChunk(cx, cz, generated, heights, biomes, dimension);
-            savePrefetchedChunk(cx, cz, generated, dimension, storeName);
-        }
-
-        synchronized (this) {
-            if (nether != dimension || !sameStoreName(saveStoreName, storeName)) return;
-            if (findProceduralCacheSlot(set, cx, cz) >= 0) return;
-            int cache = chooseProceduralCacheSlot(set);
-            System.arraycopy(generated, 0, proceduralChunks[cache], 0, generated.length);
+        if (cache < 0) {
+            cache = proceduralCacheCursor++ & (PROCEDURAL_CACHE_SIZE - 1);
+            generateChunk(cx, cz, proceduralChunks[cache]);
             proceduralChunkX[cache] = cx;
             proceduralChunkZ[cache] = cz;
-            // Keep every completion until the renderer has consumed it; several
-            // chunks may finish between two game frames.
-            if (terrainReadyCount == terrainReadyX.length) {
-                for (int i = 1; i < terrainReadyCount; i++) {
-                    terrainReadyX[i - 1] = terrainReadyX[i];
-                    terrainReadyZ[i - 1] = terrainReadyZ[i];
-                }
-                terrainReadyCount--;
-            }
-            terrainReadyX[terrainReadyCount] = cx;
-            terrainReadyZ[terrainReadyCount] = cz;
-            terrainReadyCount++;
-            revision++;
         }
-    }
-
-    /** Prepare at most one of the next two forward chunks per game tick. */
-    void prefetchAhead() {
-        // Snapshot tiny mutable fields quickly; never hold the world monitor while
-        // generating terrain or accessing RMS, otherwise rendering stalls in world.get().
-        int blockX, blockZ, dimension;
-        float directionYaw;
-        String storeName;
-        synchronized (this) {
-            storeName = saveStoreName;
-            if (storeName == null) return;
-            blockX = (int)playerX; blockZ = (int)playerZ;
-            if (playerX < blockX) blockX--;
-            if (playerZ < blockZ) blockZ--;
-            directionYaw = yaw;
-            dimension = nether ? 1 : 0;
-        }
-        int centerX = floorChunk(blockX);
-        int centerZ = floorChunk(blockZ);
-        if (centerX != prefetchCenterX || centerZ != prefetchCenterZ ||
-                dimension != prefetchDimension) {
-            prefetchCenterX = centerX;
-            prefetchCenterZ = centerZ;
-            prefetchDimension = dimension;
-            prefetchStep = 1;
-            double angle = directionYaw * Math.PI / 180.0;
-            float fx = (float)Math.sin(angle), fz = (float)Math.cos(angle);
-            prefetchDirectionX = 0;
-            prefetchDirectionZ = 0;
-            if (Math.abs(fx) > Math.abs(fz))
-                prefetchDirectionX = fx >= 0.0f ? 1 : -1;
-            else
-                prefetchDirectionZ = fz >= 0.0f ? 1 : -1;
-        }
-        if (prefetchStep > 2) return;
-        int cx = centerX + prefetchDirectionX * prefetchStep;
-        int cz = centerZ + prefetchDirectionZ * prefetchStep;
-        prefetchStep++;
-        int x = cx * CHUNK_XZ, z = cz * CHUNK_XZ;
-        if (inside(x, z) || outsideWorld(x, z)) return;
-        int set = proceduralCacheSet(cx, cz);
-        synchronized (this) {
-            if (nether != (dimension != 0) || !sameStoreName(saveStoreName, storeName)) return;
-            if (findProceduralCacheSlot(set, cx, cz) >= 0) return;
-        }
-        boolean loaded = loadPrefetchedChunk(cx, cz, prefetchChunk, dimension != 0, storeName);
-        if (!loaded) {
-            generateChunk(cx, cz, prefetchChunk, prefetchHeights, prefetchBiomes, dimension != 0);
-            // Persist outside the world lock. RMS can be slow on feature phones.
-            savePrefetchedChunk(cx, cz, prefetchChunk, dimension != 0, storeName);
-        }
-        // Publish the finished data atomically so the game thread can use it
-        // without waiting for generation or disk access.
-        synchronized (this) {
-            if (nether == (dimension != 0) && sameStoreName(saveStoreName, storeName) &&
-                    findProceduralCacheSlot(set, cx, cz) < 0) {
-                int cache = chooseProceduralCacheSlot(set);
-                System.arraycopy(prefetchChunk, 0, proceduralChunks[cache], 0, prefetchChunk.length);
-                proceduralChunkX[cache] = cx;
-                proceduralChunkZ[cache] = cz;
-            }
-        }
-    }
-
-    private static boolean sameStoreName(String a, String b) {
-        return a == b || (a != null && a.equals(b));
-    }
-
-    private String prefetchStoreName() {
-        return saveStoreName == null ? null : saveStoreName + "-chunks";
-    }
-
-    private boolean loadPrefetchedChunk(int cx, int cz, byte[] target) {
-        return loadPrefetchedChunk(cx, cz, target, nether);
-    }
-
-    private boolean loadPrefetchedChunk(int cx, int cz, byte[] target, boolean dimension) {
-        return loadPrefetchedChunk(cx, cz, target, dimension, saveStoreName);
-    }
-
-    private boolean loadPrefetchedChunk(int cx, int cz, byte[] target,
-                                        boolean dimension, String worldStoreName) {
-        String name = worldStoreName == null ? null : worldStoreName + "-chunks";
-        if (name == null) return false;
-        RecordStore store = null;
-        try {
-            store = RecordStore.openRecordStore(name, false);
-            int count = store.getNumRecords();
-            for (int id = 1; id <= count; id++) {
-                byte[] data;
-                try { data = store.getRecord(id); } catch (RecordStoreException missing) { continue; }
-                if (data == null || data.length != PREFETCH_HEADER_BYTES + target.length) continue;
-                DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
-                if (in.readInt() != PREFETCH_STORE_MAGIC) continue;
-                if (in.readInt() != seed || in.readUnsignedByte() != noiseVersion ||
-                        in.readUnsignedByte() != worldType ||
-                        in.readUnsignedByte() != (dimension ? 1 : 0) ||
-                        in.readInt() != cx || in.readInt() != cz) continue;
-                in.readFully(target);
-                return true;
-            }
-        } catch (Exception ignored) {
-        } finally {
-            if (store != null) try { store.closeRecordStore(); } catch (RecordStoreException ignored) { }
-        }
-        return false;
-    }
-
-    private void savePrefetchedChunk(int cx, int cz, byte[] source) {
-        savePrefetchedChunk(cx, cz, source, nether, saveStoreName);
-    }
-
-    private void savePrefetchedChunk(int cx, int cz, byte[] source, boolean dimension, String worldStoreName) {
-        String name = worldStoreName == null ? null : worldStoreName + "-chunks";
-        if (name == null) return;
-        RecordStore store = null;
-        try {
-            store = RecordStore.openRecordStore(name, true);
-            while (store.getNumRecords() < PREFETCH_RECORDS)
-                store.addRecord(new byte[0], 0, 0);
-            int slot = prefetchWriteSlot++ % PREFETCH_RECORDS;
-            ByteArrayOutputStream bytes = new ByteArrayOutputStream(PREFETCH_HEADER_BYTES + source.length);
-            DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(PREFETCH_STORE_MAGIC);
-            out.writeInt(seed);
-            out.writeByte(noiseVersion);
-            out.writeByte(worldType);
-            out.writeByte(dimension ? 1 : 0);
-            out.writeInt(cx);
-            out.writeInt(cz);
-            out.write(source);
-            out.flush();
-            byte[] data = bytes.toByteArray();
-            store.setRecord(slot + 1, data, 0, data.length);
-        } catch (Exception ignored) {
-        } catch (OutOfMemoryError ignored) {
-        } finally {
-            if (store != null) try { store.closeRecordStore(); } catch (RecordStoreException ignored) { }
-        }
+        int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
+        return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
     }
 
     private int findEdit(int x, int y, int z) {
@@ -1113,8 +867,7 @@ final class VoxelWorld {
             setGenerationDiagnosticStage("VoxelWorld.generate: comenzando fila de chunks cz=" + cz);
             for (int cx = 0; cx < CHUNKS_X; cx++) {
                 setGenerationDiagnosticStage("VoxelWorld.generate: reservando caché para chunk cx=" + cx + ", cz=" + cz);
-                int set = proceduralCacheSet(cx, cz);
-                int cache = chooseProceduralCacheSlot(set);
+                int cache = proceduralCacheCursor++ & (PROCEDURAL_CACHE_SIZE - 1);
                 setGenerationDiagnosticStage("VoxelWorld.generate: generando chunk cx=" + cx + ", cz=" + cz);
                 generateChunk(cx, cz, proceduralChunks[cache]);
                 setGenerationDiagnosticStage("VoxelWorld.generate: guardando coordenadas del chunk cx=" + cx + ", cz=" + cz);
