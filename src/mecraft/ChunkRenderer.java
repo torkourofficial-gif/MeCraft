@@ -1566,6 +1566,10 @@ final class ChunkRenderer {
             }
         });
         try {
+            chunkBuildThread.setPriority(Thread.MIN_PRIORITY);
+        } catch (RuntimeException ignored) {
+        }
+        try {
             chunkBuildThread.start();
         } catch (RuntimeException failed) {
             chunkBuildThread = null;
