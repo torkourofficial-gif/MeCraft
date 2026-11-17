@@ -1564,16 +1564,24 @@ final class ChunkRenderer {
         if (chunk.faceBuilders != null) {
             for (int i = 0; i < chunk.faceBuilders.length; i++) {
                 FaceBuilder builder = chunk.faceBuilders[i];
-                chunk.faceBuilders[i] = null;
                 while (builder != null) {
                     FaceBuilder next = builder.next;
                     builder.next = null;
+                    chunk.faceBuilders[i] = next;
                     if (builder.vertexCount > 0) {
-                        float scale = builder.tile == Block.sideTile(Block.GRASS) ?
-                                0.999f / 16.0f : 1.0f / 16.0f;
-                        Mesh mesh = makeMesh(builder, tileAppearance(builder.tile), scale);
-                        mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
-                        chunk.meshes[at++] = mesh;
+                        try {
+                            float scale = builder.tile == Block.sideTile(Block.GRASS) ?
+                                    0.999f / 16.0f : 1.0f / 16.0f;
+                            Mesh mesh = makeMesh(builder, tileAppearance(builder.tile), scale);
+                            mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
+                            chunk.meshes[at++] = mesh;
+                        } catch (OutOfMemoryError exhausted) {
+                            recycleFaceBuilder(builder);
+                            throw exhausted;
+                        } catch (RuntimeException failed) {
+                            recycleFaceBuilder(builder);
+                            throw failed;
+                        }
                     }
                     recycleFaceBuilder(builder);
                     builder = next;
@@ -1584,12 +1592,12 @@ final class ChunkRenderer {
 
         if (chunk.flowers != null) {
             FlowerBuilder finished = chunk.flowers;
-            chunk.flowers = null;
             if (finished.vertexCount > 0) {
                 Mesh mesh = makeFlowerMesh(finished, flowerAppearance);
                 mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
                 chunk.meshes[at++] = mesh;
             }
+            chunk.flowers = null;
             recycleFlowerBuilder(finished);
         }
 
@@ -1597,7 +1605,7 @@ final class ChunkRenderer {
             Mesh mesh = makeFireMesh(chunk.fires);
             mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
             chunk.meshes[at++] = mesh;
-            // Keep the small UV controller attached to the chunk so fire can animate.
+            // Keep the UV controller attached to the chunk so fire can animate.
         } else if (chunk.fires != null) {
             recycleFireBuilder(chunk.fires);
             chunk.fires = null;
@@ -1605,12 +1613,12 @@ final class ChunkRenderer {
 
         if (chunk.portals != null) {
             PortalBuilder finished = chunk.portals;
-            chunk.portals = null;
             if (finished.vertexCount > 0) {
                 Mesh mesh = makePortalMesh(finished);
                 mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
                 chunk.meshes[at++] = mesh;
             }
+            chunk.portals = null;
             recyclePortalBuilder(finished);
         }
     }
