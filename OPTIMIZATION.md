@@ -36,6 +36,14 @@ This branch contains a conservative hot-path optimization for the existing MIDP 
 
 These changes reduce duplicate player-skin texture objects and avoid startup conversion/residency for unused mob textures. The actual byte savings depend on the JSR-184 implementation and asset dimensions; no numerical heap/native-memory claim is made without device profiling.
 
+### Chunk streaming: persistent worker and overlapped mesh installation
+
+- Replaced per-chunk thread creation with one persistent, low-priority meshing worker. It sleeps between requests and reuses the renderer's existing bounded scratch buffers.
+- The render thread can request the next visible chunk while the previous chunk's M3G meshes are still being installed. The pipeline remains bounded to one current install plus one in-flight/completed build.
+- Increased the per-frame M3G installation budget from one mesh to at most three meshes, accelerating multi-material chunks without an unbounded per-frame loop.
+- Kept a single meshing worker and synchronized the small reusable FaceBuilder pool because the worker and render thread now overlap.
+- Existing camera-window prioritization and stale world/slot checks remain in place.
+
 ## Existing strengths retained
 
 The code already has several good J2ME/M3G practices that were deliberately preserved:
