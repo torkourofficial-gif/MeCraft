@@ -33,6 +33,8 @@ final class ChunkRenderer {
     private static final int TORCH_LIGHT_RADIUS = 4;
     private static final int LAVA_LIGHT_RADIUS = 6;
     private static final int MAX_CHUNK_TORCHES = 128;
+    // Bound the temporary concatenation buffers on small CLDC heaps.
+    private static final int MAX_SHARED_CHUNK_VERTICES = 16384;
     private final int[] chunkTorchX = new int[MAX_CHUNK_TORCHES];
     private final int[] chunkTorchY = new int[MAX_CHUNK_TORCHES];
     private final int[] chunkTorchZ = new int[MAX_CHUNK_TORCHES];
@@ -1638,8 +1640,7 @@ final class ChunkRenderer {
             int extras = (chunk.flowers != null && chunk.flowers.vertexCount > 0 ? 1 : 0) +
                     (chunk.fires != null && chunk.fires.vertexCount > 0 ? 1 : 0) +
                     (chunk.portals != null && chunk.portals.vertexCount > 0 ? 1 : 0);
-            chunk.sharedTileCount = tileCount;
-            chunk.sharedBatching = tileCount > 0 && totalVertices <= 65535;
+            chunk.sharedBatching = tileCount > 0 && totalVertices <= MAX_SHARED_CHUNK_VERTICES;
             chunk.meshes = new Mesh[(chunk.sharedBatching ? (tileCount + 2) / 3 : tileCount) + extras];
             if (chunk.sharedBatching) prepareSharedChunkVertices(chunk, totalVertices);
         }
@@ -2205,7 +2206,6 @@ final class ChunkRenderer {
         VertexBuffer sharedVertices;
         int[] sharedTileStarts;
         int[] sharedTileFaces;
-        int sharedTileCount;
         boolean sharedBatching;
         FlowerBuilder flowers;
         FireBuilder fires;
@@ -2251,7 +2251,9 @@ final class ChunkRenderer {
         colors.set(0, totalVertices, colorData);
         VertexBuffer vertices = new VertexBuffer();
         vertices.setPositions(positions, 1.0f, null);
-        vertices.setTexCoords(0, texCoords, 1.0f / 16.0f, null);
+        // A tiny global inset preserves the grass-side seam guard while using
+        // one shared VertexBuffer for every tile submesh in this chunk.
+        vertices.setTexCoords(0, texCoords, 0.999f / 16.0f, null);
         vertices.setColors(colors);
         chunk.sharedVertices = vertices;
     }
