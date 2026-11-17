@@ -1523,6 +1523,7 @@ final class ChunkRenderer {
         if (pendingChunkMeshes != null) {
             ChunkBuildResult pending = pendingChunkMeshes;
             boolean slotStillMatches = pending.slot >= 0 && pending.slot < CACHE_SIZE &&
+                    chunkInstalls[pending.slot] == null &&
                     chunkWorldX[pending.slot] == pending.cx &&
                     chunkWorldY[pending.slot] == pending.cy &&
                     chunkWorldZ[pending.slot] == pending.cz;
@@ -1623,6 +1624,7 @@ final class ChunkRenderer {
         completedChunkBuild = null;
         if (result.failure != null || result.world != world ||
                 result.slot < 0 || result.slot >= CACHE_SIZE ||
+                chunkInstalls[result.slot] != null ||
                 chunkWorldX[result.slot] != result.cx || chunkWorldY[result.slot] != result.cy ||
                 chunkWorldZ[result.slot] != result.cz) {
             if (result.slot >= 0 && result.slot < CACHE_SIZE &&
