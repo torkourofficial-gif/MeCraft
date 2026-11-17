@@ -25,8 +25,7 @@ import javax.microedition.m3g.World;
 /** Builds shared-texture chunk meshes on demand for the visible part of the world. */
 final class ChunkRenderer {
     private static final int MAX_STREAM_RADIUS = 4;
-    // One nearest chunk build is requested per sync. The render/game thread
-    // captures a bounded immutable input before the worker starts meshing it.
+    // One nearest chunk build is requested per sync using a bounded input snapshot.
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
@@ -1591,8 +1590,7 @@ final class ChunkRenderer {
                 }
             }
         }
-        // Never build terrain synchronously here. The worker prepares plain
-        // geometry arrays while gameplay/rendering continues normally.
+        // Mesh one chunk at a time; create its M3G objects in bounded slices.
         boolean pendingIsBest = false;
         if (best >= 0 && pendingChunkMeshes != null) {
             pendingIsBest = pendingChunkMeshes.world == world &&
@@ -1606,7 +1604,6 @@ final class ChunkRenderer {
         }
     }
 
-    /** One persistent low-priority worker replaces one Thread allocation per chunk. */
     /**
      * Build one selected chunk synchronously. CLDC devices avoid the worker,
      * lock and cross-thread hand-off; M3G mesh creation remains sliced over frames.
@@ -1636,7 +1633,7 @@ final class ChunkRenderer {
         data.worldY = cy * VoxelWorld.CHUNK_Y;
         data.worldZ = cz * VoxelWorld.CHUNK_XZ;
         pendingChunkMeshes = new ChunkBuildResult(world, chunkBuildSnapshot.revision,
-                slot, cx, cy, cz, data, null);
+                slot, cx, cy, cz, data);
     }
 
     private Chunk buildChunk(ChunkBuildSnapshot snapshot, int cx, int cy, int cz) {
@@ -2338,9 +2335,8 @@ private static final class ChunkInstallState {
         final VoxelWorld world;
         final int revision, slot, cx, cy, cz;
         Chunk chunk;
-        final Throwable failure;
-        ChunkBuildResult(VoxelWorld w, int r, int s, int x, int y, int z, Chunk c, Throwable f) {
-            world=w; revision=r; slot=s; cx=x; cy=y; cz=z; chunk=c; failure=f;
+        ChunkBuildResult(VoxelWorld w, int r, int s, int x, int y, int z, Chunk c) {
+            world=w; revision=r; slot=s; cx=x; cy=y; cz=z; chunk=c;
         }
     }
 
