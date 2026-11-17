@@ -1046,7 +1046,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 return;
             }
             renderer.swingHand();
-            renderer.sync(world);
+            // Chunk invalidation is processed once by paint(), not here.
             resetMining();
             miningHitWait = 5;
             return;
@@ -1081,9 +1081,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             if (world.mode == 0)
                 damageTool(hotbar[world.selectedSlot],
                         ItemCatalog.durabilityCost(hotbar[world.selectedSlot]));
-            // Rebuild the removed door first, then emit debris so the visual burst
-            // cannot be lost behind a terrain rebuild on slower M3G implementations.
-            renderer.sync(world);
+            // paint() synchronizes the changed chunk before rendering this burst.
             renderer.spawnBlockDestroy(x, lowerY, z, debrisTile);
             resetMining();
             miningHitWait = 5;
@@ -1136,9 +1134,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             }
             if (world.mode == 0 && id != Block.FIRE)
                 damageTool(heldItem, ItemCatalog.durabilityCost(heldItem));
-            // Sync the changed terrain before creating the burst. Fire vanishes
-            // silently, while ordinary blocks retain their destruction particles.
-            renderer.sync(world);
+            // paint() synchronizes the changed terrain once before rendering.
+            // Fire vanishes silently; ordinary blocks retain their destruction burst.
             if (id != Block.FIRE) renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
             resetMining();
             miningHitWait = 5;
