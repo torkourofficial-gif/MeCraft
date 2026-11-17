@@ -2347,7 +2347,7 @@ final class ChunkRenderer {
     }
 
     private void recycleFaceBuilder(FaceBuilder builder) {
-        if (builder.p.length > MAX_FACE_BUILDER_VERTICES * 3) return;
+        if (builder.p.length > 1536) return;
         synchronized (chunkBuildLock) {
             if (freeFaceBuilderCount < freeFaceBuilders.length) {
                 builder.reset(0);
