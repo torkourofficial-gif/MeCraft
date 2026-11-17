@@ -25,7 +25,7 @@ import javax.microedition.m3g.World;
 /** Builds shared-texture chunk meshes on demand for the visible part of the world. */
 final class ChunkRenderer {
     private static final int MAX_STREAM_RADIUS = 4;
-    // One nearest chunk build is requested per sync using a bounded input snapshot.
+    // One complete nearest chunk is built per sync, matching the supplied JAR.
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
@@ -34,8 +34,6 @@ final class ChunkRenderer {
     private static final int MAX_CHUNK_TORCHES = 128;
     // A material is split into bounded linked segments; no builder grows without limit.
     private static final int MAX_FACE_BUILDER_VERTICES = 1024;
-    // Hard render-thread geometry budget: no mesh slice contains more than 5k vertices.
-    private static final int MAX_CHUNK_VERTICES_PER_FRAME = 5000;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
     private static final float CHUNK_RADIUS = 12.0f;
     private static final float NORMAL_FOV = 68.0f;
@@ -96,16 +94,13 @@ final class ChunkRenderer {
     private int torchScanZ = Integer.MIN_VALUE;
     private int torchScanRevision = Integer.MIN_VALUE;
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
-    private final int[] terrainReadyCoordinate = new int[2];
-    // One reusable snapshot and one active build keep streaming single-threaded.
+    // One reusable light-source snapshot and one active build keep streaming single-threaded.
     private final ChunkBuildSnapshot chunkBuildSnapshot = new ChunkBuildSnapshot();
     private final IndexBuffer[] chunkBatchIndices = new IndexBuffer[3];
     private final Appearance[] chunkBatchAppearances = new Appearance[3];
-    private ChunkBuildResult pendingChunkMeshes;
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
     private final boolean[] chunkFrustumVisible = new boolean[CACHE_SIZE];
-    private final ChunkInstallState[] chunkInstalls = new ChunkInstallState[CACHE_SIZE];
     private final int[] chunkWorldX = new int[CACHE_SIZE];
     private final int[] chunkWorldY = new int[CACHE_SIZE];
     private final int[] chunkWorldZ = new int[CACHE_SIZE];
@@ -1276,27 +1271,6 @@ final class ChunkRenderer {
     }
 
     private void rebuildChanged(VoxelWorld world) {
-        // A generation worker can finish multiple chunks between frames.
-        // Drain all notifications instead of relying on the single edit marker.
-        while (world.consumeTerrainReadyChunk(terrainReadyCoordinate)) {
-            int readyX = terrainReadyCoordinate[0];
-            int readyZ = terrainReadyCoordinate[1];
-            int span = MAX_STREAM_SPAN;
-            for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++) {
-                for (int dz = -1; dz <= 1; dz++) {
-                    for (int dx = -1; dx <= 1; dx++) {
-                        int cx = readyX + dx;
-                        int cz = readyZ + dz;
-                        int slot = (cy * span + floorMod(cz, span)) * span +
-                                floorMod(cx, span);
-                        if (residentChunks[slot] && chunkWorldX[slot] == cx &&
-                                chunkWorldY[slot] == cy && chunkWorldZ[slot] == cz)
-                            dirtyChunks[slot] = true;
-                    }
-                }
-            }
-        }
-
         int x = world.changedX, y = world.changedY, z = world.changedZ;
         int cx = floorDiv(x, VoxelWorld.CHUNK_XZ);
         int cy = y / VoxelWorld.CHUNK_Y;
@@ -1339,7 +1313,7 @@ final class ChunkRenderer {
 
     private void setChunkRenderingEnabled(Chunk chunk, boolean enabled) {
         if (chunk == null || chunk.renderingEnabled == enabled) return;
-        for (int m = 0; m < chunk.meshBuildCount; m++) {
+        for (int m = 0; m < chunk.meshes.length; m++) {
             Mesh mesh = chunk.meshes[m];
             if (mesh != null) mesh.setRenderingEnable(enabled);
         }
@@ -1350,47 +1324,30 @@ final class ChunkRenderer {
         if (chunkFrustumVisible[i] == visible) return;
         chunkFrustumVisible[i] = visible;
         setChunkRenderingEnabled(chunks[i], visible);
-        ChunkInstallState install = chunkInstalls[i];
-        if (install != null) setChunkRenderingEnabled(install.replacement, visible);
     }
 
-    private void installChunk(int i, int cx, int cy, int cz, Chunk replacement) {
-        // Keep the old geometry visible while the replacement is attached in small steps.
-        ChunkInstallState state = new ChunkInstallState();
-        state.previous = chunks[i];
-        state.replacement = replacement;
-        state.cx = cx; state.cy = cy; state.cz = cz;
-        chunkInstalls[i] = state;
-        chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
+    /** Replace one chunk immediately, matching the October 29 streaming path. */
+    private void replaceChunk(int i, int cx, int cy, int cz, Chunk replacement) {
+        Chunk previous = chunks[i];
+        if (previous != null) {
+            for (int m = 0; m < previous.meshes.length; m++)
+                terrain.removeChild(previous.meshes[m]);
+            recycleChunkBuilders(previous);
+        }
+        chunks[i] = replacement;
+        chunkWorldX[i] = cx;
+        chunkWorldY[i] = cy;
+        chunkWorldZ[i] = cz;
         residentChunks[i] = true;
         dirtyChunks[i] = false;
-    }
-
-    private boolean advanceChunkInstall(int i) {
-        ChunkInstallState state = chunkInstalls[i];
-        if (state == null) return false;
-        if (state.replacement != null && state.addCursor < state.replacement.meshes.length) {
-            Mesh mesh = state.replacement.meshes[state.addCursor++];
-            mesh.setRenderingEnable(chunkFrustumVisible[i]);
-            state.replacement.renderingEnabled = chunkFrustumVisible[i];
-            terrain.addChild(mesh);
-            return true;
-        }
-        if (state.discardedReplacement != null) {
-            if (state.discardedRemoveCursor < state.discardedCount) {
-                terrain.removeChild(state.discardedReplacement.meshes[state.discardedRemoveCursor++]);
-                return true;
+        if (replacement != null) {
+            replacement.renderingEnabled = chunkFrustumVisible[i];
+            for (int m = 0; m < replacement.meshes.length; m++) {
+                Mesh mesh = replacement.meshes[m];
+                mesh.setRenderingEnable(replacement.renderingEnabled);
+                terrain.addChild(mesh);
             }
-            state.discardedReplacement = null;
         }
-        if (state.previous != null && state.removeCursor < state.previous.meshes.length) {
-            terrain.removeChild(state.previous.meshes[state.removeCursor++]);
-            return true;
-        }
-        chunks[i] = state.replacement;
-        dirtyChunks[i] = state.dirtyAfterInstall;
-        chunkInstalls[i] = null;
-        return true;
     }
 
     private void rebuildWorld(VoxelWorld world) {
@@ -1398,24 +1355,17 @@ final class ChunkRenderer {
     }
 
     private void removeChunk(int i) {
-        setChunkVisibility(i, false);
-        if (chunkInstalls[i] == null && chunks[i] != null) {
-            ChunkInstallState state = new ChunkInstallState();
-            state.previous = chunks[i];
-            chunkInstalls[i] = state;
-        } else if (chunkInstalls[i] != null) {
-            // Cancel a partially attached replacement, but remove its nodes one per frame.
-            ChunkInstallState state = chunkInstalls[i];
-            if (state.replacement != null) {
-                state.discardedReplacement = state.replacement;
-                state.discardedCount = state.addCursor;
-                state.discardedRemoveCursor = 0;
-                state.replacement = null;
-                state.addCursor = 0;
-            }
+        Chunk chunk = chunks[i];
+        if (chunk != null) {
+            setChunkRenderingEnabled(chunk, false);
+            for (int m = 0; m < chunk.meshes.length; m++)
+                terrain.removeChild(chunk.meshes[m]);
+            recycleChunkBuilders(chunk);
+            chunks[i] = null;
         }
         residentChunks[i] = false;
         dirtyChunks[i] = false;
+        chunkFrustumVisible[i] = false;
     }
 
     /**
@@ -1540,7 +1490,6 @@ final class ChunkRenderer {
                     boolean sameChunk = residentChunks[i] && chunkWorldX[i] == cx &&
                         chunkWorldY[i] == cy && chunkWorldZ[i] == cz;
                     if (residentChunks[i] && !sameChunk) removeChunk(i);
-                    if (chunkInstalls[i] != null) continue;
 
                     if (!sameChunk) {
                         chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
@@ -1559,192 +1508,156 @@ final class ChunkRenderer {
             }
         }
 
-        // Advance at most one scene-graph mutation per frame; installation is not a bulk operation.
-        boolean installAdvanced = false;
-        for (int installSlot = 0; installSlot < CACHE_SIZE; installSlot++) {
-            if (chunkInstalls[installSlot] != null) {
-                advanceChunkInstall(installSlot);
-                installAdvanced = true;
-                break;
-            }
-        }
-        // Advance the active chunk's bounded M3G mesh slices.
-        if (pendingChunkMeshes != null) {
-            ChunkBuildResult pending = pendingChunkMeshes;
-            boolean slotStillMatches = pending.slot >= 0 && pending.slot < CACHE_SIZE &&
-                    chunkInstalls[pending.slot] == null &&
-                    chunkWorldX[pending.slot] == pending.cx &&
-                    chunkWorldY[pending.slot] == pending.cy &&
-                    chunkWorldZ[pending.slot] == pending.cz;
-            if (pending.world != world || !slotStillMatches) {
-                pendingChunkMeshes = null;
-            } else {
-                // Each step creates at most one M3G mesh slice (<= 5,000 vertices).
-                boolean finished = !installAdvanced && finishChunkMeshStep(pending.chunk);
-                if (finished) {
-                    ChunkBuildResult ready = pendingChunkMeshes;
-                    pendingChunkMeshes = null;
-                    boolean changedDuringBuild = ready.revision != world.revision;
-                    installChunk(ready.slot, ready.cx, ready.cy, ready.cz, ready.chunk);
-                    if (chunkInstalls[ready.slot] != null) chunkInstalls[ready.slot].dirtyAfterInstall = changedDuringBuild;
-                }
-            }
-        }
-        // Mesh one chunk at a time; create its M3G objects in bounded slices.
-        boolean pendingIsBest = false;
-        if (best >= 0 && pendingChunkMeshes != null) {
-            pendingIsBest = pendingChunkMeshes.world == world &&
-                    pendingChunkMeshes.cx == chunkWorldX[best] &&
-                    pendingChunkMeshes.cy == chunkWorldY[best] &&
-                    pendingChunkMeshes.cz == chunkWorldZ[best];
-        }
-        if (pendingChunkMeshes == null &&
-                best >= 0 && (!residentChunks[best] || dirtyChunks[best]) && !pendingIsBest) {
-            requestChunkBuild(world, best, chunkWorldX[best], chunkWorldY[best], chunkWorldZ[best]);
+        // Exactly one selected chunk is built per sync, as in the supplied JAR.
+        // Its complete mesh set is created and attached before moving to the next.
+        if (best >= 0 && (!residentChunks[best] || dirtyChunks[best])) {
+            requestChunkBuild(world, best, chunkWorldX[best],
+                    chunkWorldY[best], chunkWorldZ[best]);
         }
     }
 
-    /**
-     * Build one selected chunk synchronously. CLDC devices avoid the worker,
-     * lock and cross-thread hand-off; M3G mesh creation remains sliced over frames.
-     */
     private void requestChunkBuild(VoxelWorld world, int slot,
                                    int cx, int cy, int cz) {
-        if (pendingChunkMeshes != null) return;
         if (!captureChunkBuildSnapshot(world, cx, cy, cz, chunkBuildSnapshot)) {
             dirtyChunks[slot] = true;
             return;
         }
-        Chunk data;
+        Chunk data = null;
         try {
-            data = buildChunk(chunkBuildSnapshot, cx, cy, cz);
+            data = buildChunk(world, chunkBuildSnapshot, cx, cy, cz);
+            if (data == null) {
+                data = new Chunk();
+                data.faceBuilders = new FaceBuilder[TILE_COUNT];
+            }
+            data.worldX = cx * VoxelWorld.CHUNK_XZ;
+            data.worldY = cy * VoxelWorld.CHUNK_Y;
+            data.worldZ = cz * VoxelWorld.CHUNK_XZ;
+            finishChunkMeshes(data);
+            if (world.revision != chunkBuildSnapshot.revision) {
+                recycleChunkBuilders(data);
+                dirtyChunks[slot] = true;
+                return;
+            }
+            replaceChunk(slot, cx, cy, cz, data);
         } catch (OutOfMemoryError exhausted) {
+            if (data != null) recycleChunkBuilders(data);
             dirtyChunks[slot] = true;
-            return;
         } catch (RuntimeException failed) {
+            if (data != null) recycleChunkBuilders(data);
             dirtyChunks[slot] = true;
-            return;
         }
-        if (data == null) {
-            data = new Chunk();
-            data.faceBuilders = new FaceBuilder[TILE_COUNT];
-        }
-        data.worldX = cx * VoxelWorld.CHUNK_XZ;
-        data.worldY = cy * VoxelWorld.CHUNK_Y;
-        data.worldZ = cz * VoxelWorld.CHUNK_XZ;
-        pendingChunkMeshes = new ChunkBuildResult(world, chunkBuildSnapshot.revision,
-                slot, cx, cy, cz, data);
     }
 
     /**
-     * Convert at most one bounded slice of a chunk into M3G objects per call.
-     * Geometry builders are released as soon as their final slice is created.
+     * Convert every material builder for this chunk in the same operation.
+     * Each FaceBuilder remains bounded, but a chunk is no longer stretched
+     * across hundreds of frames by a one-mesh-per-frame conversion budget.
      */
-    private boolean finishChunkMeshStep(Chunk chunk) {
-        if (chunk.meshes == null) {
-            int meshCount = 0;
+    private void finishChunkMeshes(Chunk chunk) {
+        int meshCount = 0;
+        if (chunk.faceBuilders != null) {
+            for (int i = 0; i < chunk.faceBuilders.length; i++)
+                for (FaceBuilder b = chunk.faceBuilders[i]; b != null; b = b.next)
+                    if (b.vertexCount > 0) meshCount++;
+        }
+        if (chunk.flowers != null && chunk.flowers.vertexCount > 0) meshCount++;
+        if (chunk.fires != null && chunk.fires.vertexCount > 0) meshCount++;
+        if (chunk.portals != null && chunk.portals.vertexCount > 0) meshCount++;
+        chunk.meshes = new Mesh[meshCount];
+        int at = 0;
+
+        if (chunk.faceBuilders != null) {
             for (int i = 0; i < chunk.faceBuilders.length; i++) {
-                for (FaceBuilder b = chunk.faceBuilders[i]; b != null; b = b.next) {
-                    if (b.vertexCount > 0)
-                        meshCount += (b.vertexCount + MAX_CHUNK_VERTICES_PER_FRAME - 1) / MAX_CHUNK_VERTICES_PER_FRAME;
-                }
-            }
-            if (chunk.flowers != null && chunk.flowers.vertexCount > 0)
-                meshCount += (chunk.flowers.vertexCount + MAX_CHUNK_VERTICES_PER_FRAME - 1) / MAX_CHUNK_VERTICES_PER_FRAME;
-            if (chunk.fires != null && chunk.fires.vertexCount > 0)
-                meshCount += (chunk.fires.vertexCount + MAX_CHUNK_VERTICES_PER_FRAME - 1) / MAX_CHUNK_VERTICES_PER_FRAME;
-            if (chunk.portals != null && chunk.portals.vertexCount > 0)
-                meshCount += (chunk.portals.vertexCount + MAX_CHUNK_VERTICES_PER_FRAME - 1) / MAX_CHUNK_VERTICES_PER_FRAME;
-            chunk.meshes = new Mesh[meshCount];
-        }
-
-        while (chunk.meshBuildCursor < TILE_COUNT) {
-            int tile = chunk.meshBuildCursor;
-            FaceBuilder builder = chunk.faceBuilders[tile];
-            if (builder == null || builder.vertexCount <= 0) {
-                if (builder != null) {
-                    chunk.faceBuilders[tile] = builder.next;
+                FaceBuilder builder = chunk.faceBuilders[i];
+                while (builder != null) {
+                    FaceBuilder next = builder.next;
                     builder.next = null;
+                    chunk.faceBuilders[i] = next;
+                    if (builder.vertexCount > 0) {
+                        try {
+                            float scale = builder.tile == Block.sideTile(Block.GRASS) ?
+                                    0.999f / 16.0f : 1.0f / 16.0f;
+                            Mesh mesh = makeMesh(builder, tileAppearance(builder.tile), scale);
+                            mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
+                            chunk.meshes[at++] = mesh;
+                        } catch (OutOfMemoryError exhausted) {
+                            recycleFaceBuilder(builder);
+                            throw exhausted;
+                        } catch (RuntimeException failed) {
+                            recycleFaceBuilder(builder);
+                            throw failed;
+                        }
+                    }
                     recycleFaceBuilder(builder);
-                    continue;
+                    builder = next;
                 }
-                chunk.meshBuildCursor++;
-                chunk.meshBuildVertexCursor = 0;
-                continue;
             }
-
-            int count = Math.min(MAX_CHUNK_VERTICES_PER_FRAME,
-                    builder.vertexCount - chunk.meshBuildVertexCursor);
-            float scale = tile == Block.sideTile(Block.GRASS) ?
-                    0.999f / 16.0f : 1.0f / 16.0f;
-            storeChunkMesh(chunk, makeMeshSlice(builder, tileAppearance(tile), scale,
-                    chunk.meshBuildVertexCursor, count));
-            chunk.meshBuildVertexCursor += count;
-
-            if (chunk.meshBuildVertexCursor >= builder.vertexCount) {
-                chunk.faceBuilders[tile] = builder.next;
-                builder.next = null;
-                recycleFaceBuilder(builder);
-                chunk.meshBuildVertexCursor = 0;
-                if (chunk.faceBuilders[tile] == null) chunk.meshBuildCursor++;
-            }
-            return false;
+            chunk.faceBuilders = null;
         }
 
-        if (chunk.flowers != null && chunk.flowers.vertexCount > 0) {
-            int count = Math.min(MAX_CHUNK_VERTICES_PER_FRAME,
-                    chunk.flowers.vertexCount - chunk.meshBuildVertexCursor);
-            storeChunkMesh(chunk, makeFlowerMeshSlice(chunk.flowers,
-                    chunk.meshBuildVertexCursor, count));
-            chunk.meshBuildVertexCursor += count;
-            if (chunk.meshBuildVertexCursor >= chunk.flowers.vertexCount) {
-                FlowerBuilder finished = chunk.flowers;
-                chunk.flowers = null;
-                recycleFlowerBuilder(finished);
-                chunk.meshBuildVertexCursor = 0;
+        if (chunk.flowers != null) {
+            FlowerBuilder finished = chunk.flowers;
+            if (finished.vertexCount > 0) {
+                Mesh mesh = makeFlowerMesh(finished, flowerAppearance);
+                mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
+                chunk.meshes[at++] = mesh;
             }
-            return false;
+            chunk.flowers = null;
+            recycleFlowerBuilder(finished);
         }
 
         if (chunk.fires != null && chunk.fires.vertexCount > 0) {
-            int count = Math.min(MAX_CHUNK_VERTICES_PER_FRAME,
-                    chunk.fires.vertexCount - chunk.meshBuildVertexCursor);
-            storeChunkMesh(chunk, makeFireMeshSlice(chunk.fires,
-                    chunk.meshBuildVertexCursor, count));
-            chunk.meshBuildVertexCursor += count;
-            if (chunk.meshBuildVertexCursor >= chunk.fires.vertexCount) {
-                FireBuilder finished = chunk.fires;
-                chunk.fires = null;
-                recycleFireBuilder(finished);
-                chunk.meshBuildVertexCursor = 0;
-            }
-            return false;
+            Mesh mesh = makeFireMesh(chunk.fires);
+            mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
+            chunk.meshes[at++] = mesh;
+            // Keep the UV controller attached to the chunk so fire can animate.
+        } else if (chunk.fires != null) {
+            recycleFireBuilder(chunk.fires);
+            chunk.fires = null;
         }
 
-        if (chunk.portals != null && chunk.portals.vertexCount > 0) {
-            int count = Math.min(MAX_CHUNK_VERTICES_PER_FRAME,
-                    chunk.portals.vertexCount - chunk.meshBuildVertexCursor);
-            storeChunkMesh(chunk, makePortalMeshSlice(chunk.portals,
-                    chunk.meshBuildVertexCursor, count));
-            chunk.meshBuildVertexCursor += count;
-            if (chunk.meshBuildVertexCursor >= chunk.portals.vertexCount) {
-                PortalBuilder finished = chunk.portals;
-                chunk.portals = null;
-                recyclePortalBuilder(finished);
-                chunk.meshBuildVertexCursor = 0;
+        if (chunk.portals != null) {
+            PortalBuilder finished = chunk.portals;
+            if (finished.vertexCount > 0) {
+                Mesh mesh = makePortalMesh(finished);
+                mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
+                chunk.meshes[at++] = mesh;
             }
-            return false;
+            chunk.portals = null;
+            recyclePortalBuilder(finished);
         }
-        return true;
     }
 
-    private void storeChunkMesh(Chunk chunk, Mesh mesh) {
-        mesh.setRenderingEnable(false);
-        mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
-        chunk.meshes[chunk.meshBuildCount++] = mesh;
+    private void recycleChunkBuilders(Chunk chunk) {
+        if (chunk == null) return;
+        if (chunk.faceBuilders != null) {
+            for (int i = 0; i < chunk.faceBuilders.length; i++) {
+                FaceBuilder builder = chunk.faceBuilders[i];
+                chunk.faceBuilders[i] = null;
+                while (builder != null) {
+                    FaceBuilder next = builder.next;
+                    builder.next = null;
+                    recycleFaceBuilder(builder);
+                    builder = next;
+                }
+            }
+            chunk.faceBuilders = null;
+        }
+        if (chunk.flowers != null) {
+            recycleFlowerBuilder(chunk.flowers);
+            chunk.flowers = null;
+        }
+        if (chunk.fires != null) {
+            recycleFireBuilder(chunk.fires);
+            chunk.fires = null;
+        }
+        if (chunk.portals != null) {
+            recyclePortalBuilder(chunk.portals);
+            chunk.portals = null;
+        }
     }
 
-    private Chunk buildChunk(ChunkBuildSnapshot snapshot, int cx, int cy, int cz) {
+    private Chunk buildChunk(VoxelWorld world, ChunkBuildSnapshot snapshot, int cx, int cy, int cz) {
         FaceBuilder[] builders = chunkFaceBuilders;
         FaceBuilder[] builderTails = chunkFaceBuilderTails;
         for (int i = 0; i < builders.length; i++) { builders[i] = null; builderTails[i] = null; }
@@ -1770,7 +1683,7 @@ final class ChunkRenderer {
                 int localZ = z - z0;
                 int localX = 0;
                 for (int x = x0; x < x1; x++, localIndex++, localX++) {
-                    byte id = snapshot.get(x, y, z);
+                    byte id = world.get(x, y, z);
                     chunkVoxelScratch[localIndex] = id;
                     chunkLightScratch[localIndex] = (byte)(id == Block.LAVA ? 14 : torchLightAt(localIndex));
                     if (id == Block.AIR) continue;
@@ -1778,7 +1691,7 @@ final class ChunkRenderer {
                     if (id == Block.PORTAL) {
                         if (portals == null) portals = acquirePortalBuilder();
                         portals.add(localX, localY, localZ,
-                                snapshot.metadata(x, y, z), portalFrameSize);
+                                world.portalAxisAt(x, y, z), portalFrameSize);
                     } else if (id == Block.FIRE) {
                         if (fires == null) fires = acquireFireBuilder();
                         fires.add(localX, localY, localZ);
@@ -1788,7 +1701,7 @@ final class ChunkRenderer {
                     } else if (Block.isDoor(id)) {
                         if (flowers == null) flowers = acquireFlowerBuilder();
                         flowers.addDoor(localX, localY, localZ, id,
-                                snapshot.metadata(x, y, z));
+                                world.doorMetadata(x, y, z));
                     }
                 }
             }
@@ -1848,10 +1761,11 @@ final class ChunkRenderer {
                                 neighbor = chunkVoxelScratch[voxelIndex + VoxelWorld.CHUNK_XZ];
                             else if (face == 5 && y > y0)
                                 neighbor = chunkVoxelScratch[voxelIndex - CHUNK_AREA];
-                            else neighbor = snapshot.get(nx, ny, nz);
+                            else neighbor = world.get(nx, ny, nz);
                             if (Block.faceVisible(id, neighbor)) {
-                                int metadata = snapshot.metadata(x, y, z);
-                                int tile = renderWorldTile(snapshot.nether, id, face, metadata);
+                                int metadata = id == Block.WOOL ? world.woolColor(x, y, z) :
+                                        (id == Block.CHEST ? world.chestFacing(x, y, z) : 0);
+                                int tile = renderWorldTile(world.nether, id, face, metadata);
                                 int light = chunkLightScratch[voxelIndex] & 255;
                                 key = light * TILE_COUNT + tile + 1;
                             }
@@ -1949,48 +1863,19 @@ final class ChunkRenderer {
         return builder;
     }
 
-private Mesh makeMeshSlice(FaceBuilder data, Appearance appearance, float textureScale, int start, int count) {
-        short[] p = new short[count * 3]; short[] uv = new short[count * 2]; byte[] c = new byte[count * 4];
-        System.arraycopy(data.p, start * 3, p, 0, count * 3);
-        System.arraycopy(data.uv, start * 2, uv, 0, count * 2);
-        System.arraycopy(data.c, start * 4, c, 0, count * 4);
-        VertexArray positions = new VertexArray(count, 3, 2); positions.set(0, count, p);
-        VertexArray texCoords = new VertexArray(count, 2, 2); texCoords.set(0, count, uv);
-        VertexArray colors = new VertexArray(count, 4, 1); colors.set(0, count, c);
+    private Mesh makeFireMesh(FireBuilder data) {
+        int vertexCount = data.vertexCount;
+        VertexArray positions = new VertexArray(vertexCount, 3, 2);
+        positions.set(0, vertexCount, data.p);
+        VertexArray texCoords = new VertexArray(vertexCount, 2, 2);
+        texCoords.set(0, vertexCount, data.uv);
+        data.texCoords = texCoords;
         VertexBuffer vertices = new VertexBuffer();
-        vertices.setPositions(positions, 1.0f, null); vertices.setTexCoords(0, texCoords, textureScale, null); vertices.setColors(colors);
-        int[] strips = new int[count / 4]; for (int i = 0; i < strips.length; i++) strips[i] = 4;
-        return new Mesh(vertices, new TriangleStripArray(0, strips), appearance);
-    }
-
-    private Mesh makeFlowerMeshSlice(FlowerBuilder data, int start, int count) {
-        short[] p = new short[count * 3]; short[] uv = new short[count * 2];
-        System.arraycopy(data.p, start * 3, p, 0, count * 3); System.arraycopy(data.uv, start * 2, uv, 0, count * 2);
-        VertexArray positions = new VertexArray(count, 3, 2); positions.set(0, count, p);
-        VertexArray texCoords = new VertexArray(count, 2, 2); texCoords.set(0, count, uv);
-        VertexBuffer vertices = new VertexBuffer(); vertices.setPositions(positions, 1.0f / 256.0f, null); vertices.setTexCoords(0, texCoords, 1.0f / 256.0f, null);
-        int[] strips = new int[count / 4]; for (int i = 0; i < strips.length; i++) strips[i] = 4;
-        return new Mesh(vertices, new TriangleStripArray(0, strips), flowerAppearance);
-    }
-
-    private Mesh makeFireMeshSlice(FireBuilder data, int start, int count) {
-        short[] p = new short[count * 3]; short[] uv = new short[count * 2];
-        System.arraycopy(data.p, start * 3, p, 0, count * 3); System.arraycopy(data.uv, start * 2, uv, 0, count * 2);
-        VertexArray positions = new VertexArray(count, 3, 2); positions.set(0, count, p);
-        VertexArray texCoords = new VertexArray(count, 2, 2); texCoords.set(0, count, uv);
-        VertexBuffer vertices = new VertexBuffer(); vertices.setPositions(positions, 1.0f / 256.0f, null); vertices.setTexCoords(0, texCoords, 1.0f / 1024.0f, null);
-        int[] strips = new int[count / 4]; for (int i = 0; i < strips.length; i++) strips[i] = 4;
+        vertices.setPositions(positions, 1.0f / 256.0f, null);
+        vertices.setTexCoords(0, texCoords, 1.0f / 1024.0f, null);
+        int[] strips = new int[vertexCount / 4];
+        for (int i = 0; i < strips.length; i++) strips[i] = 4;
         return new Mesh(vertices, new TriangleStripArray(0, strips), worldFireAppearance);
-    }
-
-    private Mesh makePortalMeshSlice(PortalBuilder data, int start, int count) {
-        short[] p = new short[count * 3]; short[] uv = new short[count * 2];
-        System.arraycopy(data.p, start * 3, p, 0, count * 3); System.arraycopy(data.uv, start * 2, uv, 0, count * 2);
-        VertexArray positions = new VertexArray(count, 3, 2); positions.set(0, count, p);
-        VertexArray texCoords = new VertexArray(count, 2, 2); texCoords.set(0, count, uv);
-        VertexBuffer vertices = new VertexBuffer(); vertices.setPositions(positions, 1.0f / 256.0f, null); vertices.setTexCoords(0, texCoords, 1.0f / portalFrameSize, null);
-        int[] strips = new int[count / 4]; for (int i = 0; i < strips.length; i++) strips[i] = 4;
-        return new Mesh(vertices, new TriangleStripArray(0, strips), portalAppearance);
     }
 
     private Mesh makeMesh(FaceBuilder data, Appearance appearance) {
@@ -2302,7 +2187,6 @@ private Mesh makeMeshSlice(FaceBuilder data, Appearance appearance, float textur
         FlowerBuilder flowers;
         FireBuilder fires;
         PortalBuilder portals;
-        int meshBuildCursor, meshBuildCount, meshBuildVertexCursor;
         boolean renderingEnabled;
         int worldX, worldY, worldZ;
     }
@@ -2363,42 +2247,12 @@ private Mesh makeMeshSlice(FaceBuilder data, Appearance appearance, float textur
         }
     }
 
-private static final class ChunkInstallState {
-        Chunk previous, replacement, discardedReplacement;
-        int cx, cy, cz, addCursor, removeCursor;
-        int discardedCount, discardedRemoveCursor;
-        boolean dirtyAfterInstall;
-    }
-
-
-    private boolean captureChunkBuildSnapshot(VoxelWorld world, int cx, int cy, int cz,
+private boolean captureChunkBuildSnapshot(VoxelWorld world, int cx, int cy, int cz,
                                                ChunkBuildSnapshot snapshot) {
         int revision = world.revision;
         int x0 = cx * VoxelWorld.CHUNK_XZ;
         int y0 = cy * VoxelWorld.CHUNK_Y;
         int z0 = cz * VoxelWorld.CHUNK_XZ;
-        snapshot.baseX = x0 - 1;
-        snapshot.baseY = y0 - 1;
-        snapshot.baseZ = z0 - 1;
-        snapshot.nether = world.nether;
-        int at = 0;
-        for (int y = 0; y < ChunkBuildSnapshot.SIZE_Y; y++) {
-            int wy = snapshot.baseY + y;
-            for (int z = 0; z < ChunkBuildSnapshot.SIZE_XZ; z++) {
-                int wz = snapshot.baseZ + z;
-                for (int x = 0; x < ChunkBuildSnapshot.SIZE_XZ; x++, at++) {
-                    int wx = snapshot.baseX + x;
-                    byte id = world.get(wx, wy, wz);
-                    snapshot.voxels[at] = id;
-                    byte metadata = 0;
-                    if (id == Block.WOOL) metadata = (byte)world.woolColor(wx, wy, wz);
-                    else if (Block.isDoor(id)) metadata = (byte)world.doorMetadata(wx, wy, wz);
-                    else if (id == Block.CHEST) metadata = (byte)world.chestFacing(wx, wy, wz);
-                    else if (id == Block.PORTAL) metadata = (byte)world.portalAxisAt(wx, wy, wz);
-                    snapshot.metadata[at] = metadata;
-                }
-            }
-        }
         int radius = LAVA_LIGHT_RADIUS;
         int minX = x0 - radius, maxX = x0 + VoxelWorld.CHUNK_XZ + radius;
         int minY = Math.max(0, y0 - radius);
@@ -2412,40 +2266,12 @@ private static final class ChunkInstallState {
     }
 
     private static final class ChunkBuildSnapshot {
-        static final int SIZE_XZ = VoxelWorld.CHUNK_XZ + 2;
-        static final int SIZE_Y = VoxelWorld.CHUNK_Y + 2;
-        final byte[] voxels = new byte[SIZE_XZ * SIZE_Y * SIZE_XZ];
-        final byte[] metadata = new byte[voxels.length];
         final int[] lightX = new int[MAX_CHUNK_TORCHES];
         final int[] lightY = new int[MAX_CHUNK_TORCHES];
         final int[] lightZ = new int[MAX_CHUNK_TORCHES];
         final byte[] lightRadius = new byte[MAX_CHUNK_TORCHES];
         final boolean[] lavaSource = new boolean[MAX_CHUNK_TORCHES];
-        int baseX, baseY, baseZ, revision, lightCount;
-        boolean nether;
-        private int index(int x, int y, int z) {
-            int lx = x - baseX, ly = y - baseY, lz = z - baseZ;
-            if (lx < 0 || lx >= SIZE_XZ || ly < 0 || ly >= SIZE_Y || lz < 0 || lz >= SIZE_XZ)
-                return -1;
-            return (ly * SIZE_XZ + lz) * SIZE_XZ + lx;
-        }
-        byte get(int x, int y, int z) {
-            int i = index(x, y, z);
-            return i < 0 ? Block.AIR : voxels[i];
-        }
-        int metadata(int x, int y, int z) {
-            int i = index(x, y, z);
-            return i < 0 ? 0 : metadata[i] & 255;
-        }
-    }
-
-    private static final class ChunkBuildResult {
-        final VoxelWorld world;
-        final int revision, slot, cx, cy, cz;
-        Chunk chunk;
-        ChunkBuildResult(VoxelWorld w, int r, int s, int x, int y, int z, Chunk c) {
-            world=w; revision=r; slot=s; cx=x; cy=y; cz=z; chunk=c;
-        }
+        int revision, lightCount;
     }
 
     /** One full-cell portal plane, sharing the eight-frame portal material. */
