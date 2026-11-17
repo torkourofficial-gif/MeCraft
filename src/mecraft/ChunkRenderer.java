@@ -1381,6 +1381,13 @@ final class ChunkRenderer {
             terrain.addChild(mesh);
             return true;
         }
+        if (state.discardedReplacement != null) {
+            if (state.discardedRemoveCursor < state.discardedCount) {
+                terrain.removeChild(state.discardedReplacement.meshes[state.discardedRemoveCursor++]);
+                return true;
+            }
+            state.discardedReplacement = null;
+        }
         if (state.previous != null && state.removeCursor < state.previous.meshes.length) {
             terrain.removeChild(state.previous.meshes[state.removeCursor++]);
             return true;
@@ -1402,10 +1409,12 @@ final class ChunkRenderer {
             state.previous = chunks[i];
             chunkInstalls[i] = state;
         } else if (chunkInstalls[i] != null) {
-            // A slot being replaced is rare; detach only the partially attached replacement.
+            // Cancel a partially attached replacement, but remove its nodes one per frame.
             ChunkInstallState state = chunkInstalls[i];
             if (state.replacement != null) {
-                for (int m = 0; m < state.addCursor; m++) terrain.removeChild(state.replacement.meshes[m]);
+                state.discardedReplacement = state.replacement;
+                state.discardedCount = state.addCursor;
+                state.discardedRemoveCursor = 0;
                 state.replacement = null;
                 state.addCursor = 0;
             }
@@ -2322,8 +2331,9 @@ final class ChunkRenderer {
     }
 
     private static final class ChunkInstallState {
-        Chunk previous, replacement;
+        Chunk previous, replacement, discardedReplacement;
         int cx, cy, cz, addCursor, removeCursor;
+        int discardedCount, discardedRemoveCursor;
         boolean dirtyAfterInstall;
     }
 
