@@ -114,6 +114,7 @@ final class ChunkRenderer {
     private ChunkBuildResult pendingChunkMeshes;
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
+    private final boolean[] chunkFrustumVisible = new boolean[CACHE_SIZE];
     private final ChunkInstallState[] chunkInstalls = new ChunkInstallState[CACHE_SIZE];
     private final int[] chunkWorldX = new int[CACHE_SIZE];
     private final int[] chunkWorldY = new int[CACHE_SIZE];
@@ -1341,6 +1342,23 @@ final class ChunkRenderer {
         return result < 0 ? result + divisor : result;
     }
 
+    private void setChunkRenderingEnabled(Chunk chunk, boolean enabled) {
+        if (chunk == null || chunk.renderingEnabled == enabled) return;
+        for (int m = 0; m < chunk.meshBuildCount; m++) {
+            Mesh mesh = chunk.meshes[m];
+            if (mesh != null) mesh.setRenderingEnable(enabled);
+        }
+        chunk.renderingEnabled = enabled;
+    }
+
+    private void setChunkVisibility(int i, boolean visible) {
+        if (chunkFrustumVisible[i] == visible) return;
+        chunkFrustumVisible[i] = visible;
+        setChunkRenderingEnabled(chunks[i], visible);
+        ChunkInstallState install = chunkInstalls[i];
+        if (install != null) setChunkRenderingEnabled(install.replacement, visible);
+    }
+
     private void installChunk(int i, int cx, int cy, int cz, Chunk replacement) {
         // Keep the old geometry visible while the replacement is attached in small steps.
         ChunkInstallState state = new ChunkInstallState();
@@ -1357,7 +1375,10 @@ final class ChunkRenderer {
         ChunkInstallState state = chunkInstalls[i];
         if (state == null) return false;
         if (state.replacement != null && state.addCursor < state.replacement.meshes.length) {
-            terrain.addChild(state.replacement.meshes[state.addCursor++]);
+            Mesh mesh = state.replacement.meshes[state.addCursor++];
+            mesh.setRenderingEnable(chunkFrustumVisible[i]);
+            state.replacement.renderingEnabled = chunkFrustumVisible[i];
+            terrain.addChild(mesh);
             return true;
         }
         if (state.previous != null && state.removeCursor < state.previous.meshes.length) {
@@ -1375,6 +1396,7 @@ final class ChunkRenderer {
     }
 
     private void removeChunk(int i) {
+        setChunkVisibility(i, false);
         if (chunkInstalls[i] == null && chunks[i] != null) {
             ChunkInstallState state = new ChunkInstallState();
             state.previous = chunks[i];
@@ -1390,6 +1412,47 @@ final class ChunkRenderer {
         }
         residentChunks[i] = false;
         dirtyChunks[i] = false;
+    }
+
+    /**
+     * Conservative AABB/frustum intersection using support radii against all six
+     * camera planes. A chunk is rejected only when its entire box is outside a plane.
+     */
+    private boolean chunkInFrustum(int cx, int cy, int cz,
+            float eyeX, float eyeY, float eyeZ,
+            float fx, float fy, float fz, float rx, float rz,
+            float ux, float uy, float uz) {
+        float hx = VoxelWorld.CHUNK_XZ * 0.5f;
+        float hy = VoxelWorld.CHUNK_Y * 0.5f;
+        float hz = VoxelWorld.CHUNK_XZ * 0.5f;
+        float dx = cx * VoxelWorld.CHUNK_XZ + hx - eyeX;
+        float dy = cy * VoxelWorld.CHUNK_Y + hy - eyeY;
+        float dz = cz * VoxelWorld.CHUNK_XZ + hz - eyeZ;
+        float depth = dx * fx + dy * fy + dz * fz;
+        float horizontal = dx * rx + dz * rz;
+        float vertical = dx * ux + dy * uy + dz * uz;
+        float depthRadius = Math.abs(fx) * hx + Math.abs(fy) * hy + Math.abs(fz) * hz;
+
+        if (depth + depthRadius < 0.1f || depth - depthRadius > cameraFar) return false;
+
+        float leftRadius = Math.abs(fx * tanHorizontalFov + rx) * hx +
+                Math.abs(fy * tanHorizontalFov) * hy +
+                Math.abs(fz * tanHorizontalFov + rz) * hz;
+        if (depth * tanHorizontalFov + horizontal + leftRadius < 0.0f) return false;
+        float rightRadius = Math.abs(fx * tanHorizontalFov - rx) * hx +
+                Math.abs(fy * tanHorizontalFov) * hy +
+                Math.abs(fz * tanHorizontalFov - rz) * hz;
+        if (depth * tanHorizontalFov - horizontal + rightRadius < 0.0f) return false;
+
+        float topRadius = Math.abs(fx * tanVerticalFov + ux) * hx +
+                Math.abs(fy * tanVerticalFov + uy) * hy +
+                Math.abs(fz * tanVerticalFov + uz) * hz;
+        if (depth * tanVerticalFov + vertical + topRadius < 0.0f) return false;
+        float bottomRadius = Math.abs(fx * tanVerticalFov - ux) * hx +
+                Math.abs(fy * tanVerticalFov - uy) * hy +
+                Math.abs(fz * tanVerticalFov - uz) * hz;
+        if (depth * tanVerticalFov - vertical + bottomRadius < 0.0f) return false;
+        return true;
     }
 
     /** Keep M3G buffers only for chunks intersecting the camera frustum. */
@@ -1408,13 +1471,6 @@ final class ChunkRenderer {
         float forwardX = sinYaw * cosPitch, forwardY = sinPitch, forwardZ = cosYaw * cosPitch;
         float rightX = cosYaw, rightZ = -sinYaw;
         float upX = -sinYaw * sinPitch, upY = cosPitch, upZ = -cosYaw * sinPitch;
-        float depthRadius = Math.abs(forwardX) * (VoxelWorld.CHUNK_XZ * 0.5f) +
-                Math.abs(forwardY) * (VoxelWorld.CHUNK_Y * 0.5f) +
-                Math.abs(forwardZ) * (VoxelWorld.CHUNK_XZ * 0.5f);
-        float verticalRadius = Math.abs(upX) * (VoxelWorld.CHUNK_XZ * 0.5f) +
-                Math.abs(upY) * (VoxelWorld.CHUNK_Y * 0.5f) +
-                Math.abs(upZ) * (VoxelWorld.CHUNK_XZ * 0.5f);
-
         int firstChunkX = centerX - streamRadius;
         int lastChunkX = centerX + streamRadius;
         int firstChunkZ = centerZ - streamRadius;
@@ -1444,11 +1500,16 @@ final class ChunkRenderer {
             lastChunkZ = centerZ + Math.max(0, Math.max(forwardChunkZ, cornerZ));
         }
 
-        // Evict only chunks that have actually left the horizontal stream window.
+        // Apply the actual camera frustum to already-resident chunks too; previously
+        // the frustum only filtered new builds while old meshes kept rendering.
         for (int i = 0; i < CACHE_SIZE; i++) {
-            if (residentChunks[i] &&
-                    (chunkWorldX[i] < firstChunkX || chunkWorldX[i] > lastChunkX ||
-                     chunkWorldZ[i] < firstChunkZ || chunkWorldZ[i] > lastChunkZ)) removeChunk(i);
+            if (!residentChunks[i]) continue;
+            boolean outsideWindow = chunkWorldX[i] < firstChunkX || chunkWorldX[i] > lastChunkX ||
+                    chunkWorldZ[i] < firstChunkZ || chunkWorldZ[i] > lastChunkZ;
+            if (outsideWindow) removeChunk(i);
+            else setChunkVisibility(i, chunkInFrustum(chunkWorldX[i], chunkWorldY[i], chunkWorldZ[i],
+                    eyeX, eyeY, eyeZ, forwardX, forwardY, forwardZ,
+                    rightX, rightZ, upX, upY, upZ));
         }
 
         int firstRx = firstChunkX - centerX + MAX_STREAM_RADIUS;
@@ -1469,35 +1530,20 @@ final class ChunkRenderer {
                     float dx = cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeX;
                     float dy = cy * VoxelWorld.CHUNK_Y + VoxelWorld.CHUNK_Y * 0.5f - eyeY;
                     float dz = cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - eyeZ;
-
-                    float depth = dx * forwardX + dy * forwardY + dz * forwardZ;
-                    float vertical = dx * upX + dy * upY + dz * upZ;
-                    boolean visible;
-                    if (shortestDistance) {
-                        // The 2x2 window already limits horizontal work. Use
-                        // the projected chunk bounds to avoid meshing unseen
-                        // vertical sections (the old 2x2 path did this too).
-                        float visibleDepth = Math.max(0.0f, depth + depthRadius);
-                        visible = depth + depthRadius >= 0.1f &&
-                            depth - depthRadius <= cameraFar &&
-                            Math.abs(vertical) <= visibleDepth * tanVerticalFov + verticalRadius;
-                    } else {
-                        float horizontal = dx * rightX + dz * rightZ;
-                        visible = depth + CHUNK_RADIUS >= 0.1f &&
-                            depth - CHUNK_RADIUS <= cameraFar &&
-                            Math.abs(horizontal) <= Math.max(0.0f, depth) * tanHorizontalFov + CHUNK_RADIUS &&
-                            Math.abs(vertical) <= Math.max(0.0f, depth) * tanVerticalFov + CHUNK_RADIUS;
-                    }
+                    boolean visible = chunkInFrustum(cx, cy, cz, eyeX, eyeY, eyeZ,
+                            forwardX, forwardY, forwardZ, rightX, rightZ, upX, upY, upZ);
 
                     boolean sameChunk = residentChunks[i] && chunkWorldX[i] == cx &&
                         chunkWorldY[i] == cy && chunkWorldZ[i] == cz;
                     if (residentChunks[i] && !sameChunk) removeChunk(i);
-                    if (!visible || chunkInstalls[i] != null) continue;
+                    if (chunkInstalls[i] != null) continue;
 
                     if (!sameChunk) {
                         chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
                         dirtyChunks[i] = false;
+                        chunkFrustumVisible[i] = visible;
                     }
+                    if (!visible) continue;
                     if (!sameChunk || dirtyChunks[i]) {
                         float distance = dx * dx + dz * dz + dy * dy * 2.0f;
                         if (distance < bestDistance) {
@@ -1705,6 +1751,7 @@ final class ChunkRenderer {
     }
 
     private void storeChunkMesh(Chunk chunk, Mesh mesh) {
+        mesh.setRenderingEnable(false);
         mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
         chunk.meshes[chunk.meshBuildCount++] = mesh;
     }
@@ -2196,7 +2243,7 @@ final class ChunkRenderer {
             appearance.setCompositingMode(compositing);
         }
         PolygonMode polygon = new PolygonMode();
-        polygon.setCulling(PolygonMode.CULL_NONE);
+        polygon.setCulling(translucent ? PolygonMode.CULL_NONE : PolygonMode.CULL_BACK);
         polygon.setShading(PolygonMode.SHADE_FLAT);
         appearance.setPolygonMode(polygon);
         return appearance;
@@ -2260,6 +2307,7 @@ final class ChunkRenderer {
         FireBuilder fires;
         PortalBuilder portals;
         int meshBuildCursor, meshBuildCount, meshBuildVertexCursor;
+        boolean renderingEnabled;
         int worldX, worldY, worldZ;
     }
 
