@@ -551,7 +551,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         renderer.updateCamera(world, cameraPitch);
         renderer.setHurtCameraRoll(hurtCameraRoll());
         renderer.updateParticles(world, world.yaw, cameraPitch);
-        ChunkPrefetchWorker.request(world);
         if (lanGameActive) updateLanSynchronization();
     }
 
