@@ -2,8 +2,7 @@ package mecraft;
 
 /**
  * Dedicated asynchronous terrain generator. Requests are coalesced by world
- * and chunk coordinate; neither procedural generation nor RMS I/O runs on the
- * game or chunk-meshing thread.
+ * and chunk coordinate; nearest pending requests are generated first.
  */
 final class ChunkPrefetchWorker implements Runnable {
     private static final int QUEUE_SIZE = 16;
@@ -29,14 +28,18 @@ final class ChunkPrefetchWorker implements Runnable {
         }
     }
 
-    /** Keep the worker alive for worlds that have not requested an outer chunk yet. */
     static void request(VoxelWorld world) {
         if (world != null) worker();
     }
 
     static void requestChunk(VoxelWorld world, int cx, int cz) {
-        if (world == null) return;
-        worker().enqueue(world, cx, cz);
+        if (world != null) worker().enqueue(world, cx, cz);
+    }
+
+    private static float distanceSquared(VoxelWorld world, int cx, int cz) {
+        float dx = cx * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - world.playerX;
+        float dz = cz * VoxelWorld.CHUNK_XZ + VoxelWorld.CHUNK_XZ * 0.5f - world.playerZ;
+        return dx * dx + dz * dz;
     }
 
     private synchronized void enqueue(VoxelWorld world, int cx, int cz) {
@@ -45,21 +48,36 @@ final class ChunkPrefetchWorker implements Runnable {
             if (worlds[i] == world && chunkX[i] == cx && chunkZ[i] == cz) return;
         }
 
-        // Keep the queue bounded. When full, discard its oldest request so
-        // chunks around the player's current position take priority.
         if (count == QUEUE_SIZE) {
+            // Replace only the farthest pending request; never evict a nearer
+            // chunk merely because it was queued earlier.
+            int farthest = 0;
+            float farthestDistance = distanceSquared(worlds[0], chunkX[0], chunkZ[0]);
             for (int i = 1; i < count; i++) {
-                worlds[i - 1] = worlds[i];
-                chunkX[i - 1] = chunkX[i];
-                chunkZ[i - 1] = chunkZ[i];
+                float distance = distanceSquared(worlds[i], chunkX[i], chunkZ[i]);
+                if (distance > farthestDistance) {
+                    farthestDistance = distance;
+                    farthest = i;
+                }
             }
-            count--;
+            if (distanceSquared(world, cx, cz) >= farthestDistance) return;
+            removeAt(farthest);
         }
         worlds[count] = world;
         chunkX[count] = cx;
         chunkZ[count] = cz;
         count++;
         notifyAll();
+    }
+
+    private void removeAt(int index) {
+        for (int i = index + 1; i < count; i++) {
+            worlds[i - 1] = worlds[i];
+            chunkX[i - 1] = chunkX[i];
+            chunkZ[i - 1] = chunkZ[i];
+        }
+        count--;
+        worlds[count] = null;
     }
 
     public void run() {
@@ -72,22 +90,28 @@ final class ChunkPrefetchWorker implements Runnable {
                     catch (InterruptedException ignored) { if (!running) return; }
                 }
                 if (!running) return;
-                world = worlds[0];
-                cx = chunkX[0];
-                cz = chunkZ[0];
+
+                // Re-evaluate against the player's current position at dequeue
+                // time so movement does not leave stale FIFO work ahead.
+                int nearest = 0;
+                float nearestDistance = distanceSquared(worlds[0], chunkX[0], chunkZ[0]);
                 for (int i = 1; i < count; i++) {
-                    worlds[i - 1] = worlds[i];
-                    chunkX[i - 1] = chunkX[i];
-                    chunkZ[i - 1] = chunkZ[i];
+                    float distance = distanceSquared(worlds[i], chunkX[i], chunkZ[i]);
+                    if (distance < nearestDistance) {
+                        nearestDistance = distance;
+                        nearest = i;
+                    }
                 }
-                count--;
-                worlds[count] = null;
+                world = worlds[nearest];
+                cx = chunkX[nearest];
+                cz = chunkZ[nearest];
+                removeAt(nearest);
             }
 
             try {
                 world.generateRequestedChunk(cx, cz);
             } catch (OutOfMemoryError exhausted) {
-                // Keep the game alive; a later lookup can enqueue the chunk again.
+                // Keep the game alive; a later lookup can enqueue it again.
             } catch (RuntimeException unavailable) {
                 // A failed chunk request must not terminate the worker.
             }
