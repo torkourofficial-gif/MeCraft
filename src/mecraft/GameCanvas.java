@@ -99,7 +99,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private volatile boolean running;
     private volatile boolean visible;
     private volatile long profileUpdateWait, profileUpdateWork, profileRenderSync;
+    private volatile long profileRenderWork, profileHudWork;
     private volatile long profileMaxUpdateWait, profileMaxUpdateWork, profileMaxRenderSync;
+    private volatile long profileMaxRenderWork, profileMaxHudWork;
     private volatile long profileLastReport;
     private volatile int state = MENU;
     private int menuSelection = MENU_SINGLEPLAYER;
@@ -329,15 +331,20 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (now - profileLastReport < 2000L) return;
         profileLastReport = now;
         if (frameTime >= 80L || profileMaxUpdateWait >= 20L ||
-                profileMaxUpdateWork >= 35L || profileMaxRenderSync >= 35L) {
-            System.out.println("MeCraft STALL ms: frame=" + frameTime +
+                profileMaxUpdateWork >= 35L || profileMaxRenderSync >= 35L ||
+                profileMaxRenderWork >= 35L || profileMaxHudWork >= 20L) {
+            System.out.println("MeCraft STALL ms: loop=" + frameTime +
                 " updateWait=" + profileUpdateWait + " update=" + profileUpdateWork +
-                " renderSync=" + profileRenderSync + " maxWait=" + profileMaxUpdateWait +
-                " maxUpdate=" + profileMaxUpdateWork + " maxSync=" + profileMaxRenderSync);
+                " sync=" + profileRenderSync + " render=" + profileRenderWork +
+                " hud=" + profileHudWork + " maxWait=" + profileMaxUpdateWait +
+                " maxUpdate=" + profileMaxUpdateWork + " maxSync=" + profileMaxRenderSync +
+                " maxRender=" + profileMaxRenderWork + " maxHud=" + profileMaxHudWork);
         }
         profileMaxUpdateWait = 0L;
         profileMaxUpdateWork = 0L;
         profileMaxRenderSync = 0L;
+        profileMaxRenderWork = 0L;
+        profileMaxHudWork = 0L;
     }
 
     private int musicModeForState() {
@@ -3203,10 +3210,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     stage = "configurando viewport M3G";
                     graphics3D.setViewport(0, 0, getWidth(), getHeight());
                     stage = "dibujando World M3G";
+                    long renderStarted = System.currentTimeMillis();
                     renderer.render(graphics3D);
+                    profileRenderWork = System.currentTimeMillis() - renderStarted;
+                    if (profileRenderWork > profileMaxRenderWork)
+                        profileMaxRenderWork = profileRenderWork;
                 }
                 finally { graphics3D.releaseTarget(); }
                 stage = "dibujando HUD 2D";
+                long hudStarted = System.currentTimeMillis();
                 if (state == CHEST_INVENTORY) {
                     drawTint(g, chestOverlay());
                     drawChest(g);
@@ -3227,6 +3239,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 }
                 if (state == INVENTORY || state == WORKBENCH) drawCrafting(g, state == WORKBENCH);
                 if (state == CREATIVE_INVENTORY) drawCreativeInventory(g);
+                profileHudWork = System.currentTimeMillis() - hudStarted;
+                if (profileHudWork > profileMaxHudWork) profileMaxHudWork = profileHudWork;
             } catch (OutOfMemoryError exhausted) {
                 showError("M3G agotó la memoria disponible durante el dibujo. Cierra y vuelve a abrir el mundo para liberar recursos.");
                 drawError(g);
