@@ -1479,7 +1479,7 @@ final class ChunkRenderer {
             }
         }
 
-        // Poll completed geometry and advance only one M3G mesh per frame.
+        // Poll completed geometry and advance within the three-mesh / 5 ms frame slice.
         pollChunkBuild(world);
         if (pendingChunkMeshes != null) {
             ChunkBuildResult pending = pendingChunkMeshes;
