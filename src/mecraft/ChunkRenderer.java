@@ -1977,6 +1977,11 @@ final class ChunkRenderer {
         return chunk;
     }
 
+    private void add(FaceBuilder[] builders, int tile, int x, int y, int z, int face) {
+        if (builders[tile] == null) builders[tile] = new FaceBuilder(tile);
+        builders[tile].add(x, y, z, face);
+    }
+
     private FaceBuilder acquireFaceBuilder(int tile) {
         FaceBuilder builder;
         synchronized (chunkBuildLock) {
