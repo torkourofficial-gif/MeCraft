@@ -90,3 +90,13 @@ Priorities for this target:
 - Test the actual HTC S730 runtime separately from the 8 MB emulator: the emulator heap limit is useful for catching Java-heap pressure but does not model the phone's M3G driver, native heap, or timing.
 
 The particle hot-path and the bounded player/mob texture changes are intentionally conservative. Larger changes to chunk storage, texture formats, or mesh batching should be measured against this memory budget before adoption.
+
+
+### Frame-budget and hot-path refinements
+
+- Added separate timing for M3G scene rendering and the 2D HUD, alongside the existing update and renderer-sync timings. Stall reports now expose the expensive stage instead of treating asynchronous `repaint()` as render time.
+- Generated-terrain completion notifications now invalidate only the matching 3x3 chunk neighborhood across vertical sections, using the renderer's direct-mapped slot calculation rather than scanning the entire resident cache for each notification.
+- Chunk mesh installation keeps its three-mesh ceiling but also stops after a roughly 5 ms installation slice (after at least one step), preventing a cluster of expensive native M3G creations from monopolizing a frame.
+- Day/night updates avoid repeatedly sending nearly identical sunlight intensity values into M3G.
+- Distant mobs retain per-tick AI and physics, while articulated pose updates are performed every other tick to reduce scene-graph property churn. Nearby mobs keep full-rate animation.
+- These are workload reductions, not measured FPS gains. The 20 FPS target still requires profiling on the HTC S730 and the 8 MB emulator.

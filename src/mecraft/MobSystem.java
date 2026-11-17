@@ -102,6 +102,10 @@ final class MobSystem {
             }
             if (!mob.alive) continue;
             mob.age++;
+            float visualDx = world.playerX - mob.x;
+            float visualDz = world.playerZ - mob.z;
+            boolean updatePose = visualDx * visualDx + visualDz * visualDz <= 144.0f ||
+                    (tick & 1) == 0;
             if (mob.type == CHICKEN && mob.age > 0 && mob.age % 500 == 0)
                 drops.spawn(ItemCatalog.EGG, floor(mob.x), floor(mob.y), floor(mob.z));
             if (updateBurning(mob, world)) continue;
@@ -110,7 +114,7 @@ final class MobSystem {
             if (mob.attackDelay > 0) mob.attackDelay--;
             if (mob.type == GHAST) {
                 updateGhast(mob, world);
-                animate(mob);
+                if (updatePose) animate(mob);
                 mob.root.setTranslation(mob.x, mob.y, mob.z);
                 mob.root.setScale(4.0f, 4.0f, 4.0f);
                 mob.root.setOrientation(modelYaw(mob.yaw), 0.0f, 1.0f, 0.0f);
@@ -162,7 +166,7 @@ final class MobSystem {
             }
             if (mob.type == CREEPER)
                 mob.setFlashWhite(mob.fuseTicks > 0 && (mob.fuseTicks / 2) % 2 == 0);
-            animate(mob);
+            if (updatePose) animate(mob);
             turn(mob);
             move(mob, world);
             mob.root.setTranslation(mob.x, mob.y, mob.z);

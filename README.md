@@ -89,3 +89,6 @@ Para instalar manualmente, transfiere ambos archivos de `dist/` al teléfono o a
 
 
 
+
+
+Se añadieron mediciones separadas para render M3G y HUD, invalidación localizada de chunks y presupuesto temporal para instalar meshes.

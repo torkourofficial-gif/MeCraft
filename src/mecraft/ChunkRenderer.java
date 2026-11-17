@@ -194,6 +194,7 @@ final class ChunkRenderer {
     private boolean hasPreviousPlayerPosition;
     private float currentDaylight = 1.0f;
     private int currentSkyColor = 0xFF82B8E8;
+    private float appliedSunlightIntensity = -1.0f;
 
     ChunkRenderer(int width, int height) throws IOException {
         if (width <= 0) width = 1;
@@ -1210,7 +1211,10 @@ final class ChunkRenderer {
             currentDaylight = 0.32f;
             currentSkyColor = 0xFF4A1717;
             updateTerrainFog();
-            sunlight.setIntensity(0.45f);
+            if (appliedSunlightIntensity != 0.45f) {
+                sunlight.setIntensity(0.45f);
+                appliedSunlightIntensity = 0.45f;
+            }
             updateTorchLights(world);
             return;
         }
@@ -1221,7 +1225,11 @@ final class ChunkRenderer {
         if (sun > 1.0f) sun = 1.0f;
         currentDaylight = sun;
         // Keep moonlight visible on small, low-brightness phone displays.
-        sunlight.setIntensity(0.28f + sun * 0.72f);
+        float intensity = 0.28f + sun * 0.72f;
+        if (Math.abs(intensity - appliedSunlightIntensity) >= 0.004f) {
+            sunlight.setIntensity(intensity);
+            appliedSunlightIntensity = intensity;
+        }
         currentSkyColor = blendColor(0xFF26354A, 0xFF82B8E8, sun);
         updateTerrainFog();
         updateTorchLights(world);
@@ -1271,10 +1279,19 @@ final class ChunkRenderer {
         while (world.consumeTerrainReadyChunk(terrainReadyCoordinate)) {
             int readyX = terrainReadyCoordinate[0];
             int readyZ = terrainReadyCoordinate[1];
-            for (int i = 0; i < CACHE_SIZE; i++) {
-                if (residentChunks[i] &&
-                    Math.abs(chunkWorldX[i] - readyX) <= 1 &&
-                    Math.abs(chunkWorldZ[i] - readyZ) <= 1) dirtyChunks[i] = true;
+            int span = MAX_STREAM_SPAN;
+            for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        int cx = readyX + dx;
+                        int cz = readyZ + dz;
+                        int slot = (cy * span + floorMod(cz, span)) * span +
+                                floorMod(cx, span);
+                        if (residentChunks[slot] && chunkWorldX[slot] == cx &&
+                                chunkWorldY[slot] == cy && chunkWorldZ[slot] == cz)
+                            dirtyChunks[slot] = true;
+                    }
+                }
             }
         }
 
@@ -1475,7 +1492,10 @@ final class ChunkRenderer {
             } else {
                 // Pipeline several bounded M3G creations per frame.
                 boolean finished = false;
+                long installStarted = System.currentTimeMillis();
                 for (int meshStep = 0; meshStep < 3; meshStep++) {
+                    if (meshStep > 0 && System.currentTimeMillis() - installStarted >= 5L)
+                        break;
                     if (finishChunkMeshStep(pending.chunk)) {
                         finished = true;
                         break;
