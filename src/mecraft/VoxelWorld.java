@@ -364,10 +364,10 @@ final class VoxelWorld {
         prefetchStep++;
         int x = cx * CHUNK_XZ, z = cz * CHUNK_XZ;
         if (inside(x, z) || outsideWorld(x, z)) return;
-        int cache = proceduralCacheSlot(cx, cz);
+        int set = proceduralCacheSet(cx, cz);
         synchronized (this) {
             if (nether != (dimension != 0) || !sameStoreName(saveStoreName, storeName)) return;
-            if (proceduralChunkX[cache] == cx && proceduralChunkZ[cache] == cz) return;
+            if (findProceduralCacheSlot(set, cx, cz) >= 0) return;
         }
         boolean loaded = loadPrefetchedChunk(cx, cz, prefetchChunk, dimension != 0, storeName);
         if (!loaded) {
@@ -379,7 +379,8 @@ final class VoxelWorld {
         // without waiting for generation or disk access.
         synchronized (this) {
             if (nether == (dimension != 0) && sameStoreName(saveStoreName, storeName) &&
-                    (proceduralChunkX[cache] != cx || proceduralChunkZ[cache] != cz)) {
+                    findProceduralCacheSlot(set, cx, cz) < 0) {
+                int cache = chooseProceduralCacheSlot(set);
                 System.arraycopy(prefetchChunk, 0, proceduralChunks[cache], 0, prefetchChunk.length);
                 proceduralChunkX[cache] = cx;
                 proceduralChunkZ[cache] = cz;
@@ -1112,7 +1113,8 @@ final class VoxelWorld {
             setGenerationDiagnosticStage("VoxelWorld.generate: comenzando fila de chunks cz=" + cz);
             for (int cx = 0; cx < CHUNKS_X; cx++) {
                 setGenerationDiagnosticStage("VoxelWorld.generate: reservando caché para chunk cx=" + cx + ", cz=" + cz);
-                int cache = proceduralCacheSlot(cx, cz);
+                int set = proceduralCacheSet(cx, cz);
+                int cache = chooseProceduralCacheSlot(set);
                 setGenerationDiagnosticStage("VoxelWorld.generate: generando chunk cx=" + cx + ", cz=" + cz);
                 generateChunk(cx, cz, proceduralChunks[cache]);
                 setGenerationDiagnosticStage("VoxelWorld.generate: guardando coordenadas del chunk cx=" + cx + ", cz=" + cz);
