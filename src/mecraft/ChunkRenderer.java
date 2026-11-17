@@ -101,9 +101,13 @@ final class ChunkRenderer {
     private final int[] terrainReadyCoordinate = new int[2];
     // Geometry is prepared by a low-priority worker; M3G objects are created
     // incrementally by sync() on the rendering thread.
+    private final Object chunkBuildLock = new Object();
     private volatile ChunkBuildResult completedChunkBuild;
     private volatile boolean chunkBuildRunning;
     private Thread chunkBuildThread;
+    private boolean chunkBuildRequestPending;
+    private VoxelWorld requestedBuildWorld;
+    private int requestedBuildRevision, requestedBuildSlot, requestedBuildX, requestedBuildY, requestedBuildZ;
     private ChunkBuildResult pendingChunkMeshes;
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
@@ -1468,41 +1472,89 @@ final class ChunkRenderer {
                     chunkWorldZ[pending.slot] == pending.cz;
             if (pending.world != world || !slotStillMatches) {
                 pendingChunkMeshes = null;
-            } else if (finishChunkMeshStep(pending.chunk)) {
-                ChunkBuildResult ready = pendingChunkMeshes;
-                pendingChunkMeshes = null;
-                boolean changedDuringBuild = ready.revision != world.revision;
-                installChunk(ready.slot, ready.cx, ready.cy, ready.cz, ready.chunk);
-                // A global world revision can change because of an unrelated
-                // chunk. Keep this mesh visible, then rebuild it once if the
-                // world changed while its geometry was being prepared.
-                if (changedDuringBuild) dirtyChunks[ready.slot] = true;
+            } else {
+                // Pipeline several bounded M3G creations per frame.
+                boolean finished = false;
+                for (int meshStep = 0; meshStep < 3; meshStep++) {
+                    if (finishChunkMeshStep(pending.chunk)) {
+                        finished = true;
+                        break;
+                    }
+                }
+                if (finished) {
+                    ChunkBuildResult ready = pendingChunkMeshes;
+                    pendingChunkMeshes = null;
+                    boolean changedDuringBuild = ready.revision != world.revision;
+                    installChunk(ready.slot, ready.cx, ready.cy, ready.cz, ready.chunk);
+                    if (changedDuringBuild) dirtyChunks[ready.slot] = true;
+                }
             }
         }
         // Never build terrain synchronously here. The worker prepares plain
         // geometry arrays while gameplay/rendering continues normally.
-        if (!chunkBuildRunning && completedChunkBuild == null && pendingChunkMeshes == null &&
-                best >= 0 && (!residentChunks[best] || dirtyChunks[best])) {
+        boolean pendingIsBest = false;
+        if (best >= 0 && pendingChunkMeshes != null) {
+            pendingIsBest = pendingChunkMeshes.world == world &&
+                    pendingChunkMeshes.cx == chunkWorldX[best] &&
+                    pendingChunkMeshes.cy == chunkWorldY[best] &&
+                    pendingChunkMeshes.cz == chunkWorldZ[best];
+        }
+        if (!chunkBuildRunning && completedChunkBuild == null &&
+                best >= 0 && (!residentChunks[best] || dirtyChunks[best]) && !pendingIsBest) {
             requestChunkBuild(world, best, chunkWorldX[best], chunkWorldY[best], chunkWorldZ[best]);
         }
     }
 
+    /** One persistent low-priority worker replaces one Thread allocation per chunk. */
     private void requestChunkBuild(final VoxelWorld world, final int slot,
                                    final int cx, final int cy, final int cz) {
-        chunkBuildRunning = true;
-        final int revision = world.revision;
-        chunkBuildThread = new Thread(new Runnable() {
-            public void run() {
-                Chunk data = null;
-                Throwable failure = null;
-                try { data = buildChunk(world, cx, cy, cz); }
-                catch (Throwable problem) { failure = problem; }
+        synchronized (chunkBuildLock) {
+            if (chunkBuildRunning || completedChunkBuild != null || chunkBuildRequestPending) return;
+            if (chunkBuildThread == null) {
+                chunkBuildThread = new Thread(new Runnable() {
+                    public void run() { chunkBuildWorkerLoop(); }
+                });
+                try { chunkBuildThread.setPriority(Thread.MIN_PRIORITY); } catch (Throwable ignored) { }
+                chunkBuildThread.start();
+            }
+            requestedBuildWorld = world;
+            requestedBuildRevision = world.revision;
+            requestedBuildSlot = slot;
+            requestedBuildX = cx;
+            requestedBuildY = cy;
+            requestedBuildZ = cz;
+            chunkBuildRequestPending = true;
+            chunkBuildRunning = true;
+            chunkBuildLock.notifyAll();
+        }
+    }
+
+    private void chunkBuildWorkerLoop() {
+        while (true) {
+            VoxelWorld world;
+            int revision, slot, cx, cy, cz;
+            synchronized (chunkBuildLock) {
+                while (!chunkBuildRequestPending) {
+                    try { chunkBuildLock.wait(); }
+                    catch (InterruptedException ignored) { }
+                }
+                world = requestedBuildWorld;
+                revision = requestedBuildRevision;
+                slot = requestedBuildSlot;
+                cx = requestedBuildX;
+                cy = requestedBuildY;
+                cz = requestedBuildZ;
+                chunkBuildRequestPending = false;
+            }
+            Chunk data = null;
+            Throwable failure = null;
+            try { data = buildChunk(world, cx, cy, cz); }
+            catch (Throwable problem) { failure = problem; }
+            synchronized (chunkBuildLock) {
                 completedChunkBuild = new ChunkBuildResult(world, revision, slot, cx, cy, cz, data, failure);
                 chunkBuildRunning = false;
             }
-        });
-        try { chunkBuildThread.setPriority(Thread.MIN_PRIORITY); } catch (Throwable ignored) { }
-        chunkBuildThread.start();
+        }
     }
 
     private void pollChunkBuild(VoxelWorld world) {
@@ -1551,9 +1603,13 @@ final class ChunkRenderer {
             float scale = tile == Block.sideTile(Block.GRASS) ? 0.999f / 16.0f : 1.0f / 16.0f;
             chunk.meshes[chunk.meshBuildCount++] = makeMesh(builder, tileAppearance(tile), scale);
             chunk.faceBuilders[i] = null;
-            if (freeFaceBuilderCount < freeFaceBuilders.length && builder.p.length <= 1536) {
-                builder.reset(0);
-                freeFaceBuilders[freeFaceBuilderCount++] = builder;
+            if (builder.p.length <= 1536) {
+                synchronized (chunkBuildLock) {
+                    if (freeFaceBuilderCount < freeFaceBuilders.length) {
+                        builder.reset(0);
+                        freeFaceBuilders[freeFaceBuilderCount++] = builder;
+                    }
+                }
             }
             return false;
         }
@@ -1729,8 +1785,11 @@ final class ChunkRenderer {
                         int light = encoded / TILE_COUNT;
                         int builderIndex = tile;
                         if (builders[builderIndex] == null) {
-                            FaceBuilder builder = freeFaceBuilderCount > 0 ?
-                                    freeFaceBuilders[--freeFaceBuilderCount] : null;
+                            FaceBuilder builder;
+                            synchronized (chunkBuildLock) {
+                                builder = freeFaceBuilderCount > 0 ?
+                                        freeFaceBuilders[--freeFaceBuilderCount] : null;
+                            }
                             if (builder == null) builder = new FaceBuilder(tile);
                             else builder.reset(tile);
                             builders[builderIndex] = builder;
