@@ -1365,6 +1365,7 @@ final class ChunkRenderer {
             return true;
         }
         chunks[i] = state.replacement;
+        dirtyChunks[i] = state.dirtyAfterInstall;
         chunkInstalls[i] = null;
         return true;
     }
@@ -1374,20 +1375,19 @@ final class ChunkRenderer {
     }
 
     private void removeChunk(int i) {
-        if (chunkInstalls[i] != null) {
+        if (chunkInstalls[i] == null && chunks[i] != null) {
+            ChunkInstallState state = new ChunkInstallState();
+            state.previous = chunks[i];
+            chunkInstalls[i] = state;
+        } else if (chunkInstalls[i] != null) {
+            // A slot being replaced is rare; detach only the partially attached replacement.
             ChunkInstallState state = chunkInstalls[i];
             if (state.replacement != null) {
-                for (int m = state.addCursor; m < state.replacement.meshes.length; m++) { /* not attached */ }
                 for (int m = 0; m < state.addCursor; m++) terrain.removeChild(state.replacement.meshes[m]);
+                state.replacement = null;
+                state.addCursor = 0;
             }
-            if (state.previous != null) {
-                for (int m = state.removeCursor; m < state.previous.meshes.length; m++) terrain.removeChild(state.previous.meshes[m]);
-            }
-            chunkInstalls[i] = null;
-        } else if (chunks[i] != null) {
-            for (int m = 0; m < chunks[i].meshes.length; m++) terrain.removeChild(chunks[i].meshes[m]);
         }
-        chunks[i] = null;
         residentChunks[i] = false;
         dirtyChunks[i] = false;
     }
@@ -1492,7 +1492,7 @@ final class ChunkRenderer {
                     boolean sameChunk = residentChunks[i] && chunkWorldX[i] == cx &&
                         chunkWorldY[i] == cy && chunkWorldZ[i] == cz;
                     if (residentChunks[i] && !sameChunk) removeChunk(i);
-                    if (!visible) continue;
+                    if (!visible || chunkInstalls[i] != null) continue;
 
                     if (!sameChunk) {
                         chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
@@ -1536,7 +1536,7 @@ final class ChunkRenderer {
                     pendingChunkMeshes = null;
                     boolean changedDuringBuild = ready.revision != world.revision;
                     installChunk(ready.slot, ready.cx, ready.cy, ready.cz, ready.chunk);
-                    if (changedDuringBuild) dirtyChunks[ready.slot] = true;
+                    if (chunkInstalls[ready.slot] != null) chunkInstalls[ready.slot].dirtyAfterInstall = changedDuringBuild;
                 }
             }
         }
@@ -2270,6 +2270,7 @@ final class ChunkRenderer {
     private static final class ChunkInstallState {
         Chunk previous, replacement;
         int cx, cy, cz, addCursor, removeCursor;
+        boolean dirtyAfterInstall;
     }
 
     private void prepareSharedChunkVertices(Chunk chunk, int totalVertices) {
