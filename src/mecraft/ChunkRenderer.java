@@ -25,7 +25,7 @@ import javax.microedition.m3g.World;
 /** Builds shared-texture chunk meshes on demand for the visible part of the world. */
 final class ChunkRenderer {
     private static final int MAX_STREAM_RADIUS = 4;
-    // One nearest chunk build is requested per sync using a bounded input snapshot.
+    // One complete nearest chunk is built per sync, matching the supplied JAR.
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
@@ -94,7 +94,7 @@ final class ChunkRenderer {
     private int torchScanZ = Integer.MIN_VALUE;
     private int torchScanRevision = Integer.MIN_VALUE;
     private final Chunk[] chunks = new Chunk[CACHE_SIZE];
-    // One reusable snapshot and one active build keep streaming single-threaded.
+    // One reusable light-source snapshot and one active build keep streaming single-threaded.
     private final ChunkBuildSnapshot chunkBuildSnapshot = new ChunkBuildSnapshot();
     private final IndexBuffer[] chunkBatchIndices = new IndexBuffer[3];
     private final Appearance[] chunkBatchAppearances = new Appearance[3];
