@@ -7,7 +7,6 @@ import javax.microedition.m3g.Background;
 import javax.microedition.m3g.Camera;
 import javax.microedition.m3g.CompositingMode;
 import javax.microedition.m3g.Graphics3D;
-import javax.microedition.m3g.Fog;
 import javax.microedition.m3g.Group;
 import javax.microedition.m3g.Image2D;
 import javax.microedition.m3g.IndexBuffer;
@@ -81,7 +80,6 @@ final class ChunkRenderer {
     private final Group handModelOffset = new Group();
     private final Group terrain = new Group();
     private final Background sky = new Background();
-    private final Fog terrainFog = new Fog();
     private final SkySystem skyObjects;
     private final Light sunlight = new Light();
     private final Light[] torchLights = new Light[3];
@@ -227,9 +225,6 @@ final class ChunkRenderer {
         crackMesh = new Mesh(crackBuffer, new TriangleStripArray(0, new int[] { 4 }), crackAppearance);
         crackMesh.setRenderingEnable(false);
         scene.addChild(crackMesh);
-        terrainFog.setMode(Fog.LINEAR);
-        terrainFog.setColor(currentSkyColor & 0x00FFFFFF);
-        updateTerrainFog();
         portalAppearance = createPortalAppearance(portalFrames[0]);
         Image fireImage = GameAssets.image("fire.png");
         worldFireTexture = new Texture2D(new Image2D(Image2D.RGBA, fireImage));
@@ -378,34 +373,13 @@ final class ChunkRenderer {
         streamRadius = shortestDistance ? 1 : (setting == 0 ? 1 : setting + 1);
         if (streamRadius > MAX_STREAM_RADIUS) streamRadius = MAX_STREAM_RADIUS;
         // Shortest keeps the 2x2 streaming window, but limits visible depth
-        // to roughly one 16-block chunk. Fog fades gradually near the far plane.
+        // to roughly one 16-block chunk.
         cameraFar = shortestDistance ? 16.0f :
                 ((streamRadius * 2 + 1) * (float)VoxelWorld.CHUNK_XZ) + 8.0f;
         camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
                 0.1f, cameraFar);
         externalCamera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight,
                 0.1f, cameraFar);
-        updateTerrainFog();
-    }
-
-    private int appliedFogColor = Integer.MIN_VALUE;
-    private float appliedFogStart = -1.0f;
-    private float appliedFogEnd = -1.0f;
-
-    private void updateTerrainFog() {
-        float start = shortestDistance ? 10.0f : cameraFar * 0.58f;
-        float end = shortestDistance ? cameraFar - 0.25f : cameraFar * 0.94f;
-        if (end <= start) end = start + 1.0f;
-        int color = currentSkyColor & 0x00FFFFFF;
-        if (color != appliedFogColor) {
-            terrainFog.setColor(color);
-            appliedFogColor = color;
-        }
-        if (start != appliedFogStart || end != appliedFogEnd) {
-            terrainFog.setLinear(start, end);
-            appliedFogStart = start;
-            appliedFogEnd = end;
-        }
     }
 
     float fieldOfView() { return cameraFov; }
@@ -1207,7 +1181,6 @@ final class ChunkRenderer {
         if (world.nether) {
             currentDaylight = 0.32f;
             currentSkyColor = 0xFF4A1717;
-            updateTerrainFog();
             if (appliedSunlightIntensity != 0.45f) {
                 sunlight.setIntensity(0.45f);
                 appliedSunlightIntensity = 0.45f;
@@ -1228,7 +1201,6 @@ final class ChunkRenderer {
             appliedSunlightIntensity = intensity;
         }
         currentSkyColor = blendColor(0xFF26354A, 0xFF82B8E8, sun);
-        updateTerrainFog();
         updateTorchLights(world);
     }
 
@@ -1983,7 +1955,6 @@ final class ChunkRenderer {
     private Appearance createPortalAppearance(Texture2D texture) {
         Appearance appearance = new Appearance();
         appearance.setTexture(0, texture);
-        appearance.setFog(terrainFog);
         Material material = new Material();
         material.setColor(Material.AMBIENT, 0xFFFFFFFF);
         material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
@@ -2113,7 +2084,6 @@ final class ChunkRenderer {
     private Appearance createBlockAppearance(Texture2D texture, boolean translucent) {
         Appearance appearance = new Appearance();
         appearance.setTexture(0, texture);
-        appearance.setFog(terrainFog);
         Material material = new Material();
         material.setColor(Material.AMBIENT, 0xFFFFFFFF);
         material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
@@ -2137,7 +2107,6 @@ final class ChunkRenderer {
     private Appearance createFlowerAppearance() {
         Appearance appearance = new Appearance();
         appearance.setTexture(0, atlas);
-        appearance.setFog(terrainFog);
         Material material = new Material();
         material.setColor(Material.AMBIENT, 0xFFFFFFFF);
         material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
@@ -2156,7 +2125,6 @@ final class ChunkRenderer {
     private Appearance createFireAppearance(Texture2D texture) {
         Appearance appearance = new Appearance();
         appearance.setTexture(0, texture);
-        appearance.setFog(terrainFog);
         Material material = new Material();
         material.setColor(Material.AMBIENT, 0xFFFFFFFF);
         material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
