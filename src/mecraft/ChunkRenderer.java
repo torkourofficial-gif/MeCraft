@@ -1524,7 +1524,7 @@ final class ChunkRenderer {
         }
         Chunk data = null;
         try {
-            data = buildChunk(chunkBuildSnapshot, cx, cy, cz);
+            data = buildChunk(world, chunkBuildSnapshot, cx, cy, cz);
             if (data == null) {
                 data = new Chunk();
                 data.faceBuilders = new FaceBuilder[TILE_COUNT];
@@ -1533,6 +1533,11 @@ final class ChunkRenderer {
             data.worldY = cy * VoxelWorld.CHUNK_Y;
             data.worldZ = cz * VoxelWorld.CHUNK_XZ;
             finishChunkMeshes(data);
+            if (world.revision != chunkBuildSnapshot.revision) {
+                recycleChunkBuilders(data);
+                dirtyChunks[slot] = true;
+                return;
+            }
             replaceChunk(slot, cx, cy, cz, data);
         } catch (OutOfMemoryError exhausted) {
             if (data != null) recycleChunkBuilders(data);
@@ -1652,7 +1657,7 @@ final class ChunkRenderer {
         }
     }
 
-    private Chunk buildChunk(ChunkBuildSnapshot snapshot, int cx, int cy, int cz) {
+    private Chunk buildChunk(VoxelWorld world, ChunkBuildSnapshot snapshot, int cx, int cy, int cz) {
         FaceBuilder[] builders = chunkFaceBuilders;
         FaceBuilder[] builderTails = chunkFaceBuilderTails;
         for (int i = 0; i < builders.length; i++) { builders[i] = null; builderTails[i] = null; }
@@ -1678,7 +1683,7 @@ final class ChunkRenderer {
                 int localZ = z - z0;
                 int localX = 0;
                 for (int x = x0; x < x1; x++, localIndex++, localX++) {
-                    byte id = snapshot.get(x, y, z);
+                    byte id = world.get(x, y, z);
                     chunkVoxelScratch[localIndex] = id;
                     chunkLightScratch[localIndex] = (byte)(id == Block.LAVA ? 14 : torchLightAt(localIndex));
                     if (id == Block.AIR) continue;
@@ -1686,7 +1691,7 @@ final class ChunkRenderer {
                     if (id == Block.PORTAL) {
                         if (portals == null) portals = acquirePortalBuilder();
                         portals.add(localX, localY, localZ,
-                                snapshot.metadata(x, y, z), portalFrameSize);
+                                world.portalAxisAt(x, y, z), portalFrameSize);
                     } else if (id == Block.FIRE) {
                         if (fires == null) fires = acquireFireBuilder();
                         fires.add(localX, localY, localZ);
@@ -1696,7 +1701,7 @@ final class ChunkRenderer {
                     } else if (Block.isDoor(id)) {
                         if (flowers == null) flowers = acquireFlowerBuilder();
                         flowers.addDoor(localX, localY, localZ, id,
-                                snapshot.metadata(x, y, z));
+                                world.doorMetadata(x, y, z));
                     }
                 }
             }
@@ -1756,10 +1761,11 @@ final class ChunkRenderer {
                                 neighbor = chunkVoxelScratch[voxelIndex + VoxelWorld.CHUNK_XZ];
                             else if (face == 5 && y > y0)
                                 neighbor = chunkVoxelScratch[voxelIndex - CHUNK_AREA];
-                            else neighbor = snapshot.get(nx, ny, nz);
+                            else neighbor = world.get(nx, ny, nz);
                             if (Block.faceVisible(id, neighbor)) {
-                                int metadata = snapshot.metadata(x, y, z);
-                                int tile = renderWorldTile(snapshot.nether, id, face, metadata);
+                                int metadata = id == Block.WOOL ? world.woolColor(x, y, z) :
+                                        (id == Block.CHEST ? world.chestFacing(x, y, z) : 0);
+                                int tile = renderWorldTile(world.nether, id, face, metadata);
                                 int light = chunkLightScratch[voxelIndex] & 255;
                                 key = light * TILE_COUNT + tile + 1;
                             }
@@ -2247,28 +2253,6 @@ private boolean captureChunkBuildSnapshot(VoxelWorld world, int cx, int cy, int 
         int x0 = cx * VoxelWorld.CHUNK_XZ;
         int y0 = cy * VoxelWorld.CHUNK_Y;
         int z0 = cz * VoxelWorld.CHUNK_XZ;
-        snapshot.baseX = x0 - 1;
-        snapshot.baseY = y0 - 1;
-        snapshot.baseZ = z0 - 1;
-        snapshot.nether = world.nether;
-        int at = 0;
-        for (int y = 0; y < ChunkBuildSnapshot.SIZE_Y; y++) {
-            int wy = snapshot.baseY + y;
-            for (int z = 0; z < ChunkBuildSnapshot.SIZE_XZ; z++) {
-                int wz = snapshot.baseZ + z;
-                for (int x = 0; x < ChunkBuildSnapshot.SIZE_XZ; x++, at++) {
-                    int wx = snapshot.baseX + x;
-                    byte id = world.get(wx, wy, wz);
-                    snapshot.voxels[at] = id;
-                    byte metadata = 0;
-                    if (id == Block.WOOL) metadata = (byte)world.woolColor(wx, wy, wz);
-                    else if (Block.isDoor(id)) metadata = (byte)world.doorMetadata(wx, wy, wz);
-                    else if (id == Block.CHEST) metadata = (byte)world.chestFacing(wx, wy, wz);
-                    else if (id == Block.PORTAL) metadata = (byte)world.portalAxisAt(wx, wy, wz);
-                    snapshot.metadata[at] = metadata;
-                }
-            }
-        }
         int radius = LAVA_LIGHT_RADIUS;
         int minX = x0 - radius, maxX = x0 + VoxelWorld.CHUNK_XZ + radius;
         int minY = Math.max(0, y0 - radius);
@@ -2282,31 +2266,12 @@ private boolean captureChunkBuildSnapshot(VoxelWorld world, int cx, int cy, int 
     }
 
     private static final class ChunkBuildSnapshot {
-        static final int SIZE_XZ = VoxelWorld.CHUNK_XZ + 2;
-        static final int SIZE_Y = VoxelWorld.CHUNK_Y + 2;
-        final byte[] voxels = new byte[SIZE_XZ * SIZE_Y * SIZE_XZ];
-        final byte[] metadata = new byte[voxels.length];
         final int[] lightX = new int[MAX_CHUNK_TORCHES];
         final int[] lightY = new int[MAX_CHUNK_TORCHES];
         final int[] lightZ = new int[MAX_CHUNK_TORCHES];
         final byte[] lightRadius = new byte[MAX_CHUNK_TORCHES];
         final boolean[] lavaSource = new boolean[MAX_CHUNK_TORCHES];
-        int baseX, baseY, baseZ, revision, lightCount;
-        boolean nether;
-        private int index(int x, int y, int z) {
-            int lx = x - baseX, ly = y - baseY, lz = z - baseZ;
-            if (lx < 0 || lx >= SIZE_XZ || ly < 0 || ly >= SIZE_Y || lz < 0 || lz >= SIZE_XZ)
-                return -1;
-            return (ly * SIZE_XZ + lz) * SIZE_XZ + lx;
-        }
-        byte get(int x, int y, int z) {
-            int i = index(x, y, z);
-            return i < 0 ? Block.AIR : voxels[i];
-        }
-        int metadata(int x, int y, int z) {
-            int i = index(x, y, z);
-            return i < 0 ? 0 : metadata[i] & 255;
-        }
+        int revision, lightCount;
     }
 
     /** One full-cell portal plane, sharing the eight-frame portal material. */
