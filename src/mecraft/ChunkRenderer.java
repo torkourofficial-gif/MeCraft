@@ -132,6 +132,10 @@ final class ChunkRenderer {
     // chunk without retaining one builder for every possible tile/light pair.
     private final FaceBuilder[] freeFaceBuilders = new FaceBuilder[32];
     private int freeFaceBuilderCount;
+    private final FlowerBuilder[] freeFlowerBuilders = new FlowerBuilder[2];
+    private final FireBuilder[] freeFireBuilders = new FireBuilder[2];
+    private final PortalBuilder[] freePortalBuilders = new PortalBuilder[2];
+    private int freeFlowerBuilderCount, freeFireBuilderCount, freePortalBuilderCount;
     private final Image terrainImage;
     private final Texture2D atlas;
     private final Texture2D itemAtlas;
@@ -1739,21 +1743,36 @@ final class ChunkRenderer {
             int count = Math.min(MAX_CHUNK_VERTICES_PER_FRAME, chunk.flowers.vertexCount - chunk.meshBuildVertexCursor);
             storeChunkMesh(chunk, makeFlowerMeshSlice(chunk.flowers, chunk.meshBuildVertexCursor, count));
             chunk.meshBuildVertexCursor += count;
-            if (chunk.meshBuildVertexCursor >= chunk.flowers.vertexCount) { chunk.flowers = null; chunk.meshBuildVertexCursor = 0; }
+            if (chunk.meshBuildVertexCursor >= chunk.flowers.vertexCount) {
+                FlowerBuilder finished = chunk.flowers;
+                chunk.flowers = null;
+                recycleFlowerBuilder(finished);
+                chunk.meshBuildVertexCursor = 0;
+            }
             return false;
         }
         if (chunk.fires != null && chunk.meshBuildVertexCursor < chunk.fires.vertexCount) {
             int count = Math.min(MAX_CHUNK_VERTICES_PER_FRAME, chunk.fires.vertexCount - chunk.meshBuildVertexCursor);
             storeChunkMesh(chunk, makeFireMeshSlice(chunk.fires, chunk.meshBuildVertexCursor, count));
             chunk.meshBuildVertexCursor += count;
-            if (chunk.meshBuildVertexCursor >= chunk.fires.vertexCount) { chunk.fires = null; chunk.meshBuildVertexCursor = 0; }
+            if (chunk.meshBuildVertexCursor >= chunk.fires.vertexCount) {
+                FireBuilder finished = chunk.fires;
+                chunk.fires = null;
+                recycleFireBuilder(finished);
+                chunk.meshBuildVertexCursor = 0;
+            }
             return false;
         }
         if (chunk.portals != null && chunk.meshBuildVertexCursor < chunk.portals.vertexCount) {
             int count = Math.min(MAX_CHUNK_VERTICES_PER_FRAME, chunk.portals.vertexCount - chunk.meshBuildVertexCursor);
             storeChunkMesh(chunk, makePortalMeshSlice(chunk.portals, chunk.meshBuildVertexCursor, count));
             chunk.meshBuildVertexCursor += count;
-            if (chunk.meshBuildVertexCursor >= chunk.portals.vertexCount) { chunk.portals = null; chunk.meshBuildVertexCursor = 0; }
+            if (chunk.meshBuildVertexCursor >= chunk.portals.vertexCount) {
+                PortalBuilder finished = chunk.portals;
+                chunk.portals = null;
+                recyclePortalBuilder(finished);
+                chunk.meshBuildVertexCursor = 0;
+            }
             return false;
         }
         return true;
@@ -1796,17 +1815,17 @@ final class ChunkRenderer {
                     if (id == Block.AIR) continue;
                     nonAirBlocks++;
                     if (id == Block.PORTAL) {
-                        if (portals == null) portals = new PortalBuilder();
+                        if (portals == null) portals = acquirePortalBuilder();
                         portals.add(localX, localY, localZ,
                                 snapshot.metadata(x, y, z), portalFrameSize);
                     } else if (id == Block.FIRE) {
-                        if (fires == null) fires = new FireBuilder();
+                        if (fires == null) fires = acquireFireBuilder();
                         fires.add(localX, localY, localZ);
                     } else if (Block.isFlower(id)) {
-                        if (flowers == null) flowers = new FlowerBuilder();
+                        if (flowers == null) flowers = acquireFlowerBuilder();
                         flowers.add(localX, localY, localZ, Block.sideTile(id));
                     } else if (Block.isDoor(id)) {
-                        if (flowers == null) flowers = new FlowerBuilder();
+                        if (flowers == null) flowers = acquireFlowerBuilder();
                         flowers.addDoor(localX, localY, localZ, id,
                                 snapshot.metadata(x, y, z));
                     }
@@ -2330,6 +2349,66 @@ final class ChunkRenderer {
         }
     }
 
+    private FlowerBuilder acquireFlowerBuilder() {
+        synchronized (chunkBuildLock) {
+            if (freeFlowerBuilderCount == 0) return new FlowerBuilder();
+            FlowerBuilder builder = freeFlowerBuilders[--freeFlowerBuilderCount];
+            freeFlowerBuilders[freeFlowerBuilderCount] = null;
+            builder.reset();
+            return builder;
+        }
+    }
+
+    private FireBuilder acquireFireBuilder() {
+        synchronized (chunkBuildLock) {
+            if (freeFireBuilderCount == 0) return new FireBuilder();
+            FireBuilder builder = freeFireBuilders[--freeFireBuilderCount];
+            freeFireBuilders[freeFireBuilderCount] = null;
+            builder.reset();
+            return builder;
+        }
+    }
+
+    private PortalBuilder acquirePortalBuilder() {
+        synchronized (chunkBuildLock) {
+            if (freePortalBuilderCount == 0) return new PortalBuilder();
+            PortalBuilder builder = freePortalBuilders[--freePortalBuilderCount];
+            freePortalBuilders[freePortalBuilderCount] = null;
+            builder.reset();
+            return builder;
+        }
+    }
+
+    private void recycleFlowerBuilder(FlowerBuilder builder) {
+        if (builder.p.length > 4096) return;
+        synchronized (chunkBuildLock) {
+            if (freeFlowerBuilderCount < freeFlowerBuilders.length) {
+                builder.reset();
+                freeFlowerBuilders[freeFlowerBuilderCount++] = builder;
+            }
+        }
+    }
+
+    private void recycleFireBuilder(FireBuilder builder) {
+        if (builder.p.length > 4096) return;
+        synchronized (chunkBuildLock) {
+            if (freeFireBuilderCount < freeFireBuilders.length) {
+                builder.reset();
+                freeFireBuilders[freeFireBuilderCount++] = builder;
+            }
+        }
+    }
+
+    private void recyclePortalBuilder(PortalBuilder builder) {
+        if (builder.p.length > 4096) return;
+        synchronized (chunkBuildLock) {
+            if (freePortalBuilderCount < freePortalBuilders.length) {
+                builder.reset();
+                freePortalBuilders[freePortalBuilderCount++] = builder;
+            }
+        }
+    }
+
     private static final class ChunkInstallState {
         Chunk previous, replacement, discardedReplacement;
         int cx, cy, cz, addCursor, removeCursor;
@@ -2457,6 +2536,8 @@ final class ChunkRenderer {
 
         void reset() { vertexCount = 0; }
 
+        void reset() { vertexCount = 0; }
+
         void add(int x, int y, int z, int axis, int frameSize) {
             ensure(vertexCount + 4);
             int x0 = x * 256, x1 = x0 + 256;
@@ -2501,6 +2582,8 @@ final class ChunkRenderer {
         short[] uv = new short[32];
         int vertexCount;
         VertexArray texCoords;
+
+        void reset() { vertexCount = 0; texCoords = null; }
 
         void add(int x, int y, int z) {
             ensure(vertexCount + 8);
