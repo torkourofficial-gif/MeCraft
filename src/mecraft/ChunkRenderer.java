@@ -35,12 +35,6 @@ final class ChunkRenderer {
     private static final int MAX_CHUNK_TORCHES = 128;
     // Bound the temporary concatenation buffers on small CLDC heaps.
     private static final int MAX_SHARED_CHUNK_VERTICES = 16384;
-    private final int[] chunkTorchX = new int[MAX_CHUNK_TORCHES];
-    private final int[] chunkTorchY = new int[MAX_CHUNK_TORCHES];
-    private final int[] chunkTorchZ = new int[MAX_CHUNK_TORCHES];
-    private final byte[] chunkLightRadius = new byte[MAX_CHUNK_TORCHES];
-    private final boolean[] chunkLavaSource = new boolean[MAX_CHUNK_TORCHES];
-    private int chunkTorchCount;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
     private static final float CHUNK_RADIUS = 12.0f;
     private static final float NORMAL_FOV = 68.0f;
