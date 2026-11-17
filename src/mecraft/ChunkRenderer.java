@@ -1558,6 +1558,9 @@ final class ChunkRenderer {
     }
 
     private void pollChunkBuild(VoxelWorld world) {
+        // Keep the single completed-result slot intact until the current
+        // render-thread installation has finished; never overwrite it.
+        if (pendingChunkMeshes != null) return;
         ChunkBuildResult result = completedChunkBuild;
         if (result == null) return;
         completedChunkBuild = null;
