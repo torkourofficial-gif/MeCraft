@@ -1670,7 +1670,7 @@ final class ChunkRenderer {
             if (b == null) { chunk.meshBuildCursor++; chunk.meshBuildVertexCursor = 0; continue; }
             int count = Math.min(MAX_CHUNK_VERTICES_PER_FRAME, b.vertexCount - chunk.meshBuildVertexCursor);
             float scale = tile == Block.sideTile(Block.GRASS) ? 0.999f / 16.0f : 1.0f / 16.0f;
-            chunk.meshes[chunk.meshBuildCount++] = makeMeshSlice(b, tileAppearance(tile), scale, chunk.meshBuildVertexCursor, count);
+            storeChunkMesh(chunk, makeMeshSlice(b, tileAppearance(tile), scale, chunk.meshBuildVertexCursor, count));
             chunk.meshBuildVertexCursor += count;
             if (chunk.meshBuildVertexCursor >= b.vertexCount) {
                 chunk.faceBuilders[tile] = null;
@@ -1682,27 +1682,31 @@ final class ChunkRenderer {
         }
         if (chunk.flowers != null && chunk.meshBuildVertexCursor < chunk.flowers.vertexCount) {
             int count = Math.min(MAX_CHUNK_VERTICES_PER_FRAME, chunk.flowers.vertexCount - chunk.meshBuildVertexCursor);
-            chunk.meshes[chunk.meshBuildCount++] = makeFlowerMeshSlice(chunk.flowers, chunk.meshBuildVertexCursor, count);
+            storeChunkMesh(chunk, makeFlowerMeshSlice(chunk.flowers, chunk.meshBuildVertexCursor, count));
             chunk.meshBuildVertexCursor += count;
             if (chunk.meshBuildVertexCursor >= chunk.flowers.vertexCount) { chunk.flowers = null; chunk.meshBuildVertexCursor = 0; }
             return false;
         }
         if (chunk.fires != null && chunk.meshBuildVertexCursor < chunk.fires.vertexCount) {
             int count = Math.min(MAX_CHUNK_VERTICES_PER_FRAME, chunk.fires.vertexCount - chunk.meshBuildVertexCursor);
-            chunk.meshes[chunk.meshBuildCount++] = makeFireMeshSlice(chunk.fires, chunk.meshBuildVertexCursor, count);
+            storeChunkMesh(chunk, makeFireMeshSlice(chunk.fires, chunk.meshBuildVertexCursor, count));
             chunk.meshBuildVertexCursor += count;
             if (chunk.meshBuildVertexCursor >= chunk.fires.vertexCount) { chunk.fires = null; chunk.meshBuildVertexCursor = 0; }
             return false;
         }
         if (chunk.portals != null && chunk.meshBuildVertexCursor < chunk.portals.vertexCount) {
             int count = Math.min(MAX_CHUNK_VERTICES_PER_FRAME, chunk.portals.vertexCount - chunk.meshBuildVertexCursor);
-            chunk.meshes[chunk.meshBuildCount++] = makePortalMeshSlice(chunk.portals, chunk.meshBuildVertexCursor, count);
+            storeChunkMesh(chunk, makePortalMeshSlice(chunk.portals, chunk.meshBuildVertexCursor, count));
             chunk.meshBuildVertexCursor += count;
             if (chunk.meshBuildVertexCursor >= chunk.portals.vertexCount) { chunk.portals = null; chunk.meshBuildVertexCursor = 0; }
             return false;
         }
-        for (int i = 0; i < chunk.meshBuildCount; i++) chunk.meshes[i].setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
         return true;
+    }
+
+    private void storeChunkMesh(Chunk chunk, Mesh mesh) {
+        mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
+        chunk.meshes[chunk.meshBuildCount++] = mesh;
     }
 
     private Chunk buildChunk(ChunkBuildSnapshot snapshot, int cx, int cy, int cz) {
