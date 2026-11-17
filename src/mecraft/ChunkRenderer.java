@@ -1490,7 +1490,6 @@ final class ChunkRenderer {
                     boolean sameChunk = residentChunks[i] && chunkWorldX[i] == cx &&
                         chunkWorldY[i] == cy && chunkWorldZ[i] == cz;
                     if (residentChunks[i] && !sameChunk) removeChunk(i);
-                    if (chunkInstalls[i] != null) continue;
 
                     if (!sameChunk) {
                         chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
