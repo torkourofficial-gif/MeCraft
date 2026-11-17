@@ -35,6 +35,8 @@ final class ChunkRenderer {
     private static final int MAX_CHUNK_TORCHES = 128;
     // Bound the temporary concatenation buffers on small CLDC heaps.
     private static final int MAX_SHARED_CHUNK_VERTICES = 16384;
+    // Hard render-thread geometry budget: no mesh slice contains more than 5k vertices.
+    private static final int MAX_CHUNK_VERTICES_PER_FRAME = 5000;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
     private static final float CHUNK_RADIUS = 12.0f;
     private static final float NORMAL_FOV = 68.0f;
@@ -112,6 +114,7 @@ final class ChunkRenderer {
     private ChunkBuildResult pendingChunkMeshes;
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
+    private final ChunkInstallState[] chunkInstalls = new ChunkInstallState[CACHE_SIZE];
     private final int[] chunkWorldX = new int[CACHE_SIZE];
     private final int[] chunkWorldY = new int[CACHE_SIZE];
     private final int[] chunkWorldZ = new int[CACHE_SIZE];
@@ -1339,17 +1342,32 @@ final class ChunkRenderer {
     }
 
     private void installChunk(int i, int cx, int cy, int cz, Chunk replacement) {
-        Chunk previous = chunks[i];
-        if (previous != null) {
-            for (int m = 0; m < previous.meshes.length; m++) terrain.removeChild(previous.meshes[m]);
-        }
-        chunks[i] = replacement;
+        // Keep the old geometry visible while the replacement is attached in small steps.
+        ChunkInstallState state = new ChunkInstallState();
+        state.previous = chunks[i];
+        state.replacement = replacement;
+        state.cx = cx; state.cy = cy; state.cz = cz;
+        chunkInstalls[i] = state;
         chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
         residentChunks[i] = true;
         dirtyChunks[i] = false;
-        if (replacement != null) {
-            for (int m = 0; m < replacement.meshes.length; m++) terrain.addChild(replacement.meshes[m]);
+    }
+
+    private boolean advanceChunkInstall(int i) {
+        ChunkInstallState state = chunkInstalls[i];
+        if (state == null) return false;
+        if (state.replacement != null && state.addCursor < state.replacement.meshes.length) {
+            terrain.addChild(state.replacement.meshes[state.addCursor++]);
+            return true;
         }
+        if (state.previous != null && state.removeCursor < state.previous.meshes.length) {
+            terrain.removeChild(state.previous.meshes[state.removeCursor++]);
+            return true;
+        }
+        chunks[i] = state.replacement;
+        dirtyChunks[i] = state.dirtyAfterInstall;
+        chunkInstalls[i] = null;
+        return true;
     }
 
     private void rebuildWorld(VoxelWorld world) {
@@ -1357,9 +1375,18 @@ final class ChunkRenderer {
     }
 
     private void removeChunk(int i) {
-        if (chunks[i] != null) {
-            for (int m = 0; m < chunks[i].meshes.length; m++) terrain.removeChild(chunks[i].meshes[m]);
-            chunks[i] = null;
+        if (chunkInstalls[i] == null && chunks[i] != null) {
+            ChunkInstallState state = new ChunkInstallState();
+            state.previous = chunks[i];
+            chunkInstalls[i] = state;
+        } else if (chunkInstalls[i] != null) {
+            // A slot being replaced is rare; detach only the partially attached replacement.
+            ChunkInstallState state = chunkInstalls[i];
+            if (state.replacement != null) {
+                for (int m = 0; m < state.addCursor; m++) terrain.removeChild(state.replacement.meshes[m]);
+                state.replacement = null;
+                state.addCursor = 0;
+            }
         }
         residentChunks[i] = false;
         dirtyChunks[i] = false;
@@ -1465,7 +1492,7 @@ final class ChunkRenderer {
                     boolean sameChunk = residentChunks[i] && chunkWorldX[i] == cx &&
                         chunkWorldY[i] == cy && chunkWorldZ[i] == cz;
                     if (residentChunks[i] && !sameChunk) removeChunk(i);
-                    if (!visible) continue;
+                    if (!visible || chunkInstalls[i] != null) continue;
 
                     if (!sameChunk) {
                         chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
@@ -1482,34 +1509,35 @@ final class ChunkRenderer {
             }
         }
 
-        // Poll completed geometry and advance within the three-mesh / 5 ms frame slice.
+        // Advance at most one scene-graph mutation per frame; installation is not a bulk operation.
+        boolean installAdvanced = false;
+        for (int installSlot = 0; installSlot < CACHE_SIZE; installSlot++) {
+            if (chunkInstalls[installSlot] != null) {
+                advanceChunkInstall(installSlot);
+                installAdvanced = true;
+                break;
+            }
+        }
+        // Poll completed geometry and advance its bounded vertex slices.
         pollChunkBuild(world);
         if (pendingChunkMeshes != null) {
             ChunkBuildResult pending = pendingChunkMeshes;
             boolean slotStillMatches = pending.slot >= 0 && pending.slot < CACHE_SIZE &&
+                    chunkInstalls[pending.slot] == null &&
                     chunkWorldX[pending.slot] == pending.cx &&
                     chunkWorldY[pending.slot] == pending.cy &&
                     chunkWorldZ[pending.slot] == pending.cz;
             if (pending.world != world || !slotStillMatches) {
                 pendingChunkMeshes = null;
             } else {
-                // Pipeline several bounded M3G creations per frame.
-                boolean finished = false;
-                long installStarted = System.currentTimeMillis();
-                for (int meshStep = 0; meshStep < 3; meshStep++) {
-                    if (meshStep > 0 && System.currentTimeMillis() - installStarted >= 5L)
-                        break;
-                    if (finishChunkMeshStep(pending.chunk)) {
-                        finished = true;
-                        break;
-                    }
-                }
+                // Each step creates at most one M3G mesh slice (<= 5,000 vertices).
+                boolean finished = !installAdvanced && finishChunkMeshStep(pending.chunk);
                 if (finished) {
                     ChunkBuildResult ready = pendingChunkMeshes;
                     pendingChunkMeshes = null;
                     boolean changedDuringBuild = ready.revision != world.revision;
                     installChunk(ready.slot, ready.cx, ready.cy, ready.cz, ready.chunk);
-                    if (changedDuringBuild) dirtyChunks[ready.slot] = true;
+                    if (chunkInstalls[ready.slot] != null) chunkInstalls[ready.slot].dirtyAfterInstall = changedDuringBuild;
                 }
             }
         }
@@ -1596,6 +1624,7 @@ final class ChunkRenderer {
         completedChunkBuild = null;
         if (result.failure != null || result.world != world ||
                 result.slot < 0 || result.slot >= CACHE_SIZE ||
+                chunkInstalls[result.slot] != null ||
                 chunkWorldX[result.slot] != result.cx || chunkWorldY[result.slot] != result.cy ||
                 chunkWorldZ[result.slot] != result.cz) {
             if (result.slot >= 0 && result.slot < CACHE_SIZE &&
@@ -1625,77 +1654,59 @@ final class ChunkRenderer {
      */
     private boolean finishChunkMeshStep(Chunk chunk) {
         if (chunk.meshes == null) {
-            int tileCount = 0;
-            int totalVertices = 0;
+            int meshCount = 0;
             for (int i = 0; i < chunk.faceBuilders.length; i++) {
-                FaceBuilder builder = chunk.faceBuilders[i];
-                if (builder != null) { tileCount++; totalVertices += builder.vertexCount; }
+                FaceBuilder b = chunk.faceBuilders[i];
+                if (b != null) meshCount += (b.vertexCount + MAX_CHUNK_VERTICES_PER_FRAME - 1) / MAX_CHUNK_VERTICES_PER_FRAME;
             }
-            int extras = (chunk.flowers != null && chunk.flowers.vertexCount > 0 ? 1 : 0) +
-                    (chunk.fires != null && chunk.fires.vertexCount > 0 ? 1 : 0) +
-                    (chunk.portals != null && chunk.portals.vertexCount > 0 ? 1 : 0);
-            chunk.sharedBatching = tileCount > 0 && totalVertices <= MAX_SHARED_CHUNK_VERTICES;
-            chunk.meshes = new Mesh[(chunk.sharedBatching ? (tileCount + 2) / 3 : tileCount) + extras];
-            if (chunk.sharedBatching) prepareSharedChunkVertices(chunk, totalVertices);
+            if (chunk.flowers != null) meshCount += (chunk.flowers.vertexCount + MAX_CHUNK_VERTICES_PER_FRAME - 1) / MAX_CHUNK_VERTICES_PER_FRAME;
+            if (chunk.fires != null) meshCount += (chunk.fires.vertexCount + MAX_CHUNK_VERTICES_PER_FRAME - 1) / MAX_CHUNK_VERTICES_PER_FRAME;
+            if (chunk.portals != null) meshCount += (chunk.portals.vertexCount + MAX_CHUNK_VERTICES_PER_FRAME - 1) / MAX_CHUNK_VERTICES_PER_FRAME;
+            chunk.meshes = new Mesh[meshCount];
         }
-        if (chunk.sharedBatching) {
-            int count = 0;
-            while (chunk.meshBuildCursor < TILE_COUNT && count < chunkBatchIndices.length) {
-                int tile = chunk.meshBuildCursor++;
-                if (chunk.sharedTileFaces[tile] == 0) continue;
-                int faces = chunk.sharedTileFaces[tile];
-                int[] strips = new int[faces];
-                for (int i = 0; i < faces; i++) strips[i] = 4;
-                chunkBatchIndices[count] = new TriangleStripArray(chunk.sharedTileStarts[tile], strips);
-                chunkBatchAppearances[count] = tileAppearance(tile);
-                count++;
+        while (chunk.meshBuildCursor < TILE_COUNT) {
+            int tile = chunk.meshBuildCursor;
+            FaceBuilder b = chunk.faceBuilders[tile];
+            if (b == null) { chunk.meshBuildCursor++; chunk.meshBuildVertexCursor = 0; continue; }
+            int count = Math.min(MAX_CHUNK_VERTICES_PER_FRAME, b.vertexCount - chunk.meshBuildVertexCursor);
+            float scale = tile == Block.sideTile(Block.GRASS) ? 0.999f / 16.0f : 1.0f / 16.0f;
+            storeChunkMesh(chunk, makeMeshSlice(b, tileAppearance(tile), scale, chunk.meshBuildVertexCursor, count));
+            chunk.meshBuildVertexCursor += count;
+            if (chunk.meshBuildVertexCursor >= b.vertexCount) {
+                chunk.faceBuilders[tile] = null;
+                recycleFaceBuilder(b);
+                chunk.meshBuildCursor++;
+                chunk.meshBuildVertexCursor = 0;
             }
-            if (count > 0) {
-                IndexBuffer[] indices = new IndexBuffer[count];
-                Appearance[] appearances = new Appearance[count];
-                System.arraycopy(chunkBatchIndices, 0, indices, 0, count);
-                System.arraycopy(chunkBatchAppearances, 0, appearances, 0, count);
-                Mesh batch = new Mesh(chunk.sharedVertices, indices, appearances);
-                batch.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
-                chunk.meshes[chunk.meshBuildCount++] = batch;
-                return false;
-            }
-            chunk.sharedVertices = null;
-            chunk.sharedTileStarts = null;
-            chunk.sharedTileFaces = null;
-            chunk.sharedBatching = false;
-        } else {
-            while (chunk.meshBuildCursor < TILE_COUNT) {
-                int i = chunk.meshBuildCursor++;
-                FaceBuilder builder = chunk.faceBuilders[i];
-                if (builder == null) continue;
-                int tile = i;
-                float scale = tile == Block.sideTile(Block.GRASS) ? 0.999f / 16.0f : 1.0f / 16.0f;
-                chunk.meshes[chunk.meshBuildCount++] = makeMesh(builder, tileAppearance(tile), scale);
-                chunk.faceBuilders[i] = null;
-                recycleFaceBuilder(builder);
-                return false;
-            }
-        }
-        if (chunk.flowers != null) {
-            chunk.meshes[chunk.meshBuildCount++] = makeFlowerMesh(chunk.flowers, flowerAppearance);
-            chunk.flowers = null;
             return false;
         }
-        if (chunk.fires != null) {
-            chunk.fires.setFrame(fireAnimationFrame);
-            chunk.meshes[chunk.meshBuildCount++] = makeFireMesh(chunk.fires, worldFireAppearance);
-            chunk.fires = null;
+        if (chunk.flowers != null && chunk.meshBuildVertexCursor < chunk.flowers.vertexCount) {
+            int count = Math.min(MAX_CHUNK_VERTICES_PER_FRAME, chunk.flowers.vertexCount - chunk.meshBuildVertexCursor);
+            storeChunkMesh(chunk, makeFlowerMeshSlice(chunk.flowers, chunk.meshBuildVertexCursor, count));
+            chunk.meshBuildVertexCursor += count;
+            if (chunk.meshBuildVertexCursor >= chunk.flowers.vertexCount) { chunk.flowers = null; chunk.meshBuildVertexCursor = 0; }
             return false;
         }
-        if (chunk.portals != null) {
-            chunk.meshes[chunk.meshBuildCount++] = makePortalMesh(chunk.portals);
-            chunk.portals = null;
+        if (chunk.fires != null && chunk.meshBuildVertexCursor < chunk.fires.vertexCount) {
+            int count = Math.min(MAX_CHUNK_VERTICES_PER_FRAME, chunk.fires.vertexCount - chunk.meshBuildVertexCursor);
+            storeChunkMesh(chunk, makeFireMeshSlice(chunk.fires, chunk.meshBuildVertexCursor, count));
+            chunk.meshBuildVertexCursor += count;
+            if (chunk.meshBuildVertexCursor >= chunk.fires.vertexCount) { chunk.fires = null; chunk.meshBuildVertexCursor = 0; }
             return false;
         }
-        for (int i = 0; i < chunk.meshBuildCount; i++)
-            chunk.meshes[i].setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
+        if (chunk.portals != null && chunk.meshBuildVertexCursor < chunk.portals.vertexCount) {
+            int count = Math.min(MAX_CHUNK_VERTICES_PER_FRAME, chunk.portals.vertexCount - chunk.meshBuildVertexCursor);
+            storeChunkMesh(chunk, makePortalMeshSlice(chunk.portals, chunk.meshBuildVertexCursor, count));
+            chunk.meshBuildVertexCursor += count;
+            if (chunk.meshBuildVertexCursor >= chunk.portals.vertexCount) { chunk.portals = null; chunk.meshBuildVertexCursor = 0; }
+            return false;
+        }
         return true;
+    }
+
+    private void storeChunkMesh(Chunk chunk, Mesh mesh) {
+        mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
+        chunk.meshes[chunk.meshBuildCount++] = mesh;
     }
 
     private Chunk buildChunk(ChunkBuildSnapshot snapshot, int cx, int cy, int cz) {
@@ -1889,6 +1900,50 @@ final class ChunkRenderer {
     private void add(FaceBuilder[] builders, int tile, int x, int y, int z, int face) {
         if (builders[tile] == null) builders[tile] = new FaceBuilder(tile);
         builders[tile].add(x, y, z, face);
+    }
+
+    private Mesh makeMeshSlice(FaceBuilder data, Appearance appearance, float textureScale, int start, int count) {
+        short[] p = new short[count * 3]; short[] uv = new short[count * 2]; byte[] c = new byte[count * 4];
+        System.arraycopy(data.p, start * 3, p, 0, count * 3);
+        System.arraycopy(data.uv, start * 2, uv, 0, count * 2);
+        System.arraycopy(data.c, start * 4, c, 0, count * 4);
+        VertexArray positions = new VertexArray(count, 3, 2); positions.set(0, count, p);
+        VertexArray texCoords = new VertexArray(count, 2, 2); texCoords.set(0, count, uv);
+        VertexArray colors = new VertexArray(count, 4, 1); colors.set(0, count, c);
+        VertexBuffer vertices = new VertexBuffer();
+        vertices.setPositions(positions, 1.0f, null); vertices.setTexCoords(0, texCoords, textureScale, null); vertices.setColors(colors);
+        int[] strips = new int[count / 4]; for (int i = 0; i < strips.length; i++) strips[i] = 4;
+        return new Mesh(vertices, new TriangleStripArray(0, strips), appearance);
+    }
+
+    private Mesh makeFlowerMeshSlice(FlowerBuilder data, int start, int count) {
+        short[] p = new short[count * 3]; short[] uv = new short[count * 2];
+        System.arraycopy(data.p, start * 3, p, 0, count * 3); System.arraycopy(data.uv, start * 2, uv, 0, count * 2);
+        VertexArray positions = new VertexArray(count, 3, 2); positions.set(0, count, p);
+        VertexArray texCoords = new VertexArray(count, 2, 2); texCoords.set(0, count, uv);
+        VertexBuffer vertices = new VertexBuffer(); vertices.setPositions(positions, 1.0f / 256.0f, null); vertices.setTexCoords(0, texCoords, 1.0f / 256.0f, null);
+        int[] strips = new int[count / 4]; for (int i = 0; i < strips.length; i++) strips[i] = 4;
+        return new Mesh(vertices, new TriangleStripArray(0, strips), flowerAppearance);
+    }
+
+    private Mesh makeFireMeshSlice(FireBuilder data, int start, int count) {
+        short[] p = new short[count * 3]; short[] uv = new short[count * 2];
+        System.arraycopy(data.p, start * 3, p, 0, count * 3); System.arraycopy(data.uv, start * 2, uv, 0, count * 2);
+        VertexArray positions = new VertexArray(count, 3, 2); positions.set(0, count, p);
+        VertexArray texCoords = new VertexArray(count, 2, 2); texCoords.set(0, count, uv);
+        VertexBuffer vertices = new VertexBuffer(); vertices.setPositions(positions, 1.0f / 256.0f, null); vertices.setTexCoords(0, texCoords, 1.0f / 1024.0f, null);
+        int[] strips = new int[count / 4]; for (int i = 0; i < strips.length; i++) strips[i] = 4;
+        return new Mesh(vertices, new TriangleStripArray(0, strips), worldFireAppearance);
+    }
+
+    private Mesh makePortalMeshSlice(PortalBuilder data, int start, int count) {
+        short[] p = new short[count * 3]; short[] uv = new short[count * 2];
+        System.arraycopy(data.p, start * 3, p, 0, count * 3); System.arraycopy(data.uv, start * 2, uv, 0, count * 2);
+        VertexArray positions = new VertexArray(count, 3, 2); positions.set(0, count, p);
+        VertexArray texCoords = new VertexArray(count, 2, 2); texCoords.set(0, count, uv);
+        VertexBuffer vertices = new VertexBuffer(); vertices.setPositions(positions, 1.0f / 256.0f, null); vertices.setTexCoords(0, texCoords, 1.0f / portalFrameSize, null);
+        int[] strips = new int[count / 4]; for (int i = 0; i < strips.length; i++) strips[i] = 4;
+        return new Mesh(vertices, new TriangleStripArray(0, strips), portalAppearance);
     }
 
     private Mesh makeMesh(FaceBuilder data, Appearance appearance) {
@@ -2204,7 +2259,7 @@ final class ChunkRenderer {
         FlowerBuilder flowers;
         FireBuilder fires;
         PortalBuilder portals;
-        int meshBuildCursor, meshBuildCount;
+        int meshBuildCursor, meshBuildCount, meshBuildVertexCursor;
         int worldX, worldY, worldZ;
     }
 
@@ -2216,6 +2271,12 @@ final class ChunkRenderer {
                 freeFaceBuilders[freeFaceBuilderCount++] = builder;
             }
         }
+    }
+
+    private static final class ChunkInstallState {
+        Chunk previous, replacement;
+        int cx, cy, cz, addCursor, removeCursor;
+        boolean dirtyAfterInstall;
     }
 
     private void prepareSharedChunkVertices(Chunk chunk, int totalVertices) {
