@@ -100,3 +100,9 @@ The particle hot-path and the bounded player/mob texture changes are intentional
 - Day/night updates avoid repeatedly sending nearly identical sunlight intensity values into M3G.
 - Distant mobs retain per-tick AI and physics, while articulated pose updates are performed every other tick to reduce scene-graph property churn. Nearby mobs keep full-rate animation.
 - These are workload reductions, not measured FPS gains. The 20 FPS target still requires profiling on the HTC S730 and the 8 MB emulator.
+
+
+### Rail streaming frame slice
+
+- Rail chunk scanning remains incremental and keeps its four-section hard ceiling, but now yields after a roughly 3 ms slice once at least one section has been processed. This prevents rail cache refreshes from consuming an uncontrolled portion of a 50 ms gameplay frame.
+- The trade-off is that rail geometry may take more frames to finish after entering a new area; already-built rails remain grouped by chunk.

@@ -104,8 +104,13 @@ final class RailSystem {
         int size = scanRadius * 2 + 1;
         int total = size * size * VoxelWorld.CHUNKS_Y;
         int processed = 0;
+        long scanStarted = System.currentTimeMillis();
         while (scanPending && scanCursor < total &&
                 processed < MAX_CHUNKS_PER_UPDATE) {
+            // Always make progress by at least one section, then yield once
+            // rail scanning/mesh creation has consumed its small frame slice.
+            if (processed > 0 && System.currentTimeMillis() - scanStarted >= 3L)
+                break;
             int cursor = scanCursor++;
             int rx = cursor % size;
             int rz = (cursor / size) % size;
