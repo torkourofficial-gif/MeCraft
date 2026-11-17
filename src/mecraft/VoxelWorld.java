@@ -81,13 +81,16 @@ final class VoxelWorld {
     private static final int FLUID_QUEUE_SIZE = 2048;
     private final int[] fluidQueue = new int[FLUID_QUEUE_SIZE];
     private final byte[] fluidQueued = new byte[(BLOCK_COUNT + 7) / 8];
-    // Sixteen slots retain a wider neighborhood while chunk borders are meshed,
-    // reducing repeated procedural generation when adjacent chunks are sampled.
-    private static final int PROCEDURAL_CACHE_SIZE = 16;
+    // Keep the same 16 chunk buffers, but use four-way set associativity to
+    // avoid deterministic direct-map collisions during adjacent chunk sampling.
+    private static final int PROCEDURAL_CACHE_WAYS = 4;
+    private static final int PROCEDURAL_CACHE_SETS = 4;
+    private static final int PROCEDURAL_CACHE_SIZE = PROCEDURAL_CACHE_WAYS * PROCEDURAL_CACHE_SETS;
     private final byte[][] proceduralChunks =
             new byte[PROCEDURAL_CACHE_SIZE][InfdevTerrain.CHUNK_VOLUME];
     private final int[] proceduralChunkX = new int[PROCEDURAL_CACHE_SIZE];
     private final int[] proceduralChunkZ = new int[PROCEDURAL_CACHE_SIZE];
+    private final int[] proceduralCacheCursor = new int[PROCEDURAL_CACHE_SETS];
     // Completed streamed chunks are queued separately from gameplay block edits.
     private final int[] terrainReadyX = new int[16];
     private final int[] terrainReadyZ = new int[16];
@@ -211,9 +214,30 @@ final class VoxelWorld {
         return value < 0 && value % CHUNK_XZ != 0 ? result - 1 : result;
     }
 
-    /** Power-of-two direct-mapped cache: one hash and two coordinate checks per lookup. */
-    private int proceduralCacheSlot(int cx, int cz) {
-        return (cx * 73428767 ^ cz * 912931) & (PROCEDURAL_CACHE_SIZE - 1);
+    /** Select a small set, then search its four ways to avoid direct-map thrashing. */
+    private int proceduralCacheSet(int cx, int cz) {
+        int hash = cx * 73428767 ^ cz * 912931;
+        hash ^= hash >>> 16;
+        return hash & (PROCEDURAL_CACHE_SETS - 1);
+    }
+
+    private int findProceduralCacheSlot(int set, int cx, int cz) {
+        int first = set * PROCEDURAL_CACHE_WAYS;
+        for (int way = 0; way < PROCEDURAL_CACHE_WAYS; way++) {
+            int slot = first + way;
+            if (proceduralChunkX[slot] == cx && proceduralChunkZ[slot] == cz) return slot;
+        }
+        return -1;
+    }
+
+    private int chooseProceduralCacheSlot(int set) {
+        int first = set * PROCEDURAL_CACHE_WAYS;
+        for (int way = 0; way < PROCEDURAL_CACHE_WAYS; way++) {
+            int slot = first + way;
+            if (proceduralChunkX[slot] == Integer.MIN_VALUE) return slot;
+        }
+        int way = proceduralCacheCursor[set]++ & (PROCEDURAL_CACHE_WAYS - 1);
+        return first + way;
     }
 
     /**
@@ -224,9 +248,10 @@ final class VoxelWorld {
      */
     private byte proceduralBlock(int x, int y, int z) {
         int cx = floorChunk(x), cz = floorChunk(z);
-        int cache = proceduralCacheSlot(cx, cz);
+        int set = proceduralCacheSet(cx, cz);
         synchronized (this) {
-            if (proceduralChunkX[cache] == cx && proceduralChunkZ[cache] == cz) {
+            int cache = findProceduralCacheSlot(set, cx, cz);
+            if (cache >= 0) {
                 int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
                 return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
             }
@@ -257,11 +282,11 @@ final class VoxelWorld {
 
     /** Generate one requested chunk on the terrain worker, then publish atomically. */
     void generateRequestedChunk(int cx, int cz) {
-        int cache = proceduralCacheSlot(cx, cz);
+        int set = proceduralCacheSet(cx, cz);
         final boolean dimension;
         final String storeName;
         synchronized (this) {
-            if (proceduralChunkX[cache] == cx && proceduralChunkZ[cache] == cz) return;
+            if (findProceduralCacheSlot(set, cx, cz) >= 0) return;
             dimension = nether;
             storeName = saveStoreName;
         }
@@ -279,7 +304,8 @@ final class VoxelWorld {
 
         synchronized (this) {
             if (nether != dimension || !sameStoreName(saveStoreName, storeName)) return;
-            if (proceduralChunkX[cache] == cx && proceduralChunkZ[cache] == cz) return;
+            if (findProceduralCacheSlot(set, cx, cz) >= 0) return;
+            int cache = chooseProceduralCacheSlot(set);
             System.arraycopy(generated, 0, proceduralChunks[cache], 0, generated.length);
             proceduralChunkX[cache] = cx;
             proceduralChunkZ[cache] = cz;
@@ -338,10 +364,10 @@ final class VoxelWorld {
         prefetchStep++;
         int x = cx * CHUNK_XZ, z = cz * CHUNK_XZ;
         if (inside(x, z) || outsideWorld(x, z)) return;
-        int cache = proceduralCacheSlot(cx, cz);
+        int set = proceduralCacheSet(cx, cz);
         synchronized (this) {
             if (nether != (dimension != 0) || !sameStoreName(saveStoreName, storeName)) return;
-            if (proceduralChunkX[cache] == cx && proceduralChunkZ[cache] == cz) return;
+            if (findProceduralCacheSlot(set, cx, cz) >= 0) return;
         }
         boolean loaded = loadPrefetchedChunk(cx, cz, prefetchChunk, dimension != 0, storeName);
         if (!loaded) {
@@ -353,7 +379,8 @@ final class VoxelWorld {
         // without waiting for generation or disk access.
         synchronized (this) {
             if (nether == (dimension != 0) && sameStoreName(saveStoreName, storeName) &&
-                    (proceduralChunkX[cache] != cx || proceduralChunkZ[cache] != cz)) {
+                    findProceduralCacheSlot(set, cx, cz) < 0) {
+                int cache = chooseProceduralCacheSlot(set);
                 System.arraycopy(prefetchChunk, 0, proceduralChunks[cache], 0, prefetchChunk.length);
                 proceduralChunkX[cache] = cx;
                 proceduralChunkZ[cache] = cz;
@@ -1086,7 +1113,8 @@ final class VoxelWorld {
             setGenerationDiagnosticStage("VoxelWorld.generate: comenzando fila de chunks cz=" + cz);
             for (int cx = 0; cx < CHUNKS_X; cx++) {
                 setGenerationDiagnosticStage("VoxelWorld.generate: reservando caché para chunk cx=" + cx + ", cz=" + cz);
-                int cache = proceduralCacheSlot(cx, cz);
+                int set = proceduralCacheSet(cx, cz);
+                int cache = chooseProceduralCacheSlot(set);
                 setGenerationDiagnosticStage("VoxelWorld.generate: generando chunk cx=" + cx + ", cz=" + cz);
                 generateChunk(cx, cz, proceduralChunks[cache]);
                 setGenerationDiagnosticStage("VoxelWorld.generate: guardando coordenadas del chunk cx=" + cx + ", cz=" + cz);
