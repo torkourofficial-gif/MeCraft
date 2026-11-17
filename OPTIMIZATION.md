@@ -106,3 +106,10 @@ The particle hot-path and the bounded player/mob texture changes are intentional
 
 - Rail chunk scanning remains incremental and keeps its four-section hard ceiling, but now yields after a roughly 3 ms slice once at least one section has been processed. This prevents rail cache refreshes from consuming an uncontrolled portion of a 50 ms gameplay frame.
 - The trade-off is that rail geometry may take more frames to finish after entering a new area; already-built rails remain grouped by chunk.
+
+
+### Shortest render-distance preset
+
+- The Shortest preset now explicitly keeps the shared stream radius at one chunk, in addition to its existing facing-aligned 2x2 horizontal window and 16-block camera far plane. This keeps fallback/generic streaming calculations conservative instead of inheriting a larger radius from the numeric setting.
+- The existing shortest-mode visibility test rejects vertical sections outside the camera frustum before requesting mesh builds; rail streaming is also restricted to radius one.
+- This is a guard against accidental over-streaming in the lowest preset, not a measured FPS or memory claim. The bounded worker and frame-sliced M3G installation remain shared with the other presets.
