@@ -25,8 +25,8 @@ import javax.microedition.m3g.World;
 /** Builds shared-texture chunk meshes on demand for the visible part of the world. */
 final class ChunkRenderer {
     private static final int MAX_STREAM_RADIUS = 4;
-    // One nearest chunk mesh is built per sync, matching the pre-November 10
-    // streamer. Procedural data is generated on demand by VoxelWorld.get().
+    // One nearest chunk build is requested per sync. The render/game thread
+    // captures a bounded immutable input before the worker starts meshing it.
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
