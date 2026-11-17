@@ -33,8 +33,8 @@ final class ChunkRenderer {
     private static final int TORCH_LIGHT_RADIUS = 4;
     private static final int LAVA_LIGHT_RADIUS = 6;
     private static final int MAX_CHUNK_TORCHES = 128;
-    // Bound the temporary concatenation buffers on small CLDC heaps.
-    private static final int MAX_SHARED_CHUNK_VERTICES = 16384;
+    // A material is split into bounded linked segments; no builder grows without limit.
+    private static final int MAX_FACE_BUILDER_VERTICES = 1024;
     // Hard render-thread geometry budget: no mesh slice contains more than 5k vertices.
     private static final int MAX_CHUNK_VERTICES_PER_FRAME = 5000;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
@@ -128,6 +128,7 @@ final class ChunkRenderer {
     // One chunk is meshed at a time; reuse the large material lookup table to
     // avoid allocating thousands of references every time the player moves.
     private final FaceBuilder[] chunkFaceBuilders = new FaceBuilder[TILE_COUNT];
+    private final FaceBuilder[] chunkFaceBuilderTails = new FaceBuilder[TILE_COUNT];
     // A bounded pool avoids allocating FaceBuilder arrays for every streamed
     // chunk without retaining one builder for every possible tile/light pair.
     private final FaceBuilder[] freeFaceBuilders = new FaceBuilder[32];
@@ -1715,8 +1716,8 @@ final class ChunkRenderer {
         if (chunk.meshes == null) {
             int meshCount = 0;
             for (int i = 0; i < chunk.faceBuilders.length; i++) {
-                FaceBuilder b = chunk.faceBuilders[i];
-                if (b != null) meshCount += (b.vertexCount + MAX_CHUNK_VERTICES_PER_FRAME - 1) / MAX_CHUNK_VERTICES_PER_FRAME;
+                for (FaceBuilder b = chunk.faceBuilders[i]; b != null; b = b.next)
+                    meshCount += (b.vertexCount + MAX_CHUNK_VERTICES_PER_FRAME - 1) / MAX_CHUNK_VERTICES_PER_FRAME;
             }
             if (chunk.flowers != null) meshCount += (chunk.flowers.vertexCount + MAX_CHUNK_VERTICES_PER_FRAME - 1) / MAX_CHUNK_VERTICES_PER_FRAME;
             if (chunk.fires != null) meshCount += (chunk.fires.vertexCount + MAX_CHUNK_VERTICES_PER_FRAME - 1) / MAX_CHUNK_VERTICES_PER_FRAME;
@@ -1732,10 +1733,11 @@ final class ChunkRenderer {
             storeChunkMesh(chunk, makeMeshSlice(b, tileAppearance(tile), scale, chunk.meshBuildVertexCursor, count));
             chunk.meshBuildVertexCursor += count;
             if (chunk.meshBuildVertexCursor >= b.vertexCount) {
-                chunk.faceBuilders[tile] = null;
+                chunk.faceBuilders[tile] = b.next;
+                b.next = null;
                 recycleFaceBuilder(b);
-                chunk.meshBuildCursor++;
                 chunk.meshBuildVertexCursor = 0;
+                if (chunk.faceBuilders[tile] == null) chunk.meshBuildCursor++;
             }
             return false;
         }
@@ -1786,7 +1788,8 @@ final class ChunkRenderer {
 
     private Chunk buildChunk(ChunkBuildSnapshot snapshot, int cx, int cy, int cz) {
         FaceBuilder[] builders = chunkFaceBuilders;
-        for (int i = 0; i < builders.length; i++) builders[i] = null;
+        FaceBuilder[] builderTails = chunkFaceBuilderTails;
+        for (int i = 0; i < builders.length; i++) { builders[i] = null; builderTails[i] = null; }
         FlowerBuilder flowers = null;
         FireBuilder fires = null;
         PortalBuilder portals = null;
@@ -1933,17 +1936,18 @@ final class ChunkRenderer {
                         int tile = encoded % TILE_COUNT;
                         int light = encoded / TILE_COUNT;
                         int builderIndex = tile;
-                        if (builders[builderIndex] == null) {
-                            FaceBuilder builder;
-                            synchronized (chunkBuildLock) {
-                                builder = freeFaceBuilderCount > 0 ?
-                                        freeFaceBuilders[--freeFaceBuilderCount] : null;
-                            }
-                            if (builder == null) builder = new FaceBuilder(tile);
-                            else builder.reset(tile);
+                        FaceBuilder builder = builderTails[builderIndex];
+                        if (builder == null) {
+                            builder = acquireFaceBuilder(tile);
                             builders[builderIndex] = builder;
+                            builderTails[builderIndex] = builder;
+                        } else if (builder.vertexCount + 4 > MAX_FACE_BUILDER_VERTICES) {
+                            FaceBuilder next = acquireFaceBuilder(tile);
+                            builder.next = next;
+                            builderTails[builderIndex] = next;
+                            builder = next;
                         }
-                        builders[builderIndex].addRect(x, y, z, faceWidth, faceHeight, face, light);
+                        builder.addRect(x, y, z, faceWidth, faceHeight, face, light);
                         a += rectWidth;
                     }
                 }
@@ -1965,6 +1969,7 @@ final class ChunkRenderer {
         for (int i = 0; i < builders.length; i++) {
             chunk.faceBuilders[i] = builders[i];
             builders[i] = null;
+            builderTails[i] = null;
         }
         chunk.flowers = flowers;
         chunk.fires = fires;
@@ -1972,9 +1977,15 @@ final class ChunkRenderer {
         return chunk;
     }
 
-    private void add(FaceBuilder[] builders, int tile, int x, int y, int z, int face) {
-        if (builders[tile] == null) builders[tile] = new FaceBuilder(tile);
-        builders[tile].add(x, y, z, face);
+    private FaceBuilder acquireFaceBuilder(int tile) {
+        FaceBuilder builder;
+        synchronized (chunkBuildLock) {
+            builder = freeFaceBuilderCount > 0 ? freeFaceBuilders[--freeFaceBuilderCount] : null;
+            if (builder != null) freeFaceBuilders[freeFaceBuilderCount] = null;
+        }
+        if (builder == null) return new FaceBuilder(tile);
+        builder.reset(tile);
+        return builder;
     }
 
     private Mesh makeMeshSlice(FaceBuilder data, Appearance appearance, float textureScale, int start, int count) {
@@ -2327,10 +2338,6 @@ final class ChunkRenderer {
     private static final class Chunk {
         Mesh[] meshes;
         FaceBuilder[] faceBuilders;
-        VertexBuffer sharedVertices;
-        int[] sharedTileStarts;
-        int[] sharedTileFaces;
-        boolean sharedBatching;
         FlowerBuilder flowers;
         FireBuilder fires;
         PortalBuilder portals;
@@ -2416,39 +2423,6 @@ final class ChunkRenderer {
         boolean dirtyAfterInstall;
     }
 
-    private void prepareSharedChunkVertices(Chunk chunk, int totalVertices) {
-        short[] positionsData = new short[totalVertices * 3];
-        short[] texCoordData = new short[totalVertices * 2];
-        byte[] colorData = new byte[totalVertices * 4];
-        chunk.sharedTileStarts = new int[TILE_COUNT];
-        chunk.sharedTileFaces = new int[TILE_COUNT];
-        int vertexOffset = 0;
-        for (int tile = 0; tile < TILE_COUNT; tile++) {
-            FaceBuilder builder = chunk.faceBuilders[tile];
-            if (builder == null) continue;
-            chunk.sharedTileStarts[tile] = vertexOffset;
-            chunk.sharedTileFaces[tile] = builder.faceCount;
-            System.arraycopy(builder.p, 0, positionsData, vertexOffset * 3, builder.vertexCount * 3);
-            System.arraycopy(builder.uv, 0, texCoordData, vertexOffset * 2, builder.vertexCount * 2);
-            System.arraycopy(builder.c, 0, colorData, vertexOffset * 4, builder.vertexCount * 4);
-            vertexOffset += builder.vertexCount;
-            chunk.faceBuilders[tile] = null;
-            recycleFaceBuilder(builder);
-        }
-        VertexArray positions = new VertexArray(totalVertices, 3, 2);
-        positions.set(0, totalVertices, positionsData);
-        VertexArray texCoords = new VertexArray(totalVertices, 2, 2);
-        texCoords.set(0, totalVertices, texCoordData);
-        VertexArray colors = new VertexArray(totalVertices, 4, 1);
-        colors.set(0, totalVertices, colorData);
-        VertexBuffer vertices = new VertexBuffer();
-        vertices.setPositions(positions, 1.0f, null);
-        // A tiny global inset preserves the grass-side seam guard while using
-        // one shared VertexBuffer for every tile submesh in this chunk.
-        vertices.setTexCoords(0, texCoords, 0.999f / 16.0f, null);
-        vertices.setColors(colors);
-        chunk.sharedVertices = vertices;
-    }
 
     private boolean captureChunkBuildSnapshot(VoxelWorld world, int cx, int cy, int cz,
                                                ChunkBuildSnapshot snapshot) {
@@ -2706,6 +2680,7 @@ final class ChunkRenderer {
     /** Reuses one short position array per material; no per-block scene nodes. */
     private static final class FaceBuilder {
         int tile;
+        FaceBuilder next;
         short[] p = new short[192];
         short[] uv = new short[128];
         byte[] c = new byte[256];
@@ -2718,6 +2693,7 @@ final class ChunkRenderer {
             tile = nextTile;
             vertexCount = 0;
             faceCount = 0;
+            next = null;
         }
 
         /** Add one tiled rectangle produced by the chunk's greedy face scan. */
@@ -2800,11 +2776,16 @@ final class ChunkRenderer {
         }
 
         private void ensure(int needed) {
+            if (needed > MAX_FACE_BUILDER_VERTICES)
+                throw new IllegalStateException("FaceBuilder segment overflow");
             if (needed <= p.length / 3 && needed <= uv.length / 2 && needed <= c.length / 4) return;
             int size = p.length / 3;
             if (uv.length / 2 > size) size = uv.length / 2;
             if (c.length / 4 > size) size = c.length / 4;
-            while (size < needed) size <<= 1;
+            while (size < needed) {
+                size <<= 1;
+                if (size > MAX_FACE_BUILDER_VERTICES) size = MAX_FACE_BUILDER_VERTICES;
+            }
             short[] nextP = new short[size * 3];
             short[] nextUv = new short[size * 2];
             byte[] nextC = new byte[size * 4];
