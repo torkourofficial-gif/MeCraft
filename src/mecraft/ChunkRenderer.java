@@ -99,7 +99,7 @@ final class ChunkRenderer {
     private volatile int readySlot, readyX, readyY, readyZ, readyRevision;
     private Thread chunkBuildThread;
     private Chunk installingChunk;
-    private int installingSlot, installingX, installingY, installingZ;
+    private int installingSlot, installingX, installingY, installingZ, installingRevision;
     private final IndexBuffer[] chunkBatchIndices = new IndexBuffer[3];
     private final Appearance[] chunkBatchAppearances = new Appearance[3];
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
@@ -1498,6 +1498,7 @@ final class ChunkRenderer {
                     chunkWorldY[slot] == cy && chunkWorldZ[slot] == cz) {
                 installingChunk = completed;
                 installingSlot = slot; installingX = cx; installingY = cy; installingZ = cz;
+                installingRevision = revision;
                 completed.worldX = cx * VoxelWorld.CHUNK_XZ;
                 completed.worldY = cy * VoxelWorld.CHUNK_Y;
                 completed.worldZ = cz * VoxelWorld.CHUNK_XZ;
@@ -1506,9 +1507,27 @@ final class ChunkRenderer {
                 if (slot >= 0 && slot < CACHE_SIZE) dirtyChunks[slot] = true;
             }
         }
-        if (installingChunk != null && finishChunkMeshStep(installingChunk, 2)) {
-            replaceChunk(installingSlot, installingX, installingY, installingZ, installingChunk);
-            installingChunk = null;
+        if (installingChunk != null) {
+            if (world.revision != installingRevision) {
+                recycleChunkBuilders(installingChunk);
+                dirtyChunks[installingSlot] = true;
+                installingChunk = null;
+            } else {
+                try {
+                    if (finishChunkMeshStep(installingChunk, 2)) {
+                        replaceChunk(installingSlot, installingX, installingY, installingZ, installingChunk);
+                        installingChunk = null;
+                    }
+                } catch (OutOfMemoryError exhausted) {
+                    recycleChunkBuilders(installingChunk);
+                    dirtyChunks[installingSlot] = true;
+                    installingChunk = null;
+                } catch (RuntimeException failed) {
+                    recycleChunkBuilders(installingChunk);
+                    dirtyChunks[installingSlot] = true;
+                    installingChunk = null;
+                }
+            }
         }
         if (best >= 0 && (!residentChunks[best] || dirtyChunks[best]) &&
                 chunkBuildThread == null && !buildResultReady && installingChunk == null) {
@@ -1587,6 +1606,7 @@ final class ChunkRenderer {
             }
             FaceBuilder builder = chunk.meshBuildCurrent;
             chunk.meshBuildCurrent = builder.next;
+            chunk.faceBuilders[chunk.meshBuildIndex] = chunk.meshBuildCurrent;
             builder.next = null;
             if (builder.vertexCount > 0) {
                 float scale = builder.tile == Block.sideTile(Block.GRASS) ?
@@ -1868,7 +1888,7 @@ final class ChunkRenderer {
         builders[tile].add(x, y, z, face);
     }
 
-    private FaceBuilder acquireFaceBuilder(int tile) {
+    private synchronized FaceBuilder acquireFaceBuilder(int tile) {
         FaceBuilder builder = freeFaceBuilderCount > 0 ?
                 freeFaceBuilders[--freeFaceBuilderCount] : null;
         if (builder != null) freeFaceBuilders[freeFaceBuilderCount] = null;
@@ -2203,7 +2223,7 @@ final class ChunkRenderer {
         FaceBuilder meshBuildCurrent;
     }
 
-    private void recycleFaceBuilder(FaceBuilder builder) {
+    private synchronized void recycleFaceBuilder(FaceBuilder builder) {
         if (builder.p.length > 1536) return;
         if (freeFaceBuilderCount < freeFaceBuilders.length) {
             builder.reset(0);
@@ -2211,7 +2231,7 @@ final class ChunkRenderer {
         }
     }
 
-    private FlowerBuilder acquireFlowerBuilder() {
+    private synchronized FlowerBuilder acquireFlowerBuilder() {
         if (freeFlowerBuilderCount == 0) return new FlowerBuilder();
         FlowerBuilder builder = freeFlowerBuilders[--freeFlowerBuilderCount];
         freeFlowerBuilders[freeFlowerBuilderCount] = null;
@@ -2219,7 +2239,7 @@ final class ChunkRenderer {
         return builder;
     }
 
-    private FireBuilder acquireFireBuilder() {
+    private synchronized FireBuilder acquireFireBuilder() {
         if (freeFireBuilderCount == 0) return new FireBuilder();
         FireBuilder builder = freeFireBuilders[--freeFireBuilderCount];
         freeFireBuilders[freeFireBuilderCount] = null;
@@ -2227,7 +2247,7 @@ final class ChunkRenderer {
         return builder;
     }
 
-    private PortalBuilder acquirePortalBuilder() {
+    private synchronized PortalBuilder acquirePortalBuilder() {
         if (freePortalBuilderCount == 0) return new PortalBuilder();
         PortalBuilder builder = freePortalBuilders[--freePortalBuilderCount];
         freePortalBuilders[freePortalBuilderCount] = null;
@@ -2235,7 +2255,7 @@ final class ChunkRenderer {
         return builder;
     }
 
-    private void recycleFlowerBuilder(FlowerBuilder builder) {
+    private synchronized void recycleFlowerBuilder(FlowerBuilder builder) {
         if (builder.p.length > 4096) return;
         if (freeFlowerBuilderCount < freeFlowerBuilders.length) {
             builder.reset();
@@ -2243,7 +2263,7 @@ final class ChunkRenderer {
         }
     }
 
-    private void recycleFireBuilder(FireBuilder builder) {
+    private synchronized void recycleFireBuilder(FireBuilder builder) {
         if (builder.p.length > 4096) return;
         if (freeFireBuilderCount < freeFireBuilders.length) {
             builder.reset();
@@ -2251,7 +2271,7 @@ final class ChunkRenderer {
         }
     }
 
-    private void recyclePortalBuilder(PortalBuilder builder) {
+    private synchronized void recyclePortalBuilder(PortalBuilder builder) {
         if (builder.p.length > 4096) return;
         if (freePortalBuilderCount < freePortalBuilders.length) {
             builder.reset();
@@ -2274,13 +2294,13 @@ private boolean captureChunkBuildSnapshot(VoxelWorld world, int cx, int cy, int 
                 snapshot.lightX, snapshot.lightY, snapshot.lightZ, snapshot.lightRadius,
                 snapshot.lavaSource, MAX_CHUNK_TORCHES, TORCH_LIGHT_RADIUS, LAVA_LIGHT_RADIUS);
         snapshot.nether = world.nether;
-        for (int ly = 0; ly < VoxelWorld.CHUNK_Y; ly++) {
+        for (int ly = -1; ly <= VoxelWorld.CHUNK_Y; ly++) {
             int wy = y0 + ly;
             for (int lz = -1; lz <= VoxelWorld.CHUNK_XZ; lz++) {
                 int wz = z0 + lz;
                 for (int lx = -1; lx <= VoxelWorld.CHUNK_XZ; lx++) {
                     int wx = x0 + lx;
-                    snapshot.voxels[ly * ChunkBuildSnapshot.PAD_AREA +
+                    snapshot.voxels[(ly + 1) * ChunkBuildSnapshot.PAD_AREA +
                             (lz + 1) * ChunkBuildSnapshot.PAD + lx + 1] = world.get(wx, wy, wz);
                 }
             }
@@ -2297,7 +2317,7 @@ private boolean captureChunkBuildSnapshot(VoxelWorld world, int cx, int cy, int 
     private static final class ChunkBuildSnapshot {
         private static final int PAD = VoxelWorld.CHUNK_XZ + 2;
         private static final int PAD_AREA = PAD * PAD;
-        final byte[] voxels = new byte[PAD_AREA * VoxelWorld.CHUNK_Y];
+        final byte[] voxels = new byte[PAD_AREA * (VoxelWorld.CHUNK_Y + 2)];
         final byte[] metadata = new byte[VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
         boolean nether;
         final int[] lightX = new int[MAX_CHUNK_TORCHES];
@@ -2308,10 +2328,10 @@ private boolean captureChunkBuildSnapshot(VoxelWorld world, int cx, int cy, int 
         int revision, lightCount;
 
         byte block(int x, int y, int z) {
-            if (y < 0 || y >= VoxelWorld.CHUNK_Y || x < -1 ||
+            if (y < -1 || y > VoxelWorld.CHUNK_Y || x < -1 ||
                     x > VoxelWorld.CHUNK_XZ || z < -1 || z > VoxelWorld.CHUNK_XZ)
                 return Block.AIR;
-            return voxels[y * PAD_AREA + (z + 1) * PAD + x + 1];
+            return voxels[(y + 1) * PAD_AREA + (z + 1) * PAD + x + 1];
         }
 
         int metadata(int x, int y, int z) {
