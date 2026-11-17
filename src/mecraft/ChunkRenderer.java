@@ -376,9 +376,11 @@ final class ChunkRenderer {
         if (setting < 0) setting = 0;
         if (setting > 4) setting = 4;
         // Shortest is the emergency low-memory preset: a compact 2x2
-        // square aligned to the player's facing direction.
+        // square aligned to the player's facing direction. Keep the generic
+        // radius at one as well, so no other streaming path can accidentally
+        // expand this preset back to the larger square window.
         shortestDistance = setting == 4;
-        streamRadius = setting == 0 ? 1 : setting + 1;
+        streamRadius = shortestDistance ? 1 : (setting == 0 ? 1 : setting + 1);
         if (streamRadius > MAX_STREAM_RADIUS) streamRadius = MAX_STREAM_RADIUS;
         // Shortest keeps the 2x2 streaming window, but limits visible depth
         // to roughly one 16-block chunk. Fog fades gradually near the far plane.
