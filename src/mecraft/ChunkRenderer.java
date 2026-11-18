@@ -33,6 +33,7 @@ final class ChunkRenderer {
     // A material is split into bounded linked segments; no builder grows without limit.
     private static final int MAX_FACE_BUILDER_VERTICES = 2048;
     private static final int MAX_CHUNK_MESHES_PER_SYNC = 4;
+    private static final int MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 2048;
     private static final long MAX_CHUNK_MESH_INSTALL_MILLIS = 6L;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
     private static final float CHUNK_RADIUS = 12.0f;
@@ -104,6 +105,10 @@ final class ChunkRenderer {
     private int chunkBuildRequestSlot, chunkBuildRequestX, chunkBuildRequestY;
     private int chunkBuildRequestZ, chunkBuildRequestEpoch;
     private Thread chunkBuildThread;
+    // Copy world data into the worker snapshot in bounded frame-sized slices.
+    private boolean chunkSnapshotPreparing;
+    private int chunkSnapshotCursor, chunkSnapshotRevision;
+    private int chunkSnapshotSlot, chunkSnapshotX, chunkSnapshotY, chunkSnapshotZ, chunkSnapshotEpoch;
     private int streamEpoch;
     private Chunk installingChunk;
     private int installingSlot, installingX, installingY, installingZ, installingEpoch;
@@ -1371,6 +1376,7 @@ final class ChunkRenderer {
 
     private void rebuildWorld(VoxelWorld world) {
         streamEpoch++;
+        chunkSnapshotPreparing = false;
         if (installingChunk != null) {
             recycleChunkBuilders(installingChunk);
             installingChunk = null;
@@ -1597,36 +1603,109 @@ final class ChunkRenderer {
                 }
             }
         }
-        if (best >= 0 && (!residentChunks[best] || dirtyChunks[best]) &&
+        if (chunkSnapshotPreparing) {
+            advanceChunkBuildSnapshot(world);
+        }
+        if (!chunkSnapshotPreparing && best >= 0 &&
+                (!residentChunks[best] || dirtyChunks[best]) &&
                 !chunkBuildWorkerBusy && !buildResultReady && installingChunk == null) {
-            requestChunkBuild(world, best, chunkWorldX[best],
+            beginChunkBuildSnapshot(world, best, chunkWorldX[best],
                     chunkWorldY[best], chunkWorldZ[best]);
+            if (chunkSnapshotPreparing) advanceChunkBuildSnapshot(world);
         }
     }
 
-    private void requestChunkBuild(final VoxelWorld world, final int slot,
-                                   final int cx, final int cy, final int cz) {
+    private void beginChunkBuildSnapshot(VoxelWorld world, int slot,
+                                         int cx, int cy, int cz) {
         if (!world.prepareProceduralChunksForSection(cx, cz)) {
             dirtyChunks[slot] = true;
             return;
         }
-        if (!captureChunkBuildSnapshot(world, cx, cy, cz, chunkBuildSnapshot)) {
+        chunkSnapshotPreparing = true;
+        chunkSnapshotCursor = 0;
+        chunkSnapshotSlot = slot;
+        chunkSnapshotX = cx;
+        chunkSnapshotY = cy;
+        chunkSnapshotZ = cz;
+        chunkSnapshotEpoch = streamEpoch;
+        chunkSnapshotRevision = world.revision;
+    }
+
+    private void advanceChunkBuildSnapshot(VoxelWorld world) {
+        int slot = chunkSnapshotSlot;
+        boolean slotMatches = slot >= 0 && slot < CACHE_SIZE &&
+                chunkWorldX[slot] == chunkSnapshotX &&
+                chunkWorldY[slot] == chunkSnapshotY &&
+                chunkWorldZ[slot] == chunkSnapshotZ;
+        if (chunkSnapshotEpoch != streamEpoch || !slotMatches ||
+                !chunkFrustumVisible[slot] || world.revision != chunkSnapshotRevision ||
+                chunkBuildWorkerBusy || buildResultReady || installingChunk != null) {
+            chunkSnapshotPreparing = false;
+            if (slotMatches) dirtyChunks[slot] = true;
+            return;
+        }
+
+        ChunkBuildSnapshot snapshot = chunkBuildSnapshot;
+        int x0 = chunkSnapshotX * VoxelWorld.CHUNK_XZ;
+        int y0 = chunkSnapshotY * VoxelWorld.CHUNK_Y;
+        int z0 = chunkSnapshotZ * VoxelWorld.CHUNK_XZ;
+        int voxelCount = ChunkBuildSnapshot.PAD_AREA * (VoxelWorld.CHUNK_Y + 2);
+        int metadataCount = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ;
+        int total = voxelCount + metadataCount;
+        int end = chunkSnapshotCursor + MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC;
+        if (end > total) end = total;
+
+        while (chunkSnapshotCursor < end) {
+            int index = chunkSnapshotCursor++;
+            if (index < voxelCount) {
+                int localX = index % ChunkBuildSnapshot.PAD - 1;
+                int localZ = index / ChunkBuildSnapshot.PAD % ChunkBuildSnapshot.PAD - 1;
+                int localY = index / ChunkBuildSnapshot.PAD_AREA - 1;
+                snapshot.voxels[index] = world.get(x0 + localX, y0 + localY, z0 + localZ);
+            } else {
+                int metadataIndex = index - voxelCount;
+                int localX = metadataIndex % VoxelWorld.CHUNK_XZ;
+                int localZ = metadataIndex / VoxelWorld.CHUNK_XZ % VoxelWorld.CHUNK_XZ;
+                int localY = metadataIndex /
+                        (VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ);
+                snapshot.metadata[metadataIndex] = (byte)world.metadataAt(
+                        x0 + localX, y0 + localY, z0 + localZ);
+            }
+        }
+        if (chunkSnapshotCursor < total) return;
+
+        int radius = LAVA_LIGHT_RADIUS;
+        snapshot.lightCount = world.collectLightSources(
+                x0 - radius, Math.max(0, y0 - radius), z0 - radius,
+                x0 + VoxelWorld.CHUNK_XZ + radius,
+                Math.min(VoxelWorld.HEIGHT, y0 + VoxelWorld.CHUNK_Y + radius),
+                z0 + VoxelWorld.CHUNK_XZ + radius,
+                snapshot.lightX, snapshot.lightY, snapshot.lightZ,
+                snapshot.lightRadius, snapshot.lavaSource, MAX_CHUNK_TORCHES,
+                TORCH_LIGHT_RADIUS, LAVA_LIGHT_RADIUS);
+        snapshot.nether = world.nether;
+        snapshot.revision = chunkSnapshotRevision;
+        if (world.revision != chunkSnapshotRevision) {
+            chunkSnapshotPreparing = false;
             dirtyChunks[slot] = true;
             return;
         }
+
         synchronized (chunkBuildWorkerLock) {
-            if (chunkBuildWorkerBusy) {
+            if (chunkBuildWorkerBusy || buildResultReady || installingChunk != null) {
+                chunkSnapshotPreparing = false;
                 dirtyChunks[slot] = true;
                 return;
             }
             chunkBuildWorkerBusy = true;
             chunkBuildRequestPending = true;
             chunkBuildRequestSlot = slot;
-            chunkBuildRequestX = cx;
-            chunkBuildRequestY = cy;
-            chunkBuildRequestZ = cz;
-            chunkBuildRequestEpoch = streamEpoch;
+            chunkBuildRequestX = chunkSnapshotX;
+            chunkBuildRequestY = chunkSnapshotY;
+            chunkBuildRequestZ = chunkSnapshotZ;
+            chunkBuildRequestEpoch = chunkSnapshotEpoch;
             dirtyChunks[slot] = false;
+            chunkSnapshotPreparing = false;
             if (chunkBuildThread == null) {
                 try {
                     Thread worker = new Thread(new Runnable() {
