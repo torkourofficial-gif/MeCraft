@@ -973,7 +973,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void mineTarget() {
         if (world != null) {
-            int mobHit = renderer.hitMob(world, cameraPitch, heldAttackDamage());
+            ensureLookRay();
+        int mobHit = renderer.hitMob(world, (float)lookRayX, (float)lookRayY,
+                (float)lookRayZ, heldAttackDamage());
             if (mobHit >= 0) {
                 if (mobHit > 0) onMobHit();
                 return;
@@ -1260,7 +1262,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     pendingIronDoorX = Integer.MIN_VALUE;
                     if (world.toggleDoor(target[0], target[1], target[2])) {
                         renderer.swingHand();
-}
+                    }
                 } else {
                     pendingIronDoorX = target[0]; pendingIronDoorY = lowerY;
                     pendingIronDoorZ = target[2]; pendingIronDoorTicks = 12;
@@ -1269,7 +1271,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 pendingIronDoorTicks = 0;
                 pendingIronDoorX = Integer.MIN_VALUE;
                 renderer.swingHand();
-}
+            }
             return;
         }
         int selectedItem = hotbar[world.selectedSlot];
@@ -1315,7 +1317,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 inventory[doorItem]--;
                 if (inventory[doorItem] == 0) restoreHotbarItem(doorItem);
             }
-return;
+            return;
         }
         if (block == Block.TORCH) {
             // Floor torches need a solid block below; wall torches attach to the
@@ -1353,7 +1355,7 @@ return;
             inventory[selectedItem]--;
             if (inventory[selectedItem] == 0) restoreHotbarItem(selectedItem);
         }
-}
+    }
 
 
     private boolean railExistsNear(int x, int y, int z) {
