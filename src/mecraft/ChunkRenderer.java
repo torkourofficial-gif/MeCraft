@@ -1503,6 +1503,10 @@ final class ChunkRenderer {
                         chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
                         dirtyChunks[i] = false;
                         chunkFrustumVisible[i] = visible;
+                    } else if (!residentChunks[i]) {
+                        // Preserve visibility for a pending or re-requested slot
+                        // even when its cached coordinates already match.
+                        chunkFrustumVisible[i] = visible;
                     }
                     if (!visible) continue;
                     if (!residentChunks[i] || dirtyChunks[i]) {
