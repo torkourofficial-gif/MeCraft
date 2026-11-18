@@ -32,7 +32,7 @@ final class ChunkRenderer {
     private static final int LAVA_LIGHT_RADIUS = 6;
     private static final int MAX_CHUNK_TORCHES = 128;
     // A material is split into bounded linked segments; no builder grows without limit.
-    private static final int MAX_FACE_BUILDER_VERTICES = 1024;
+    private static final int MAX_FACE_BUILDER_VERTICES = 2048;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
     private static final float CHUNK_RADIUS = 12.0f;
     private static final float NORMAL_FOV = 68.0f;
@@ -125,7 +125,7 @@ final class ChunkRenderer {
     private final FaceBuilder[] chunkFaceBuilderTails = new FaceBuilder[TILE_COUNT];
     // A bounded pool avoids allocating FaceBuilder arrays for every streamed
     // chunk without retaining one builder for every possible tile/light pair.
-    private final FaceBuilder[] freeFaceBuilders = new FaceBuilder[32];
+    private final FaceBuilder[] freeFaceBuilders = new FaceBuilder[16];
     private int freeFaceBuilderCount;
     private final FlowerBuilder[] freeFlowerBuilders = new FlowerBuilder[2];
     private final FireBuilder[] freeFireBuilders = new FireBuilder[2];
