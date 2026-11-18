@@ -42,6 +42,16 @@ final class MobSystem {
     // Small overlaps at moving joints prevent visible seams between closed cuboids.
     private static final float JOINT_OVERLAP = 0.5f;
 
+    // Precompute the unchanged 20-frame death curve once instead of evaluating
+    // a square root for every dying mob on every game tick.
+    private static final float[] DEATH_ROLL = new float[20];
+    static {
+        for (int i = 0; i < DEATH_ROLL.length; i++) {
+            float progress = (i + 1) / 20.0f;
+            DEATH_ROLL[i] = (float)Math.sqrt(progress) * 90.0f;
+        }
+    }
+
     private final Mob[] mobs = new Mob[MOB_COUNT];
     private final Arrow[] arrows = new Arrow[6];
     private final Fireball[] fireballs = new Fireball[2];
@@ -383,11 +393,10 @@ final class MobSystem {
 
     private void updateDeath(int slot, Mob mob) {
         mob.deathTicks++;
-        float progress = mob.deathTicks / 20.0f;
-        if (progress > 1.0f) progress = 1.0f;
-        float roll = (float)Math.sqrt(progress) * 90.0f;
-        mob.pose.setOrientation(roll, 0.0f, 0.0f, 1.0f);
-        if (mob.deathTicks >= 20) {
+        int frame = mob.deathTicks;
+        if (frame > DEATH_ROLL.length) frame = DEATH_ROLL.length;
+        mob.pose.setOrientation(DEATH_ROLL[frame - 1], 0.0f, 0.0f, 1.0f);
+        if (mob.deathTicks >= DEATH_ROLL.length) {
             particles.spawnMobDeath(mob.x, mob.y, mob.z);
             releaseMob(slot);
         }
