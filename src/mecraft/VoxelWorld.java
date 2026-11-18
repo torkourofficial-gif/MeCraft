@@ -183,8 +183,6 @@ final class VoxelWorld {
     }
 
     VoxelWorld(int seed, int mode, int worldSize, int worldType, int noiseVersion) {
-        InfdevTerrain.beginGeneration(seed);
-        try {
         setGenerationDiagnosticStage("VoxelWorld: asignando semilla");
         this.seed = seed;
         this.noiseVersion = noiseVersion <= 0 ? 0 : 1;
@@ -204,10 +202,6 @@ final class VoxelWorld {
         setGenerationDiagnosticStage("VoxelWorld: entrando en generate()");
         generate();
         setGenerationDiagnosticStage("VoxelWorld: generate() terminó; posicionando jugador");
-    
-        } finally {
-            InfdevTerrain.endGeneration(seed);
-        }
     }
 
     private int index(int x, int y, int z) {
@@ -362,7 +356,6 @@ final class VoxelWorld {
             }
 
             boolean generated = false;
-            InfdevTerrain.beginGeneration(requestSeed);
             try {
                 generateChunk(cx, cz, proceduralPrefetchBlocks,
                         proceduralPrefetchHeights, proceduralPrefetchBiomes, dimension);
@@ -371,8 +364,6 @@ final class VoxelWorld {
                 generated = false;
             } catch (RuntimeException failed) {
                 generated = false;
-            } finally {
-                InfdevTerrain.endGeneration(requestSeed);
             }
             synchronized (proceduralPrefetchLock) {
                 proceduralPrefetchBusy = false;
