@@ -1245,8 +1245,10 @@ final class ChunkRenderer {
     void sync(VoxelWorld world) {
         if (world.revision != builtRevision || world.fullRebuild) {
             boolean resetStreaming = builtRevision < 0 || world.fullRebuild;
-            if (resetStreaming) rebuildWorld(world);
-            else rebuildChanged(world);
+            if (resetStreaming) {
+                rebuildWorld(world);
+                world.bulkChangedPending = false;
+            } else rebuildChanged(world);
             builtRevision = world.revision;
         }
         // Rail meshes also have a camera-centered streaming window, so they
@@ -1258,6 +1260,30 @@ final class ChunkRenderer {
     }
 
     private void rebuildChanged(VoxelWorld world) {
+        if (world.bulkChangedPending) {
+            // TNT changes many voxels at once. Rebuild only resident sections
+            // intersecting that blast region, plus a one-block face halo.
+            int minChunkX = floorDiv(world.bulkChangedMinX - 1, VoxelWorld.CHUNK_XZ);
+            int maxChunkX = floorDiv(world.bulkChangedMaxX + 1, VoxelWorld.CHUNK_XZ);
+            int minChunkY = floorDiv(world.bulkChangedMinY - 1, VoxelWorld.CHUNK_Y);
+            int maxChunkY = floorDiv(world.bulkChangedMaxY + 1, VoxelWorld.CHUNK_Y);
+            int minChunkZ = floorDiv(world.bulkChangedMinZ - 1, VoxelWorld.CHUNK_XZ);
+            int maxChunkZ = floorDiv(world.bulkChangedMaxZ + 1, VoxelWorld.CHUNK_XZ);
+            for (int chunkY = minChunkY; chunkY <= maxChunkY; chunkY++) {
+                if (chunkY < 0 || chunkY >= VoxelWorld.CHUNKS_Y) continue;
+                for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+                    for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+                        int slot = (chunkY * MAX_STREAM_SPAN +
+                                floorMod(chunkZ, MAX_STREAM_SPAN)) * MAX_STREAM_SPAN +
+                                floorMod(chunkX, MAX_STREAM_SPAN);
+                        if (chunkWorldX[slot] == chunkX && chunkWorldY[slot] == chunkY &&
+                                chunkWorldZ[slot] == chunkZ)
+                            dirtyChunks[slot] = true;
+                    }
+                }
+            }
+            world.bulkChangedPending = false;
+        }
         int x = world.changedX, y = world.changedY, z = world.changedZ;
         int cx = floorDiv(x, VoxelWorld.CHUNK_XZ);
         int cy = y / VoxelWorld.CHUNK_Y;
