@@ -1514,7 +1514,7 @@ final class ChunkRenderer {
                 installingChunk = null;
             } else {
                 try {
-                    if (finishChunkMeshStep(installingChunk, 2)) {
+                    if (finishChunkMeshStep(installingChunk, 1)) {
                         replaceChunk(installingSlot, installingX, installingY, installingZ, installingChunk);
                         installingChunk = null;
                     }
