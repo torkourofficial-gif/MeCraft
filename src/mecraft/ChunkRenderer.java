@@ -1289,7 +1289,8 @@ final class ChunkRenderer {
                 }
             }
         }
-        sync(world);
+        // paint() performs the renderer sync once per frame. Keep this helper to
+        // queue the urgent local invalidation without advancing mesh work twice.
     }
 
     private boolean isUrgentChunk(int cx, int cy, int cz) {
