@@ -2560,7 +2560,7 @@ final class ChunkRenderer {
         final int[] lightZ = new int[MAX_CHUNK_TORCHES];
         final byte[] lightRadius = new byte[MAX_CHUNK_TORCHES];
         final boolean[] lavaSource = new boolean[MAX_CHUNK_TORCHES];
-        final int[] lightScanState = new int[2];
+        final int[] lightScanState = new int[5];
         int revision, lightCount;
 
         byte block(int x, int y, int z) {
