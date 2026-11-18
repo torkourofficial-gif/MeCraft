@@ -36,6 +36,12 @@ This branch contains a conservative hot-path optimization for the existing MIDP 
 
 These changes reduce duplicate player-skin texture objects and avoid startup conversion/residency for unused mob textures. The actual byte savings depend on the JSR-184 implementation and asset dimensions; no numerical heap/native-memory claim is made without device profiling.
 
+### Player movement tick
+
+- Skip input normalization's square root unless the two-axis input magnitude exceeds one.
+- Cache the yaw sine/cosine while the heading is unchanged, and do not compute them at all when there is no directional input. Idle 20 Hz ticks therefore avoid this movement math while physics and collision updates continue normally.
+- Movement vectors and collision behavior are unchanged.
+
 ### Terrain mesh batching
 
 - Increased the maximum vertices in each recycled face-builder segment from 1,024 to 2,048. Material buckets that used to spill into a second mesh can stay in one, reducing worst-case segment and mesh count.
