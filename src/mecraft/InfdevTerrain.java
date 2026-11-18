@@ -13,54 +13,84 @@ final class InfdevTerrain {
     private static final int[] latticeZCache = new int[LATTICE_CACHE_SIZE];
     private static final byte[] latticeValueCache = new byte[LATTICE_CACHE_SIZE];
     private static final boolean[] latticeCacheValid = new boolean[LATTICE_CACHE_SIZE];
-    // Seeded 256-entry permutation table: 512 bytes, generated once per world.
-    // Version 0 retains the original coordinate hash for existing saves.
-    private static final byte[] seededPermutation = new byte[512];
-    private static int preparedNoiseSeed = Integer.MIN_VALUE;
-    private static int preparedNoiseVersion = -1;
-    // Terrain generation can run on the streaming worker. Same-seed generation
-    // is read-only with respect to the permutation; a seed change waits for
-    // active generators before replacing that shared table.
-    private static int activeGenerationSeed = Integer.MIN_VALUE;
-    private static int activeGenerationCount;
-
-    static synchronized void beginGeneration(int seed) {
-        while (activeGenerationCount > 0 && activeGenerationSeed != seed) {
-            try { InfdevTerrain.class.wait(); } catch (InterruptedException ignored) { }
-        }
-        if (activeGenerationCount == 0) activeGenerationSeed = seed;
-        activeGenerationCount++;
-    }
-
-    static synchronized void endGeneration(int seed) {
-        if (activeGenerationCount > 0 && activeGenerationSeed == seed) {
-            activeGenerationCount--;
-            if (activeGenerationCount == 0) {
-                activeGenerationSeed = Integer.MIN_VALUE;
-                InfdevTerrain.class.notifyAll();
-            }
-        }
-    }
+    // Immutable per-seed noise tables. Keeping a small bounded cache avoids
+    // serializing whole chunk generations or replacing a table another worker reads.
+    private static volatile NoiseTable noiseTable0;
+    private static volatile NoiseTable noiseTable1;
+    private static volatile NoiseTable noiseTable2;
+    private static volatile NoiseTable noiseTable3;
+    private static volatile NoiseTable lastNoiseTable;
+    private static int nextNoiseTable;
 
     static synchronized void prepareNoise(int seed, int version) {
-        while (activeGenerationCount > 0 && activeGenerationSeed != seed) {
-            try { InfdevTerrain.class.wait(); } catch (InterruptedException ignored) { }
-        }
         int selectedVersion = version <= 0 ? 0 : 1;
-        if (preparedNoiseSeed == seed && preparedNoiseVersion == selectedVersion) return;
-        preparedNoiseSeed = seed;
-        preparedNoiseVersion = selectedVersion;
-        if (selectedVersion == 0) return;
-        int state = seed ^ 0x6D2B79F5;
-        for (int i = 0; i < 256; i++) seededPermutation[i] = (byte)i;
-        for (int i = 255; i > 0; i--) {
-            state = state * 1664525 + 1013904223;
-            int j = (state >>> 1) % (i + 1);
-            byte value = seededPermutation[i];
-            seededPermutation[i] = seededPermutation[j];
-            seededPermutation[j] = value;
+        NoiseTable existing = findNoiseTable(seed, selectedVersion);
+        if (existing != null) {
+            lastNoiseTable = existing;
+            return;
         }
-        for (int i = 0; i < 256; i++) seededPermutation[i + 256] = seededPermutation[i];
+        byte[] permutation = null;
+        if (selectedVersion != 0) {
+            permutation = new byte[512];
+            int state = seed ^ 0x6D2B79F5;
+            for (int i = 0; i < 256; i++) permutation[i] = (byte)i;
+            for (int i = 255; i > 0; i--) {
+                state = state * 1664525 + 1013904223;
+                int j = (state >>> 1) % (i + 1);
+                byte value = permutation[i];
+                permutation[i] = permutation[j];
+                permutation[j] = value;
+            }
+            for (int i = 0; i < 256; i++) permutation[i + 256] = permutation[i];
+        }
+        NoiseTable created = new NoiseTable(seed, selectedVersion, permutation);
+        switch (nextNoiseTable++ & 3) {
+        case 0: noiseTable0 = created; break;
+        case 1: noiseTable1 = created; break;
+        case 2: noiseTable2 = created; break;
+        default: noiseTable3 = created; break;
+        }
+        lastNoiseTable = created;
+    }
+
+    private static NoiseTable findNoiseTable(int seed, int version) {
+        NoiseTable recent = lastNoiseTable;
+        if (recent != null && recent.seed == seed && recent.version == version) return recent;
+        NoiseTable table = noiseTable0;
+        if (table != null && table.seed == seed && table.version == version) return table;
+        table = noiseTable1;
+        if (table != null && table.seed == seed && table.version == version) return table;
+        table = noiseTable2;
+        if (table != null && table.seed == seed && table.version == version) return table;
+        table = noiseTable3;
+        if (table != null && table.seed == seed && table.version == version) return table;
+        return null;
+    }
+
+    private static NoiseTable findNoiseTable(int seed) {
+        NoiseTable recent = lastNoiseTable;
+        if (recent != null && recent.seed == seed) return recent;
+        NoiseTable table = noiseTable0;
+        if (table != null && table.seed == seed) return table;
+        table = noiseTable1;
+        if (table != null && table.seed == seed) return table;
+        table = noiseTable2;
+        if (table != null && table.seed == seed) return table;
+        table = noiseTable3;
+        if (table != null && table.seed == seed) return table;
+        return null;
+    }
+
+    private static final class NoiseTable {
+        final int seed;
+        final int version;
+        final byte[] permutation;
+
+        NoiseTable(int seed, int version, byte[] permutation) {
+            this.seed = seed;
+            this.version = version;
+            this.permutation = permutation;
+        }
     }
 
     private static final int OCEAN = 0;
@@ -302,12 +332,16 @@ final class InfdevTerrain {
      * the world is created.
      */
     private static int lattice(int seed, int x, int z) {
-        if (preparedNoiseSeed != seed || preparedNoiseVersion < 0)
+        NoiseTable table = findNoiseTable(seed);
+        if (table == null) {
             prepareNoise(seed, 1);
-        if (preparedNoiseVersion != 0) {
+            table = findNoiseTable(seed);
+        }
+        if (table != null && table.version != 0) {
+            byte[] permutation = table.permutation;
             int px = x & 255;
             int pz = z & 255;
-            return seededPermutation[px + (seededPermutation[pz] & 255)] & 255;
+            return permutation[px + (permutation[pz] & 255)] & 255;
         }
         int base = seed ^ x * 73428767 ^ z * 42317861;
         int mixed = (base ^ (base >>> 13)) * 1274126177;
