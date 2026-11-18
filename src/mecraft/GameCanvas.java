@@ -242,6 +242,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private int pendingIronDoorX = Integer.MIN_VALUE, pendingIronDoorY, pendingIronDoorZ;
     private int pendingIronDoorTicks;
     private final int[] traceResult = new int[6];
+    private float lookRayYaw, lookRayPitch;
+    private boolean lookRayValid;
+    private double lookRaySinYaw, lookRayCosYaw, lookRaySinPitch, lookRayCosPitch;
+    private double lookRayX, lookRayY, lookRayZ;
     private static final int MAX_AIR = 300;
     private int airTicks = MAX_AIR;
     private int hurtTicks;
@@ -1043,12 +1047,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     /** Ray-pick the full minecart bounds, stopping when a solid block occludes it. */
     private boolean minecartInCrosshair(MinecartEntity cart) {
         if (world == null || cart == null || !cart.alive) return false;
-        double yaw = world.yaw * Math.PI / 180.0;
-        double pitch = cameraPitch * Math.PI / 180.0;
+        ensureLookRay();
         float ox = world.playerX, oy = world.playerY + PLAYER_EYE_HEIGHT, oz = world.playerZ;
-        double rx = Math.sin(yaw) * Math.cos(pitch);
-        double ry = Math.sin(pitch);
-        double rz = Math.cos(yaw) * Math.cos(pitch);
+        double rx = lookRayX, ry = lookRayY, rz = lookRayZ;
         for (float d = 0.20f; d <= 5.0f; d += 0.05f) {
             float px = ox + (float)(rx * d);
             float py = oy + (float)(ry * d);
@@ -1063,13 +1064,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     private boolean boatInCrosshair(BoatEntity boat) {
-        double yaw = world.yaw * Math.PI / 180.0;
-        double pitch = cameraPitch * Math.PI / 180.0;
+        ensureLookRay();
         float ox = world.playerX, oy = world.playerY + PLAYER_EYE_HEIGHT, oz = world.playerZ;
         float dx = boat.x - ox, dy = boat.y - oy, dz = boat.z - oz;
-        double rx = Math.sin(yaw) * Math.cos(pitch);
-        double ry = Math.sin(pitch);
-        double rz = Math.cos(yaw) * Math.cos(pitch);
+        double rx = lookRayX, ry = lookRayY, rz = lookRayZ;
         double along = dx * rx + dy * ry + dz * rz;
         if (along < 0.0 || along > 5.0) return false;
         double ex = dx - rx * along, ey = dy - ry * along, ez = dz - rz * along;
@@ -1563,11 +1561,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (world == null || renderer == null) return;
         int selected = hotbar[world.selectedSlot];
         if (world.mode == 0 && inventory[selected] <= 0) return;
-        double yaw = world.yaw * Math.PI / 180.0;
-        double pitch = cameraPitch * Math.PI / 180.0;
-        double dirX = Math.sin(yaw) * Math.cos(pitch);
-        double dirY = Math.sin(pitch);
-        double dirZ = Math.cos(yaw) * Math.cos(pitch);
+        ensureLookRay();
+        double dirX = lookRayX, dirY = lookRayY, dirZ = lookRayZ;
         int bx = 0, by = 0, bz = 0;
         boolean found = false;
         // Block targeting intentionally skips fluids; boats therefore use a dedicated
@@ -2108,16 +2103,29 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         return Math.max(1, (items + pageSize - 1) / pageSize);
     }
 
-    /** Short ray march; returns hit voxel and the previous empty voxel offset. */
-    private int[] trace(float reach) {
+    private void ensureLookRay() {
+        if (lookRayValid && lookRayYaw == world.yaw && lookRayPitch == cameraPitch) return;
         double yaw = world.yaw * Math.PI / 180.0;
         double pitch = cameraPitch * Math.PI / 180.0;
+        lookRaySinYaw = Math.sin(yaw);
+        lookRayCosYaw = Math.cos(yaw);
+        lookRaySinPitch = Math.sin(pitch);
+        lookRayCosPitch = Math.cos(pitch);
+        lookRayX = lookRaySinYaw * lookRayCosPitch;
+        lookRayY = lookRaySinPitch;
+        lookRayZ = lookRayCosYaw * lookRayCosPitch;
+        lookRayYaw = world.yaw;
+        lookRayPitch = cameraPitch;
+        lookRayValid = true;
+    }
+
+    /** Short ray march; returns hit voxel and the previous empty voxel offset. */
+    private int[] trace(float reach) {
+        ensureLookRay();
         float ox = world.playerX;
         float oy = world.playerY + PLAYER_EYE_HEIGHT;
         float oz = world.playerZ;
-        double dirX = Math.sin(yaw) * Math.cos(pitch);
-        double dirY = Math.sin(pitch);
-        double dirZ = Math.cos(yaw) * Math.cos(pitch);
+        double dirX = lookRayX, dirY = lookRayY, dirZ = lookRayZ;
         int oldX = floorBlock(ox), oldY = floorBlock(oy), oldZ = floorBlock(oz);
         for (float d = 0.35f; d <= reach; d += 0.12f) {
             float x = ox + (float)(dirX * d);
@@ -4143,10 +4151,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void drawLanPlayers(Graphics g) {
         int w = getWidth(), h = getHeight();
-        double yaw = world.yaw * Math.PI / 180.0;
-        double pitch = cameraPitch * Math.PI / 180.0;
-        double sy = Math.sin(yaw), cy = Math.cos(yaw);
-        double sp = Math.sin(pitch), cp = Math.cos(pitch);
+        ensureLookRay();
+        double sy = lookRaySinYaw, cy = lookRayCosYaw;
+        double sp = lookRaySinPitch, cp = lookRayCosPitch;
         double focal = w * 0.82;
         int i;
         for (i = 0; i < LanProtocol.MAX_PLAYERS; i++) {
