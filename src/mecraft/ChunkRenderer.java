@@ -1735,7 +1735,7 @@ final class ChunkRenderer {
                         0.999f / 16.0f : 1.0f / 16.0f;
                 Mesh mesh = makeMesh(builder, tileAppearance(builder.tile), scale);
                 mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
-                chunk.meshes[chunk.meshBuildAt++] = mesh;
+                appendChunkMesh(chunk, mesh);
                 budget--;
                 installed++;
             }
@@ -1749,7 +1749,7 @@ final class ChunkRenderer {
                 if (b.vertexCount > 0) {
                     Mesh mesh = makeFlowerMesh(b, flowerAppearance);
                     mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
-                    chunk.meshes[chunk.meshBuildAt++] = mesh;
+                    appendChunkMesh(chunk, mesh);
                     budget--;
                     installed++;
                 }
@@ -1765,7 +1765,7 @@ final class ChunkRenderer {
                 if (chunk.fires.vertexCount > 0) {
                     Mesh mesh = makeFireMesh(chunk.fires);
                     mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
-                    chunk.meshes[chunk.meshBuildAt++] = mesh;
+                    appendChunkMesh(chunk, mesh);
                     budget--;
                     installed++;
                 } else {
@@ -1783,7 +1783,7 @@ final class ChunkRenderer {
                 if (b.vertexCount > 0) {
                     Mesh mesh = makePortalMesh(b);
                     mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
-                    chunk.meshes[chunk.meshBuildAt++] = mesh;
+                    appendChunkMesh(chunk, mesh);
                     budget--;
                 }
                 chunk.portals = null;
