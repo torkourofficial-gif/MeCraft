@@ -109,6 +109,8 @@ final class ChunkRenderer {
     // Copy world data into the worker snapshot in bounded frame-sized slices.
     private boolean chunkSnapshotPreparing;
     private int chunkSnapshotCursor, chunkSnapshotRevision;
+    private int chunkSnapshotVoxelX, chunkSnapshotVoxelY, chunkSnapshotVoxelZ;
+    private int chunkSnapshotMetadataX, chunkSnapshotMetadataY, chunkSnapshotMetadataZ;
     private int chunkSnapshotSlot, chunkSnapshotX, chunkSnapshotY, chunkSnapshotZ, chunkSnapshotEpoch;
     private int streamEpoch;
     private Chunk installingChunk;
@@ -1624,6 +1626,8 @@ final class ChunkRenderer {
         }
         chunkSnapshotPreparing = true;
         chunkSnapshotCursor = 0;
+        chunkSnapshotVoxelX = chunkSnapshotVoxelY = chunkSnapshotVoxelZ = -1;
+        chunkSnapshotMetadataX = chunkSnapshotMetadataY = chunkSnapshotMetadataZ = 0;
         chunkSnapshotSlot = slot;
         chunkSnapshotX = cx;
         chunkSnapshotY = cy;
@@ -1659,20 +1663,29 @@ final class ChunkRenderer {
         if (end > total) end = total;
 
         while (chunkSnapshotCursor < end) {
-            int index = chunkSnapshotCursor++;
-            if (index < voxelCount) {
-                int localX = index % ChunkBuildSnapshot.PAD - 1;
-                int localZ = index / ChunkBuildSnapshot.PAD % ChunkBuildSnapshot.PAD - 1;
-                int localY = index / ChunkBuildSnapshot.PAD_AREA - 1;
-                snapshot.voxels[index] = world.get(x0 + localX, y0 + localY, z0 + localZ);
+            if (chunkSnapshotCursor < voxelCount) {
+                int index = chunkSnapshotCursor++;
+                snapshot.voxels[index] = world.get(x0 + chunkSnapshotVoxelX,
+                        y0 + chunkSnapshotVoxelY, z0 + chunkSnapshotVoxelZ);
+                if (++chunkSnapshotVoxelX > VoxelWorld.CHUNK_XZ) {
+                    chunkSnapshotVoxelX = -1;
+                    if (++chunkSnapshotVoxelZ > VoxelWorld.CHUNK_XZ) {
+                        chunkSnapshotVoxelZ = -1;
+                        chunkSnapshotVoxelY++;
+                    }
+                }
             } else {
-                int metadataIndex = index - voxelCount;
-                int localX = metadataIndex % VoxelWorld.CHUNK_XZ;
-                int localZ = metadataIndex / VoxelWorld.CHUNK_XZ % VoxelWorld.CHUNK_XZ;
-                int localY = metadataIndex /
-                        (VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ);
+                int metadataIndex = chunkSnapshotCursor++ - voxelCount;
                 snapshot.metadata[metadataIndex] = (byte)world.metadataAt(
-                        x0 + localX, y0 + localY, z0 + localZ);
+                        x0 + chunkSnapshotMetadataX, y0 + chunkSnapshotMetadataY,
+                        z0 + chunkSnapshotMetadataZ);
+                if (++chunkSnapshotMetadataX >= VoxelWorld.CHUNK_XZ) {
+                    chunkSnapshotMetadataX = 0;
+                    if (++chunkSnapshotMetadataZ >= VoxelWorld.CHUNK_XZ) {
+                        chunkSnapshotMetadataZ = 0;
+                        chunkSnapshotMetadataY++;
+                    }
+                }
             }
         }
         if (chunkSnapshotCursor < total) return;
