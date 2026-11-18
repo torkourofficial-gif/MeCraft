@@ -1118,8 +1118,6 @@ final class VoxelWorld {
 
     private void generateChunk(int cx, int cz, byte[] target, int[] heights,
                                byte[] biomes, boolean dimension) {
-        InfdevTerrain.beginGeneration(seed);
-        try {
         InfdevTerrain.prepareNoise(seed, noiseVersion);
         setGenerationDiagnosticStage("VoxelWorld.generateChunk: validando dimensión; chunk cx=" + cx + ", cz=" + cz);
         if (!dimension && worldType == TYPE_FLAT) {
@@ -1141,10 +1139,7 @@ final class VoxelWorld {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generate; cx=" + cx + ", cz=" + cz);
             InfdevTerrain.generate(seed, cx, cz, target, heights, biomes);
         }
-    
-        } finally {
-            InfdevTerrain.endGeneration(seed);
-        }
+
     }
 
     synchronized void setNetherDimension(boolean enabled) {
