@@ -9,8 +9,20 @@ final class PlayerPhysics {
     private float motionY;
     private float motionZ;
     private float fallDistance;
+    private float yawBasisDegrees;
+    private float yawSin, yawCos;
+    private boolean yawBasisValid;
     private boolean onGround;
     private boolean horizontalCollision;
+
+    private void updateYawBasis(float yawDegrees) {
+        if (yawBasisValid && yawBasisDegrees == yawDegrees) return;
+        float radians = yawDegrees * (float)Math.PI / 180.0f;
+        yawSin = (float)Math.sin(radians);
+        yawCos = (float)Math.cos(radians);
+        yawBasisDegrees = yawDegrees;
+        yawBasisValid = true;
+    }
 
     void reset() {
         motionX = motionY = motionZ = fallDistance = 0.0f;
@@ -58,10 +70,18 @@ final class PlayerPhysics {
     /** Returns Indev fall damage, if a landing occurred this tick. */
     int update(VoxelWorld world, float forward, float strafe, boolean jumping,
                boolean flying, boolean descending, boolean sprinting) {
-        float inputLength = (float)Math.sqrt(forward * forward + strafe * strafe);
-        if (inputLength > 1.0f) {
+        float inputLengthSquared = forward * forward + strafe * strafe;
+        if (inputLengthSquared > 1.0f) {
+            float inputLength = (float)Math.sqrt(inputLengthSquared);
             forward /= inputLength;
             strafe /= inputLength;
+        }
+
+        float sin = 0.0f, cos = 1.0f;
+        if (forward != 0.0f || strafe != 0.0f) {
+            updateYawBasis(world.yaw);
+            sin = yawSin;
+            cos = yawCos;
         }
 
         if (flying) {
@@ -72,9 +92,6 @@ final class PlayerPhysics {
             if (movedY != requestedY) motionY = 0.0f;
             onGround = false;
             fallDistance = 0.0f;
-            float radians = world.yaw * (float)Math.PI / 180.0f;
-            float sin = (float)Math.sin(radians);
-            float cos = (float)Math.cos(radians);
             motionX += (forward * sin - strafe * cos) * 0.04f;
             motionZ += (forward * cos + strafe * sin) * 0.04f;
             moveHorizontally(world);
@@ -92,9 +109,6 @@ final class PlayerPhysics {
             else if (onGround) motionY = 0.42f;
         }
 
-        float radians = world.yaw * (float)Math.PI / 180.0f;
-        float sin = (float)Math.sin(radians);
-        float cos = (float)Math.cos(radians);
         float acceleration = inWater ? 0.02f : (onGround ? 0.10f : 0.02f);
         if (sprinting && !inWater) acceleration *= 1.6f;
         // The view uses yaw zero facing +Z, so its screen-right basis is -X.
