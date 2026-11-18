@@ -100,7 +100,7 @@ final class VoxelWorld {
     // procedural cache only on the game thread; no cache array is shared while
     // generation is in progress.
     private final Object proceduralPrefetchLock = new Object();
-    private final byte[] proceduralPrefetchBlocks = new byte[InfdevTerrain.CHUNK_VOLUME];
+    private byte[] proceduralPrefetchBlocks = new byte[InfdevTerrain.CHUNK_VOLUME];
     private final int[] proceduralPrefetchHeights = new int[CHUNK_XZ * CHUNK_XZ];
     private final byte[] proceduralPrefetchBiomes = new byte[CHUNK_XZ * CHUNK_XZ];
     private boolean proceduralPrefetchPending, proceduralPrefetchBusy;
@@ -399,8 +399,9 @@ final class VoxelWorld {
                 int cx = proceduralPrefetchReadyX, cz = proceduralPrefetchReadyZ;
                 if (findProceduralCache(cx, cz) < 0) {
                     int cache = proceduralCacheCursor++ & (PROCEDURAL_CACHE_SIZE - 1);
-                    System.arraycopy(proceduralPrefetchBlocks, 0,
-                            proceduralChunks[cache], 0, InfdevTerrain.CHUNK_VOLUME);
+                    byte[] recycled = proceduralChunks[cache];
+                    proceduralChunks[cache] = proceduralPrefetchBlocks;
+                    proceduralPrefetchBlocks = recycled;
                     proceduralChunkX[cache] = cx;
                     proceduralChunkZ[cache] = cz;
                     proceduralLastCache = cache;
