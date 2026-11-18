@@ -34,6 +34,8 @@ final class ParticleSystem {
     private final int[] activeSlots = new int[CAPACITY];
     private int activeCount;
     private int renderedParticleCount;
+    private boolean textureCoordinatesDirty;
+    private boolean meshVisible;
     private float cameraYaw, cameraPitch;
     private boolean cameraBasisValid;
     private float rightX, rightZ, upX, upY, upZ;
@@ -93,42 +95,41 @@ final class ParticleSystem {
         for (int i = 0; i < CAPACITY; i++) setParticleColor(i, 0);
     }
 
-    /** Compact 4x2x2 debris burst (16 fragments); one fixed mesh stores the effect. */
+    /** Four short-lived debris shards share one fixed M3G mesh. */
     void spawnBlockDestroy(int bx, int by, int bz, int blockTile) {
-        for (int gy = 0; gy < 2; gy++) {
-            for (int gz = 0; gz < 2; gz++) {
-                for (int gx = 0; gx < 2; gx++) {
-                    int i = cursor++;
-                    if (cursor == CAPACITY) cursor = 0;
-                    activate(i);
-                    float rx = (gx + 0.5f) * 0.5f;
-                    float ry = (gy + 0.5f) * 0.5f;
-                    float rz = (gz + 0.5f) * 0.5f;
-                    x[i] = bx + rx;
-                    y[i] = by + ry;
-                    z[i] = bz + rz;
-                    float mx = rx - 0.5f + (nextRandom() * 0.8f - 0.4f);
-                    float my = ry - 0.5f + (nextRandom() * 0.8f - 0.4f);
-                    float mz = rz - 0.5f + (nextRandom() * 0.8f - 0.4f);
-                    float length = (float)Math.sqrt(mx * mx + my * my + mz * mz);
-                    if (length < 0.0001f) length = 0.0001f;
-                    float speed = (nextRandom() + nextRandom() + 1.0f) * 0.06f;
-                    vx[i] = mx / length * speed;
-                    vy[i] = my / length * speed + 0.1f;
-                    vz[i] = mz / length * speed;
-                    size[i] = 0.075f + nextRandom() * 0.055f;
-                    age[i] = 0;
-                    // About two seconds at the game's 20 updates per second.
-                    lifetime[i] = 24;
-                    tile[i] = blockTile;
-                    tileOffsetX[i] = (int)(nextRandom() * 4.0f);
-                    tileOffsetY[i] = (int)(nextRandom() * 4.0f);
-                    writeTileUV(i, tile[i], tileOffsetX[i], tileOffsetY[i]);
-                    deathDust[i] = false;
-                    setParticleColor(i, 255);
-                }
-            }
+        for (int fragment = 0; fragment < 4; fragment++) {
+            int i = cursor++;
+            if (cursor == CAPACITY) cursor = 0;
+            activate(i);
+            int gx = fragment & 1;
+            int gy = (fragment >> 1) & 1;
+            int gz = gx ^ gy;
+            float rx = (gx + 0.5f) * 0.5f;
+            float ry = (gy + 0.5f) * 0.5f;
+            float rz = (gz + 0.5f) * 0.5f;
+            x[i] = bx + rx;
+            y[i] = by + ry;
+            z[i] = bz + rz;
+            float mx = rx - 0.5f + (nextRandom() * 0.8f - 0.4f);
+            float my = ry - 0.5f + (nextRandom() * 0.8f - 0.4f);
+            float mz = rz - 0.5f + (nextRandom() * 0.8f - 0.4f);
+            float length = (float)Math.sqrt(mx * mx + my * my + mz * mz);
+            if (length < 0.0001f) length = 0.0001f;
+            float speed = (nextRandom() + nextRandom() + 1.0f) * 0.06f;
+            vx[i] = mx / length * speed;
+            vy[i] = my / length * speed + 0.1f;
+            vz[i] = mz / length * speed;
+            size[i] = 0.075f + nextRandom() * 0.055f;
+            age[i] = 0;
+            lifetime[i] = 12;
+            tile[i] = blockTile;
+            tileOffsetX[i] = (int)(nextRandom() * 4.0f);
+            tileOffsetY[i] = (int)(nextRandom() * 4.0f);
+            writeTileUV(i, tile[i], tileOffsetX[i], tileOffsetY[i]);
+            deathDust[i] = false;
+            setParticleColor(i, 255);
         }
+        textureCoordinatesDirty = true;
     }
 
     /** Small brown puffs emitted after a mob finishes its death fall. */
@@ -153,6 +154,7 @@ final class ParticleSystem {
             deathDust[i] = true;
             setParticleColor(i, 165, 132, 91, 230);
         }
+        textureCoordinatesDirty = true;
     }
 
     private void activate(int particle) {
@@ -175,7 +177,10 @@ final class ParticleSystem {
 
     void update(VoxelWorld world, float yawDegrees, float pitchDegrees) {
         if (activeCount == 0) {
-            mesh.setRenderingEnable(false);
+            if (meshVisible) {
+                mesh.setRenderingEnable(false);
+                meshVisible = false;
+            }
             renderedParticleCount = 0;
             return;
         }
@@ -201,6 +206,7 @@ final class ParticleSystem {
                 active[i] = false;
                 activeCount--;
                 activeSlots[n] = activeSlots[activeCount];
+                textureCoordinatesDirty = true;
                 continue;
             }
             age[i]++;
@@ -230,8 +236,15 @@ final class ParticleSystem {
         for (int n = 0; n < activeCount; n++) {
             int i = activeSlots[n];
             writeQuad(n, rightX, rightZ, upX, upY, upZ, originX, originY, originZ);
-            writeTileUV(n, tile[i], tileOffsetX[i], tileOffsetY[i]);
             writeParticleColor(n, i);
+        }
+        if (textureCoordinatesDirty) {
+            for (int n = 0; n < activeCount; n++) {
+                int i = activeSlots[n];
+                writeTileUV(n, tile[i], tileOffsetX[i], tileOffsetY[i]);
+            }
+            texCoordArray.set(0, activeCount * 4, texCoords);
+            textureCoordinatesDirty = false;
         }
         int uploadCount = Math.max(activeCount, renderedParticleCount);
         for (int n = activeCount; n < renderedParticleCount; n++) setParticleColor(n, 0);
@@ -240,11 +253,11 @@ final class ParticleSystem {
             positionArray.set(0, vertices, positions);
             colorArray.set(0, vertices, colors);
         }
-        if (activeCount > 0) {
-            texCoordArray.set(0, activeCount * 4, texCoords);
-        }
         renderedParticleCount = activeCount;
-        mesh.setRenderingEnable(activeCount > 0);
+        if (!meshVisible) {
+            mesh.setRenderingEnable(true);
+            meshVisible = true;
+        }
     }
 
     private void writeParticleColor(int renderSlot, int particle) {
