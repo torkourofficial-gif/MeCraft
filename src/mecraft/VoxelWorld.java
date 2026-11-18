@@ -95,6 +95,25 @@ final class VoxelWorld {
     // Most collision/ray queries stay inside one procedural chunk; keep its
     // ring slot as a one-entry fast path before scanning the small cache.
     private int proceduralLastCache = -1;
+
+    // One bounded terrain-prefetch worker. Results are copied into the main
+    // procedural cache only on the game thread; no cache array is shared while
+    // generation is in progress.
+    private final Object proceduralPrefetchLock = new Object();
+    private final byte[] proceduralPrefetchBlocks = new byte[InfdevTerrain.CHUNK_VOLUME];
+    private final int[] proceduralPrefetchHeights = new int[CHUNK_XZ * CHUNK_XZ];
+    private final byte[] proceduralPrefetchBiomes = new byte[CHUNK_XZ * CHUNK_XZ];
+    private boolean proceduralPrefetchPending, proceduralPrefetchBusy;
+    private volatile boolean proceduralPrefetchReady;
+    private int proceduralPrefetchRequestX, proceduralPrefetchRequestZ;
+    private int proceduralPrefetchRequestSeed, proceduralPrefetchRequestNoiseVersion;
+    private int proceduralPrefetchBusyX, proceduralPrefetchBusyZ;
+    private boolean proceduralPrefetchRequestNether, proceduralPrefetchRequestPriority;
+    private boolean proceduralPrefetchBusyNether;
+    private int proceduralPrefetchReadyX, proceduralPrefetchReadyZ;
+    private int proceduralPrefetchReadySeed, proceduralPrefetchReadyNoiseVersion;
+    private boolean proceduralPrefetchReadyNether;
+    private Thread proceduralPrefetchThread;
     private final int[] proceduralHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     private final byte[] proceduralBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
 
@@ -164,6 +183,8 @@ final class VoxelWorld {
     }
 
     VoxelWorld(int seed, int mode, int worldSize, int worldType, int noiseVersion) {
+        InfdevTerrain.beginGeneration(seed);
+        try {
         setGenerationDiagnosticStage("VoxelWorld: asignando semilla");
         this.seed = seed;
         this.noiseVersion = noiseVersion <= 0 ? 0 : 1;
@@ -183,6 +204,10 @@ final class VoxelWorld {
         setGenerationDiagnosticStage("VoxelWorld: entrando en generate()");
         generate();
         setGenerationDiagnosticStage("VoxelWorld: generate() terminó; posicionando jugador");
+    
+        } finally {
+            InfdevTerrain.endGeneration(seed);
+        }
     }
 
     private int index(int x, int y, int z) {
@@ -203,32 +228,190 @@ final class VoxelWorld {
     }
 
     /**
-     * Procedural chunks are generated on demand, as in the October 29 build.
-     * The eight-slot ring keeps adjacent chunk reads cheap without a worker,
-     * placeholder terrain, or a second invalidation pass.
+     * Prefer the bounded prefetch result for streamed terrain. Direct world
+     * queries keep a synchronous fallback so collision and block reads stay exact
+     * if gameplay outruns the worker.
      */
+    private int findProceduralCache(int cx, int cz) {
+        for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++)
+            if (proceduralChunkX[i] == cx && proceduralChunkZ[i] == cz) return i;
+        return -1;
+    }
+
     private byte proceduralBlock(int x, int y, int z) {
         int cx = floorChunk(x), cz = floorChunk(z);
         int cache = proceduralLastCache;
-        if (cache < 0 || proceduralChunkX[cache] != cx || proceduralChunkZ[cache] != cz) {
-            cache = -1;
-            for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
-                if (proceduralChunkX[i] == cx && proceduralChunkZ[i] == cz) {
-                    cache = i;
-                    break;
-                }
-            }
-            if (cache < 0) {
-                cache = proceduralCacheCursor++ & (PROCEDURAL_CACHE_SIZE - 1);
-                generateChunk(cx, cz, proceduralChunks[cache]);
-                proceduralChunkX[cache] = cx;
-                proceduralChunkZ[cache] = cz;
-            }
-            proceduralLastCache = cache;
+        if (cache < 0 || proceduralChunkX[cache] != cx || proceduralChunkZ[cache] != cz)
+            cache = findProceduralCache(cx, cz);
+        if (cache < 0) {
+            installPrefetchedProceduralChunk();
+            cache = findProceduralCache(cx, cz);
         }
+        if (cache < 0) {
+            cache = proceduralCacheCursor++ & (PROCEDURAL_CACHE_SIZE - 1);
+            generateChunk(cx, cz, proceduralChunks[cache]);
+            proceduralChunkX[cache] = cx;
+            proceduralChunkZ[cache] = cz;
+        }
+        proceduralLastCache = cache;
         int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
         return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
     }
+
+    private boolean needsProceduralChunk(int cx, int cz) {
+        int x0 = cx * CHUNK_XZ, z0 = cz * CHUNK_XZ;
+        int x1 = x0 + CHUNK_XZ - 1, z1 = z0 + CHUNK_XZ - 1;
+        if (worldSize == SIZE_OLD &&
+                (x1 < 0 || x0 >= 240 || z1 < 0 || z0 >= 240)) return false;
+        return !(x0 >= 0 && x1 < WIDTH && z0 >= 0 && z1 < DEPTH);
+    }
+
+    /** Request terrain one chunk ahead; generation never writes into the live cache. */
+    void prefetchProceduralChunk(int cx, int cz) {
+        installPrefetchedProceduralChunk();
+        if (worldType == TYPE_FLAT || !needsProceduralChunk(cx, cz) ||
+                findProceduralCache(cx, cz) >= 0) return;
+        requestProceduralPrefetch(cx, cz, false);
+    }
+
+    /**
+     * Ensures the x/z chunks touched by a padded section snapshot are already
+     * generated. Returning false defers the mesh request without doing terrain
+     * generation on the game thread.
+     */
+    boolean prepareProceduralChunksForSection(int sectionX, int sectionZ) {
+        installPrefetchedProceduralChunk();
+        if (worldType == TYPE_FLAT) return true;
+        int x0 = sectionX * CHUNK_XZ, z0 = sectionZ * CHUNK_XZ;
+        int minX = floorChunk(x0 - 1), maxX = floorChunk(x0 + CHUNK_XZ);
+        int minZ = floorChunk(z0 - 1), maxZ = floorChunk(z0 + CHUNK_XZ);
+        for (int cz = minZ; cz <= maxZ; cz++) {
+            for (int cx = minX; cx <= maxX; cx++) {
+                if (needsProceduralChunk(cx, cz) && findProceduralCache(cx, cz) < 0) {
+                    requestProceduralPrefetch(cx, cz, true);
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private void requestProceduralPrefetch(final int cx, final int cz, boolean priority) {
+        if (!needsProceduralChunk(cx, cz) || findProceduralCache(cx, cz) >= 0) return;
+        synchronized (proceduralPrefetchLock) {
+            if ((proceduralPrefetchBusy && proceduralPrefetchBusyX == cx &&
+                    proceduralPrefetchBusyZ == cz && proceduralPrefetchBusyNether == nether) ||
+                (proceduralPrefetchPending && proceduralPrefetchRequestX == cx &&
+                    proceduralPrefetchRequestZ == cz && proceduralPrefetchRequestNether == nether) ||
+                (proceduralPrefetchReady && proceduralPrefetchReadyX == cx &&
+                    proceduralPrefetchReadyZ == cz && proceduralPrefetchReadyNether == nether))
+                return;
+            if (proceduralPrefetchPending &&
+                    (!priority || proceduralPrefetchRequestPriority)) return;
+            proceduralPrefetchRequestX = cx;
+            proceduralPrefetchRequestZ = cz;
+            proceduralPrefetchRequestNether = nether;
+            proceduralPrefetchRequestSeed = seed;
+            proceduralPrefetchRequestNoiseVersion = noiseVersion;
+            proceduralPrefetchRequestPriority = priority;
+            proceduralPrefetchPending = true;
+            if (proceduralPrefetchThread == null) {
+                try {
+                    Thread worker = new Thread(new Runnable() {
+                        public void run() { runProceduralPrefetchWorker(); }
+                    });
+                    try { worker.setPriority(Thread.MIN_PRIORITY); } catch (RuntimeException ignored) { }
+                    proceduralPrefetchThread = worker;
+                    worker.start();
+                } catch (OutOfMemoryError exhausted) {
+                    proceduralPrefetchThread = null;
+                    proceduralPrefetchPending = false;
+                } catch (RuntimeException failed) {
+                    proceduralPrefetchThread = null;
+                    proceduralPrefetchPending = false;
+                }
+            } else {
+                proceduralPrefetchLock.notifyAll();
+            }
+        }
+    }
+
+    private void runProceduralPrefetchWorker() {
+        while (true) {
+            int cx, cz, requestSeed, requestNoiseVersion;
+            boolean dimension;
+            synchronized (proceduralPrefetchLock) {
+                while (!proceduralPrefetchPending || proceduralPrefetchReady) {
+                    try { proceduralPrefetchLock.wait(10000L); }
+                    catch (InterruptedException ignored) { }
+                    if (!proceduralPrefetchPending && !proceduralPrefetchReady) {
+                        proceduralPrefetchThread = null;
+                        return;
+                    }
+                }
+                cx = proceduralPrefetchRequestX;
+                cz = proceduralPrefetchRequestZ;
+                dimension = proceduralPrefetchRequestNether;
+                requestSeed = proceduralPrefetchRequestSeed;
+                requestNoiseVersion = proceduralPrefetchRequestNoiseVersion;
+                proceduralPrefetchPending = false;
+                proceduralPrefetchBusy = true;
+                proceduralPrefetchBusyX = cx;
+                proceduralPrefetchBusyZ = cz;
+                proceduralPrefetchBusyNether = dimension;
+            }
+
+            boolean generated = false;
+            InfdevTerrain.beginGeneration(requestSeed);
+            try {
+                generateChunk(cx, cz, proceduralPrefetchBlocks,
+                        proceduralPrefetchHeights, proceduralPrefetchBiomes, dimension);
+                generated = true;
+            } catch (OutOfMemoryError exhausted) {
+                generated = false;
+            } catch (RuntimeException failed) {
+                generated = false;
+            } finally {
+                InfdevTerrain.endGeneration(requestSeed);
+            }
+            synchronized (proceduralPrefetchLock) {
+                proceduralPrefetchBusy = false;
+                if (generated) {
+                    proceduralPrefetchReadyX = cx;
+                    proceduralPrefetchReadyZ = cz;
+                    proceduralPrefetchReadyNether = dimension;
+                    proceduralPrefetchReadySeed = requestSeed;
+                    proceduralPrefetchReadyNoiseVersion = requestNoiseVersion;
+                    proceduralPrefetchReady = true;
+                }
+                proceduralPrefetchLock.notifyAll();
+            }
+        }
+    }
+
+    private void installPrefetchedProceduralChunk() {
+        if (!proceduralPrefetchReady) return;
+        synchronized (proceduralPrefetchLock) {
+            if (!proceduralPrefetchReady) return;
+            if (proceduralPrefetchReadySeed == seed &&
+                    proceduralPrefetchReadyNoiseVersion == noiseVersion &&
+                    proceduralPrefetchReadyNether == nether) {
+                int cx = proceduralPrefetchReadyX, cz = proceduralPrefetchReadyZ;
+                if (findProceduralCache(cx, cz) < 0) {
+                    int cache = proceduralCacheCursor++ & (PROCEDURAL_CACHE_SIZE - 1);
+                    System.arraycopy(proceduralPrefetchBlocks, 0,
+                            proceduralChunks[cache], 0, InfdevTerrain.CHUNK_VOLUME);
+                    proceduralChunkX[cache] = cx;
+                    proceduralChunkZ[cache] = cz;
+                    proceduralLastCache = cache;
+                }
+            }
+            proceduralPrefetchReady = false;
+            proceduralPrefetchLock.notifyAll();
+        }
+    }
+
+
 
     private int findEdit(int x, int y, int z) {
         return findEdit(x, y, z, nether);
@@ -943,6 +1126,8 @@ final class VoxelWorld {
 
     private void generateChunk(int cx, int cz, byte[] target, int[] heights,
                                byte[] biomes, boolean dimension) {
+        InfdevTerrain.beginGeneration(seed);
+        try {
         InfdevTerrain.prepareNoise(seed, noiseVersion);
         setGenerationDiagnosticStage("VoxelWorld.generateChunk: validando dimensión; chunk cx=" + cx + ", cz=" + cz);
         if (!dimension && worldType == TYPE_FLAT) {
@@ -963,6 +1148,10 @@ final class VoxelWorld {
         } else {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generate; cx=" + cx + ", cz=" + cz);
             InfdevTerrain.generate(seed, cx, cz, target, heights, biomes);
+        }
+    
+        } finally {
+            InfdevTerrain.endGeneration(seed);
         }
     }
 
