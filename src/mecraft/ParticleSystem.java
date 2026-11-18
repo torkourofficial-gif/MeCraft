@@ -123,9 +123,7 @@ final class ParticleSystem {
                     tile[i] = blockTile;
                     tileOffsetX[i] = (int)(nextRandom() * 4.0f);
                     tileOffsetY[i] = (int)(nextRandom() * 4.0f);
-                    writeTileUV(i, tile[i], tileOffsetX[i], tileOffsetY[i]);
                     deathDust[i] = false;
-                    setParticleColor(i, 255);
                 }
             }
         }
@@ -149,9 +147,7 @@ final class ParticleSystem {
             tile[i] = Block.sideTile(Block.DIRT);
             tileOffsetX[i] = (int)(nextRandom() * 12.0f);
             tileOffsetY[i] = (int)(nextRandom() * 12.0f);
-            writeTileUV(i, tile[i], tileOffsetX[i], tileOffsetY[i]);
             deathDust[i] = true;
-            setParticleColor(i, 165, 132, 91, 230);
         }
     }
 
