@@ -974,8 +974,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private void mineTarget() {
         if (world != null) {
             ensureLookRay();
-        int mobHit = renderer.hitMob(world, (float)lookRayX, (float)lookRayY,
-                (float)lookRayZ, heldAttackDamage());
+            int mobHit = renderer.hitMob(world, (float)lookRayX, (float)lookRayY,
+                    (float)lookRayZ, heldAttackDamage());
             if (mobHit >= 0) {
                 if (mobHit > 0) onMobHit();
                 return;
@@ -1002,7 +1002,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void updateMining() {
         if (world == null) return;
-        int mobHit = renderer.hitMob(world, cameraPitch, heldAttackDamage());
+        ensureLookRay();
+        int mobHit = renderer.hitMob(world, (float)lookRayX, (float)lookRayY,
+                (float)lookRayZ, heldAttackDamage());
         if (mobHit >= 0) {
             if (mobHit > 0) onMobHit();
             resetMining();
