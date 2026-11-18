@@ -108,7 +108,7 @@ final class ChunkRenderer {
     private Thread chunkBuildThread;
     // Copy world data into the worker snapshot in bounded frame-sized slices.
     private boolean chunkSnapshotPreparing;
-    private int chunkSnapshotCursor, chunkSnapshotRevision;
+    private int chunkSnapshotCursor, chunkSnapshotInvalidationVersion;
     private boolean chunkLightSnapshotValid;
     private int chunkLightSnapshotX, chunkLightSnapshotY, chunkLightSnapshotZ;
     private int chunkLightSnapshotRevision, chunkLightSnapshotCount;
@@ -124,6 +124,7 @@ final class ChunkRenderer {
     private int chunkQuadIndexCursor;
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
+    private final int[] chunkInvalidationVersion = new int[CACHE_SIZE];
     private final boolean[] chunkFrustumVisible = new boolean[CACHE_SIZE];
     private final int[] chunkWorldX = new int[CACHE_SIZE];
     private final int[] chunkWorldY = new int[CACHE_SIZE];
@@ -1289,7 +1290,7 @@ final class ChunkRenderer {
                                 floorMod(chunkX, MAX_STREAM_SPAN);
                         if (chunkWorldX[slot] == chunkX && chunkWorldY[slot] == chunkY &&
                                 chunkWorldZ[slot] == chunkZ)
-                            dirtyChunks[slot] = true;
+                            markChunkDirty(slot);
                     }
                 }
             }
@@ -1329,10 +1330,15 @@ final class ChunkRenderer {
                             floorMod(chunkX, MAX_STREAM_SPAN);
                     if (chunkWorldX[slot] == chunkX && chunkWorldY[slot] == chunkY &&
                             chunkWorldZ[slot] == chunkZ)
-                        dirtyChunks[slot] = true;
+                        markChunkDirty(slot);
                 }
             }
         }
+    }
+
+    private void markChunkDirty(int slot) {
+        dirtyChunks[slot] = true;
+        chunkInvalidationVersion[slot]++;
     }
 
     private int floorDiv(int value, int divisor) {
@@ -1637,7 +1643,7 @@ final class ChunkRenderer {
         chunkSnapshotY = cy;
         chunkSnapshotZ = cz;
         chunkSnapshotEpoch = streamEpoch;
-        chunkSnapshotRevision = world.revision;
+        chunkSnapshotInvalidationVersion = chunkInvalidationVersion[slot];
         chunkBuildSnapshot.lightScanState[0] = 0;
         chunkBuildSnapshot.lightScanState[1] = 0;
     }
@@ -1649,7 +1655,8 @@ final class ChunkRenderer {
                 chunkWorldY[slot] == chunkSnapshotY &&
                 chunkWorldZ[slot] == chunkSnapshotZ;
         if (chunkSnapshotEpoch != streamEpoch || !slotMatches ||
-                !chunkFrustumVisible[slot] || world.revision != chunkSnapshotRevision ||
+                !chunkFrustumVisible[slot] ||
+                chunkInvalidationVersion[slot] != chunkSnapshotInvalidationVersion ||
                 chunkBuildWorkerBusy || buildResultReady || installingChunk != null) {
             chunkSnapshotPreparing = false;
             if (slotMatches) dirtyChunks[slot] = true;
@@ -1716,8 +1723,7 @@ final class ChunkRenderer {
             snapshot.lightCount = snapshot.lightScanState[1];
         }
         snapshot.nether = world.nether;
-        snapshot.revision = chunkSnapshotRevision;
-        if (world.revision != chunkSnapshotRevision) {
+        if (chunkInvalidationVersion[slot] != chunkSnapshotInvalidationVersion) {
             chunkSnapshotPreparing = false;
             dirtyChunks[slot] = true;
             return;
@@ -2582,7 +2588,7 @@ final class ChunkRenderer {
         final byte[] lightRadius = new byte[MAX_CHUNK_TORCHES];
         final boolean[] lavaSource = new boolean[MAX_CHUNK_TORCHES];
         final int[] lightScanState = new int[5];
-        int revision, lightCount;
+        int lightCount;
 
         byte block(int x, int y, int z) {
             if (y < -1 || y > VoxelWorld.CHUNK_Y || x < -1 ||
