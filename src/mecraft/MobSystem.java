@@ -191,13 +191,8 @@ final class MobSystem {
     }
 
     /** Returns 1 for a hit, 0 when the target is still on attack cooldown, or -1 for no target. */
-    int hit(VoxelWorld world, float pitch, int damage) {
+    int hit(VoxelWorld world, float dirX, float dirY, float dirZ, int damage) {
         if (worldSeed != world.seed) reset(world);
-        float yaw = world.yaw * (float)Math.PI / 180.0f;
-        float pitchRadians = pitch * (float)Math.PI / 180.0f;
-        float dirX = (float)Math.sin(yaw) * (float)Math.cos(pitchRadians);
-        float dirY = (float)Math.sin(pitchRadians);
-        float dirZ = (float)Math.cos(yaw) * (float)Math.cos(pitchRadians);
         float originX = world.playerX;
         float originY = world.playerY + 1.62f;
         float originZ = world.playerZ;
