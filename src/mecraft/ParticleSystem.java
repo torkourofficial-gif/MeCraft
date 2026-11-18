@@ -39,6 +39,7 @@ final class ParticleSystem {
     private final VertexArray texCoordArray;
     private final VertexArray colorArray;
     private int cursor;
+    private int uploadedCount;
     private int random = 0x13579BDF;
 
     ParticleSystem(Texture2D atlas) {
@@ -85,7 +86,6 @@ final class ParticleSystem {
         compositing.setDepthWriteEnable(false);
         appearance.setCompositingMode(compositing);
         mesh = new Mesh(buffer, triangles, appearance);
-        for (int i = 0; i < CAPACITY; i++) setParticleColor(i, 0);
     }
 
     /** Compact 4x2x2 debris burst (16 fragments); one fixed mesh stores the effect. */
@@ -120,7 +120,6 @@ final class ParticleSystem {
                     tileOffsetY[i] = (int)(nextRandom() * 4.0f);
                     writeTileUV(i, tile[i], tileOffsetX[i], tileOffsetY[i]);
                     deathDust[i] = false;
-                    setParticleColor(i, 255);
                 }
             }
         }
@@ -146,7 +145,6 @@ final class ParticleSystem {
             tileOffsetY[i] = (int)(nextRandom() * 12.0f);
             writeTileUV(i, tile[i], tileOffsetX[i], tileOffsetY[i]);
             deathDust[i] = true;
-            setParticleColor(i, 165, 132, 91, 230);
         }
     }
 
@@ -169,7 +167,14 @@ final class ParticleSystem {
     }
 
     void update(VoxelWorld world, float yawDegrees, float pitchDegrees) {
-        if (activeCount == 0) return;
+        if (activeCount == 0) {
+            if (uploadedCount > 0) {
+                for (int i = 0; i < uploadedCount; i++) setParticleColor(i, 0);
+                colorArray.set(0, uploadedCount * 4, colors);
+                uploadedCount = 0;
+            }
+            return;
+        }
         // Particle vertices are stored as signed 16-bit fixed-point values.
         // Keep them near the origin so they remain representable after the
         // player has flown far from the initial spawn in an infinite world.
@@ -184,50 +189,63 @@ final class ParticleSystem {
         float upX = -(float)(Math.sin(yaw) * Math.sin(pitch));
         float upY = (float)Math.cos(pitch);
         float upZ = -(float)(Math.cos(yaw) * Math.sin(pitch));
+        int renderCount = 0;
         for (int i = 0; i < CAPACITY; i++) {
             if (!active[i]) continue;
-            if (age[i] < lifetime[i]) {
-                age[i]++;
-                if (deathDust[i]) vy[i] += 0.001f;
-                else vy[i] -= 0.04f;
-                x[i] += vx[i];
-                y[i] += vy[i];
-                z[i] += vz[i];
-                boolean onGround = false;
-                if (!deathDust[i]) {
-                    int belowY = floorInt(y[i] - size[i]);
-                    if (world.isSolidAt(floorInt(x[i]), belowY, floorInt(z[i]))) {
-                        y[i] = belowY + 1.0f + size[i];
-                        vy[i] = 0.0f;
-                        onGround = true;
-                    }
-                }
-                vx[i] *= deathDust[i] ? 0.92f : 0.98f;
-                vy[i] *= deathDust[i] ? 0.96f : 0.98f;
-                vz[i] *= deathDust[i] ? 0.92f : 0.98f;
-                if (onGround) { vx[i] *= 0.7f; vz[i] *= 0.7f; }
-                if (deathDust[i]) {
-                    int alpha = 230 - age[i] * 230 / lifetime[i];
-                    setParticleColor(i, 165, 132, 91, alpha);
-                } else {
-                    int alpha = 255 - age[i] * 255 / lifetime[i];
-                    setParticleColor(i, alpha);
-                }
-            } else {
+            if (age[i] >= lifetime[i]) {
                 active[i] = false;
                 activeCount--;
-                setParticleColor(i, 0);
                 continue;
             }
-            writeQuad(i, rightX, rightZ, upX, upY, upZ,
+            age[i]++;
+            if (deathDust[i]) vy[i] += 0.001f;
+            else vy[i] -= 0.04f;
+            x[i] += vx[i];
+            y[i] += vy[i];
+            z[i] += vz[i];
+            boolean onGround = false;
+            if (!deathDust[i]) {
+                int belowY = floorInt(y[i] - size[i]);
+                if (world.isSolidAt(floorInt(x[i]), belowY, floorInt(z[i]))) {
+                    y[i] = belowY + 1.0f + size[i];
+                    vy[i] = 0.0f;
+                    onGround = true;
+                }
+            }
+            vx[i] *= deathDust[i] ? 0.92f : 0.98f;
+            vy[i] *= deathDust[i] ? 0.96f : 0.98f;
+            vz[i] *= deathDust[i] ? 0.92f : 0.98f;
+            if (onGround) { vx[i] *= 0.7f; vz[i] *= 0.7f; }
+
+            // Pack live fragments at the start of the fixed mesh. VertexArray.set
+            // copies exactly the requested range, so upload only visible quads.
+            int out = renderCount++;
+            writeQuad(out, rightX, rightZ, upX, upY, upZ,
                     originX, originY, originZ);
+            writeTileUV(out, tile[i], tileOffsetX[i], tileOffsetY[i]);
+            if (deathDust[i]) {
+                int alpha = 230 - age[i] * 230 / lifetime[i];
+                setParticleColor(out, 165, 132, 91, alpha);
+            } else {
+                int alpha = 255 - age[i] * 255 / lifetime[i];
+                setParticleColor(out, alpha);
+            }
             if (age[i] >= lifetime[i]) {
                 active[i] = false;
                 activeCount--;
             }
         }
-        positionArray.set(0, VERTICES, positions);
-        colorArray.set(0, VERTICES, colors);
+
+        // Clear only the old tail; the fixed strip array keeps unused quads transparent.
+        int uploadCount = Math.max(renderCount, uploadedCount);
+        for (int i = renderCount; i < uploadedCount; i++) setParticleColor(i, 0);
+        if (renderCount > 0) {
+            int vertexCount = renderCount * 4;
+            positionArray.set(0, vertexCount, positions);
+            texCoordArray.set(0, vertexCount, texCoords);
+        }
+        if (uploadCount > 0) colorArray.set(0, uploadCount * 4, colors);
+        uploadedCount = renderCount;
     }
 
     private void writeQuad(int particle, float rx, float rz, float ux, float uy, float uz,
