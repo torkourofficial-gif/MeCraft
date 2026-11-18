@@ -33,6 +33,7 @@ final class ChunkRenderer {
     private static final int MAX_CHUNK_TORCHES = 128;
     // A material is split into bounded linked segments; no builder grows without limit.
     private static final int MAX_FACE_BUILDER_VERTICES = 2048;
+    private static final int MAX_CHUNK_MESHES_PER_SYNC = 4;
     private static final long MAX_CHUNK_MESH_INSTALL_MILLIS = 6L;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
     private static final float CHUNK_RADIUS = 12.0f;
@@ -97,15 +98,16 @@ final class ChunkRenderer {
     private final ChunkBuildSnapshot chunkBuildSnapshot = new ChunkBuildSnapshot();
     private volatile Chunk readyChunk;
     private volatile boolean buildResultReady;
-    private volatile int readySlot, readyX, readyY, readyZ, readyRevision;
+    private volatile int readySlot, readyX, readyY, readyZ, readyEpoch;
     private final Object chunkBuildWorkerLock = new Object();
     private volatile boolean chunkBuildWorkerBusy;
     private boolean chunkBuildRequestPending;
     private int chunkBuildRequestSlot, chunkBuildRequestX, chunkBuildRequestY;
-    private int chunkBuildRequestZ, chunkBuildRequestRevision;
+    private int chunkBuildRequestZ, chunkBuildRequestEpoch;
     private Thread chunkBuildThread;
+    private int streamEpoch;
     private Chunk installingChunk;
-    private int installingSlot, installingX, installingY, installingZ, installingRevision;
+    private int installingSlot, installingX, installingY, installingZ, installingEpoch;
     private final IndexBuffer[] chunkBatchIndices = new IndexBuffer[3];
     private final Appearance[] chunkBatchAppearances = new Appearance[3];
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
@@ -1287,8 +1289,8 @@ final class ChunkRenderer {
                     int slot = (chunkY * MAX_STREAM_SPAN +
                             floorMod(chunkZ, MAX_STREAM_SPAN)) * MAX_STREAM_SPAN +
                             floorMod(chunkX, MAX_STREAM_SPAN);
-                    if (residentChunks[slot] && chunkWorldX[slot] == chunkX &&
-                            chunkWorldY[slot] == chunkY && chunkWorldZ[slot] == chunkZ)
+                    if (chunkWorldX[slot] == chunkX && chunkWorldY[slot] == chunkY &&
+                            chunkWorldZ[slot] == chunkZ)
                         dirtyChunks[slot] = true;
                 }
             }
@@ -1346,6 +1348,17 @@ final class ChunkRenderer {
     }
 
     private void rebuildWorld(VoxelWorld world) {
+        streamEpoch++;
+        if (installingChunk != null) {
+            recycleChunkBuilders(installingChunk);
+            installingChunk = null;
+        }
+        if (buildResultReady) {
+            Chunk stale = readyChunk;
+            readyChunk = null;
+            buildResultReady = false;
+            recycleChunkBuilders(stale);
+        }
         for (int i = 0; i < chunks.length; i++) removeChunk(i);
     }
 
@@ -1482,7 +1495,7 @@ final class ChunkRenderer {
                     boolean visible = chunkInFrustum(cx, cy, cz, eyeX, eyeY, eyeZ,
                             forwardX, forwardY, forwardZ, rightX, rightZ, upX, upY, upZ);
 
-                    boolean sameChunk = residentChunks[i] && chunkWorldX[i] == cx &&
+                    boolean sameChunk = chunkWorldX[i] == cx &&
                         chunkWorldY[i] == cy && chunkWorldZ[i] == cz;
                     if (residentChunks[i] && !sameChunk) removeChunk(i);
 
@@ -1492,7 +1505,7 @@ final class ChunkRenderer {
                         chunkFrustumVisible[i] = visible;
                     }
                     if (!visible) continue;
-                    if (!sameChunk || dirtyChunks[i]) {
+                    if (!residentChunks[i] || dirtyChunks[i]) {
                         float distance = dx * dx + dz * dz + dy * dy * 2.0f;
                         if (distance < bestDistance) {
                             bestDistance = distance;
@@ -1507,31 +1520,38 @@ final class ChunkRenderer {
         if (buildResultReady) {
             Chunk completed = readyChunk;
             int slot = readySlot, cx = readyX, cy = readyY, cz = readyZ;
-            int revision = readyRevision;
+            int epoch = readyEpoch;
             readyChunk = null;
             buildResultReady = false;
-            if (completed != null && world.revision == revision &&
-                    slot >= 0 && slot < CACHE_SIZE && chunkWorldX[slot] == cx &&
-                    chunkWorldY[slot] == cy && chunkWorldZ[slot] == cz) {
+            boolean slotMatches = slot >= 0 && slot < CACHE_SIZE &&
+                    chunkWorldX[slot] == cx && chunkWorldY[slot] == cy &&
+                    chunkWorldZ[slot] == cz;
+            if (completed != null && epoch == streamEpoch && slotMatches &&
+                    !dirtyChunks[slot]) {
                 installingChunk = completed;
                 installingSlot = slot; installingX = cx; installingY = cy; installingZ = cz;
-                installingRevision = revision;
+                installingEpoch = epoch;
                 completed.worldX = cx * VoxelWorld.CHUNK_XZ;
                 completed.worldY = cy * VoxelWorld.CHUNK_Y;
                 completed.worldZ = cz * VoxelWorld.CHUNK_XZ;
             } else {
                 if (completed != null) recycleChunkBuilders(completed);
-                if (slot >= 0 && slot < CACHE_SIZE) dirtyChunks[slot] = true;
+                if (slotMatches) dirtyChunks[slot] = true;
             }
         }
         if (installingChunk != null) {
-            if (world.revision != installingRevision) {
+            boolean slotMatches = installingSlot >= 0 && installingSlot < CACHE_SIZE &&
+                    chunkWorldX[installingSlot] == installingX &&
+                    chunkWorldY[installingSlot] == installingY &&
+                    chunkWorldZ[installingSlot] == installingZ;
+            if (installingEpoch != streamEpoch || !slotMatches ||
+                    dirtyChunks[installingSlot]) {
                 recycleChunkBuilders(installingChunk);
-                dirtyChunks[installingSlot] = true;
+                if (slotMatches) dirtyChunks[installingSlot] = true;
                 installingChunk = null;
             } else {
                 try {
-                    if (finishChunkMeshStep(installingChunk, 2)) {
+                    if (finishChunkMeshStep(installingChunk, MAX_CHUNK_MESHES_PER_SYNC)) {
                         replaceChunk(installingSlot, installingX, installingY, installingZ, installingChunk);
                         installingChunk = null;
                     }
@@ -1570,7 +1590,8 @@ final class ChunkRenderer {
             chunkBuildRequestX = cx;
             chunkBuildRequestY = cy;
             chunkBuildRequestZ = cz;
-            chunkBuildRequestRevision = chunkBuildSnapshot.revision;
+            chunkBuildRequestEpoch = streamEpoch;
+            dirtyChunks[slot] = false;
             if (chunkBuildThread == null) {
                 try {
                     Thread worker = new Thread(new Runnable() {
@@ -1605,7 +1626,7 @@ final class ChunkRenderer {
      */
     private void runChunkBuildWorker() {
         while (true) {
-            int slot, cx, cy, cz, revision;
+            int slot, cx, cy, cz, epoch;
             synchronized (chunkBuildWorkerLock) {
                 while (!chunkBuildRequestPending) {
                     try {
@@ -1622,7 +1643,7 @@ final class ChunkRenderer {
                 cx = chunkBuildRequestX;
                 cy = chunkBuildRequestY;
                 cz = chunkBuildRequestZ;
-                revision = chunkBuildRequestRevision;
+                epoch = chunkBuildRequestEpoch;
             }
 
             Chunk data = null;
@@ -1643,7 +1664,7 @@ final class ChunkRenderer {
                 readyX = cx;
                 readyY = cy;
                 readyZ = cz;
-                readyRevision = revision;
+                readyEpoch = epoch;
                 readyChunk = data;
                 buildResultReady = true;
                 chunkBuildWorkerBusy = false;
