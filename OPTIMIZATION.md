@@ -149,3 +149,11 @@ The particle hot-path and the bounded player/mob texture changes are intentional
 - The Shortest preset now explicitly keeps the shared stream radius at one chunk, in addition to its existing facing-aligned 2x2 horizontal window and 16-block camera far plane. This keeps fallback/generic streaming calculations conservative instead of inheriting a larger radius from the numeric setting.
 - The existing shortest-mode visibility test rejects vertical sections outside the camera frustum before requesting mesh builds; rail streaming is also restricted to radius one.
 - This is a guard against accidental over-streaming in the lowest preset, not a measured FPS or memory claim. The bounded worker and frame-sliced M3G installation remain shared with the other presets.
+
+
+### TNT: coste de destrucción y reacción en cadena
+
+- La fase de rayos guarda en un buffer fijo el ID de cada voxel consultado dentro del volumen de explosión. Si varios rayos cruzan el mismo bloque, el mundo se lee una sola vez; la fase de destrucción reutiliza ese mismo ID. No se asigna memoria por explosión y se mantienen los radios, resistencias, aleatoriedad y probabilidades de drops existentes.
+- Los drops y las TNT encadenadas que aparecen mientras el pool se actualiza ahora se renderizan en ese frame, pero su física, edad y fuse empiezan en el siguiente tick. Antes, su avance dependía de si su slot estaba antes o después del índice actual del pool; las TNT encadenadas podían perder un tick de fuse.
+- El buffer se limita al volumen fijo de 20³ voxels de la explosión. El radio de TNT actual cabe en ese límite; radios futuros mayores quedan sujetos al mismo guard de seguridad del método.
+- La reducción de lecturas está razonada por el recorrido repetido de rayos y el barrido final; aún no hay medición de tiempo ni FPS en HTC S730. Verificar el rendimiento y el comportamiento de explosiones en el dispositivo sigue pendiente.
