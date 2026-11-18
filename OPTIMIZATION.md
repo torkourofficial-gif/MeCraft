@@ -107,6 +107,13 @@ Priorities for this target:
 The particle hot-path and the bounded player/mob texture changes are intentionally conservative. Larger changes to chunk storage, texture formats, or mesh batching should be measured against this memory budget before adoption.
 
 
+### Whole-code hot-path reductions
+
+- Chunk edit invalidation now addresses only the affected ring-cache coordinates. Ordinary boundary edits touch at most eight neighboring chunks; torch edits inspect only chunk coordinates intersecting the light radius, instead of scanning the full 648-slot cache on every world revision.
+- Procedural terrain lookup checks the last-hit chunk before searching the eight-entry cache. Collision and ray queries tend to reuse the same chunk, avoiding repeated cache scans without changing generation or eviction behavior.
+- Reuse the camera ray basis while yaw and pitch are unchanged. Block tracing, boat/cart targeting, and LAN player projection share the cached trigonometric values.
+- Particle billboards also reuse their camera-facing basis until the view changes.
+
 ### Frame-budget and hot-path refinements
 
 - Added separate timing for M3G scene rendering and the 2D HUD, alongside the existing update and renderer-sync timings. Stall reports now expose the expensive stage instead of treating asynchronous `repaint()` as render time.
