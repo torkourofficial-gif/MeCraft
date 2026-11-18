@@ -32,9 +32,9 @@ final class ChunkRenderer {
     private static final int MAX_CHUNK_TORCHES = 128;
     // A material is split into bounded linked segments; no builder grows without limit.
     private static final int MAX_FACE_BUILDER_VERTICES = 2048;
-    private static final int MAX_CHUNK_MESHES_PER_SYNC = 4;
-    private static final int MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 2048;
-    private static final int MAX_CHUNK_LIGHT_SCAN_CELLS_PER_SYNC = 2048;
+    private static final int MAX_CHUNK_MESHES_PER_SYNC = 1;
+    private static final int MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 512;
+    private static final int MAX_CHUNK_LIGHT_SCAN_CELLS_PER_SYNC = 512;
     private static final long MAX_CHUNK_MESH_INSTALL_MILLIS = 6L;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
     private static final float CHUNK_RADIUS = 12.0f;
