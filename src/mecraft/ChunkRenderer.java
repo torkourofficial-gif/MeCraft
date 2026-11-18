@@ -1311,10 +1311,7 @@ final class ChunkRenderer {
 
     private void setChunkRenderingEnabled(Chunk chunk, boolean enabled) {
         if (chunk == null || chunk.renderingEnabled == enabled) return;
-        for (int m = 0; m < chunk.meshes.length; m++) {
-            Mesh mesh = chunk.meshes[m];
-            if (mesh != null) mesh.setRenderingEnable(enabled);
-        }
+        if (chunk.meshRoot != null) chunk.meshRoot.setRenderingEnable(enabled);
         chunk.renderingEnabled = enabled;
     }
 
@@ -1328,8 +1325,7 @@ final class ChunkRenderer {
     private void replaceChunk(int i, int cx, int cy, int cz, Chunk replacement) {
         Chunk previous = chunks[i];
         if (previous != null) {
-            for (int m = 0; m < previous.meshes.length; m++)
-                terrain.removeChild(previous.meshes[m]);
+            if (previous.meshRoot != null) terrain.removeChild(previous.meshRoot);
             recycleChunkBuilders(previous);
         }
         chunks[i] = replacement;
@@ -1340,10 +1336,9 @@ final class ChunkRenderer {
         dirtyChunks[i] = false;
         if (replacement != null) {
             replacement.renderingEnabled = chunkFrustumVisible[i];
-            for (int m = 0; m < replacement.meshes.length; m++) {
-                Mesh mesh = replacement.meshes[m];
-                mesh.setRenderingEnable(replacement.renderingEnabled);
-                terrain.addChild(mesh);
+            if (replacement.meshRoot != null) {
+                replacement.meshRoot.setRenderingEnable(replacement.renderingEnabled);
+                terrain.addChild(replacement.meshRoot);
             }
         }
     }
@@ -1367,8 +1362,7 @@ final class ChunkRenderer {
         Chunk chunk = chunks[i];
         if (chunk != null) {
             setChunkRenderingEnabled(chunk, false);
-            for (int m = 0; m < chunk.meshes.length; m++)
-                terrain.removeChild(chunk.meshes[m]);
+            if (chunk.meshRoot != null) terrain.removeChild(chunk.meshRoot);
             recycleChunkBuilders(chunk);
             chunks[i] = null;
         }
@@ -1692,6 +1686,15 @@ final class ChunkRenderer {
      * produces Java-side builders; all JSR-184 objects and scene mutations
      * stay on the game thread.
      */
+    private void appendChunkMesh(Chunk chunk, Mesh mesh) {
+        if (chunk.meshRoot == null) {
+            chunk.meshRoot = new Group();
+            chunk.meshRoot.setRenderingEnable(false);
+        }
+        appendChunkMesh(chunk, mesh);
+        chunk.meshRoot.addChild(mesh);
+    }
+
     private boolean finishChunkMeshStep(Chunk chunk, int maxMeshes) {
         if (chunk.meshes == null) {
             int count = 0;
@@ -2355,6 +2358,7 @@ final class ChunkRenderer {
 
     private static final class Chunk {
         Mesh[] meshes;
+        Group meshRoot;
         FaceBuilder[] faceBuilders;
         FlowerBuilder flowers;
         FireBuilder fires;
