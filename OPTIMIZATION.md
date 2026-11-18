@@ -107,6 +107,13 @@ Priorities for this target:
 The particle hot-path and the bounded player/mob texture changes are intentionally conservative. Larger changes to chunk storage, texture formats, or mesh batching should be measured against this memory budget before adoption.
 
 
+### Block breaking and placement
+
+- Block targeting now uses a voxel DDA traversal from the same 0.35-block near offset. It visits only cells crossed by the ray instead of sampling every 0.12 blocks, reducing repeated world lookups during mining and placement while retaining the five-block reach and fluid pass-through.
+- Mining attacks reuse the already cached camera ray for mob hit tests rather than recalculating yaw/pitch trigonometry on each attack tick.
+- Placement reads the targeted block once when checking for crafting tables, chests, furnaces, and doors.
+- Successful block/door placement and tilling no longer force an immediate renderer sync. The regular paint path synchronizes changed terrain once before rendering, avoiding a duplicate chunk/rail scan on the input path.
+
 ### Whole-code hot-path reductions
 
 - Chunk edit invalidation now addresses only the affected ring-cache coordinates. Ordinary boundary edits touch at most eight neighboring chunks; torch edits inspect only chunk coordinates intersecting the light radius, instead of scanning the full 648-slot cache on every world revision.
