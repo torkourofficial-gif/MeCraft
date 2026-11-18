@@ -460,8 +460,11 @@ final class VoxelWorld {
     }
 
     int dropItemId(int x, int y, int z) {
-        byte id = get(x, y, z);
-        return id == Block.WOOL ? ItemCatalog.woolItem(woolColor(x, y, z)) : Block.dropId(id);
+        return dropItemId(get(x, y, z), x, y, z);
+    }
+
+    private int dropItemId(byte id, int x, int y, int z) {
+        return id == Block.WOOL ? ItemCatalog.woolItem(metadataAt(x, y, z) & 15) : Block.dropId(id);
     }
 
     boolean setWool(int x, int y, int z, int color) {
@@ -627,8 +630,8 @@ final class VoxelWorld {
                     int local = ((by - minY) * EXPLOSION_MASK_SIZE + (bz - minZ)) *
                         EXPLOSION_MASK_SIZE + (bx - minX);
                     if ((explosionBits[local >> 3] & (1 << (local & 7))) == 0) continue;
-                    byte id = explosionBlockIds[local];
-                    if (id == EXPLOSION_UNCACHED) id = get(bx, by, bz);
+                    // Door removal can mutate an adjacent voxel during this pass.
+                    byte id = get(bx, by, bz);
                     if (id == Block.AIR) continue;
                     if (id == Block.TNT) {
                         // Keep the block intact if the bounded entity pool is full;
@@ -639,13 +642,15 @@ final class VoxelWorld {
                         removeDoor(bx, by, bz);
                         continue;
                     } else if (Block.dropsItem(id) && randomFloat() < 0.3f) {
-                        drops.spawn(dropItemId(bx, by, bz), bx, by, bz);
+                        drops.spawn(dropItemId(id, bx, by, bz), bx, by, bz);
                     }
-                    set(bx, by, bz, Block.AIR);
-                    if (by + 1 < HEIGHT && Block.isDoor(get(bx, by + 1, bz)) &&
-                        !Block.solid(get(bx, by, bz))) {
-                        if (randomFloat() < 0.3f) drops.spawn(Block.dropId(get(bx, by + 1, bz)), bx, by + 1, bz);
-                        removeDoor(bx, by + 1, bz);
+                    setBlockKnownOld(bx, by, bz, Block.AIR, 0, id);
+                    if (by + 1 < HEIGHT) {
+                        byte above = get(bx, by + 1, bz);
+                        if (Block.isDoor(above)) {
+                            if (randomFloat() < 0.3f) drops.spawn(Block.dropId(above), bx, by + 1, bz);
+                            removeDoor(bx, by + 1, bz);
+                        }
                     }
                 }
             }
@@ -700,6 +705,13 @@ final class VoxelWorld {
         if (y <= 0 || y >= HEIGHT || outsideWorld(x, z)) return false;
         if (id < 0 || id >= Block.COUNT) return false;
         byte oldId = get(x, y, z);
+        return setBlockKnownOld(x, y, z, id, fluidLevel, oldId);
+    }
+
+    /** Mutates a voxel whose current ID was just read by the caller. */
+    private boolean setBlockKnownOld(int x, int y, int z, byte id, int fluidLevel, byte oldId) {
+        if (y <= 0 || y >= HEIGHT || outsideWorld(x, z)) return false;
+        if (id < 0 || id >= Block.COUNT) return false;
         if (oldId == id && (!Block.isFluid(id) || metadataAt(x, y, z) == fluidLevel)) return false;
         if (inside(x, z)) {
             int i = index(x, y, z);
