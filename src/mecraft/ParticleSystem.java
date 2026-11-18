@@ -31,7 +31,9 @@ final class ParticleSystem {
     private final int[] tileOffsetY = new int[CAPACITY];
     private final boolean[] deathDust = new boolean[CAPACITY];
     private final boolean[] active = new boolean[CAPACITY];
+    private final int[] activeSlots = new int[CAPACITY];
     private int activeCount;
+    private int renderedParticleCount;
     private float cameraYaw, cameraPitch;
     private boolean cameraBasisValid;
     private float rightX, rightZ, upX, upY, upZ;
@@ -95,11 +97,11 @@ final class ParticleSystem {
     void spawnBlockDestroy(int bx, int by, int bz, int blockTile) {
         for (int gy = 0; gy < 2; gy++) {
             for (int gz = 0; gz < 2; gz++) {
-                for (int gx = 0; gx < 4; gx++) {
+                for (int gx = 0; gx < 2; gx++) {
                     int i = cursor++;
                     if (cursor == CAPACITY) cursor = 0;
                     activate(i);
-                    float rx = (gx + 0.5f) * 0.25f;
+                    float rx = (gx + 0.5f) * 0.5f;
                     float ry = (gy + 0.5f) * 0.5f;
                     float rz = (gz + 0.5f) * 0.5f;
                     x[i] = bx + rx;
@@ -117,7 +119,7 @@ final class ParticleSystem {
                     size[i] = 0.075f + nextRandom() * 0.055f;
                     age[i] = 0;
                     // About two seconds at the game's 20 updates per second.
-                    lifetime[i] = 40;
+                    lifetime[i] = 24;
                     tile[i] = blockTile;
                     tileOffsetX[i] = (int)(nextRandom() * 4.0f);
                     tileOffsetY[i] = (int)(nextRandom() * 4.0f);
@@ -156,7 +158,7 @@ final class ParticleSystem {
     private void activate(int particle) {
         if (!active[particle]) {
             active[particle] = true;
-            activeCount++;
+            activeSlots[activeCount++] = particle;
         }
     }
 
@@ -172,10 +174,11 @@ final class ParticleSystem {
     }
 
     void update(VoxelWorld world, float yawDegrees, float pitchDegrees) {
-        if (activeCount == 0) return;
-        // Particle vertices are stored as signed 16-bit fixed-point values.
-        // Keep them near the origin so they remain representable after the
-        // player has flown far from the initial spawn in an infinite world.
+        if (activeCount == 0) {
+            mesh.setRenderingEnable(false);
+            renderedParticleCount = 0;
+            return;
+        }
         float originX = world.playerX;
         float originY = world.playerY;
         float originZ = world.playerZ;
@@ -192,50 +195,69 @@ final class ParticleSystem {
             cameraPitch = pitchDegrees;
             cameraBasisValid = true;
         }
-        for (int i = 0; i < CAPACITY; i++) {
-            if (!active[i]) continue;
-            if (age[i] < lifetime[i]) {
-                age[i]++;
-                if (deathDust[i]) vy[i] += 0.001f;
-                else vy[i] -= 0.04f;
-                x[i] += vx[i];
-                y[i] += vy[i];
-                z[i] += vz[i];
-                boolean onGround = false;
-                if (!deathDust[i]) {
-                    int belowY = floorInt(y[i] - size[i]);
-                    if (world.isSolidAt(floorInt(x[i]), belowY, floorInt(z[i]))) {
-                        y[i] = belowY + 1.0f + size[i];
-                        vy[i] = 0.0f;
-                        onGround = true;
-                    }
-                }
-                vx[i] *= deathDust[i] ? 0.92f : 0.98f;
-                vy[i] *= deathDust[i] ? 0.96f : 0.98f;
-                vz[i] *= deathDust[i] ? 0.92f : 0.98f;
-                if (onGround) { vx[i] *= 0.7f; vz[i] *= 0.7f; }
-                if (deathDust[i]) {
-                    int alpha = 230 - age[i] * 230 / lifetime[i];
-                    setParticleColor(i, 165, 132, 91, alpha);
-                } else {
-                    int alpha = 255 - age[i] * 255 / lifetime[i];
-                    setParticleColor(i, alpha);
-                }
-            } else {
-                active[i] = false;
-                activeCount--;
-                setParticleColor(i, 0);
-                continue;
-            }
-            writeQuad(i, rightX, rightZ, upX, upY, upZ,
-                    originX, originY, originZ);
+        for (int n = 0; n < activeCount; ) {
+            int i = activeSlots[n];
             if (age[i] >= lifetime[i]) {
                 active[i] = false;
                 activeCount--;
+                activeSlots[n] = activeSlots[activeCount];
+                continue;
             }
+            age[i]++;
+            if (deathDust[i]) vy[i] += 0.001f;
+            else vy[i] -= 0.04f;
+            x[i] += vx[i];
+            y[i] += vy[i];
+            z[i] += vz[i];
+            boolean onGround = false;
+            if (!deathDust[i]) {
+                int belowY = floorInt(y[i] - size[i]);
+                if (world.isSolidAt(floorInt(x[i]), belowY, floorInt(z[i]))) {
+                    y[i] = belowY + 1.0f + size[i];
+                    vy[i] = 0.0f;
+                    onGround = true;
+                }
+            }
+            vx[i] *= deathDust[i] ? 0.92f : 0.98f;
+            vy[i] *= deathDust[i] ? 0.96f : 0.98f;
+            vz[i] *= deathDust[i] ? 0.92f : 0.98f;
+            if (onGround) { vx[i] *= 0.7f; vz[i] *= 0.7f; }
+            n++;
         }
-        positionArray.set(0, VERTICES, positions);
-        colorArray.set(0, VERTICES, colors);
+
+        // Pack live particles at the start of the fixed mesh. A single partial
+        // VertexArray upload now scales with the live count, not all 64 slots.
+        for (int n = 0; n < activeCount; n++) {
+            int i = activeSlots[n];
+            writeQuad(n, rightX, rightZ, upX, upY, upZ, originX, originY, originZ);
+            writeTileUV(n, tile[i], tileOffsetX[i], tileOffsetY[i]);
+            writeParticleColor(n, i);
+        }
+        int uploadCount = Math.max(activeCount, renderedParticleCount);
+        for (int n = activeCount; n < renderedParticleCount; n++) setParticleColor(n, 0);
+        if (uploadCount > 0) {
+            int vertices = uploadCount * 4;
+            positionArray.set(0, vertices, positions);
+            colorArray.set(0, vertices, colors);
+        }
+        if (activeCount > 0) {
+            texCoordArray.set(0, activeCount * 4, texCoords);
+        }
+        renderedParticleCount = activeCount;
+        mesh.setRenderingEnable(activeCount > 0);
+    }
+
+    private void writeParticleColor(int renderSlot, int particle) {
+        int alpha;
+        int red, green, blue;
+        if (deathDust[particle]) {
+            red = 165; green = 132; blue = 91;
+            alpha = 230 - age[particle] * 230 / lifetime[particle];
+        } else {
+            red = 153; green = 153; blue = 153;
+            alpha = 255 - age[particle] * 255 / lifetime[particle];
+        }
+        setParticleColor(renderSlot, red, green, blue, alpha);
     }
 
     private void writeQuad(int particle, float rx, float rz, float ux, float uy, float uz,
