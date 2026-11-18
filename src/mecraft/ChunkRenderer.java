@@ -1264,23 +1264,34 @@ final class ChunkRenderer {
         int lz = z - cz * VoxelWorld.CHUNK_XZ;
         boolean torchChanged = world.changedOldId == Block.TORCH ||
                 world.get(x, y, z) == Block.TORCH;
-        for (int i = 0; i < CACHE_SIZE; i++) {
-            if (!residentChunks[i]) continue;
-            if (torchChanged) {
-                int bx0 = chunkWorldX[i] * VoxelWorld.CHUNK_XZ;
-                int by0 = chunkWorldY[i] * VoxelWorld.CHUNK_Y;
-                int bz0 = chunkWorldZ[i] * VoxelWorld.CHUNK_XZ;
-                if (x < bx0 - TORCH_LIGHT_RADIUS || x >= bx0 + VoxelWorld.CHUNK_XZ + TORCH_LIGHT_RADIUS ||
-                    y < by0 - TORCH_LIGHT_RADIUS || y >= by0 + VoxelWorld.CHUNK_Y + TORCH_LIGHT_RADIUS ||
-                    z < bz0 - TORCH_LIGHT_RADIUS || z >= bz0 + VoxelWorld.CHUNK_XZ + TORCH_LIGHT_RADIUS)
-                    continue;
-                dirtyChunks[i] = true;
-                continue;
+        int minChunkX = torchChanged ? floorDiv(x - TORCH_LIGHT_RADIUS, VoxelWorld.CHUNK_XZ) :
+                cx - (lx == 0 ? 1 : 0);
+        int maxChunkX = torchChanged ? floorDiv(x + TORCH_LIGHT_RADIUS, VoxelWorld.CHUNK_XZ) :
+                cx + (lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0);
+        int minChunkY = torchChanged ? floorDiv(y - TORCH_LIGHT_RADIUS, VoxelWorld.CHUNK_Y) :
+                cy - (ly == 0 ? 1 : 0);
+        int maxChunkY = torchChanged ? floorDiv(y + TORCH_LIGHT_RADIUS, VoxelWorld.CHUNK_Y) :
+                cy + (ly == VoxelWorld.CHUNK_Y - 1 ? 1 : 0);
+        int minChunkZ = torchChanged ? floorDiv(z - TORCH_LIGHT_RADIUS, VoxelWorld.CHUNK_XZ) :
+                cz - (lz == 0 ? 1 : 0);
+        int maxChunkZ = torchChanged ? floorDiv(z + TORCH_LIGHT_RADIUS, VoxelWorld.CHUNK_XZ) :
+                cz + (lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0);
+
+        // Only chunks intersecting the changed block's face neighborhood or
+        // torch-light radius can be affected. Address their ring-cache slots
+        // directly instead of scanning all 648 entries for every edit.
+        for (int chunkY = minChunkY; chunkY <= maxChunkY; chunkY++) {
+            if (chunkY < 0 || chunkY >= VoxelWorld.CHUNKS_Y) continue;
+            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+                for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+                    int slot = (chunkY * MAX_STREAM_SPAN +
+                            floorMod(chunkZ, MAX_STREAM_SPAN)) * MAX_STREAM_SPAN +
+                            floorMod(chunkX, MAX_STREAM_SPAN);
+                    if (residentChunks[slot] && chunkWorldX[slot] == chunkX &&
+                            chunkWorldY[slot] == chunkY && chunkWorldZ[slot] == chunkZ)
+                        dirtyChunks[slot] = true;
+                }
             }
-            if (Math.abs(chunkWorldX[i] - cx) > (lx == 0 || lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0) ||
-                Math.abs(chunkWorldY[i] - cy) > (ly == 0 || ly == VoxelWorld.CHUNK_Y - 1 ? 1 : 0) ||
-                Math.abs(chunkWorldZ[i] - cz) > (lz == 0 || lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0)) continue;
-            dirtyChunks[i] = true;
         }
     }
 
