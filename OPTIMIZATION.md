@@ -6,10 +6,10 @@ This branch contains a conservative hot-path optimization for the existing MIDP 
 
 ### ParticleSystem: sparse updates and immutable UVs
 
-- Added a fixed 64-entry active-slot bitmap and counter. An empty particle pool now returns before doing trigonometry, collision queries, vertex writes, or M3G buffer uploads.
-- Inactive particle slots are skipped rather than rewriting their vertices and colors on every 50 ms update.
-- Atlas UVs are calculated once when a particle is spawned. The texture-coordinate `VertexArray` is no longer uploaded every update; only positions and vertex colors are updated while particles are alive.
-- The pool remains fixed-size and allocation-free during update/spawn. No change to particle count, lifetime, atlas, collision, or visual fade was intended.
+- Added a fixed 64-entry active-slot list and counter. An empty particle pool now disables its mesh and returns before doing trigonometry, collision queries, vertex writes, or M3G buffer uploads. Simulation iterates active entries rather than all 64 slots.
+- Render data is packed into the first N mesh slots each update. `VertexArray.set` uploads only the live prefix (and the prior prefix once to clear expired particles), instead of sending all 256 vertices for a typical 16-particle burst.
+- Atlas UVs are calculated for packed render slots and uploaded only for live particles; positions and colors likewise use partial vertex ranges. This follows the JSR-184 `VertexArray.set(firstVertex, numVertices, values)` range API.
+- The pool remains fixed-size and allocation-free during update/spawn. Block-break debris now uses eight fragments instead of 16 and lasts 24 ticks (about 1.2 seconds at 20 updates/second); other particle types retain their prior counts and lifetimes.
 
 ## Memory optimizations applied
 
