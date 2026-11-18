@@ -33,6 +33,7 @@ final class ChunkRenderer {
     private static final int MAX_CHUNK_TORCHES = 128;
     // A material is split into bounded linked segments; no builder grows without limit.
     private static final int MAX_FACE_BUILDER_VERTICES = 2048;
+    private static final long MAX_CHUNK_MESH_INSTALL_MILLIS = 6L;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
     private static final float CHUNK_RADIUS = 12.0f;
     private static final float NORMAL_FOV = 68.0f;
@@ -1657,8 +1658,13 @@ final class ChunkRenderer {
             if (chunk.portals != null && chunk.portals.vertexCount > 0) count++;
             chunk.meshes = new Mesh[count];
         }
+        long installStarted = System.currentTimeMillis();
         int budget = maxMeshes;
+        int installed = 0;
         while (budget > 0 && chunk.meshBuildPhase == 0) {
+            if (installed > 0 &&
+                    System.currentTimeMillis() - installStarted >= MAX_CHUNK_MESH_INSTALL_MILLIS)
+                break;
             if (chunk.faceBuilders == null || chunk.meshBuildIndex >= chunk.faceBuilders.length) {
                 chunk.faceBuilders = null;
                 chunk.meshBuildPhase = 1;
@@ -1681,10 +1687,13 @@ final class ChunkRenderer {
                 mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
                 chunk.meshes[chunk.meshBuildAt++] = mesh;
                 budget--;
+                installed++;
             }
             recycleFaceBuilder(builder);
         }
-        if (chunk.meshBuildPhase == 1 && budget > 0) {
+        if (chunk.meshBuildPhase == 1 && budget > 0 &&
+                (installed == 0 || System.currentTimeMillis() - installStarted <
+                        MAX_CHUNK_MESH_INSTALL_MILLIS)) {
             if (chunk.flowers != null) {
                 FlowerBuilder b = chunk.flowers;
                 if (b.vertexCount > 0) {
@@ -1692,19 +1701,23 @@ final class ChunkRenderer {
                     mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
                     chunk.meshes[chunk.meshBuildAt++] = mesh;
                     budget--;
+                    installed++;
                 }
                 chunk.flowers = null;
                 recycleFlowerBuilder(b);
             }
             chunk.meshBuildPhase = 2;
         }
-        if (chunk.meshBuildPhase == 2 && budget > 0) {
+        if (chunk.meshBuildPhase == 2 && budget > 0 &&
+                (installed == 0 || System.currentTimeMillis() - installStarted <
+                        MAX_CHUNK_MESH_INSTALL_MILLIS)) {
             if (chunk.fires != null) {
                 if (chunk.fires.vertexCount > 0) {
                     Mesh mesh = makeFireMesh(chunk.fires);
                     mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
                     chunk.meshes[chunk.meshBuildAt++] = mesh;
                     budget--;
+                    installed++;
                 } else {
                     recycleFireBuilder(chunk.fires);
                     chunk.fires = null;
@@ -1712,7 +1725,9 @@ final class ChunkRenderer {
             }
             chunk.meshBuildPhase = 3;
         }
-        if (chunk.meshBuildPhase == 3 && budget > 0) {
+        if (chunk.meshBuildPhase == 3 && budget > 0 &&
+                (installed == 0 || System.currentTimeMillis() - installStarted <
+                        MAX_CHUNK_MESH_INSTALL_MILLIS)) {
             if (chunk.portals != null) {
                 PortalBuilder b = chunk.portals;
                 if (b.vertexCount > 0) {
