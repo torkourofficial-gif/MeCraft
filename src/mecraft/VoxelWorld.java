@@ -604,6 +604,11 @@ final class VoxelWorld {
         int blockCount = sizeX * sizeY * sizeZ;
         int total = blockCount + editCount;
         int cursor = state[0];
+        if (cursor == 0) {
+            state[2] = x0;
+            state[3] = z0;
+            state[4] = y0;
+        }
         int end = cursor + maxChecks;
         if (end > total) end = total;
 
@@ -612,10 +617,15 @@ final class VoxelWorld {
             byte id;
             int x, y, z;
             if (scan < blockCount) {
-                x = x0 + scan % sizeX;
-                z = z0 + scan / sizeX % sizeZ;
-                y = y0 + scan / (sizeX * sizeZ);
+                x = state[2]; z = state[3]; y = state[4];
                 id = blocks[index(x, y, z)];
+                if (++state[2] >= x1) {
+                    state[2] = x0;
+                    if (++state[3] >= z1) {
+                        state[3] = z0;
+                        state[4]++;
+                    }
+                }
             } else {
                 int edit = scan - blockCount;
                 if (editNether[edit] != nether) continue;
