@@ -84,8 +84,9 @@ final class VoxelWorld {
     private static final int FLUID_QUEUE_SIZE = 2048;
     private final int[] fluidQueue = new int[FLUID_QUEUE_SIZE];
     private final byte[] fluidQueued = new byte[(BLOCK_COUNT + 7) / 8];
-    // Same small ring cache used by the October 29 build.
-    private static final int PROCEDURAL_CACHE_SIZE = 8;
+    // Keep the complete 3x3 short-distance window plus nearby chunks resident.
+    // Each additional entry costs one compact 16x64x16 byte terrain chunk.
+    private static final int PROCEDURAL_CACHE_SIZE = 16;
     private final byte[][] proceduralChunks =
             new byte[PROCEDURAL_CACHE_SIZE][InfdevTerrain.CHUNK_VOLUME];
     private final int[] proceduralChunkX = new int[PROCEDURAL_CACHE_SIZE];
