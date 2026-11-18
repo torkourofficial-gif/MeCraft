@@ -1237,6 +1237,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         byte soil = world.get(x, y, z);
         if ((soil != Block.GRASS && soil != Block.DIRT) || Block.solid(world.get(x, y + 1, z))) return;
         if (!world.set(x, y, z, Block.FARMLAND)) return;
+        renderer.syncEditedBlock(world, x, y, z);
         damageTool(hoe, 1);
         if (soil == Block.GRASS && (nextRandom() & 7) == 0 && inventory[ItemCatalog.SEEDS] < 64)
             inventory[ItemCatalog.SEEDS]++;
@@ -1661,7 +1662,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 !Block.solid(world.get(x, y - 1, z))) return;
         if (!world.set(x, y, z, Block.FIRE)) return;
         renderer.swingHand();
-        renderer.sync(world);
+        renderer.syncEditedBlock(world, x, y, z);
         copyInventoryToWorld();
         world.save();
     }
@@ -1695,7 +1696,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         } else return;
         if (inventory[selected] <= 0) restoreHotbarItem(selected);
         renderer.swingHand();
-        renderer.sync(world);
+        renderer.syncEditedBlock(world, x, y, z);
         copyInventoryToWorld();
         world.save();
     }
