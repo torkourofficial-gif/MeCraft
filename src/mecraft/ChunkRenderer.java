@@ -34,6 +34,7 @@ final class ChunkRenderer {
     private static final int MAX_FACE_BUILDER_VERTICES = 2048;
     private static final int MAX_CHUNK_MESHES_PER_SYNC = 4;
     private static final int MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 2048;
+    private static final int MAX_CHUNK_LIGHT_SCAN_CELLS_PER_SYNC = 2048;
     private static final long MAX_CHUNK_MESH_INSTALL_MILLIS = 6L;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
     private static final float CHUNK_RADIUS = 12.0f;
@@ -1629,6 +1630,8 @@ final class ChunkRenderer {
         chunkSnapshotZ = cz;
         chunkSnapshotEpoch = streamEpoch;
         chunkSnapshotRevision = world.revision;
+        chunkBuildSnapshot.lightScanState[0] = 0;
+        chunkBuildSnapshot.lightScanState[1] = 0;
     }
 
     private void advanceChunkBuildSnapshot(VoxelWorld world) {
@@ -1675,14 +1678,17 @@ final class ChunkRenderer {
         if (chunkSnapshotCursor < total) return;
 
         int radius = LAVA_LIGHT_RADIUS;
-        snapshot.lightCount = world.collectLightSources(
+        boolean lightsReady = world.collectLightSourcesStep(
                 x0 - radius, Math.max(0, y0 - radius), z0 - radius,
                 x0 + VoxelWorld.CHUNK_XZ + radius,
                 Math.min(VoxelWorld.HEIGHT, y0 + VoxelWorld.CHUNK_Y + radius),
                 z0 + VoxelWorld.CHUNK_XZ + radius,
                 snapshot.lightX, snapshot.lightY, snapshot.lightZ,
                 snapshot.lightRadius, snapshot.lavaSource, MAX_CHUNK_TORCHES,
-                TORCH_LIGHT_RADIUS, LAVA_LIGHT_RADIUS);
+                TORCH_LIGHT_RADIUS, LAVA_LIGHT_RADIUS,
+                MAX_CHUNK_LIGHT_SCAN_CELLS_PER_SYNC, snapshot.lightScanState);
+        if (!lightsReady) return;
+        snapshot.lightCount = snapshot.lightScanState[1];
         snapshot.nether = world.nether;
         snapshot.revision = chunkSnapshotRevision;
         if (world.revision != chunkSnapshotRevision) {
@@ -2530,41 +2536,6 @@ final class ChunkRenderer {
         }
     }
 
-private boolean captureChunkBuildSnapshot(VoxelWorld world, int cx, int cy, int cz,
-                                               ChunkBuildSnapshot snapshot) {
-        int revision = world.revision;
-        int x0 = cx * VoxelWorld.CHUNK_XZ;
-        int y0 = cy * VoxelWorld.CHUNK_Y;
-        int z0 = cz * VoxelWorld.CHUNK_XZ;
-        int radius = LAVA_LIGHT_RADIUS;
-        int minX = x0 - radius, maxX = x0 + VoxelWorld.CHUNK_XZ + radius;
-        int minY = Math.max(0, y0 - radius);
-        int maxY = Math.min(VoxelWorld.HEIGHT, y0 + VoxelWorld.CHUNK_Y + radius);
-        int minZ = z0 - radius, maxZ = z0 + VoxelWorld.CHUNK_XZ + radius;
-        snapshot.lightCount = world.collectLightSources(minX, minY, minZ, maxX, maxY, maxZ,
-                snapshot.lightX, snapshot.lightY, snapshot.lightZ, snapshot.lightRadius,
-                snapshot.lavaSource, MAX_CHUNK_TORCHES, TORCH_LIGHT_RADIUS, LAVA_LIGHT_RADIUS);
-        snapshot.nether = world.nether;
-        for (int ly = -1; ly <= VoxelWorld.CHUNK_Y; ly++) {
-            int wy = y0 + ly;
-            for (int lz = -1; lz <= VoxelWorld.CHUNK_XZ; lz++) {
-                int wz = z0 + lz;
-                for (int lx = -1; lx <= VoxelWorld.CHUNK_XZ; lx++) {
-                    int wx = x0 + lx;
-                    snapshot.voxels[(ly + 1) * ChunkBuildSnapshot.PAD_AREA +
-                            (lz + 1) * ChunkBuildSnapshot.PAD + lx + 1] = world.get(wx, wy, wz);
-                }
-            }
-        }
-        for (int ly = 0; ly < VoxelWorld.CHUNK_Y; ly++)
-            for (int lz = 0; lz < VoxelWorld.CHUNK_XZ; lz++)
-                for (int lx = 0; lx < VoxelWorld.CHUNK_XZ; lx++)
-                    snapshot.metadata[(ly * VoxelWorld.CHUNK_XZ + lz) *
-                            VoxelWorld.CHUNK_XZ + lx] = (byte)world.metadataAt(x0 + lx, y0 + ly, z0 + lz);
-        snapshot.revision = revision;
-        return world.revision == revision;
-    }
-
     private static final class ChunkBuildSnapshot {
         private static final int PAD = VoxelWorld.CHUNK_XZ + 2;
         private static final int PAD_AREA = PAD * PAD;
@@ -2576,6 +2547,7 @@ private boolean captureChunkBuildSnapshot(VoxelWorld world, int cx, int cy, int 
         final int[] lightZ = new int[MAX_CHUNK_TORCHES];
         final byte[] lightRadius = new byte[MAX_CHUNK_TORCHES];
         final boolean[] lavaSource = new boolean[MAX_CHUNK_TORCHES];
+        final int[] lightScanState = new int[2];
         int revision, lightCount;
 
         byte block(int x, int y, int z) {
