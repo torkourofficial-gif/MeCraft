@@ -163,4 +163,9 @@ The particle hot-path and the bounded player/mob texture changes are intentional
 ### Procedural terrain generation work
 
 - Removed the ravine water pre-pass. The generator only scans up to each column's surface height minus one, while generated ocean water is strictly above that surface; the pre-pass therefore could not find water and repeated reads for each ravine path step.
-- The initial synchronous generation fallback remains for a true cache miss. The larger bounded cache reduces how often that fallback runs; it does not claim that all procedural generation has moved off the game thread.
+- The renderer now requests one terrain chunk ahead on a single low-priority worker. The worker writes into private reusable staging arrays; the game thread copies a completed result into the bounded procedural cache.
+- Before capturing a mesh snapshot, the renderer checks the padded horizontal footprint for missing procedural chunks. If any are absent, the mesh request stays dirty and retries on a later sync after queuing that terrain generation. This removes normal snapshot-triggered generation from the game thread.
+- Collision and direct block reads keep their synchronous fallback if gameplay outruns prefetch, preserving exact terrain reads instead of returning placeholder air. This fallback can still cause a frame hitch in that edge case.
+- Noise table changes are guarded while generation is active so switching to a world with a different seed cannot replace the permutation underneath the worker. Same-seed chunks remain safe to generate concurrently.
+- The extra reusable staging memory is bounded to one block chunk plus its height and biome columns. Thread creation and MIN_PRIORITY use APIs present in CLDC 1.1; priority is advisory and does not guarantee CPU scheduling on every device ([CLDC 1.1 Thread API](https://docs.oracle.com/javame/config/cldc/ref-impl/cldc1.1/jsr139/java/lang/Thread.html)).
+- No HTC S730 timing or FPS measurement is available yet. The optimization removes the common synchronous generation from mesh capture, but does not promise 20 FPS or eliminate cache-miss stalls.
