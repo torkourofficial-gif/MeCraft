@@ -148,12 +148,6 @@ final class ChunkRenderer {
     private final Mesh crackMesh;
     private final VertexArray crackPositions;
     private final short[] crackPositionData = new short[] { 0,0,0, 0,1,0, 1,0,0, 1,1,0 };
-    private int crackBlockX = Integer.MIN_VALUE;
-    private int crackBlockY = Integer.MIN_VALUE;
-    private int crackBlockZ = Integer.MIN_VALUE;
-    private int crackFaceX, crackFaceY, crackFaceZ;
-    private int crackStage = -1;
-    private boolean crackVisible;
     private final short[] crackUVData = new short[] { 0,16, 0,0, 16,16, 16,0 };
     private final Appearance portalAppearance;
     private final Texture2D worldFireTexture;
@@ -1047,52 +1041,37 @@ final class ChunkRenderer {
     /** Update the transparent crack quad on the selected block face; stage is 0..9. */
     void setMiningCracks(int x, int y, int z, int faceX, int faceY, int faceZ, int stage) {
         if (x < 0 || stage < 0) {
-            if (crackVisible) {
-                crackMesh.setRenderingEnable(false);
-                crackVisible = false;
-            }
+            crackMesh.setRenderingEnable(false);
             return;
         }
         if (stage > 9) stage = 9;
+        crackAppearance.setTexture(0, crackFrames[stage]);
 
-        if (stage != crackStage) {
-            crackAppearance.setTexture(0, crackFrames[stage]);
-            crackStage = stage;
+        // Keep the quad vertices local (0..1) and position the mesh at the
+        // selected world block. This avoids truncating world coordinates into
+        // short vertex values, which made overlays fail outside the origin chunk.
+        float offset = 0.01f;
+        if (Math.abs(faceY) >= Math.abs(faceX) && Math.abs(faceY) >= Math.abs(faceZ)) {
+            crackPositionData[0] = 0; crackPositionData[1] = 0; crackPositionData[2] = 0;
+            crackPositionData[3] = 0; crackPositionData[4] = 0; crackPositionData[5] = 1;
+            crackPositionData[6] = 1; crackPositionData[7] = 0; crackPositionData[8] = 0;
+            crackPositionData[9] = 1; crackPositionData[10] = 0; crackPositionData[11] = 1;
+            crackMesh.setTranslation(x, y + (faceY > 0 ? 1.0f + offset : -offset), z);
+        } else if (Math.abs(faceX) >= Math.abs(faceZ)) {
+            crackPositionData[0] = 0; crackPositionData[1] = 0; crackPositionData[2] = 0;
+            crackPositionData[3] = 0; crackPositionData[4] = 0; crackPositionData[5] = 1;
+            crackPositionData[6] = 0; crackPositionData[7] = 1; crackPositionData[8] = 0;
+            crackPositionData[9] = 0; crackPositionData[10] = 1; crackPositionData[11] = 1;
+            crackMesh.setTranslation(x + (faceX > 0 ? 1.0f + offset : -offset), y, z);
+        } else {
+            crackPositionData[0] = 0; crackPositionData[1] = 0; crackPositionData[2] = 0;
+            crackPositionData[3] = 0; crackPositionData[4] = 1; crackPositionData[5] = 0;
+            crackPositionData[6] = 1; crackPositionData[7] = 0; crackPositionData[8] = 0;
+            crackPositionData[9] = 1; crackPositionData[10] = 1; crackPositionData[11] = 0;
+            crackMesh.setTranslation(x, y, z + (faceZ > 0 ? 1.0f + offset : -offset));
         }
-
-        boolean geometryChanged = x != crackBlockX || y != crackBlockY || z != crackBlockZ ||
-                faceX != crackFaceX || faceY != crackFaceY || faceZ != crackFaceZ;
-        if (geometryChanged) {
-            // Keep the quad local (0..1); only upload its four vertices when
-            // the target block or visible face changes.
-            float offset = 0.01f;
-            if (Math.abs(faceY) >= Math.abs(faceX) && Math.abs(faceY) >= Math.abs(faceZ)) {
-                crackPositionData[0] = 0; crackPositionData[1] = 0; crackPositionData[2] = 0;
-                crackPositionData[3] = 0; crackPositionData[4] = 0; crackPositionData[5] = 1;
-                crackPositionData[6] = 1; crackPositionData[7] = 0; crackPositionData[8] = 0;
-                crackPositionData[9] = 1; crackPositionData[10] = 0; crackPositionData[11] = 1;
-                crackMesh.setTranslation(x, y + (faceY > 0 ? 1.0f + offset : -offset), z);
-            } else if (Math.abs(faceX) >= Math.abs(faceZ)) {
-                crackPositionData[0] = 0; crackPositionData[1] = 0; crackPositionData[2] = 0;
-                crackPositionData[3] = 0; crackPositionData[4] = 0; crackPositionData[5] = 1;
-                crackPositionData[6] = 0; crackPositionData[7] = 1; crackPositionData[8] = 0;
-                crackPositionData[9] = 0; crackPositionData[10] = 1; crackPositionData[11] = 1;
-                crackMesh.setTranslation(x + (faceX > 0 ? 1.0f + offset : -offset), y, z);
-            } else {
-                crackPositionData[0] = 0; crackPositionData[1] = 0; crackPositionData[2] = 0;
-                crackPositionData[3] = 0; crackPositionData[4] = 1; crackPositionData[5] = 0;
-                crackPositionData[6] = 1; crackPositionData[7] = 0; crackPositionData[8] = 0;
-                crackPositionData[9] = 1; crackPositionData[10] = 1; crackPositionData[11] = 0;
-                crackMesh.setTranslation(x, y, z + (faceZ > 0 ? 1.0f + offset : -offset));
-            }
-            crackPositions.set(0, 4, crackPositionData);
-            crackBlockX = x; crackBlockY = y; crackBlockZ = z;
-            crackFaceX = faceX; crackFaceY = faceY; crackFaceZ = faceZ;
-        }
-        if (!crackVisible) {
-            crackMesh.setRenderingEnable(true);
-            crackVisible = true;
-        }
+        crackPositions.set(0, 4, crackPositionData);
+        crackMesh.setRenderingEnable(true);
     }
 
     private Appearance createFirstPersonAppearance(Texture2D texture,
