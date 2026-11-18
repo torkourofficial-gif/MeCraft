@@ -151,6 +151,10 @@ final class VoxelWorld {
     int changedY;
     int changedZ;
     boolean fullRebuild;
+    // Bounded dirty region used by multi-block terrain edits such as TNT.
+    boolean bulkChangedPending;
+    int bulkChangedMinX, bulkChangedMinY, bulkChangedMinZ;
+    int bulkChangedMaxX, bulkChangedMaxY, bulkChangedMaxZ;
     private int explosionRandom = 0x51F15E;
     private int fluidQueueHead;
     private int fluidQueueTail;
@@ -756,6 +760,8 @@ final class VoxelWorld {
         int spanZ = maxZ - minZ + 1;
         if (spanX > EXPLOSION_MASK_SIZE || spanY > EXPLOSION_MASK_SIZE ||
             spanZ > EXPLOSION_MASK_SIZE) return;
+        boolean fullRebuildBefore = fullRebuild;
+        int revisionBefore = revision;
         for (int i = 0; i < explosionBits.length; i++) explosionBits[i] = 0;
         for (int i = 0; i < explosionBlockIds.length; i++) explosionBlockIds[i] = EXPLOSION_UNCACHED;
 
@@ -831,7 +837,23 @@ final class VoxelWorld {
                 }
             }
         }
-        fullRebuild = true;
+        if (revision != revisionBefore) {
+            if (!bulkChangedPending) {
+                bulkChangedMinX = minX; bulkChangedMinY = minY; bulkChangedMinZ = minZ;
+                bulkChangedMaxX = maxX; bulkChangedMaxY = maxY; bulkChangedMaxZ = maxZ;
+            } else {
+                if (minX < bulkChangedMinX) bulkChangedMinX = minX;
+                if (minY < bulkChangedMinY) bulkChangedMinY = minY;
+                if (minZ < bulkChangedMinZ) bulkChangedMinZ = minZ;
+                if (maxX > bulkChangedMaxX) bulkChangedMaxX = maxX;
+                if (maxY > bulkChangedMaxY) bulkChangedMaxY = maxY;
+                if (maxZ > bulkChangedMaxZ) bulkChangedMaxZ = maxZ;
+            }
+            bulkChangedPending = true;
+        }
+        // The blast is covered by the local dirty region. Preserve a full rebuild
+        // requested by another operation that happened earlier in this frame.
+        fullRebuild = fullRebuildBefore;
     }
 
     private float explosionResistance(byte id) {
