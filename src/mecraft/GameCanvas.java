@@ -773,6 +773,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     private void createNewWorldNow(int mode, int size, int type, int difficulty, String name, int seed) {
+        long loadingStartedAt = System.currentTimeMillis();
         String stage = "preparando mundo";
         try {
             title = null;
@@ -817,6 +818,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             stage = "construyendo sectores visibles M3G";
             loadingMessage = Language.text("Construyendo chunks visibles...");
             renderer.sync(world);
+            waitForMinimumLoadingTime(loadingStartedAt, 5000L);
             state = PLAYING;
             repaint();
         } catch (OutOfMemoryError exhausted) {
@@ -826,6 +828,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 stage = VoxelWorld.getGenerationDiagnosticStage();
             }
             showDiagnostic(stage, problem);
+        }
+    }
+
+    private void waitForMinimumLoadingTime(long startedAt, long minimumMillis) {
+        long remaining = minimumMillis - (System.currentTimeMillis() - startedAt);
+        if (remaining <= 0L) return;
+        try {
+            Thread.sleep(remaining);
+        } catch (InterruptedException ignored) {
         }
     }
 
