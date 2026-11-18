@@ -1591,6 +1591,21 @@ final class ChunkRenderer {
             }
         }
 
+        // If a player edit arrives while background streaming is in progress,
+        // abandon unfinished background work so the edited chunk goes first.
+        boolean urgentPending = urgentChunkX != Integer.MIN_VALUE;
+        if (urgentPending && chunkSnapshotPreparing &&
+                !isUrgentChunk(chunkSnapshotX, chunkSnapshotY, chunkSnapshotZ)) {
+            chunkSnapshotPreparing = false;
+        }
+        if (urgentPending && installingChunk != null &&
+                !isUrgentChunk(installingX, installingY, installingZ)) {
+            recycleChunkBuilders(installingChunk);
+            if (installingSlot >= 0 && installingSlot < CACHE_SIZE)
+                dirtyChunks[installingSlot] = true;
+            installingChunk = null;
+        }
+
         // Accept completed Java geometry, then spend a small M3G budget each frame.
         if (buildResultReady) {
             Chunk completed = readyChunk;
@@ -1601,8 +1616,10 @@ final class ChunkRenderer {
             boolean slotMatches = slot >= 0 && slot < CACHE_SIZE &&
                     chunkWorldX[slot] == cx && chunkWorldY[slot] == cy &&
                     chunkWorldZ[slot] == cz;
+            boolean urgentCanPreempt = urgentChunkX != Integer.MIN_VALUE &&
+                    !isUrgentChunk(cx, cy, cz);
             if (completed != null && epoch == streamEpoch && slotMatches &&
-                    !dirtyChunks[slot]) {
+                    !dirtyChunks[slot] && !urgentCanPreempt) {
                 installingChunk = completed;
                 installingSlot = slot; installingX = cx; installingY = cy; installingZ = cz;
                 installingEpoch = epoch;
