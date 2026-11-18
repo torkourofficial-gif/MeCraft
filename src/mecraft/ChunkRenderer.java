@@ -1691,7 +1691,7 @@ final class ChunkRenderer {
             chunk.meshRoot = new Group();
             chunk.meshRoot.setRenderingEnable(false);
         }
-        appendChunkMesh(chunk, mesh);
+        chunk.meshes[chunk.meshBuildAt++] = mesh;
         chunk.meshRoot.addChild(mesh);
     }
 
