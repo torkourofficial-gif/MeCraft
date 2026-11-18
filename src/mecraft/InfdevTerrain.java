@@ -18,8 +18,34 @@ final class InfdevTerrain {
     private static final byte[] seededPermutation = new byte[512];
     private static int preparedNoiseSeed = Integer.MIN_VALUE;
     private static int preparedNoiseVersion = -1;
+    // Terrain generation can run on the streaming worker. Same-seed generation
+    // is read-only with respect to the permutation; a seed change waits for
+    // active generators before replacing that shared table.
+    private static int activeGenerationSeed = Integer.MIN_VALUE;
+    private static int activeGenerationCount;
+
+    static synchronized void beginGeneration(int seed) {
+        while (activeGenerationCount > 0 && activeGenerationSeed != seed) {
+            try { InfdevTerrain.class.wait(); } catch (InterruptedException ignored) { }
+        }
+        if (activeGenerationCount == 0) activeGenerationSeed = seed;
+        activeGenerationCount++;
+    }
+
+    static synchronized void endGeneration(int seed) {
+        if (activeGenerationCount > 0 && activeGenerationSeed == seed) {
+            activeGenerationCount--;
+            if (activeGenerationCount == 0) {
+                activeGenerationSeed = Integer.MIN_VALUE;
+                InfdevTerrain.class.notifyAll();
+            }
+        }
+    }
 
     static synchronized void prepareNoise(int seed, int version) {
+        while (activeGenerationCount > 0 && activeGenerationSeed != seed) {
+            try { InfdevTerrain.class.wait(); } catch (InterruptedException ignored) { }
+        }
         int selectedVersion = version <= 0 ? 0 : 1;
         if (preparedNoiseSeed == seed && preparedNoiseVersion == selectedVersion) return;
         preparedNoiseSeed = seed;
