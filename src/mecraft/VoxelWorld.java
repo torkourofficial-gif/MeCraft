@@ -633,7 +633,7 @@ final class VoxelWorld {
                     if (id == Block.TNT) {
                         // Keep the block intact if the bounded entity pool is full;
                         // never erase chain TNT unless its primed entity was created.
-                        if (!drops.spawnPrimedTnt(bx, by, bz, 10 + randomInt(20))) continue;
+                        if (!drops.spawnChainTnt(bx, by, bz, 10 + randomInt(20))) continue;
                     } else if (Block.isDoor(id)) {
                         if (randomFloat() < 0.3f) drops.spawn(Block.dropId(id), bx, by, bz);
                         removeDoor(bx, by, bz);
