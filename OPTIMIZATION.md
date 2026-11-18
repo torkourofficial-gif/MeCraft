@@ -123,6 +123,13 @@ The particle hot-path and the bounded player/mob texture changes are intentional
 - The trade-off is that rail geometry may take more frames to finish after entering a new area; already-built rails remain grouped by chunk.
 
 
+### Adaptive render-distance control
+
+- The game now observes its existing 2-second frame-profile windows while playing.
+- Three consecutive slow windows lower the effective render distance by one step; six sustained fast windows restore one step. The user's saved setting remains the upper bound, and the Shortest preset remains fixed.
+- The controller uses hysteresis so isolated stalls do not cause visible distance changes. It changes only chunk visibility/stream distance; the 20 Hz simulation cadence is unchanged.
+- This is a workload governor, not a guarantee of 20 FPS. Thresholds are initial conservative values and should be tuned from HTC S730 measurements.
+
 ### Shortest render-distance preset
 
 - The Shortest preset now explicitly keeps the shared stream radius at one chunk, in addition to its existing facing-aligned 2x2 horizontal window and 16-block camera far plane. This keeps fallback/generic streaming calculations conservative instead of inheriting a larger radius from the numeric setting.
