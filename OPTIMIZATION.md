@@ -59,6 +59,7 @@ These changes reduce duplicate player-skin texture objects and avoid startup con
 - Chunk work is serial: one chunk build or one M3G installation is active at a time. Results remain valid across edits to unrelated chunks; an affected chunk is invalidated through its dirty cache coordinate. A streaming epoch rejects results after a full world rebuild.
 - M3G installation is capped at four meshes per renderer sync and yields after roughly six milliseconds once at least one mesh is installed. The larger count improves throughput for small meshes while preserving the time slice; a single large M3G creation can exceed it. M3G objects and scene mutations stay on the game thread.
 - The worker builds Java geometry from a copied chunk snapshot and reuses bounded scratch buffers and FaceBuilder storage.
+- Each resident chunk now has one Group root. New Mesh nodes are attached to its detached root during the paced install; replacement and eviction swap/remove one scene child instead of looping over every Mesh in the visible terrain Group.
 - Each greedy mesh rebuild still remeshes the affected 16×8×16 section, but the worker now yields between face directions so lower-priority CPU work gives the game loop scheduling opportunities. The renderer also reuses a bounded cache of common quad-strip IndexBuffers during M3G mesh installation, avoiding repeated strip-array allocations and TriangleStripArray construction after edits.
 - Existing camera-window prioritization and stale world/slot checks remain in place.
 
