@@ -32,6 +32,7 @@ final class ParticleSystem {
     private final boolean[] deathDust = new boolean[CAPACITY];
     private final boolean[] active = new boolean[CAPACITY];
     private final int[] activeSlots = new int[CAPACITY];
+    private final boolean[] uvDirty = new boolean[CAPACITY];
     private int activeCount;
     private int renderedParticleCount;
     private float cameraYaw, cameraPitch;
@@ -123,6 +124,7 @@ final class ParticleSystem {
                     tile[i] = blockTile;
                     tileOffsetX[i] = (int)(nextRandom() * 4.0f);
                     tileOffsetY[i] = (int)(nextRandom() * 4.0f);
+                    uvDirty[i] = true;
                     deathDust[i] = false;
                 }
             }
@@ -147,6 +149,7 @@ final class ParticleSystem {
             tile[i] = Block.sideTile(Block.DIRT);
             tileOffsetX[i] = (int)(nextRandom() * 12.0f);
             tileOffsetY[i] = (int)(nextRandom() * 12.0f);
+            uvDirty[i] = true;
             deathDust[i] = true;
         }
     }
@@ -154,7 +157,9 @@ final class ParticleSystem {
     private void activate(int particle) {
         if (!active[particle]) {
             active[particle] = true;
-            activeSlots[activeCount++] = particle;
+            activeSlots[activeCount] = particle;
+            uvDirty[particle] = true;
+            activeCount++;
         }
     }
 
@@ -196,7 +201,11 @@ final class ParticleSystem {
             if (age[i] >= lifetime[i]) {
                 active[i] = false;
                 activeCount--;
-                activeSlots[n] = activeSlots[activeCount];
+                if (n < activeCount) {
+                    int moved = activeSlots[activeCount];
+                    activeSlots[n] = moved;
+                    uvDirty[moved] = true;
+                }
                 continue;
             }
             age[i]++;
@@ -223,10 +232,15 @@ final class ParticleSystem {
 
         // Pack live particles at the start of the fixed mesh. A single partial
         // VertexArray upload now scales with the live count, not all 64 slots.
+        boolean textureCoordinatesChanged = false;
         for (int n = 0; n < activeCount; n++) {
             int i = activeSlots[n];
             writeQuad(n, rightX, rightZ, upX, upY, upZ, originX, originY, originZ);
-            writeTileUV(n, tile[i], tileOffsetX[i], tileOffsetY[i]);
+            if (uvDirty[i]) {
+                writeTileUV(n, tile[i], tileOffsetX[i], tileOffsetY[i]);
+                uvDirty[i] = false;
+                textureCoordinatesChanged = true;
+            }
             writeParticleColor(n, i);
         }
         int uploadCount = Math.max(activeCount, renderedParticleCount);
@@ -236,7 +250,7 @@ final class ParticleSystem {
             positionArray.set(0, vertices, positions);
             colorArray.set(0, vertices, colors);
         }
-        if (activeCount > 0) {
+        if (activeCount > 0 && textureCoordinatesChanged) {
             texCoordArray.set(0, activeCount * 4, texCoords);
         }
         renderedParticleCount = activeCount;
