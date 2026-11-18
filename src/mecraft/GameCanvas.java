@@ -2539,7 +2539,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     keys[1] = true;
                     return;
                 }
-                int mobHit = renderer.hitMob(world, cameraPitch, heldAttackDamage());
+                ensureLookRay();
+                int mobHit = renderer.hitMob(world, (float)lookRayX, (float)lookRayY,
+                        (float)lookRayZ, heldAttackDamage());
                 if (mobHit >= 0) {
                     if (mobHit > 0) onMobHit();
                     keys[1] = true;
