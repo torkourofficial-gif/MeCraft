@@ -1260,9 +1260,35 @@ final class ChunkRenderer {
 
     /** Synchronize a player edit and put its chunk at the head of the build queue. */
     void syncEditedBlock(VoxelWorld world, int x, int y, int z) {
-        urgentChunkX = floorDiv(x, VoxelWorld.CHUNK_XZ);
-        urgentChunkY = y / VoxelWorld.CHUNK_Y;
-        urgentChunkZ = floorDiv(z, VoxelWorld.CHUNK_XZ);
+        int cx = floorDiv(x, VoxelWorld.CHUNK_XZ);
+        int cy = y / VoxelWorld.CHUNK_Y;
+        int cz = floorDiv(z, VoxelWorld.CHUNK_XZ);
+        urgentChunkX = cx;
+        urgentChunkY = cy;
+        urgentChunkZ = cz;
+
+        // A single action may change more than one voxel (doors, attached plants,
+        // rails). Explicitly invalidate the edited chunk and its face-neighbor
+        // chunks so the last VoxelWorld.changedX/Y/Z value cannot hide an edit.
+        int minX = cx - (x - cx * VoxelWorld.CHUNK_XZ == 0 ? 1 : 0);
+        int maxX = cx + (x - cx * VoxelWorld.CHUNK_XZ == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0);
+        int minY = cy - (y % VoxelWorld.CHUNK_Y == 0 ? 1 : 0);
+        int maxY = cy + (y % VoxelWorld.CHUNK_Y == VoxelWorld.CHUNK_Y - 1 ? 1 : 0);
+        int minZ = cz - (z - cz * VoxelWorld.CHUNK_XZ == 0 ? 1 : 0);
+        int maxZ = cz + (z - cz * VoxelWorld.CHUNK_XZ == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0);
+        for (int chunkY = minY; chunkY <= maxY; chunkY++) {
+            if (chunkY < 0 || chunkY >= VoxelWorld.CHUNKS_Y) continue;
+            for (int chunkZ = minZ; chunkZ <= maxZ; chunkZ++) {
+                for (int chunkX = minX; chunkX <= maxX; chunkX++) {
+                    int slot = (chunkY * MAX_STREAM_SPAN +
+                            floorMod(chunkZ, MAX_STREAM_SPAN)) * MAX_STREAM_SPAN +
+                            floorMod(chunkX, MAX_STREAM_SPAN);
+                    if (chunkWorldX[slot] == chunkX && chunkWorldY[slot] == chunkY &&
+                            chunkWorldZ[slot] == chunkZ)
+                        markChunkDirty(slot);
+                }
+            }
+        }
         sync(world);
     }
 
