@@ -146,6 +146,7 @@ final class VoxelWorld {
     float playerZ;
     float yaw;
     int revision;
+    int lightRevision;
     byte changedOldId;
     int changedX;
     int changedY;
@@ -991,6 +992,8 @@ final class VoxelWorld {
         changedY = y;
         changedZ = z;
         revision++;
+        if (oldId == Block.TORCH || oldId == Block.LAVA ||
+                id == Block.TORCH || id == Block.LAVA) lightRevision++;
         recordLanChange(x, y, z);
         scheduleFluidNeighbors(x, y, z);
         return true;
