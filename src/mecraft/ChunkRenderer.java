@@ -1231,8 +1231,8 @@ final class ChunkRenderer {
         // No per-frame M3G light updates are needed.
     }
 
-    int hitMob(VoxelWorld world, float pitch, int damage) {
-        return mobs.hit(world, pitch, damage);
+    int hitMob(VoxelWorld world, float dirX, float dirY, float dirZ, int damage) {
+        return mobs.hit(world, dirX, dirY, dirZ, damage);
     }
 
     boolean shootPlayerArrow(VoxelWorld world, float pitch) {
