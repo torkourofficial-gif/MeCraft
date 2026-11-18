@@ -45,6 +45,9 @@ final class DroppedItemSystem {
     private final int[] age = new int[CAPACITY];
     private final int[] pickupDelay = new int[CAPACITY];
     private final int[] tntFuse = new int[CAPACITY];
+    // Slots created during update are rendered now but start simulation next tick.
+    private final int[] spawnTick = new int[CAPACITY];
+    private int updateTick;
     private final short[] positions = new short[VERTEX_COUNT * 3];
     private final short[] texCoords = new short[VERTEX_COUNT * 2];
     private final byte[] colors = new byte[VERTEX_COUNT * 4];
@@ -168,6 +171,7 @@ final class DroppedItemSystem {
         if (itemId[slot] == 0) activeCount++;
 
         itemId[slot] = id;
+        spawnTick[slot] = updateTick;
         age[slot] = 0;
         tntFuse[slot] = 0;
         pickupDelay[slot] = 10;
@@ -207,6 +211,7 @@ final class DroppedItemSystem {
 
     /** Returns one collected block ID, or -1 when nothing was collected. */
     int update(VoxelWorld world, int[] inventory, PlayerPhysics physics) {
+        updateTick++;
         if (activeCount == 0) {
             mesh.setRenderingEnable(false);
             spriteMesh.setRenderingEnable(false);
@@ -219,6 +224,21 @@ final class DroppedItemSystem {
         boolean hasTntFlash = false;
         for (int i = 0; i < CAPACITY; i++) {
             if (itemId[i] == 0) {
+                continue;
+            }
+            if (spawnTick[i] == updateTick) {
+                // TNT chain reactions and drops spawned during this pass must not
+                // lose one fuse/motion tick based on their array slot.
+                writeItem(i);
+                int id = itemId[i];
+                if (id == Block.TNT && tntFuse[i] > 0) {
+                    if (tntFuse[i] / 5 % 2 == 0) hasTntFlash = true;
+                    hasBlocks = true;
+                } else if (id < Block.COUNT || ItemCatalog.isColoredWool(id)) {
+                    hasBlocks = true;
+                } else {
+                    hasSprites = true;
+                }
                 continue;
             }
             age[i]++;
