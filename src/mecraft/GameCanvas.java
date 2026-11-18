@@ -103,6 +103,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private volatile long profileMaxUpdateWait, profileMaxUpdateWork, profileMaxRenderSync;
     private volatile long profileMaxRenderWork, profileMaxHudWork;
     private volatile long profileLastReport;
+    private int adaptiveDistanceLevel;
+    private int adaptiveSlowWindows;
+    private int adaptiveFastWindows;
+    private int appliedAdaptiveDistance = -1;
     private volatile int state = MENU;
     private int menuSelection = MENU_SINGLEPLAYER;
     private int debugMenuSequence;
@@ -341,11 +345,57 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 " maxUpdate=" + profileMaxUpdateWork + " maxSync=" + profileMaxRenderSync +
                 " maxRender=" + profileMaxRenderWork + " maxHud=" + profileMaxHudWork);
         }
+        updateAdaptiveRenderDistance(frameTime);
         profileMaxUpdateWait = 0L;
         profileMaxUpdateWork = 0L;
         profileMaxRenderSync = 0L;
         profileMaxRenderWork = 0L;
         profileMaxHudWork = 0L;
+    }
+
+    /**
+     * Trim visible chunks only after repeated slow windows; restore gradually
+     * after sustained headroom. The saved/user setting remains the upper bound.
+     */
+    private void updateAdaptiveRenderDistance(long frameTime) {
+        if (state != PLAYING || renderer == null) {
+            appliedAdaptiveDistance = -1;
+            return;
+        }
+        if (renderDistance >= 4) {
+            adaptiveDistanceLevel = adaptiveSlowWindows = adaptiveFastWindows = 0;
+        } else {
+            boolean slow = frameTime >= 60L || profileMaxRenderSync >= 40L ||
+                    profileMaxRenderWork >= 45L || profileMaxUpdateWork >= 45L;
+            boolean fast = frameTime <= 35L && profileMaxRenderSync <= 25L &&
+                    profileMaxRenderWork <= 30L && profileMaxUpdateWork <= 30L;
+            if (slow) {
+                adaptiveSlowWindows++;
+                adaptiveFastWindows = 0;
+                if (adaptiveSlowWindows >= 3) {
+                    int limit = renderDistance == 0 ? 1 : renderDistance;
+                    if (adaptiveDistanceLevel < limit) adaptiveDistanceLevel++;
+                    adaptiveSlowWindows = 0;
+                }
+            } else if (fast) {
+                adaptiveFastWindows++;
+                adaptiveSlowWindows = 0;
+                if (adaptiveFastWindows >= 6) {
+                    if (adaptiveDistanceLevel > 0) adaptiveDistanceLevel--;
+                    adaptiveFastWindows = 0;
+                }
+            } else {
+                adaptiveSlowWindows = adaptiveFastWindows = 0;
+            }
+        }
+
+        int target = renderDistance;
+        if (renderDistance < 4 && adaptiveDistanceLevel > 0)
+            target = renderDistance == 0 ? 4 : renderDistance - adaptiveDistanceLevel;
+        if (target != appliedAdaptiveDistance) {
+            renderer.setRenderDistance(target);
+            appliedAdaptiveDistance = target;
+        }
     }
 
     private int musicModeForState() {
