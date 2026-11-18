@@ -97,6 +97,11 @@ final class ChunkRenderer {
     private volatile Chunk readyChunk;
     private volatile boolean buildResultReady;
     private volatile int readySlot, readyX, readyY, readyZ, readyRevision;
+    private final Object chunkBuildWorkerLock = new Object();
+    private volatile boolean chunkBuildWorkerBusy;
+    private boolean chunkBuildRequestPending;
+    private int chunkBuildRequestSlot, chunkBuildRequestX, chunkBuildRequestY;
+    private int chunkBuildRequestZ, chunkBuildRequestRevision;
     private Thread chunkBuildThread;
     private Chunk installingChunk;
     private int installingSlot, installingX, installingY, installingZ, installingRevision;
@@ -1530,7 +1535,7 @@ final class ChunkRenderer {
             }
         }
         if (best >= 0 && (!residentChunks[best] || dirtyChunks[best]) &&
-                chunkBuildThread == null && !buildResultReady && installingChunk == null) {
+                !chunkBuildWorkerBusy && !buildResultReady && installingChunk == null) {
             requestChunkBuild(world, best, chunkWorldX[best],
                     chunkWorldY[best], chunkWorldZ[best]);
         }
@@ -1542,38 +1547,89 @@ final class ChunkRenderer {
             dirtyChunks[slot] = true;
             return;
         }
-        final int revision = chunkBuildSnapshot.revision;
-        chunkBuildThread = new Thread(new Runnable() {
-            public void run() {
-                Chunk data = null;
+        synchronized (chunkBuildWorkerLock) {
+            if (chunkBuildWorkerBusy) {
+                dirtyChunks[slot] = true;
+                return;
+            }
+            chunkBuildWorkerBusy = true;
+            chunkBuildRequestPending = true;
+            chunkBuildRequestSlot = slot;
+            chunkBuildRequestX = cx;
+            chunkBuildRequestY = cy;
+            chunkBuildRequestZ = cz;
+            chunkBuildRequestRevision = chunkBuildSnapshot.revision;
+            if (chunkBuildThread == null) {
+                chunkBuildThread = new Thread(new Runnable() {
+                    public void run() { runChunkBuildWorker(); }
+                });
                 try {
-                    data = buildChunk(chunkBuildSnapshot, cx, cy, cz);
-                    if (data == null) {
-                        data = new Chunk();
-                        data.faceBuilders = new FaceBuilder[TILE_COUNT];
-                    }
-                } catch (OutOfMemoryError exhausted) {
-                    data = null;
-                } catch (RuntimeException failed) {
-                    data = null;
+                    chunkBuildThread.setPriority(Thread.MIN_PRIORITY);
+                } catch (RuntimeException ignored) {
                 }
+                try {
+                    chunkBuildThread.start();
+                } catch (RuntimeException failed) {
+                    chunkBuildThread = null;
+                    chunkBuildWorkerBusy = false;
+                    chunkBuildRequestPending = false;
+                    dirtyChunks[slot] = true;
+                }
+            } else {
+                chunkBuildWorkerLock.notifyAll();
+            }
+        }
+    }
+
+    /**
+     * Reuses one low-priority thread while chunks are streaming. The worker
+     * exits after ten idle seconds so it does not retain an inactive renderer.
+     */
+    private void runChunkBuildWorker() {
+        while (true) {
+            int slot, cx, cy, cz, revision;
+            synchronized (chunkBuildWorkerLock) {
+                while (!chunkBuildRequestPending) {
+                    try {
+                        chunkBuildWorkerLock.wait(10000L);
+                    } catch (InterruptedException ignored) {
+                    }
+                    if (!chunkBuildRequestPending) {
+                        chunkBuildThread = null;
+                        return;
+                    }
+                }
+                chunkBuildRequestPending = false;
+                slot = chunkBuildRequestSlot;
+                cx = chunkBuildRequestX;
+                cy = chunkBuildRequestY;
+                cz = chunkBuildRequestZ;
+                revision = chunkBuildRequestRevision;
+            }
+
+            Chunk data = null;
+            try {
+                data = buildChunk(chunkBuildSnapshot, cx, cy, cz);
+                if (data == null) {
+                    data = new Chunk();
+                    data.faceBuilders = new FaceBuilder[TILE_COUNT];
+                }
+            } catch (OutOfMemoryError exhausted) {
+                data = null;
+            } catch (RuntimeException failed) {
+                data = null;
+            }
+
+            synchronized (chunkBuildWorkerLock) {
                 readySlot = slot;
-                readyX = cx; readyY = cy; readyZ = cz;
+                readyX = cx;
+                readyY = cy;
+                readyZ = cz;
                 readyRevision = revision;
                 readyChunk = data;
                 buildResultReady = true;
-                chunkBuildThread = null;
+                chunkBuildWorkerBusy = false;
             }
-        });
-        try {
-            chunkBuildThread.setPriority(Thread.MIN_PRIORITY);
-        } catch (RuntimeException ignored) {
-        }
-        try {
-            chunkBuildThread.start();
-        } catch (RuntimeException failed) {
-            chunkBuildThread = null;
-            dirtyChunks[slot] = true;
         }
     }
 
