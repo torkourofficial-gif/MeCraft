@@ -9,7 +9,6 @@ import javax.microedition.m3g.CompositingMode;
 import javax.microedition.m3g.Graphics3D;
 import javax.microedition.m3g.Group;
 import javax.microedition.m3g.Image2D;
-import javax.microedition.m3g.IndexBuffer;
 import javax.microedition.m3g.Light;
 import javax.microedition.m3g.Mesh;
 import javax.microedition.m3g.Material;
@@ -110,7 +109,7 @@ final class ChunkRenderer {
     private int installingSlot, installingX, installingY, installingZ, installingEpoch;
     // Small direct-mapped reuse cache for common quad-strip index buffers.
     private final int[] chunkQuadIndexFaceCounts = new int[8];
-    private final IndexBuffer[] chunkQuadIndexBuffers = new IndexBuffer[8];
+    private final TriangleStripArray[] chunkQuadIndexBuffers = new TriangleStripArray[8];
     private int chunkQuadIndexCursor;
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
@@ -1870,6 +1869,7 @@ final class ChunkRenderer {
                 }
             }
         }
+        Thread.yield();
 
         // An all-air section has no geometry at all. Returning null still marks
         // the slot resident in replaceChunk(), so it will not be retried every frame.
@@ -2069,7 +2069,7 @@ final class ChunkRenderer {
         for (int i = 0; i < chunkQuadIndexBuffers.length; i++) {
             if (chunkQuadIndexBuffers[i] != null &&
                     chunkQuadIndexFaceCounts[i] == faceCount)
-                return (TriangleStripArray)chunkQuadIndexBuffers[i];
+                return chunkQuadIndexBuffers[i];
         }
         int[] strips = new int[faceCount];
         for (int i = 0; i < faceCount; i++) strips[i] = 4;
