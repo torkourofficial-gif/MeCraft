@@ -992,8 +992,8 @@ final class VoxelWorld {
         changedY = y;
         changedZ = z;
         revision++;
-        if (oldId == Block.TORCH || oldId == Block.LAVA ||
-                id == Block.TORCH || id == Block.LAVA) lightRevision++;
+        if (oldId != id && (oldId == Block.TORCH || oldId == Block.LAVA ||
+                id == Block.TORCH || id == Block.LAVA)) lightRevision++;
         recordLanChange(x, y, z);
         scheduleFluidNeighbors(x, y, z);
         return true;
