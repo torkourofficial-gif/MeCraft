@@ -36,6 +36,12 @@ This branch contains a conservative hot-path optimization for the existing MIDP 
 
 These changes reduce duplicate player-skin texture objects and avoid startup conversion/residency for unused mob textures. The actual byte savings depend on the JSR-184 implementation and asset dimensions; no numerical heap/native-memory claim is made without device profiling.
 
+### Terrain mesh batching
+
+- Increased the maximum vertices in each recycled face-builder segment from 1,024 to 2,048. Material buckets that used to spill into a second mesh can stay in one, reducing worst-case segment and mesh count.
+- Reduced the recycled builder pool from 32 entries to 16. Its maximum retained vertex staging capacity remains approximately the same (32 × 1,024 versus 16 × 2,048 vertices); excess builders can be collected instead of growing the permanent pool.
+- The total terrain geometry is unchanged. A single mesh build can take longer, so this trades fewer M3G mesh submissions for larger per-mesh creation work and needs profiling on the target runtime.
+
 ### Chunk streaming: reusable worker and bounded mesh installation
 
 - Reuses one low-priority chunk worker across nearby streaming requests. It sleeps between requests and exits after ten idle seconds so it does not retain an inactive renderer.
