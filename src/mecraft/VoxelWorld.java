@@ -88,6 +88,9 @@ final class VoxelWorld {
     private final int[] proceduralChunkX = new int[PROCEDURAL_CACHE_SIZE];
     private final int[] proceduralChunkZ = new int[PROCEDURAL_CACHE_SIZE];
     private int proceduralCacheCursor;
+    // Most collision/ray queries stay inside one procedural chunk; keep its
+    // ring slot as a one-entry fast path before scanning the small cache.
+    private int proceduralLastCache = -1;
     private final int[] proceduralHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     private final byte[] proceduralBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
 
@@ -202,18 +205,22 @@ final class VoxelWorld {
      */
     private byte proceduralBlock(int x, int y, int z) {
         int cx = floorChunk(x), cz = floorChunk(z);
-        int cache = -1;
-        for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
-            if (proceduralChunkX[i] == cx && proceduralChunkZ[i] == cz) {
-                cache = i;
-                break;
+        int cache = proceduralLastCache;
+        if (cache < 0 || proceduralChunkX[cache] != cx || proceduralChunkZ[cache] != cz) {
+            cache = -1;
+            for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
+                if (proceduralChunkX[i] == cx && proceduralChunkZ[i] == cz) {
+                    cache = i;
+                    break;
+                }
             }
-        }
-        if (cache < 0) {
-            cache = proceduralCacheCursor++ & (PROCEDURAL_CACHE_SIZE - 1);
-            generateChunk(cx, cz, proceduralChunks[cache]);
-            proceduralChunkX[cache] = cx;
-            proceduralChunkZ[cache] = cz;
+            if (cache < 0) {
+                cache = proceduralCacheCursor++ & (PROCEDURAL_CACHE_SIZE - 1);
+                generateChunk(cx, cz, proceduralChunks[cache]);
+                proceduralChunkX[cache] = cx;
+                proceduralChunkZ[cache] = cz;
+            }
+            proceduralLastCache = cache;
         }
         int lx = x - cx * CHUNK_XZ, lz = z - cz * CHUNK_XZ;
         return proceduralChunks[cache][(lz * CHUNK_XZ + lx) * HEIGHT + y];
@@ -956,6 +963,7 @@ final class VoxelWorld {
             proceduralChunkX[i] = Integer.MIN_VALUE;
             proceduralChunkZ[i] = Integer.MIN_VALUE;
         }
+        proceduralLastCache = -1;
 
         fluidQueueHead = fluidQueueTail = fluidQueueCount = fluidTickDelay = fluidDirection = 0;
         lavaTickCounter = 0;
