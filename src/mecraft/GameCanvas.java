@@ -1105,7 +1105,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             // instead of silently deleting it without starting a fuse.
             if (!renderer.spawnPrimedTnt(x, y, z, 80)) {
                 world.set(x, y, z, Block.TNT);
-                renderer.sync(world);
+                renderer.syncEditedBlock(world, x, y, z);
                 miningDamage = 0.99f;
                 return;
             }
