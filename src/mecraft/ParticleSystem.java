@@ -32,6 +32,9 @@ final class ParticleSystem {
     private final boolean[] deathDust = new boolean[CAPACITY];
     private final boolean[] active = new boolean[CAPACITY];
     private int activeCount;
+    private float cameraYaw, cameraPitch;
+    private boolean cameraBasisValid;
+    private float rightX, rightZ, upX, upY, upZ;
     private final short[] positions = new short[VERTICES * 3];
     private final short[] texCoords = new short[VERTICES * 2];
     private final byte[] colors = new byte[VERTICES * 4];
@@ -177,13 +180,18 @@ final class ParticleSystem {
         float originY = world.playerY;
         float originZ = world.playerZ;
         mesh.setTranslation(originX, originY, originZ);
-        double yaw = yawDegrees * Math.PI / 180.0;
-        double pitch = pitchDegrees * Math.PI / 180.0;
-        float rightX = (float)Math.cos(yaw);
-        float rightZ = -(float)Math.sin(yaw);
-        float upX = -(float)(Math.sin(yaw) * Math.sin(pitch));
-        float upY = (float)Math.cos(pitch);
-        float upZ = -(float)(Math.cos(yaw) * Math.sin(pitch));
+        if (!cameraBasisValid || cameraYaw != yawDegrees || cameraPitch != pitchDegrees) {
+            double yaw = yawDegrees * Math.PI / 180.0;
+            double pitch = pitchDegrees * Math.PI / 180.0;
+            rightX = (float)Math.cos(yaw);
+            rightZ = -(float)Math.sin(yaw);
+            upX = -(float)(Math.sin(yaw) * Math.sin(pitch));
+            upY = (float)Math.cos(pitch);
+            upZ = -(float)(Math.cos(yaw) * Math.sin(pitch));
+            cameraYaw = yawDegrees;
+            cameraPitch = pitchDegrees;
+            cameraBasisValid = true;
+        }
         for (int i = 0; i < CAPACITY; i++) {
             if (!active[i]) continue;
             if (age[i] < lifetime[i]) {
