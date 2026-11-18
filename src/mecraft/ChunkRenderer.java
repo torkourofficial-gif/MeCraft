@@ -108,8 +108,10 @@ final class ChunkRenderer {
     private int streamEpoch;
     private Chunk installingChunk;
     private int installingSlot, installingX, installingY, installingZ, installingEpoch;
-    private final IndexBuffer[] chunkBatchIndices = new IndexBuffer[3];
-    private final Appearance[] chunkBatchAppearances = new Appearance[3];
+    // Small direct-mapped reuse cache for common quad-strip index buffers.
+    private final int[] chunkQuadIndexFaceCounts = new int[8];
+    private final IndexBuffer[] chunkQuadIndexBuffers = new IndexBuffer[8];
+    private int chunkQuadIndexCursor;
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
     private final boolean[] chunkFrustumVisible = new boolean[CACHE_SIZE];
@@ -1984,6 +1986,7 @@ final class ChunkRenderer {
                         a += rectWidth;
                     }
                 }
+                Thread.yield();
             }
         }
 
@@ -2062,6 +2065,21 @@ final class ChunkRenderer {
         }
     }
 
+    private TriangleStripArray chunkQuadIndices(int faceCount) {
+        for (int i = 0; i < chunkQuadIndexBuffers.length; i++) {
+            if (chunkQuadIndexBuffers[i] != null &&
+                    chunkQuadIndexFaceCounts[i] == faceCount)
+                return (TriangleStripArray)chunkQuadIndexBuffers[i];
+        }
+        int[] strips = new int[faceCount];
+        for (int i = 0; i < faceCount; i++) strips[i] = 4;
+        TriangleStripArray indices = new TriangleStripArray(0, strips);
+        int slot = chunkQuadIndexCursor++ & (chunkQuadIndexBuffers.length - 1);
+        chunkQuadIndexFaceCounts[slot] = faceCount;
+        chunkQuadIndexBuffers[slot] = indices;
+        return indices;
+    }
+
     private Mesh makeMesh(FaceBuilder data, Appearance appearance, float textureScale) {
         int vertexCount = data.vertexCount;
         VertexArray positions = new VertexArray(vertexCount, 3, 2);
@@ -2075,10 +2093,7 @@ final class ChunkRenderer {
         vertices.setPositions(positions, 1.0f, null);
         vertices.setTexCoords(0, texCoords, textureScale, null);
         vertices.setColors(colors);
-        int[] strips = new int[data.faceCount];
-        for (int i = 0; i < strips.length; i++) strips[i] = 4;
-        TriangleStripArray triangles = new TriangleStripArray(0, strips);
-
+        TriangleStripArray triangles = chunkQuadIndices(data.faceCount);
         return new Mesh(vertices, triangles, appearance);
     }
 
