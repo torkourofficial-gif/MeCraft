@@ -92,6 +92,7 @@ final class ParticleSystem {
         compositing.setDepthWriteEnable(false);
         appearance.setCompositingMode(compositing);
         mesh = new Mesh(buffer, triangles, appearance);
+        mesh.setRenderingEnable(false);
         for (int i = 0; i < CAPACITY; i++) setParticleColor(i, 0);
     }
 
