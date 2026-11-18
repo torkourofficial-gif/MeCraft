@@ -109,6 +109,9 @@ final class ChunkRenderer {
     // Copy world data into the worker snapshot in bounded frame-sized slices.
     private boolean chunkSnapshotPreparing;
     private int chunkSnapshotCursor, chunkSnapshotRevision;
+    private boolean chunkLightSnapshotValid;
+    private int chunkLightSnapshotX, chunkLightSnapshotY, chunkLightSnapshotZ;
+    private int chunkLightSnapshotRevision, chunkLightSnapshotCount;
     private int chunkSnapshotVoxelX, chunkSnapshotVoxelY, chunkSnapshotVoxelZ;
     private int chunkSnapshotMetadataX, chunkSnapshotMetadataY, chunkSnapshotMetadataZ;
     private int chunkSnapshotSlot, chunkSnapshotX, chunkSnapshotY, chunkSnapshotZ, chunkSnapshotEpoch;
@@ -1380,6 +1383,7 @@ final class ChunkRenderer {
     private void rebuildWorld(VoxelWorld world) {
         streamEpoch++;
         chunkSnapshotPreparing = false;
+        chunkLightSnapshotValid = false;
         if (installingChunk != null) {
             recycleChunkBuilders(installingChunk);
             installingChunk = null;
@@ -1690,24 +1694,41 @@ final class ChunkRenderer {
         }
         if (chunkSnapshotCursor < total) return;
 
-        int radius = LAVA_LIGHT_RADIUS;
-        boolean lightsReady = world.collectLightSourcesStep(
-                x0 - radius, Math.max(0, y0 - radius), z0 - radius,
-                x0 + VoxelWorld.CHUNK_XZ + radius,
-                Math.min(VoxelWorld.HEIGHT, y0 + VoxelWorld.CHUNK_Y + radius),
-                z0 + VoxelWorld.CHUNK_XZ + radius,
-                snapshot.lightX, snapshot.lightY, snapshot.lightZ,
-                snapshot.lightRadius, snapshot.lavaSource, MAX_CHUNK_TORCHES,
-                TORCH_LIGHT_RADIUS, LAVA_LIGHT_RADIUS,
-                MAX_CHUNK_LIGHT_SCAN_CELLS_PER_SYNC, snapshot.lightScanState);
-        if (!lightsReady) return;
-        snapshot.lightCount = snapshot.lightScanState[1];
+        int lightRevision = world.lightRevision;
+        boolean cachedLights = chunkLightSnapshotValid &&
+                chunkLightSnapshotX == chunkSnapshotX &&
+                chunkLightSnapshotY == chunkSnapshotY &&
+                chunkLightSnapshotZ == chunkSnapshotZ &&
+                chunkLightSnapshotRevision == lightRevision;
+        if (cachedLights) {
+            snapshot.lightCount = chunkLightSnapshotCount;
+        } else {
+            boolean lightsReady = world.collectLightSourcesStep(
+                    x0 - LAVA_LIGHT_RADIUS, Math.max(0, y0 - LAVA_LIGHT_RADIUS), z0 - LAVA_LIGHT_RADIUS,
+                    x0 + VoxelWorld.CHUNK_XZ + LAVA_LIGHT_RADIUS,
+                    Math.min(VoxelWorld.HEIGHT, y0 + VoxelWorld.CHUNK_Y + LAVA_LIGHT_RADIUS),
+                    z0 + VoxelWorld.CHUNK_XZ + LAVA_LIGHT_RADIUS,
+                    snapshot.lightX, snapshot.lightY, snapshot.lightZ,
+                    snapshot.lightRadius, snapshot.lavaSource, MAX_CHUNK_TORCHES,
+                    TORCH_LIGHT_RADIUS, LAVA_LIGHT_RADIUS,
+                    MAX_CHUNK_LIGHT_SCAN_CELLS_PER_SYNC, snapshot.lightScanState);
+            if (!lightsReady) return;
+            snapshot.lightCount = snapshot.lightScanState[1];
+        }
         snapshot.nether = world.nether;
         snapshot.revision = chunkSnapshotRevision;
         if (world.revision != chunkSnapshotRevision) {
             chunkSnapshotPreparing = false;
             dirtyChunks[slot] = true;
             return;
+        }
+        if (!cachedLights) {
+            chunkLightSnapshotValid = true;
+            chunkLightSnapshotX = chunkSnapshotX;
+            chunkLightSnapshotY = chunkSnapshotY;
+            chunkLightSnapshotZ = chunkSnapshotZ;
+            chunkLightSnapshotRevision = lightRevision;
+            chunkLightSnapshotCount = snapshot.lightCount;
         }
 
         synchronized (chunkBuildWorkerLock) {
