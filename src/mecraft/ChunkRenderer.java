@@ -1430,6 +1430,12 @@ final class ChunkRenderer {
         float pitch = (float)(cameraPitch * Math.PI / 180.0);
         float sinYaw = (float)Math.sin(yaw), cosYaw = (float)Math.cos(yaw);
         float sinPitch = (float)Math.sin(pitch), cosPitch = (float)Math.cos(pitch);
+        int terrainAheadX = centerX, terrainAheadZ = centerZ;
+        if (Math.abs(sinYaw) > Math.abs(cosYaw))
+            terrainAheadX += sinYaw >= 0.0f ? 1 : -1;
+        else
+            terrainAheadZ += cosYaw >= 0.0f ? 1 : -1;
+        world.prefetchProceduralChunk(terrainAheadX, terrainAheadZ);
         float forwardX = sinYaw * cosPitch, forwardY = sinPitch, forwardZ = cosYaw * cosPitch;
         float rightX = cosYaw, rightZ = -sinYaw;
         float upX = -sinYaw * sinPitch, upY = cosPitch, upZ = -cosYaw * sinPitch;
@@ -1579,6 +1585,10 @@ final class ChunkRenderer {
 
     private void requestChunkBuild(final VoxelWorld world, final int slot,
                                    final int cx, final int cy, final int cz) {
+        if (!world.prepareProceduralChunksForSection(cx, cz)) {
+            dirtyChunks[slot] = true;
+            return;
+        }
         if (!captureChunkBuildSnapshot(world, cx, cy, cz, chunkBuildSnapshot)) {
             dirtyChunks[slot] = true;
             return;
