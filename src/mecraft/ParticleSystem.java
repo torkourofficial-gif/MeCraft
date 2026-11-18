@@ -118,7 +118,7 @@ final class ParticleSystem {
                     tile[i] = blockTile;
                     tileOffsetX[i] = (int)(nextRandom() * 4.0f);
                     tileOffsetY[i] = (int)(nextRandom() * 4.0f);
-                    writeTileUV(i, tile[i], tileOffsetX[i], tileOffsetY[i]);
+                    // UVs are packed into the render buffer during update().
                     deathDust[i] = false;
                 }
             }
@@ -143,7 +143,7 @@ final class ParticleSystem {
             tile[i] = Block.sideTile(Block.DIRT);
             tileOffsetX[i] = (int)(nextRandom() * 12.0f);
             tileOffsetY[i] = (int)(nextRandom() * 12.0f);
-            writeTileUV(i, tile[i], tileOffsetX[i], tileOffsetY[i]);
+            // UVs are packed into the render buffer during update().
             deathDust[i] = true;
         }
     }
