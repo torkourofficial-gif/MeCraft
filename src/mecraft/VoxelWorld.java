@@ -78,6 +78,9 @@ final class VoxelWorld {
     private static final int EXPLOSION_MASK_SIZE = 20;
     private static final int EXPLOSION_MASK_AREA = EXPLOSION_MASK_SIZE * EXPLOSION_MASK_SIZE;
     private final byte[] explosionBits = new byte[(EXPLOSION_MASK_SIZE * EXPLOSION_MASK_AREA + 7) / 8];
+    // Reuse ray-sampled block IDs during each blast; sentinel is outside the block-ID range.
+    private static final byte EXPLOSION_UNCACHED = 127;
+    private final byte[] explosionBlockIds = new byte[EXPLOSION_MASK_SIZE * EXPLOSION_MASK_AREA];
     private static final int FLUID_QUEUE_SIZE = 2048;
     private final int[] fluidQueue = new int[FLUID_QUEUE_SIZE];
     private final byte[] fluidQueued = new byte[(BLOCK_COUNT + 7) / 8];
@@ -575,6 +578,7 @@ final class VoxelWorld {
         if (spanX > EXPLOSION_MASK_SIZE || spanY > EXPLOSION_MASK_SIZE ||
             spanZ > EXPLOSION_MASK_SIZE) return;
         for (int i = 0; i < explosionBits.length; i++) explosionBits[i] = 0;
+        for (int i = 0; i < explosionBlockIds.length; i++) explosionBlockIds[i] = EXPLOSION_UNCACHED;
 
         for (int rx = 0; rx < 16; rx++) {
             for (int ry = 0; ry < 16; ry++) {
@@ -590,13 +594,24 @@ final class VoxelWorld {
                     float px = x, py = y, pz = z;
                     while (strength > 0.0f) {
                         int bx = floorBlock(px), by = floorBlock(py), bz = floorBlock(pz);
-                        byte id = get(bx, by, bz);
+                        boolean inBounds = bx >= minX && bx <= maxX &&
+                            by >= minY && by <= maxY && bz >= minZ && bz <= maxZ;
+                        int local = 0;
+                        byte id;
+                        if (inBounds) {
+                            local = ((by - minY) * EXPLOSION_MASK_SIZE + (bz - minZ)) *
+                                EXPLOSION_MASK_SIZE + (bx - minX);
+                            id = explosionBlockIds[local];
+                            if (id == EXPLOSION_UNCACHED) {
+                                id = get(bx, by, bz);
+                                explosionBlockIds[local] = id;
+                            }
+                        } else {
+                            id = get(bx, by, bz);
+                        }
                         if (id != Block.AIR)
                             strength -= (explosionResistance(id) + 0.3f) * 0.3f;
-                        if (strength > 0.0f && bx >= minX && bx <= maxX &&
-                            by >= minY && by <= maxY && bz >= minZ && bz <= maxZ) {
-                            int local = ((by - minY) * EXPLOSION_MASK_SIZE + (bz - minZ)) *
-                                EXPLOSION_MASK_SIZE + (bx - minX);
+                        if (strength > 0.0f && inBounds) {
                             explosionBits[local >> 3] |= (byte)(1 << (local & 7));
                         }
                         px += dx * 0.3f; py += dy * 0.3f; pz += dz * 0.3f;
@@ -612,7 +627,8 @@ final class VoxelWorld {
                     int local = ((by - minY) * EXPLOSION_MASK_SIZE + (bz - minZ)) *
                         EXPLOSION_MASK_SIZE + (bx - minX);
                     if ((explosionBits[local >> 3] & (1 << (local & 7))) == 0) continue;
-                    byte id = get(bx, by, bz);
+                    byte id = explosionBlockIds[local];
+                    if (id == EXPLOSION_UNCACHED) id = get(bx, by, bz);
                     if (id == Block.AIR) continue;
                     if (id == Block.TNT) {
                         // Keep the block intact if the bounded entity pool is full;
