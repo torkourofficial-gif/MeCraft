@@ -528,23 +528,9 @@ final class InfdevTerrain {
         int radiusSquared = radius * radius;
         int verticalSquared = verticalRadius * verticalRadius;
 
-        // Like the original generator, don't open a ravine through an ocean
-        // column; otherwise the fissure would immediately fill with water.
-        for (int z = minZ; z <= maxZ; z++) {
-            for (int x = minX; x <= maxX; x++) {
-                // Vanilla checks the boundary of the carving box for water;
-                // scanning only its rim avoids a full 3D pre-pass on every step.
-                if (x != minX && x != maxX && z != minZ && z != maxZ) continue;
-                int column = (z - originZ) * CHUNK_SIZE + x - originX;
-                int top = Math.min(high, heights[column] - 1);
-                int dx = x - cx, dz = z - cz;
-                if (dx * dx + dz * dz > radiusSquared) continue;
-                for (int y = top; y >= low; y--) {
-                    if (blocks[column * WORLD_HEIGHT + y] == Block.WATER) return;
-                }
-            }
-        }
-
+        // This carver is clipped below each column's surface (height - 1),
+        // while generated ocean water exists only above the surface. A per-slice
+        // water scan here could never find water and only repeated voxel reads.
         for (int z = minZ; z <= maxZ; z++) {
             for (int x = minX; x <= maxX; x++) {
                 int dx = x - cx, dz = z - cz;
