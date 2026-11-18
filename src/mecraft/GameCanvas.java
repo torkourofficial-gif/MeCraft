@@ -1110,7 +1110,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 return;
             }
             renderer.swingHand();
-            // Chunk invalidation is processed once by paint(), not here.
+            renderer.syncEditedBlock(world, x, y, z);
             resetMining();
             miningHitWait = 5;
             return;
@@ -1145,7 +1145,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             if (world.mode == 0)
                 damageTool(hotbar[world.selectedSlot],
                         ItemCatalog.durabilityCost(hotbar[world.selectedSlot]));
-            // paint() synchronizes the changed chunk before rendering this burst.
+            renderer.syncEditedBlock(world, x, lowerY, z);
             renderer.spawnBlockDestroy(x, lowerY, z, debrisTile);
             resetMining();
             miningHitWait = 5;
@@ -1198,8 +1198,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             }
             if (world.mode == 0 && id != Block.FIRE)
                 damageTool(heldItem, ItemCatalog.durabilityCost(heldItem));
-            // paint() synchronizes the changed terrain once before rendering.
-            // Fire vanishes silently; ordinary blocks retain their destruction burst.
+            // Prioritize the edited chunk so the terrain change is visible as soon as
+            // its bounded mesh build completes; unrelated chunks remain incremental.
+            renderer.syncEditedBlock(world, x, y, z);
             if (id != Block.FIRE) renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
             resetMining();
             miningHitWait = 5;
@@ -1275,6 +1276,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     pendingIronDoorX = Integer.MIN_VALUE;
                     if (world.toggleDoor(target[0], target[1], target[2])) {
                         renderer.swingHand();
+                        renderer.syncEditedBlock(world, target[0], lowerY, target[2]);
                     }
                 } else {
                     pendingIronDoorX = target[0]; pendingIronDoorY = lowerY;
@@ -1284,6 +1286,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 pendingIronDoorTicks = 0;
                 pendingIronDoorX = Integer.MIN_VALUE;
                 renderer.swingHand();
+                int meta = world.doorMetadata(target[0], target[1], target[2]);
+                renderer.syncEditedBlock(world, target[0],
+                        (meta & 8) != 0 ? target[1] - 1 : target[1], target[2]);
             }
             return;
         }
@@ -1325,6 +1330,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 z + 1.0f > pz - PLAYER_RADIUS && z < pz + PLAYER_RADIUS &&
                 doorY + 2.0f > py && doorY < py + PLAYER_HEIGHT) return;
             if (!world.placeDoor(x, doorY, z, orientation, doorBlock)) return;
+            renderer.syncEditedBlock(world, x, doorY, z);
             renderer.swingHand();
             if (world.mode == 0) {
                 inventory[doorItem]--;
@@ -1363,6 +1369,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             // corners and uphill/downhill links, then refreshes nearby pieces.
             orientRailNetwork(x, y, z);
         }
+        renderer.syncEditedBlock(world, x, y, z);
         renderer.swingHand();
         if (world.mode == 0) {
             inventory[selectedItem]--;
