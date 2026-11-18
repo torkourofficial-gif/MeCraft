@@ -163,7 +163,7 @@ The particle hot-path and the bounded player/mob texture changes are intentional
 ### Procedural terrain generation work
 
 - Removed the ravine water pre-pass. The generator only scans up to each column's surface height minus one, while generated ocean water is strictly above that surface; the pre-pass therefore could not find water and repeated reads for each ravine path step.
-- The renderer now requests one terrain chunk ahead on a single low-priority worker. The worker writes into private reusable staging arrays; the game thread copies a completed result into the bounded procedural cache.
+- The renderer now requests one terrain chunk ahead on a single low-priority worker. The worker writes into private reusable staging arrays; the game thread swaps the completed block buffer into the bounded procedural cache in constant time, recycling the evicted slot as the worker's next staging buffer.
 - Before capturing a mesh snapshot, the renderer checks the padded horizontal footprint for missing procedural chunks. If any are absent, the mesh request stays dirty and retries on a later sync after queuing that terrain generation. This removes normal snapshot-triggered generation from the game thread.
 - Collision and direct block reads keep their synchronous fallback if gameplay outruns prefetch, preserving exact terrain reads instead of returning placeholder air. This fallback can still cause a frame hitch in that edge case.
 - Noise table changes are guarded while generation is active so switching to a world with a different seed cannot replace the permutation underneath the worker. Same-seed chunks remain safe to generate concurrently.
