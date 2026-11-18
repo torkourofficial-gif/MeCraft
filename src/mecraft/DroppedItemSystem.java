@@ -13,6 +13,9 @@ import javax.microedition.m3g.VertexBuffer;
 /** Bounded Indev-style item entities using a block mesh and a small item-sprite mesh. */
 final class DroppedItemSystem {
     private static final int CAPACITY = 32;
+    // Reserve slots so a field of block drops cannot prevent further TNT detonations.
+    private static final int DROPPED_ITEM_LIMIT = CAPACITY - 8;
+    private static final int CHAIN_TNT_LIMIT = CAPACITY - 1;
     private static final int VERTICES_PER_ITEM = 24;
     private static final int VERTEX_COUNT = CAPACITY * VERTICES_PER_ITEM;
     private static final float POSITION_SCALE = 256.0f;
@@ -158,7 +161,11 @@ final class DroppedItemSystem {
     }
 
     int spawn(int id, int bx, int by, int bz) {
-        if (id <= Block.AIR || id >= ItemCatalog.COUNT || activeCount >= CAPACITY) return -1;
+        return spawnWithLimit(id, bx, by, bz, DROPPED_ITEM_LIMIT);
+    }
+
+    private int spawnWithLimit(int id, int bx, int by, int bz, int limit) {
+        if (id <= Block.AIR || id >= ItemCatalog.COUNT || activeCount >= limit) return -1;
         int slot = -1;
         for (int n = 0; n < CAPACITY; n++) {
             int candidate = (cursor + n) % CAPACITY;
@@ -191,7 +198,15 @@ final class DroppedItemSystem {
     }
 
     boolean spawnPrimedTnt(int bx, int by, int bz, int fuse) {
-        int slot = spawn(Block.TNT, bx, by, bz);
+        return spawnPrimedTnt(bx, by, bz, fuse, CAPACITY);
+    }
+
+    boolean spawnChainTnt(int bx, int by, int bz, int fuse) {
+        return spawnPrimedTnt(bx, by, bz, fuse, CHAIN_TNT_LIMIT);
+    }
+
+    private boolean spawnPrimedTnt(int bx, int by, int bz, int fuse, int limit) {
+        int slot = spawnWithLimit(Block.TNT, bx, by, bz, limit);
         if (slot < 0) return false;
         tntFuse[slot] = fuse;
         pickupDelay[slot] = fuse + 20;
