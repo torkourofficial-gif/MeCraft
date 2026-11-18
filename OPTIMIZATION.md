@@ -36,12 +36,12 @@ This branch contains a conservative hot-path optimization for the existing MIDP 
 
 These changes reduce duplicate player-skin texture objects and avoid startup conversion/residency for unused mob textures. The actual byte savings depend on the JSR-184 implementation and asset dimensions; no numerical heap/native-memory claim is made without device profiling.
 
-### Chunk streaming: persistent worker and overlapped mesh installation
+### Chunk streaming: reusable worker and bounded mesh installation
 
-- Replaced per-chunk thread creation with one persistent, low-priority meshing worker. It sleeps between requests and reuses the renderer's existing bounded scratch buffers.
-- The render thread can request the next visible chunk while the previous chunk's M3G meshes are still being installed. The pipeline remains bounded to one current install plus one in-flight/completed build.
-- Increased the per-frame M3G installation budget from one mesh to at most three meshes, accelerating multi-material chunks without an unbounded per-frame loop.
-- Kept a single meshing worker and synchronized the small reusable FaceBuilder pool because the worker and render thread now overlap.
+- Reuses one low-priority chunk worker across nearby streaming requests. It sleeps between requests and exits after ten idle seconds so it does not retain an inactive renderer.
+- Chunk work is serial: one chunk build or one M3G installation is active at a time. Results are accepted only while their world revision and ring-cache slot still match.
+- M3G installation is capped at two meshes per renderer sync. M3G objects and scene mutations stay on the game thread.
+- The worker builds Java geometry from a copied chunk snapshot and reuses bounded scratch buffers and FaceBuilder storage.
 - Existing camera-window prioritization and stale world/slot checks remain in place.
 
 ## Existing strengths retained
@@ -96,7 +96,7 @@ The particle hot-path and the bounded player/mob texture changes are intentional
 
 - Added separate timing for M3G scene rendering and the 2D HUD, alongside the existing update and renderer-sync timings. Stall reports now expose the expensive stage instead of treating asynchronous `repaint()` as render time.
 - Generated-terrain completion notifications now invalidate only the matching 3x3 chunk neighborhood across vertical sections, using the renderer's direct-mapped slot calculation rather than scanning the entire resident cache for each notification.
-- Chunk mesh installation keeps its three-mesh ceiling but also stops after a roughly 5 ms installation slice (after at least one step), preventing a cluster of expensive native M3G creations from monopolizing a frame.
+- Chunk mesh installation is capped at two meshes per renderer sync. This bounds creation count but does not guarantee a fixed time slice because JSR-184 mesh creation time varies by device.
 - Day/night updates avoid repeatedly sending nearly identical sunlight intensity values into M3G.
 - Distant mobs retain per-tick AI and physics, while articulated pose updates are performed every other tick to reduce scene-graph property churn. Nearby mobs keep full-rate animation.
 - These are workload reductions, not measured FPS gains. The 20 FPS target still requires profiling on the HTC S730 and the 8 MB emulator.
