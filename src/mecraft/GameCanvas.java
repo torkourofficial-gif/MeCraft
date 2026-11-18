@@ -111,7 +111,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private int touchSetupSelection;
     private int language = Language.ENGLISH;
     private int cameraSensitivity = 2;
-    private int renderDistance = 1;
+    // Start with the short 3x3 chunk window on constrained J2ME devices.
+    private int renderDistance = 0;
     private boolean economicMode;
     private boolean controlsReturnSettings;
     private final int[] controlCodes = new int[CONTROL_COUNT];
