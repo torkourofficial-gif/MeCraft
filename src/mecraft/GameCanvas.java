@@ -1225,7 +1225,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (soil == Block.GRASS && (nextRandom() & 7) == 0 && inventory[ItemCatalog.SEEDS] < 64)
             inventory[ItemCatalog.SEEDS]++;
         renderer.swingHand();
-        renderer.sync(world);
         copyInventoryToWorld();
     }
 
@@ -1237,20 +1236,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private void placeBlock() {
         if (world == null) return;
         int[] target = trace(5.0f);
-        if (target != null && world.get(target[0], target[1], target[2]) == Block.CRAFTING_TABLE) {
+        byte targetBlock = target == null ? Block.AIR : world.get(target[0], target[1], target[2]);
+        if (targetBlock == Block.CRAFTING_TABLE) {
             openCrafting(true);
             return;
         }
-        if (target != null && world.get(target[0], target[1], target[2]) == Block.CHEST) {
+        if (targetBlock == Block.CHEST) {
             openChest(target[0], target[1], target[2]);
             return;
         }
-        if (target != null && world.get(target[0], target[1], target[2]) == Block.FURNACE) {
+        if (targetBlock == Block.FURNACE) {
             openFurnace(target[0], target[1], target[2]);
             return;
         }
-        if (target != null && Block.isDoor(world.get(target[0], target[1], target[2]))) {
-            byte targetedDoor = world.get(target[0], target[1], target[2]);
+        if (Block.isDoor(targetBlock)) {
+            byte targetedDoor = targetBlock;
             if (targetedDoor == Block.IRON_DOOR) {
                 int meta = world.doorMetadata(target[0], target[1], target[2]);
                 int lowerY = (meta & 8) != 0 ? target[1] - 1 : target[1];
@@ -1260,8 +1260,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     pendingIronDoorX = Integer.MIN_VALUE;
                     if (world.toggleDoor(target[0], target[1], target[2])) {
                         renderer.swingHand();
-                        renderer.sync(world);
-                    }
+}
                 } else {
                     pendingIronDoorX = target[0]; pendingIronDoorY = lowerY;
                     pendingIronDoorZ = target[2]; pendingIronDoorTicks = 12;
@@ -1270,8 +1269,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 pendingIronDoorTicks = 0;
                 pendingIronDoorX = Integer.MIN_VALUE;
                 renderer.swingHand();
-                renderer.sync(world);
-            }
+}
             return;
         }
         int selectedItem = hotbar[world.selectedSlot];
@@ -1317,8 +1315,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 inventory[doorItem]--;
                 if (inventory[doorItem] == 0) restoreHotbarItem(doorItem);
             }
-            renderer.sync(world);
-            return;
+return;
         }
         if (block == Block.TORCH) {
             // Floor torches need a solid block below; wall torches attach to the
@@ -1356,8 +1353,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             inventory[selectedItem]--;
             if (inventory[selectedItem] == 0) restoreHotbarItem(selectedItem);
         }
-        renderer.sync(world);
-    }
+}
 
 
     private boolean railExistsNear(int x, int y, int z) {
@@ -2125,13 +2121,29 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         float ox = world.playerX;
         float oy = world.playerY + PLAYER_EYE_HEIGHT;
         float oz = world.playerZ;
-        double dirX = lookRayX, dirY = lookRayY, dirZ = lookRayZ;
+        float dirX = (float)lookRayX, dirY = (float)lookRayY, dirZ = (float)lookRayZ;
         int oldX = floorBlock(ox), oldY = floorBlock(oy), oldZ = floorBlock(oz);
-        for (float d = 0.35f; d <= reach; d += 0.12f) {
-            float x = ox + (float)(dirX * d);
-            float y = oy + (float)(dirY * d);
-            float z = oz + (float)(dirZ * d);
-            int bx = floorBlock(x), by = floorBlock(y), bz = floorBlock(z);
+
+        // Start at the same 0.35-block near offset as the old ray marcher, then
+        // visit each voxel crossed by the ray exactly once (Amanatides-Woo DDA).
+        float start = 0.35f;
+        int bx = floorBlock(ox + dirX * start);
+        int by = floorBlock(oy + dirY * start);
+        int bz = floorBlock(oz + dirZ * start);
+        int stepX = dirX > 0.0f ? 1 : (dirX < 0.0f ? -1 : 0);
+        int stepY = dirY > 0.0f ? 1 : (dirY < 0.0f ? -1 : 0);
+        int stepZ = dirZ > 0.0f ? 1 : (dirZ < 0.0f ? -1 : 0);
+        float deltaX = stepX == 0 ? Float.MAX_VALUE : Math.abs(1.0f / dirX);
+        float deltaY = stepY == 0 ? Float.MAX_VALUE : Math.abs(1.0f / dirY);
+        float deltaZ = stepZ == 0 ? Float.MAX_VALUE : Math.abs(1.0f / dirZ);
+        float maxX = stepX > 0 ? (bx + 1.0f - ox) / dirX :
+                (stepX < 0 ? (bx - ox) / dirX : Float.MAX_VALUE);
+        float maxY = stepY > 0 ? (by + 1.0f - oy) / dirY :
+                (stepY < 0 ? (by - oy) / dirY : Float.MAX_VALUE);
+        float maxZ = stepZ > 0 ? (bz + 1.0f - oz) / dirZ :
+                (stepZ < 0 ? (bz - oz) / dirZ : Float.MAX_VALUE);
+
+        while (true) {
             byte id = world.get(bx, by, bz);
             if (id != Block.AIR && !Block.isFluid(id)) {
                 int[] hit = traceResult;
@@ -2140,8 +2152,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 return hit;
             }
             oldX = bx; oldY = by; oldZ = bz;
+            float next = Math.min(maxX, Math.min(maxY, maxZ));
+            if (next > reach) return null;
+            // Advance all axes crossed at a voxel edge/corner together.
+            if (maxX <= next + 0.00001f) { bx += stepX; maxX += deltaX; }
+            if (maxY <= next + 0.00001f) { by += stepY; maxY += deltaY; }
+            if (maxZ <= next + 0.00001f) { bz += stepZ; maxZ += deltaZ; }
         }
-        return null;
     }
 
     private int hotbarIndex(int id) {
