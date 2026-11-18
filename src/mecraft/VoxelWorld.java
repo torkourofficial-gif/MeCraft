@@ -583,6 +583,61 @@ final class VoxelWorld {
      * surrounding 3D box. Saved terrain is scanned directly; infinite-world
      * edits are enumerated from their compact edit list.
      */
+    /**
+     * Incremental counterpart to collectLightSources. state[0] is the scan
+     * cursor and state[1] is the number of sources written so far.
+     */
+    boolean collectLightSourcesStep(int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+            int[] sourceX, int[] sourceY, int[] sourceZ, byte[] radii,
+            boolean[] lavaSources, int limit, int torchRadius, int lavaRadius,
+            int maxChecks, int[] state) {
+        int count = state[1];
+        if (count >= limit) return true;
+
+        int y0 = Math.max(0, minY);
+        int y1 = Math.min(HEIGHT, maxY);
+        int x0 = Math.max(0, minX);
+        int x1 = Math.min(WIDTH, maxX);
+        int z0 = Math.max(0, minZ);
+        int z1 = Math.min(DEPTH, maxZ);
+        int sizeX = x1 - x0, sizeY = y1 - y0, sizeZ = z1 - z0;
+        int blockCount = sizeX * sizeY * sizeZ;
+        int total = blockCount + editCount;
+        int cursor = state[0];
+        int end = cursor + maxChecks;
+        if (end > total) end = total;
+
+        while (cursor < end && count < limit) {
+            int scan = cursor++;
+            byte id;
+            int x, y, z;
+            if (scan < blockCount) {
+                x = x0 + scan % sizeX;
+                z = z0 + scan / sizeX % sizeZ;
+                y = y0 + scan / (sizeX * sizeZ);
+                id = blocks[index(x, y, z)];
+            } else {
+                int edit = scan - blockCount;
+                if (editNether[edit] != nether) continue;
+                x = editX[edit]; y = editY[edit]; z = editZ[edit];
+                if (inside(x, z) || outsideWorld(x, z) ||
+                        x < minX || x >= maxX || y < y0 || y >= y1 ||
+                        z < minZ || z >= maxZ) continue;
+                id = editId[edit];
+            }
+            if (id != Block.TORCH && id != Block.LAVA) continue;
+            sourceX[count] = x;
+            sourceY[count] = y;
+            sourceZ[count] = z;
+            lavaSources[count] = id == Block.LAVA;
+            radii[count] = (byte)(id == Block.LAVA ? lavaRadius : torchRadius);
+            count++;
+        }
+        state[0] = count >= limit ? total : cursor;
+        state[1] = count;
+        return state[0] >= total;
+    }
+
     int collectLightSources(int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
             int[] sourceX, int[] sourceY, int[] sourceZ, byte[] radii,
             boolean[] lavaSources, int limit, int torchRadius, int lavaRadius) {
