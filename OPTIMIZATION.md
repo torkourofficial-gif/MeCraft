@@ -55,16 +55,14 @@ The code already has several good J2ME/M3G practices that were deliberately pres
 - Reused chunk scratch arrays and compact short-based vertex data.
 - A 20 Hz simulation loop and configurable render-frame skipping.
 
-## Next high-value work (not silently changed)
+## Next high-value work
 
-1. **Profile on real runtimes.** Record update, chunk-build, M3G mesh-install, render, heap and native-memory timings on at least one software M3G emulator and one physical JSR-184 phone. The slowest stage determines the next optimization; Java heap figures alone do not account for native M3G allocations.
-2. **Replace per-chunk thread creation.** `ChunkRenderer` currently creates a low-priority `Thread` for each sequential chunk build. A persistent, single worker with a bounded/coalescing request queue would reduce thread/object churn. It needs explicit shutdown and stale-world cancellation.
-3. **Make chunk snapshots revision-safe.** The worker reads world blocks while the game can edit them. Introduce a compact immutable chunk snapshot (including a one-block border and relevant light/portal metadata) captured under a short lock, then mesh that snapshot outside the lock. This avoids inconsistent geometry without holding the gameplay lock for a full mesh build.
-4. **Reduce M3G mesh count.** Current terrain is split by atlas tile/appearance. Measure driver overhead before merging compatible tiles into fewer meshes or using a single atlas mesh; preserve per-face lighting, alpha/cutout behavior, and UV seams.
-5. **Bound native M3G residency.** Track estimated vertices/meshes per resident chunk and evict by memory budget as well as view distance. `System.gc()` is not a substitute for releasing references to scene nodes, textures, and vertex arrays.
-6. **Audit remaining texture formats and dimensions.** Player-skin duplication and eager mob conversion are addressed. Compare RGB/RGBA storage and alpha requirements for other assets; keep nearest filtering for pixel art and do not assume a format conversion saves memory on every vendor implementation.
-7. **Benchmark update cadence.** Keep simulation at 20 Hz, but consider lower-frequency updates for distant mobs, particles, and cosmetic animation. Do not skip collision, fluid, save, or network state transitions without tests.
-8. **Add automated compatibility tests.** Build and preverify with Oracle Java ME SDK 3.2, then test MIDP/CLDC and JSR-184 behavior across multiple emulators. Also test save compatibility, negative chunk coordinates, chunk-border edits, camera changes, and low-memory recovery.
+1. **Profile on the HTC S730 first.** Record update, chunk-build, M3G mesh-install, render, peak Java heap, and native-memory behavior on a repeatable route. Let the slowest measured stage decide the next optimization.
+2. **Reduce M3G mesh count.** Terrain is split by atlas tile and lighting appearance. Measure driver overhead before merging compatible tiles; preserve per-face lighting, cutout behavior, and UV seams.
+3. **Bound native M3G residency.** Track estimated vertices and meshes per resident chunk and evict by memory budget as well as view distance. Releasing scene-node and buffer references matters more than calling `System.gc()`.
+4. **Audit texture formats and dimensions.** Compare RGB/RGBA storage and alpha requirements for remaining assets; keep nearest filtering for pixel art and measure on the target implementation.
+5. **Tune update cadence from measurements.** Keep simulation at 20 Hz; consider lower-frequency updates for distant mobs and cosmetic animation only after profiling. Do not skip collision, fluid, save, or network state transitions without regression checks.
+6. **Validate compatibility and save behavior.** Build with the Java ME SDK, then check MIDP/CLDC and JSR-184 on emulators and hardware, including save/load, negative chunk coordinates, chunk-border edits, and low-memory recovery.
 
 ## Standards and references
 
