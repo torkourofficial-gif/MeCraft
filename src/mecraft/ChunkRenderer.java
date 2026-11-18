@@ -124,6 +124,10 @@ final class ChunkRenderer {
     private int chunkQuadIndexCursor;
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
+    // The most recent player edit is rebuilt before background streaming work.
+    private int urgentChunkX = Integer.MIN_VALUE;
+    private int urgentChunkY = Integer.MIN_VALUE;
+    private int urgentChunkZ = Integer.MIN_VALUE;
     private final int[] chunkInvalidationVersion = new int[CACHE_SIZE];
     private final boolean[] chunkFrustumVisible = new boolean[CACHE_SIZE];
     private final int[] chunkWorldX = new int[CACHE_SIZE];
@@ -1254,6 +1258,18 @@ final class ChunkRenderer {
         return mobs.shootPlayerArrow(world, pitch);
     }
 
+    /** Synchronize a player edit and put its chunk at the head of the build queue. */
+    void syncEditedBlock(VoxelWorld world, int x, int y, int z) {
+        urgentChunkX = floorDiv(x, VoxelWorld.CHUNK_XZ);
+        urgentChunkY = y / VoxelWorld.CHUNK_Y;
+        urgentChunkZ = floorDiv(z, VoxelWorld.CHUNK_XZ);
+        sync(world);
+    }
+
+    private boolean isUrgentChunk(int cx, int cy, int cz) {
+        return cx == urgentChunkX && cy == urgentChunkY && cz == urgentChunkZ;
+    }
+
     void sync(VoxelWorld world) {
         if (world.revision != builtRevision || world.fullRebuild) {
             boolean resetStreaming = builtRevision < 0 || world.fullRebuild;
@@ -1377,6 +1393,9 @@ final class ChunkRenderer {
         chunkWorldZ[i] = cz;
         residentChunks[i] = true;
         dirtyChunks[i] = false;
+        if (isUrgentChunk(cx, cy, cz)) {
+            urgentChunkX = urgentChunkY = urgentChunkZ = Integer.MIN_VALUE;
+        }
         if (replacement != null) {
             replacement.renderingEnabled = chunkFrustumVisible[i];
             if (replacement.meshRoot != null) {
@@ -1556,10 +1575,16 @@ final class ChunkRenderer {
                     }
                     if (!visible) continue;
                     if (!residentChunks[i] || dirtyChunks[i]) {
-                        float distance = dx * dx + dz * dz + dy * dy * 2.0f;
-                        if (distance < bestDistance) {
-                            bestDistance = distance;
+                        if (isUrgentChunk(cx, cy, cz)) {
+                            // A just-edited chunk wins over all camera-distance candidates.
                             best = i;
+                            bestDistance = -1.0f;
+                        } else if (bestDistance >= 0.0f) {
+                            float distance = dx * dx + dz * dz + dy * dy * 2.0f;
+                            if (distance < bestDistance) {
+                                bestDistance = distance;
+                                best = i;
+                            }
                         }
                     }
                 }
@@ -1601,7 +1626,9 @@ final class ChunkRenderer {
                 installingChunk = null;
             } else {
                 try {
-                    if (finishChunkMeshStep(installingChunk, MAX_CHUNK_MESHES_PER_SYNC)) {
+                    int meshBudget = isUrgentChunk(installingX, installingY, installingZ) ?
+                            4 : MAX_CHUNK_MESHES_PER_SYNC;
+                    if (finishChunkMeshStep(installingChunk, meshBudget)) {
                         replaceChunk(installingSlot, installingX, installingY, installingZ, installingChunk);
                         installingChunk = null;
                     }
@@ -1670,7 +1697,9 @@ final class ChunkRenderer {
         int voxelCount = ChunkBuildSnapshot.PAD_AREA * (VoxelWorld.CHUNK_Y + 2);
         int metadataCount = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ;
         int total = voxelCount + metadataCount;
-        int end = chunkSnapshotCursor + MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC;
+        int snapshotBudget = isUrgentChunk(chunkSnapshotX, chunkSnapshotY, chunkSnapshotZ) ?
+                2048 : MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC;
+        int end = chunkSnapshotCursor + snapshotBudget;
         if (end > total) end = total;
 
         while (chunkSnapshotCursor < end) {
@@ -1718,7 +1747,9 @@ final class ChunkRenderer {
                     snapshot.lightX, snapshot.lightY, snapshot.lightZ,
                     snapshot.lightRadius, snapshot.lavaSource, MAX_CHUNK_TORCHES,
                     TORCH_LIGHT_RADIUS, LAVA_LIGHT_RADIUS,
-                    MAX_CHUNK_LIGHT_SCAN_CELLS_PER_SYNC, snapshot.lightScanState);
+                    isUrgentChunk(chunkSnapshotX, chunkSnapshotY, chunkSnapshotZ) ?
+                            4096 : MAX_CHUNK_LIGHT_SCAN_CELLS_PER_SYNC,
+                    snapshot.lightScanState);
             if (!lightsReady) return;
             snapshot.lightCount = snapshot.lightScanState[1];
         }
