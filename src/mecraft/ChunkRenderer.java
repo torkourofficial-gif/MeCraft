@@ -1560,15 +1560,21 @@ final class ChunkRenderer {
             chunkBuildRequestZ = cz;
             chunkBuildRequestRevision = chunkBuildSnapshot.revision;
             if (chunkBuildThread == null) {
-                chunkBuildThread = new Thread(new Runnable() {
-                    public void run() { runChunkBuildWorker(); }
-                });
                 try {
-                    chunkBuildThread.setPriority(Thread.MIN_PRIORITY);
-                } catch (RuntimeException ignored) {
-                }
-                try {
-                    chunkBuildThread.start();
+                    Thread worker = new Thread(new Runnable() {
+                        public void run() { runChunkBuildWorker(); }
+                    });
+                    try {
+                        worker.setPriority(Thread.MIN_PRIORITY);
+                    } catch (RuntimeException ignored) {
+                    }
+                    chunkBuildThread = worker;
+                    worker.start();
+                } catch (OutOfMemoryError exhausted) {
+                    chunkBuildThread = null;
+                    chunkBuildWorkerBusy = false;
+                    chunkBuildRequestPending = false;
+                    dirtyChunks[slot] = true;
                 } catch (RuntimeException failed) {
                     chunkBuildThread = null;
                     chunkBuildWorkerBusy = false;
