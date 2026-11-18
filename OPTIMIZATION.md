@@ -36,6 +36,11 @@ This branch contains a conservative hot-path optimization for the existing MIDP 
 
 These changes reduce duplicate player-skin texture objects and avoid startup conversion/residency for unused mob textures. The actual byte savings depend on the JSR-184 implementation and asset dimensions; no numerical heap/native-memory claim is made without device profiling.
 
+### Low-end render-distance default
+
+- Fresh installations now start at the existing Short preset (one-chunk stream radius, 3×3 horizontal window). Saved render-distance preferences are still loaded unchanged.
+- This reduces the initial resident/rendered chunk workload on constrained devices while leaving the setting available to users who prefer a longer view.
+
 ### Player movement tick
 
 - Skip input normalization's square root unless the two-axis input magnitude exceeds one.
