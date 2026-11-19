@@ -828,13 +828,16 @@ final class VoxelWorld {
         for (int i = 0; i < explosionBits.length; i++) explosionBits[i] = 0;
         for (int i = 0; i < explosionBlockIds.length; i++) explosionBlockIds[i] = EXPLOSION_UNCACHED;
 
-        for (int rx = 0; rx < 16; rx++) {
-            for (int ry = 0; ry < 16; ry++) {
-                for (int rz = 0; rz < 16; rz++) {
-                    if (rx != 0 && rx != 15 && ry != 0 && ry != 15 && rz != 0 && rz != 15) continue;
-                    float dx = rx / 15.0f * 2.0f - 1.0f;
-                    float dy = ry / 15.0f * 2.0f - 1.0f;
-                    float dz = rz / 15.0f * 2.0f - 1.0f;
+        // Eight samples per axis are enough for this deliberately small
+        // Java ME blast. The old 16^3 shell cast 1,352 rays per explosion;
+        // this shell casts 296 while retaining the same ray step and resistance.
+        for (int rx = 0; rx < 8; rx++) {
+            for (int ry = 0; ry < 8; ry++) {
+                for (int rz = 0; rz < 8; rz++) {
+                    if (rx != 0 && rx != 7 && ry != 0 && ry != 7 && rz != 0 && rz != 7) continue;
+                    float dx = rx / 7.0f * 2.0f - 1.0f;
+                    float dy = ry / 7.0f * 2.0f - 1.0f;
+                    float dz = rz / 7.0f * 2.0f - 1.0f;
                     float length = (float)Math.sqrt(dx * dx + dy * dy + dz * dz);
                     if (length == 0.0f) continue;
                     dx /= length; dy /= length; dz /= length;
