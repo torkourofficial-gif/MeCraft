@@ -37,7 +37,7 @@ final class ChunkRenderer {
     // A material is split into bounded linked segments; no builder grows without limit.
     private static final int MAX_FACE_BUILDER_VERTICES = 2048;
     private static final int MAX_CHUNK_MESHES_PER_SYNC = 1;
-    private static final int MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 512;
+    private static final int MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 4096;
     private static final int MAX_CHUNK_LIGHT_SCAN_CELLS_PER_SYNC = 512;
     private static final long MAX_CHUNK_MESH_INSTALL_MILLIS = 6L;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
@@ -114,6 +114,7 @@ final class ChunkRenderer {
     // Copy world data into the worker snapshot in bounded frame-sized slices.
     private boolean chunkSnapshotPreparing;
     private int chunkSnapshotCursor, chunkSnapshotInvalidationVersion;
+    private int chunkSnapshotChunkInvalidationVersion;
     private boolean chunkLightSnapshotValid;
     private boolean chunkVoxelSnapshotValid, chunkVoxelSnapshotFull;
     private boolean chunkSnapshotFull;
@@ -1807,11 +1808,7 @@ final class ChunkRenderer {
             boolean slotMatches = slot >= 0 && slot < CACHE_SIZE &&
                     chunkWorldX[slot] == cx && chunkWorldY[slot] == cy &&
                     chunkWorldZ[slot] == cz;
-            boolean urgentCanPreempt = urgentChunkX != Integer.MIN_VALUE &&
-                    !isUrgentChunk(cx, cy, cz);
-            if (completed != null && epoch == streamEpoch && slotMatches &&
-                    readyInvalidationVersion == chunkSectorInvalidationVersion[slot * SECTOR_COUNT + readySector] &&
-                    (dirtySectorMasks[slot] & (1 << readySector)) == 0 && !urgentCanPreempt) {
+            if (completed != null && epoch == streamEpoch && slotMatches) {
                 installingChunk = completed;
                 installingSlot = slot; installingX = cx; installingY = cy; installingZ = cz;
                 installingEpoch = epoch;
@@ -1831,9 +1828,7 @@ final class ChunkRenderer {
                     chunkWorldX[installingSlot] == installingX &&
                     chunkWorldY[installingSlot] == installingY &&
                     chunkWorldZ[installingSlot] == installingZ;
-            if (installingEpoch != streamEpoch || !slotMatches ||
-                    installingInvalidationVersion != chunkSectorInvalidationVersion[installingSlot * SECTOR_COUNT + installingSector] ||
-                    (dirtySectorMasks[installingSlot] & (1 << installingSector)) != 0) {
+            if (installingEpoch != streamEpoch || !slotMatches) {
                 recycleChunkBuilders(installingChunk);
                 if (slotMatches) markChunkDirtyMask(installingSlot, 1 << installingSector);
                 installingChunk = null;
@@ -1930,6 +1925,7 @@ final class ChunkRenderer {
         chunkSnapshotEpoch = streamEpoch;
         chunkSnapshotInvalidationVersion = chunkSectorInvalidationVersion[
                 slot * SECTOR_COUNT + chunkSnapshotSector];
+        chunkSnapshotChunkInvalidationVersion = chunkInvalidationVersion[slot];
         chunkBuildSnapshot.lightScanState[0] = 0;
         chunkBuildSnapshot.lightScanState[1] = 0;
     }
@@ -1942,7 +1938,6 @@ final class ChunkRenderer {
                 chunkWorldZ[slot] == chunkSnapshotZ;
         if (chunkSnapshotEpoch != streamEpoch || !slotMatches ||
                 !chunkFrustumVisible[slot] ||
-                chunkSectorInvalidationVersion[slot * SECTOR_COUNT + chunkSnapshotSector] != chunkSnapshotInvalidationVersion ||
                 chunkBuildWorkerBusy || buildResultReady || installingChunk != null) {
             chunkSnapshotPreparing = false;
             if (slotMatches) dirtyChunks[slot] = dirtySectorMasks[slot] != 0;
@@ -1998,13 +1993,14 @@ final class ChunkRenderer {
             }
         }
         if (chunkSnapshotCursor < total) return;
-        if (chunkSnapshotFull) {
+        if (chunkSnapshotFull &&
+                chunkInvalidationVersion[slot] == chunkSnapshotChunkInvalidationVersion) {
             chunkVoxelSnapshotValid = true;
             chunkVoxelSnapshotFull = true;
             chunkVoxelSnapshotX = chunkSnapshotX;
             chunkVoxelSnapshotY = chunkSnapshotY;
             chunkVoxelSnapshotZ = chunkSnapshotZ;
-            chunkVoxelSnapshotVersion = chunkSnapshotInvalidationVersion;
+            chunkVoxelSnapshotVersion = chunkSnapshotChunkInvalidationVersion;
         } else {
             chunkVoxelSnapshotValid = false;
             chunkVoxelSnapshotFull = false;
@@ -2033,11 +2029,9 @@ final class ChunkRenderer {
             snapshot.lightCount = snapshot.lightScanState[1];
         }
         snapshot.nether = world.nether;
-        if (chunkInvalidationVersion[slot] != chunkSnapshotInvalidationVersion) {
-            chunkSnapshotPreparing = false;
-            dirtyChunks[slot] = dirtySectorMasks[slot] != 0;
-            return;
-        }
+        // Edits made while copying leave this sector dirty. Finish this build,
+        // then rebuild once from the final world state instead of restarting the
+        // entire snapshot on every mining tick.
         if (!cachedLights) {
             chunkLightSnapshotValid = true;
             chunkLightSnapshotX = chunkSnapshotX;
@@ -2062,7 +2056,9 @@ final class ChunkRenderer {
             chunkBuildRequestEpoch = chunkSnapshotEpoch;
             chunkBuildRequestSector = chunkSnapshotSector;
             chunkBuildRequestInvalidationVersion = chunkSnapshotInvalidationVersion;
-            dirtySectorMasks[slot] &= ~(1 << chunkSnapshotSector);
+            if (chunkSectorInvalidationVersion[slot * SECTOR_COUNT + chunkSnapshotSector] ==
+                    chunkSnapshotInvalidationVersion)
+                dirtySectorMasks[slot] &= ~(1 << chunkSnapshotSector);
             dirtyChunks[slot] = dirtySectorMasks[slot] != 0;
             chunkSnapshotPreparing = false;
             if (chunkBuildThread == null) {
