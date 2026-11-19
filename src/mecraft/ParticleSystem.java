@@ -111,12 +111,13 @@ final class ParticleSystem {
                     float mx = rx - 0.5f + (nextRandom() * 0.8f - 0.4f);
                     float my = ry - 0.5f + (nextRandom() * 0.8f - 0.4f);
                     float mz = rz - 0.5f + (nextRandom() * 0.8f - 0.4f);
-                    float length = (float)Math.sqrt(mx * mx + my * my + mz * mz);
-                    if (length < 0.0001f) length = 0.0001f;
+                    // Debris does not need a normalized direction. Keeping
+                    // the bounded random vector avoids a software-float sqrt
+                    // and three divisions on CLDC/ARM for every fragment.
                     float speed = (nextRandom() + nextRandom() + 1.0f) * 0.06f;
-                    vx[i] = mx / length * speed;
-                    vy[i] = my / length * speed + 0.1f;
-                    vz[i] = mz / length * speed;
+                    vx[i] = mx * speed;
+                    vy[i] = my * speed + 0.1f;
+                    vz[i] = mz * speed;
                     size[i] = 0.075f + nextRandom() * 0.055f;
                     age[i] = 0;
                     // About two seconds at the game's 20 updates per second.
