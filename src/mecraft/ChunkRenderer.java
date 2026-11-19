@@ -1393,10 +1393,10 @@ final class ChunkRenderer {
                     if (chunkWorldX[slot] == chunkX && chunkWorldY[slot] == chunkY &&
                             chunkWorldZ[slot] == chunkZ)
                         markChunkDirtyRegion(slot,
-                                Math.max(x - (torchChanged ? TORCH_LIGHT_RADIUS : (lx == 0 ? 1 : 0)), chunkX * VoxelWorld.CHUNK_XZ),
-                                Math.min(x + (torchChanged ? TORCH_LIGHT_RADIUS : (lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0)), (chunkX + 1) * VoxelWorld.CHUNK_XZ - 1),
-                                Math.max(z - (torchChanged ? TORCH_LIGHT_RADIUS : (lz == 0 ? 1 : 0)), chunkZ * VoxelWorld.CHUNK_XZ),
-                                Math.min(z + (torchChanged ? TORCH_LIGHT_RADIUS : (lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0)), (chunkZ + 1) * VoxelWorld.CHUNK_XZ - 1));
+                                Math.max(x - (torchChanged ? TORCH_LIGHT_RADIUS : 1), chunkX * VoxelWorld.CHUNK_XZ),
+                                Math.min(x + (torchChanged ? TORCH_LIGHT_RADIUS : 1), (chunkX + 1) * VoxelWorld.CHUNK_XZ - 1),
+                                Math.max(z - (torchChanged ? TORCH_LIGHT_RADIUS : 1), chunkZ * VoxelWorld.CHUNK_XZ),
+                                Math.min(z + (torchChanged ? TORCH_LIGHT_RADIUS : 1), (chunkZ + 1) * VoxelWorld.CHUNK_XZ - 1));
                 }
             }
         }
@@ -1467,7 +1467,7 @@ final class ChunkRenderer {
             parent = new Chunk();
             parent.sectors = new Chunk[SECTOR_COUNT];
             parent.meshRoot = new Group();
-            parent.meshRoot.setRenderingEnable(false);
+            parent.meshRoot.setRenderingEnable(chunkFrustumVisible[i]);
             parent.worldX = cx * VoxelWorld.CHUNK_XZ;
             parent.worldY = cy * VoxelWorld.CHUNK_Y;
             parent.worldZ = cz * VoxelWorld.CHUNK_XZ;
@@ -1664,8 +1664,11 @@ final class ChunkRenderer {
                         dirtyChunks[i] = true;
                         chunkFrustumVisible[i] = visible;
                     } else if (!residentChunks[i]) {
-                        // Preserve visibility for a pending or re-requested slot
-                        // even when its cached coordinates already match.
+                        // A slot removed from the scene must rebuild all sectors when it re-enters.
+                        if (dirtySectorMasks[i] == 0) {
+                            dirtySectorMasks[i] = ALL_SECTORS_MASK;
+                            dirtyChunks[i] = true;
+                        }
                         chunkFrustumVisible[i] = visible;
                     }
                     if (visible && isUrgentChunk(cx, cy, cz))
