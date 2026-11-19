@@ -120,8 +120,7 @@ final class ChunkRenderer {
     private int chunkSnapshotVoxelMinZ, chunkSnapshotVoxelMaxZ;
     private int chunkSnapshotMetadataMinX, chunkSnapshotMetadataMaxX;
     private int chunkSnapshotMetadataMinZ, chunkSnapshotMetadataMaxZ;
-    private int chunkVoxelSnapshotX, chunkVoxelSnapshotY, chunkVoxelSnapshotZ, chunkVoxelSnapshotRevision;
-    private int chunkSnapshotWorldRevision;
+    private int chunkVoxelSnapshotX, chunkVoxelSnapshotY, chunkVoxelSnapshotZ, chunkVoxelSnapshotVersion;
     private int chunkLightSnapshotX, chunkLightSnapshotY, chunkLightSnapshotZ;
     private int chunkLightSnapshotRevision, chunkLightSnapshotCount;
     private int chunkSnapshotVoxelX, chunkSnapshotVoxelY, chunkSnapshotVoxelZ;
@@ -1812,10 +1811,9 @@ final class ChunkRenderer {
             return;
         }
         chunkSnapshotPreparing = true;
-        chunkSnapshotWorldRevision = world.revision;
         boolean cachedFullSnapshot = chunkVoxelSnapshotValid && chunkVoxelSnapshotFull &&
                 chunkVoxelSnapshotX == cx && chunkVoxelSnapshotY == cy &&
-                chunkVoxelSnapshotZ == cz && chunkVoxelSnapshotRevision == world.revision;
+                chunkVoxelSnapshotZ == cz && chunkVoxelSnapshotVersion == chunkInvalidationVersion[slot];
         chunkSnapshotFull = !residentChunks[slot] || cachedFullSnapshot;
         int sectorX = (chunkSnapshotSector & 1) * SECTOR_SIZE;
         int sectorZ = (chunkSnapshotSector >> 1) * SECTOR_SIZE;
@@ -1870,7 +1868,7 @@ final class ChunkRenderer {
                 chunkWorldY[slot] == chunkSnapshotY &&
                 chunkWorldZ[slot] == chunkSnapshotZ;
         if (chunkSnapshotEpoch != streamEpoch || !slotMatches ||
-                world.revision != chunkSnapshotWorldRevision || !chunkFrustumVisible[slot] ||
+                !chunkFrustumVisible[slot] ||
                 chunkInvalidationVersion[slot] != chunkSnapshotInvalidationVersion ||
                 chunkBuildWorkerBusy || buildResultReady || installingChunk != null) {
             chunkSnapshotPreparing = false;
@@ -1933,7 +1931,7 @@ final class ChunkRenderer {
             chunkVoxelSnapshotX = chunkSnapshotX;
             chunkVoxelSnapshotY = chunkSnapshotY;
             chunkVoxelSnapshotZ = chunkSnapshotZ;
-            chunkVoxelSnapshotRevision = chunkSnapshotWorldRevision;
+            chunkVoxelSnapshotVersion = chunkSnapshotInvalidationVersion;
         } else {
             chunkVoxelSnapshotValid = false;
             chunkVoxelSnapshotFull = false;
