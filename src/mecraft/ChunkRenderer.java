@@ -1571,7 +1571,10 @@ final class ChunkRenderer {
         chunkWorldZ[i] = cz;
         residentChunks[i] = true;
         dirtyChunks[i] = dirtySectorMasks[i] != 0;
-        if (isUrgentChunk(cx, cy, cz) && dirtySectorMasks[i] == 0) {
+        // Release this edit's one-sector priority as soon as its target sector
+        // is installed. Neighbor sectors may remain dirty, but must not keep
+        // the previous edit's urgency alive; the next mined block starts fresh.
+        if (isUrgentChunk(cx, cy, cz) && sector == urgentSector) {
             urgentChunkX = urgentChunkY = urgentChunkZ = Integer.MIN_VALUE;
             urgentSector = -1;
         }
