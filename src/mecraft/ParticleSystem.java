@@ -1,7 +1,6 @@
 package mecraft;
 
 import javax.microedition.m3g.Appearance;
-import javax.microedition.m3g.CompositingMode;
 import javax.microedition.m3g.Material;
 import javax.microedition.m3g.Mesh;
 import javax.microedition.m3g.PolygonMode;
@@ -10,11 +9,15 @@ import javax.microedition.m3g.TriangleStripArray;
 import javax.microedition.m3g.VertexArray;
 import javax.microedition.m3g.VertexBuffer;
 
-/** Fixed-size, shared-atlas block debris pool; uses no per-tick allocations. */
+/**
+ * Tiny fixed-pool effects for CLDC/M3G devices.
+ * No collision tests, object creation, per-particle physics objects or alpha blending.
+ */
 final class ParticleSystem {
-    private static final int CAPACITY = 64;
+    private static final int CAPACITY = 8;
     private static final int VERTICES = CAPACITY * 4;
     private static final float SCALE = 256.0f;
+    private static final int LIFE = 8;
 
     final Mesh mesh;
     private final float[] x = new float[CAPACITY];
@@ -25,305 +28,152 @@ final class ParticleSystem {
     private final float[] vz = new float[CAPACITY];
     private final float[] size = new float[CAPACITY];
     private final int[] age = new int[CAPACITY];
-    private final int[] lifetime = new int[CAPACITY];
-    private final int[] tile = new int[CAPACITY];
-    private final int[] tileOffsetX = new int[CAPACITY];
-    private final int[] tileOffsetY = new int[CAPACITY];
-    private final boolean[] deathDust = new boolean[CAPACITY];
     private final boolean[] active = new boolean[CAPACITY];
-    private final int[] activeSlots = new int[CAPACITY];
-    private final boolean[] uvDirty = new boolean[CAPACITY];
-    private int activeCount;
-    private int renderedParticleCount;
-    private float cameraYaw, cameraPitch;
-    private boolean cameraBasisValid;
-    private float rightX, rightZ, upX, upY, upZ;
     private final short[] positions = new short[VERTICES * 3];
     private final short[] texCoords = new short[VERTICES * 2];
-    private final byte[] colors = new byte[VERTICES * 4];
     private final VertexArray positionArray;
     private final VertexArray texCoordArray;
-    private final VertexArray colorArray;
     private int cursor;
-    private int random = 0x13579BDF;
+    private int activeCount;
 
     ParticleSystem(Texture2D atlas) {
         positionArray = new VertexArray(VERTICES, 3, 2);
-        // M3G may retain a mesh's initial bounds for frustum culling even after
-        // the VertexArray is updated. Particles are player-relative, so their
-        // coordinates can be negative in every axis and move across chunk
-        // boundaries. Seed the mesh with a symmetric, generous bound instead
-        // of the old positive-only 0..48 quad, which culled particles in other
-        // chunks / behind the initial origin.
-        short bound = (short)(32 * SCALE);
-        for (int i = 0; i < CAPACITY; i++) {
-            int at = i * 12;
-            positions[at] = (short)-bound; positions[at + 1] = (short)-bound; positions[at + 2] = (short)-bound;
-            positions[at + 3] = bound; positions[at + 4] = (short)-bound; positions[at + 5] = (short)-bound;
-            positions[at + 6] = (short)-bound; positions[at + 7] = bound; positions[at + 8] = bound;
-            positions[at + 9] = bound; positions[at + 10] = bound; positions[at + 11] = bound;
+        texCoordArray = new VertexArray(VERTICES, 2, 2);
+        // Give M3G stable bounds; live particles move around the player origin.
+        short bound = (short)(16.0f * SCALE);
+        for (int i = 0; i < VERTICES; i++) {
+            int p = i * 3;
+            positions[p] = (short)-bound;
+            positions[p + 1] = (short)-bound;
+            positions[p + 2] = (short)-bound;
         }
         positionArray.set(0, VERTICES, positions);
-        texCoordArray = new VertexArray(VERTICES, 2, 2);
         texCoordArray.set(0, VERTICES, texCoords);
-        colorArray = new VertexArray(VERTICES, 4, 1);
-        colorArray.set(0, VERTICES, colors);
         VertexBuffer buffer = new VertexBuffer();
         buffer.setPositions(positionArray, 1.0f / SCALE, null);
-        buffer.setTexCoords(0, texCoordArray, 1.0f / SCALE, null);
-        buffer.setColors(colorArray);
+        buffer.setTexCoords(0, texCoordArray, 1.0f / 1024.0f, null);
         int[] strips = new int[CAPACITY];
-        for (int i = 0; i < strips.length; i++) strips[i] = 4;
-        TriangleStripArray triangles = new TriangleStripArray(0, strips);
-
+        for (int i = 0; i < CAPACITY; i++) strips[i] = 4;
         Appearance appearance = new Appearance();
         appearance.setTexture(0, atlas);
         Material material = new Material();
         material.setColor(Material.AMBIENT, 0xFFFFFFFF);
         material.setColor(Material.DIFFUSE, 0xFFFFFFFF);
-        material.setVertexColorTrackingEnable(true);
         appearance.setMaterial(material);
         PolygonMode polygon = new PolygonMode();
         polygon.setCulling(PolygonMode.CULL_NONE);
         appearance.setPolygonMode(polygon);
-        CompositingMode compositing = new CompositingMode();
-        compositing.setBlending(CompositingMode.ALPHA);
-        compositing.setDepthWriteEnable(false);
-        appearance.setCompositingMode(compositing);
-        mesh = new Mesh(buffer, triangles, appearance);
-        for (int i = 0; i < CAPACITY; i++) setParticleColor(i, 0);
+        mesh = new Mesh(buffer, new TriangleStripArray(0, strips), appearance);
+        mesh.setRenderingEnable(false);
     }
 
-    /** Compact 4x2x2 debris burst (16 fragments); one fixed mesh stores the effect. */
-    void spawnBlockDestroy(int bx, int by, int bz, int blockTile) {
-        for (int gy = 0; gy < 2; gy++) {
-            for (int gz = 0; gz < 2; gz++) {
-                for (int gx = 0; gx < 2; gx++) {
-                    int i = cursor++;
-                    if (cursor == CAPACITY) cursor = 0;
-                    activate(i);
-                    float rx = (gx + 0.5f) * 0.5f;
-                    float ry = (gy + 0.5f) * 0.5f;
-                    float rz = (gz + 0.5f) * 0.5f;
-                    x[i] = bx + rx;
-                    y[i] = by + ry;
-                    z[i] = bz + rz;
-                    float mx = rx - 0.5f + (nextRandom() * 0.8f - 0.4f);
-                    float my = ry - 0.5f + (nextRandom() * 0.8f - 0.4f);
-                    float mz = rz - 0.5f + (nextRandom() * 0.8f - 0.4f);
-                    // Debris does not need a normalized direction. Keeping
-                    // the bounded random vector avoids a software-float sqrt
-                    // and three divisions on CLDC/ARM for every fragment.
-                    float speed = (nextRandom() + nextRandom() + 1.0f) * 0.06f;
-                    vx[i] = mx * speed;
-                    vy[i] = my * speed + 0.1f;
-                    vz[i] = mz * speed;
-                    size[i] = 0.075f + nextRandom() * 0.055f;
-                    age[i] = 0;
-                    // About two seconds at the game's 20 updates per second.
-                    lifetime[i] = 24;
-                    tile[i] = blockTile;
-                    tileOffsetX[i] = (int)(nextRandom() * 4.0f);
-                    tileOffsetY[i] = (int)(nextRandom() * 4.0f);
-                    uvDirty[i] = true;
-                    deathDust[i] = false;
-                }
-            }
+    void spawnBlockDestroy(int bx, int by, int bz, int blockId) {
+        spawn(bx + 0.30f, by + 0.38f, bz + 0.50f,
+                -0.035f, 0.055f, 0.012f, 0.075f, Block.sideTile(blockId));
+        spawn(bx + 0.68f, by + 0.55f, bz + 0.32f,
+                0.030f, 0.070f, -0.025f, 0.075f, Block.sideTile(blockId));
+        spawn(bx + 0.48f, by + 0.72f, bz + 0.68f,
+                0.008f, 0.085f, 0.035f, 0.065f, Block.sideTile(blockId));
+        uploadTextureCoordinates();
+    }
+
+    /** Eight tiny fire-colored squares make the TNT blast readable without a heavy emitter. */
+    void spawnExplosion(float px, float py, float pz) {
+        final float[] dx = { -1.0f, -0.7f, 0.0f, 0.7f, 1.0f, 0.7f, 0.0f, -0.7f };
+        final float[] dz = { 0.0f, -0.7f, -1.0f, -0.7f, 0.0f, 0.7f, 1.0f, 0.7f };
+        int tile = Block.sideTile(Block.FIRE);
+        for (int i = 0; i < CAPACITY; i++) {
+            float lift = (i & 1) == 0 ? 0.055f : 0.095f;
+            spawn(px, py, pz, dx[i] * 0.105f, lift, dz[i] * 0.105f,
+                    0.16f, tile);
         }
+        uploadTextureCoordinates();
     }
 
-    /** Tiny death puff; keep the one-shot effect cheap on CLDC devices. */
-    void spawnMobDeath(float px, float py, float pz) {
-        for (int n = 0; n < 4; n++) {
-            int i = cursor++;
-            if (cursor == CAPACITY) cursor = 0;
-            activate(i);
-            x[i] = px + (nextRandom() - 0.5f) * 0.42f;
-            y[i] = py + 0.2f + nextRandom() * 0.9f;
-            z[i] = pz + (nextRandom() - 0.5f) * 0.42f;
-            vx[i] = (nextRandom() - 0.5f) * 0.025f;
-            vy[i] = 0.012f + nextRandom() * 0.018f;
-            vz[i] = (nextRandom() - 0.5f) * 0.025f;
-            size[i] = 0.045f + nextRandom() * 0.035f;
-            age[i] = 0;
-            lifetime[i] = 14 + (int)(nextRandom() * 9.0f);
-            tile[i] = Block.sideTile(Block.DIRT);
-            tileOffsetX[i] = (int)(nextRandom() * 12.0f);
-            tileOffsetY[i] = (int)(nextRandom() * 12.0f);
-            uvDirty[i] = true;
-            deathDust[i] = true;
-        }
+    private void spawn(float px, float py, float pz, float sx, float sy, float sz,
+                       float particleSize, int tile) {
+        int i = cursor++;
+        if (cursor == CAPACITY) cursor = 0;
+        if (!active[i]) activeCount++;
+        active[i] = true;
+        x[i] = px; y[i] = py; z[i] = pz;
+        vx[i] = sx; vy[i] = sy; vz[i] = sz;
+        size[i] = particleSize;
+        age[i] = 0;
+        int tx = (tile & 15) * 16;
+        int ty = (tile >> 4) * 16;
+        int at = i * 8;
+        texCoords[at] = (short)tx; texCoords[at + 1] = (short)(ty + 16);
+        texCoords[at + 2] = (short)(tx + 16); texCoords[at + 3] = (short)(ty + 16);
+        texCoords[at + 4] = (short)tx; texCoords[at + 5] = (short)ty;
+        texCoords[at + 6] = (short)(tx + 16); texCoords[at + 7] = (short)ty;
     }
 
-    private void activate(int particle) {
-        if (!active[particle]) {
-            active[particle] = true;
-            activeSlots[activeCount] = particle;
-            uvDirty[particle] = true;
-            activeCount++;
-        }
-    }
-
-    /** Texture coordinates are immutable for a particle's lifetime. */
-    private void writeTileUV(int particle, int blockTile, int offsetX, int offsetY) {
-        int tileX = (blockTile & 15) * 16 + offsetX;
-        int tileY = (blockTile >> 4) * 16 + offsetY;
-        int at = particle * 8;
-        texCoords[at] = (short)tileX; texCoords[at + 1] = (short)(tileY + 4);
-        texCoords[at + 2] = (short)(tileX + 4); texCoords[at + 3] = (short)(tileY + 4);
-        texCoords[at + 4] = (short)tileX; texCoords[at + 5] = (short)tileY;
-        texCoords[at + 6] = (short)(tileX + 4); texCoords[at + 7] = (short)tileY;
+    private void uploadTextureCoordinates() {
+        texCoordArray.set(0, VERTICES, texCoords);
     }
 
     void update(VoxelWorld world, float yawDegrees, float pitchDegrees) {
         if (activeCount == 0) {
             mesh.setRenderingEnable(false);
-            renderedParticleCount = 0;
             return;
         }
+        float yaw = yawDegrees * 0.0174532925f;
+        float pitch = pitchDegrees * 0.0174532925f;
+        float rightX = (float)Math.cos(yaw);
+        float rightZ = -(float)Math.sin(yaw);
+        float upX = -(float)(Math.sin(yaw) * Math.sin(pitch));
+        float upY = (float)Math.cos(pitch);
+        float upZ = -(float)(Math.cos(yaw) * Math.sin(pitch));
         float originX = world.playerX;
         float originY = world.playerY;
         float originZ = world.playerZ;
         mesh.setTranslation(originX, originY, originZ);
-        if (!cameraBasisValid || cameraYaw != yawDegrees || cameraPitch != pitchDegrees) {
-            double yaw = yawDegrees * Math.PI / 180.0;
-            double pitch = pitchDegrees * Math.PI / 180.0;
-            rightX = (float)Math.cos(yaw);
-            rightZ = -(float)Math.sin(yaw);
-            upX = -(float)(Math.sin(yaw) * Math.sin(pitch));
-            upY = (float)Math.cos(pitch);
-            upZ = -(float)(Math.cos(yaw) * Math.sin(pitch));
-            cameraYaw = yawDegrees;
-            cameraPitch = pitchDegrees;
-            cameraBasisValid = true;
-        }
-        for (int n = 0; n < activeCount; ) {
-            int i = activeSlots[n];
-            if (age[i] >= lifetime[i]) {
-                active[i] = false;
-                activeCount--;
-                if (n < activeCount) {
-                    int moved = activeSlots[activeCount];
-                    activeSlots[n] = moved;
-                    uvDirty[moved] = true;
+
+        for (int i = 0; i < CAPACITY; i++) {
+            int at = i * 12;
+            if (!active[i]) {
+                for (int v = 0; v < 4; v++) {
+                    positions[at++] = 0;
+                    positions[at++] = 0;
+                    positions[at++] = 0;
                 }
                 continue;
             }
-            age[i]++;
-            if (deathDust[i]) vy[i] += 0.001f;
-            else vy[i] -= 0.04f;
+            if (++age[i] >= LIFE) {
+                active[i] = false;
+                activeCount--;
+                for (int v = 0; v < 4; v++) {
+                    positions[at++] = 0;
+                    positions[at++] = 0;
+                    positions[at++] = 0;
+                }
+                continue;
+            }
             x[i] += vx[i];
             y[i] += vy[i];
             z[i] += vz[i];
-            boolean onGround = false;
-            if (!deathDust[i]) {
-                int belowY = floorInt(y[i] - size[i]);
-                if (world.isSolidAt(floorInt(x[i]), belowY, floorInt(z[i]))) {
-                    y[i] = belowY + 1.0f + size[i];
-                    vy[i] = 0.0f;
-                    onGround = true;
-                }
-            }
-            vx[i] *= deathDust[i] ? 0.92f : 0.98f;
-            vy[i] *= deathDust[i] ? 0.96f : 0.98f;
-            vz[i] *= deathDust[i] ? 0.92f : 0.98f;
-            if (onGround) { vx[i] *= 0.7f; vz[i] *= 0.7f; }
-            n++;
+            vy[i] -= 0.009f;
+            float half = size[i] * (1.0f - (float)age[i] / (float)LIFE);
+            float cx = x[i] - originX;
+            float cy = y[i] - originY;
+            float cz = z[i] - originZ;
+            put(at, cx - rightX * half - upX * half,
+                    cy - upY * half, cz - rightZ * half - upZ * half); at += 3;
+            put(at, cx + rightX * half - upX * half,
+                    cy - upY * half, cz + rightZ * half - upZ * half); at += 3;
+            put(at, cx - rightX * half + upX * half,
+                    cy + upY * half, cz - rightZ * half + upZ * half); at += 3;
+            put(at, cx + rightX * half + upX * half,
+                    cy + upY * half, cz + rightZ * half + upZ * half);
         }
-
-        // Pack live particles at the start of the fixed mesh. A single partial
-        // VertexArray upload now scales with the live count, not all 64 slots.
-        boolean textureCoordinatesChanged = false;
-        for (int n = 0; n < activeCount; n++) {
-            int i = activeSlots[n];
-            writeQuad(n, rightX, rightZ, upX, upY, upZ, originX, originY, originZ);
-            if (uvDirty[i]) {
-                writeTileUV(n, tile[i], tileOffsetX[i], tileOffsetY[i]);
-                uvDirty[i] = false;
-                textureCoordinatesChanged = true;
-            }
-            writeParticleColor(n, i);
-        }
-        int uploadCount = Math.max(activeCount, renderedParticleCount);
-        for (int n = activeCount; n < renderedParticleCount; n++) setParticleColor(n, 0);
-        if (uploadCount > 0) {
-            int vertices = uploadCount * 4;
-            positionArray.set(0, vertices, positions);
-            colorArray.set(0, vertices, colors);
-        }
-        if (activeCount > 0 && textureCoordinatesChanged) {
-            texCoordArray.set(0, activeCount * 4, texCoords);
-        }
-        renderedParticleCount = activeCount;
+        positionArray.set(0, VERTICES, positions);
         mesh.setRenderingEnable(activeCount > 0);
     }
 
-    private void writeParticleColor(int renderSlot, int particle) {
-        int alpha;
-        int red, green, blue;
-        if (deathDust[particle]) {
-            red = 165; green = 132; blue = 91;
-            alpha = 230 - age[particle] * 230 / lifetime[particle];
-        } else {
-            red = 153; green = 153; blue = 153;
-            alpha = 255 - age[particle] * 255 / lifetime[particle];
-        }
-        setParticleColor(renderSlot, red, green, blue, alpha);
-    }
-
-    private void writeQuad(int particle, float rx, float rz, float ux, float uy, float uz,
-            float originX, float originY, float originZ) {
-        float half = size[particle];
-        float x0 = x[particle] - originX - rx * half - ux * half;
-        float y0 = y[particle] - originY - uy * half;
-        float z0 = z[particle] - originZ - rz * half - uz * half;
-        float x1 = x[particle] - originX + rx * half - ux * half;
-        float y1 = y[particle] - originY - uy * half;
-        float z1 = z[particle] - originZ + rz * half - uz * half;
-        float x2 = x[particle] - originX - rx * half + ux * half;
-        float y2 = y[particle] - originY + uy * half;
-        float z2 = z[particle] - originZ - rz * half + uz * half;
-        float x3 = x[particle] - originX + rx * half + ux * half;
-        float y3 = y[particle] - originY + uy * half;
-        float z3 = z[particle] - originZ + rz * half + uz * half;
-        int v = particle * 12;
-        putPosition(v, x0, y0, z0); putPosition(v + 3, x1, y1, z1);
-        putPosition(v + 6, x2, y2, z2); putPosition(v + 9, x3, y3, z3);
-
-    }
-
-    private void putPosition(int at, float px, float py, float pz) {
-        positions[at] = toShort(px);
-        positions[at + 1] = toShort(py);
-        positions[at + 2] = toShort(pz);
-    }
-
-    private short toShort(float value) {
-        return (short)(value * SCALE);
-    }
-
-    private int floorInt(float value) {
-        int result = (int)value;
-        return value < result ? result - 1 : result;
-    }
-
-    private void setParticleColor(int particle, int alpha) {
-        setParticleColor(particle, 153, 153, 153, alpha);
-    }
-
-    private void setParticleColor(int particle, int red, int green, int blue, int alpha) {
-        int at = particle * 16;
-        for (int v = 0; v < 4; v++) {
-            colors[at++] = (byte)red;
-            colors[at++] = (byte)green;
-            colors[at++] = (byte)blue;
-            colors[at++] = (byte)alpha;
-        }
-    }
-
-    private float nextRandom() {
-        random = random * 1103515245 + 12345;
-        return ((random >>> 8) & 0xFFFF) / 65535.0f;
+    private void put(int at, float px, float py, float pz) {
+        positions[at] = (short)(px * SCALE);
+        positions[at + 1] = (short)(py * SCALE);
+        positions[at + 2] = (short)(pz * SCALE);
     }
 }
-
