@@ -384,8 +384,8 @@ final class MobSystem {
         mob.fireTicks = 0;
         mob.fireMesh.setRenderingEnable(false);
         mob.root.setRenderingEnable(false);
-        mob.setHurt(false);
-        mob.pose.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
+        // The hidden pooled model is reset when it respawns; touching its
+        // materials and pose here only creates extra native M3G state changes.
         particles.spawnMobDeath(mob.x, mob.y, mob.z);
     }
 
