@@ -65,6 +65,9 @@ final class DroppedItemSystem {
     private final VertexArray tntFlashPositionArray;
     private int cursor;
     private int activeCount;
+    // Highest slot uploaded last frame. Upload only the used prefix, plus a
+    // previous tail once when it shrinks so stale native vertices are cleared.
+    private int renderedSlotCount;
     private int random = 0x2468ACE1;
     private boolean explosionPending;
     private int explosionX, explosionY, explosionZ;
@@ -333,9 +336,18 @@ final class DroppedItemSystem {
             tntFlashMesh.setRenderingEnable(false);
             return picked;
         }
-        if (hasBlocks) positionArray.set(0, VERTEX_COUNT, positions);
-        if (hasSprites) spritePositionArray.set(0, VERTEX_COUNT, spritePositions);
-        if (hasTntFlash) tntFlashPositionArray.set(0, VERTEX_COUNT, tntFlashPositions);
+        int highestActiveSlot = -1;
+        for (int i = 0; i < CAPACITY; i++)
+            if (itemId[i] != 0) highestActiveSlot = i;
+        int uploadSlots = highestActiveSlot + 1;
+        if (uploadSlots < renderedSlotCount) uploadSlots = renderedSlotCount;
+        int uploadVertices = uploadSlots * VERTICES_PER_ITEM;
+        if (uploadVertices > 0) {
+            if (hasBlocks) positionArray.set(0, uploadVertices, positions);
+            if (hasSprites) spritePositionArray.set(0, uploadVertices, spritePositions);
+            if (hasTntFlash) tntFlashPositionArray.set(0, uploadVertices, tntFlashPositions);
+        }
+        renderedSlotCount = highestActiveSlot + 1;
         mesh.setRenderingEnable(hasBlocks);
         spriteMesh.setRenderingEnable(hasSprites);
         tntFlashMesh.setRenderingEnable(hasTntFlash);
