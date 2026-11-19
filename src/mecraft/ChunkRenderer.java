@@ -354,7 +354,7 @@ final class ChunkRenderer {
         buildHeldItems();
         droppedItems = new DroppedItemSystem(atlas, itemAtlas);
         particles = new ParticleSystem(atlas);
-        mobs = new MobSystem(scene, droppedItems);
+        mobs = new MobSystem(scene, droppedItems, particles);
 
         camera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
         externalCamera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
