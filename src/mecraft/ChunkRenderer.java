@@ -1267,25 +1267,29 @@ final class ChunkRenderer {
         urgentChunkY = cy;
         urgentChunkZ = cz;
 
-        // A single action may change more than one voxel (doors, attached plants,
-        // rails). Explicitly invalidate the edited chunk and its face-neighbor
-        // chunks so the last VoxelWorld.changedX/Y/Z value cannot hide an edit.
-        int minX = cx - (x - cx * VoxelWorld.CHUNK_XZ == 0 ? 1 : 0);
-        int maxX = cx + (x - cx * VoxelWorld.CHUNK_XZ == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0);
-        int minY = cy - (y % VoxelWorld.CHUNK_Y == 0 ? 1 : 0);
-        int maxY = cy + (y % VoxelWorld.CHUNK_Y == VoxelWorld.CHUNK_Y - 1 ? 1 : 0);
-        int minZ = cz - (z - cz * VoxelWorld.CHUNK_XZ == 0 ? 1 : 0);
-        int maxZ = cz + (z - cz * VoxelWorld.CHUNK_XZ == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0);
-        for (int chunkY = minY; chunkY <= maxY; chunkY++) {
-            if (chunkY < 0 || chunkY >= VoxelWorld.CHUNKS_Y) continue;
-            for (int chunkZ = minZ; chunkZ <= maxZ; chunkZ++) {
-                for (int chunkX = minX; chunkX <= maxX; chunkX++) {
-                    int slot = (chunkY * MAX_STREAM_SPAN +
-                            floorMod(chunkZ, MAX_STREAM_SPAN)) * MAX_STREAM_SPAN +
-                            floorMod(chunkX, MAX_STREAM_SPAN);
-                    if (chunkWorldX[slot] == chunkX && chunkWorldY[slot] == chunkY &&
-                            chunkWorldZ[slot] == chunkZ)
-                        markChunkDirty(slot);
+        // For the usual one-voxel edit, sync() will invalidate this exact
+        // chunk neighborhood from VoxelWorld.changedX/Y/Z. Avoid doing the
+        // same cache walk and version bumps twice. Multi-voxel edits (doors,
+        // attached plants, rails) still need this explicit first-position pass:
+        // changedX/Y/Z can only remember the final voxel in the operation.
+        if (world.changedX != x || world.changedY != y || world.changedZ != z) {
+            int minX = cx - (x - cx * VoxelWorld.CHUNK_XZ == 0 ? 1 : 0);
+            int maxX = cx + (x - cx * VoxelWorld.CHUNK_XZ == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0);
+            int minY = cy - (y % VoxelWorld.CHUNK_Y == 0 ? 1 : 0);
+            int maxY = cy + (y % VoxelWorld.CHUNK_Y == VoxelWorld.CHUNK_Y - 1 ? 1 : 0);
+            int minZ = cz - (z - cz * VoxelWorld.CHUNK_XZ == 0 ? 1 : 0);
+            int maxZ = cz + (z - cz * VoxelWorld.CHUNK_XZ == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0);
+            for (int chunkY = minY; chunkY <= maxY; chunkY++) {
+                if (chunkY < 0 || chunkY >= VoxelWorld.CHUNKS_Y) continue;
+                for (int chunkZ = minZ; chunkZ <= maxZ; chunkZ++) {
+                    for (int chunkX = minX; chunkX <= maxX; chunkX++) {
+                        int slot = (chunkY * MAX_STREAM_SPAN +
+                                floorMod(chunkZ, MAX_STREAM_SPAN)) * MAX_STREAM_SPAN +
+                                floorMod(chunkX, MAX_STREAM_SPAN);
+                        if (chunkWorldX[slot] == chunkX && chunkWorldY[slot] == chunkY &&
+                                chunkWorldZ[slot] == chunkZ)
+                            markChunkDirty(slot);
+                    }
                 }
             }
         }
