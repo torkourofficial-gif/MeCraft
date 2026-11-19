@@ -2176,8 +2176,8 @@ final class ChunkRenderer {
      * stay on the game thread.
      */
     private void appendChunkMesh(Chunk chunk, Mesh mesh) {
-        // Keep generated meshes detached until the whole sector is ready.
-        // replaceChunkSector attaches them directly to the chunk's shared root.
+        // Store the mesh in build order; sync() attaches it to the sector root
+        // immediately after this frame's bounded M3G allocation.
         chunk.meshes[chunk.meshBuildAt++] = mesh;
     }
 
@@ -2936,7 +2936,7 @@ final class ChunkRenderer {
 
     private static final class Chunk {
         Mesh[] meshes;
-        // Shared scene root for a resident chunk; sector build records keep meshes detached.
+        // Shared scene root for a resident chunk and its incrementally attached sector meshes.
         Group meshRoot;
         Chunk[] sectors;
         FaceBuilder[] faceBuilders;
