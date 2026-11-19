@@ -50,6 +50,7 @@ final class VoxelWorld {
     private static final int CONFIG_WORLD_SAVE_MAGIC = 0x4D434647; // MCFG
     private static final int DIFFICULTY_WORLD_SAVE_MAGIC = 0x4D434648; // MCFH
     private static final int SEEDED_NOISE_WORLD_SAVE_MAGIC = 0x4D434649; // MCFI
+    private static final int DIMENSION_ID_WORLD_SAVE_MAGIC = 0x4D43464A;
     static final int SIZE_INFINITE = 0;
     static final int SIZE_OLD = 1;
     static final int TYPE_STANDARD = 0;
@@ -63,17 +64,23 @@ final class VoxelWorld {
     private static final int INFDEV_EDIT_POINTER_MAGIC = 0x49465031;
     private static final int INFDEV_EDIT_PAGE_MAGIC = 0x49465047;
     private static final int INFDEV_EDIT_PAGE_MAGIC_V2 = 0x49464432;
+    private static final int INFDEV_EDIT_PAGE_MAGIC_V3 = 0x49464433;
     private static final int DIMENSION_STORE_MAGIC = 0x4D43444D; // MCDM
     private static final int DIMENSION_PAGE_MAGIC = 0x4D434450; // MCDP
     private static final int DIMENSION_PAGE_BYTES = 16000;
     private static final int INFDEV_EDITS_PER_PAGE = 128;
     static final int DAY_LENGTH = 24000;
-
+    static final int DIMENSION_COUNT = 4;
+    static final int DIM_OVERWORLD = 0, DIM_NETHER = 1, DIM_END = 2, DIM_RESERVED = 3;
+    private static final int DIMENSION_SAVE_MAGIC_V2 = 0x4D43444E;
     byte[] blocks = new byte[BLOCK_COUNT];
     private byte[] waterLevels = new byte[BLOCK_COUNT];
+    private final byte[][] dimensionBlocks = new byte[DIMENSION_COUNT][];
+    private final byte[][] dimensionWaterLevels = new byte[DIMENSION_COUNT][];
     private byte[] otherDimensionBlocks;
     private byte[] otherDimensionWaterLevels;
     private boolean otherDimensionIsNether;
+    int dimensionId = DIM_OVERWORLD;
     // Local reusable mask: TNT blast bounds are at most 19x19x19 blocks (radius 4).
     private static final int EXPLOSION_MASK_SIZE = 20;
     private static final int EXPLOSION_MASK_AREA = EXPLOSION_MASK_SIZE * EXPLOSION_MASK_SIZE;
@@ -108,11 +115,12 @@ final class VoxelWorld {
     private int proceduralPrefetchRequestX, proceduralPrefetchRequestZ;
     private int proceduralPrefetchRequestSeed, proceduralPrefetchRequestNoiseVersion;
     private int proceduralPrefetchBusyX, proceduralPrefetchBusyZ;
-    private boolean proceduralPrefetchRequestNether, proceduralPrefetchRequestPriority;
-    private boolean proceduralPrefetchBusyNether;
+    private int proceduralPrefetchRequestDimension;
+    private boolean proceduralPrefetchRequestPriority;
+    private int proceduralPrefetchBusyDimension;
     private int proceduralPrefetchReadyX, proceduralPrefetchReadyZ;
     private int proceduralPrefetchReadySeed, proceduralPrefetchReadyNoiseVersion;
-    private boolean proceduralPrefetchReadyNether;
+    private int proceduralPrefetchReadyDimension;
     private Thread proceduralPrefetchThread;
     private final int[] proceduralHeights = new int[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
     private final byte[] proceduralBiomes = new byte[InfdevTerrain.CHUNK_SIZE * InfdevTerrain.CHUNK_SIZE];
@@ -122,7 +130,7 @@ final class VoxelWorld {
     private int[] editZ = new int[128];
     private byte[] editId = new byte[128];
     private byte[] editMeta = new byte[128];
-    private boolean[] editNether = new boolean[128];
+    private byte[] editDimension = new byte[128];
     private int[] editLookup = new int[256];
     private int editCount;
     private int editGeneration;
@@ -190,6 +198,8 @@ final class VoxelWorld {
     VoxelWorld(int seed, int mode, int worldSize, int worldType, int noiseVersion) {
         setGenerationDiagnosticStage("VoxelWorld: asignando semilla");
         this.seed = seed;
+        dimensionBlocks[DIM_OVERWORLD] = blocks;
+        dimensionWaterLevels[DIM_OVERWORLD] = waterLevels;
         this.noiseVersion = noiseVersion <= 0 ? 0 : 1;
         InfdevTerrain.prepareNoise(seed, this.noiseVersion);
         setGenerationDiagnosticStage("VoxelWorld: asignando modo");
@@ -299,17 +309,17 @@ final class VoxelWorld {
         if (!needsProceduralChunk(cx, cz) || findProceduralCache(cx, cz) >= 0) return;
         synchronized (proceduralPrefetchLock) {
             if ((proceduralPrefetchBusy && proceduralPrefetchBusyX == cx &&
-                    proceduralPrefetchBusyZ == cz && proceduralPrefetchBusyNether == nether) ||
+                    proceduralPrefetchBusyZ == cz && proceduralPrefetchBusyDimension == dimensionId) ||
                 (proceduralPrefetchPending && proceduralPrefetchRequestX == cx &&
-                    proceduralPrefetchRequestZ == cz && proceduralPrefetchRequestNether == nether) ||
+                    proceduralPrefetchRequestZ == cz && proceduralPrefetchRequestDimension == dimensionId) ||
                 (proceduralPrefetchReady && proceduralPrefetchReadyX == cx &&
-                    proceduralPrefetchReadyZ == cz && proceduralPrefetchReadyNether == nether))
+                    proceduralPrefetchReadyZ == cz && proceduralPrefetchReadyDimension == dimensionId))
                 return;
             if (proceduralPrefetchPending &&
                     (!priority || proceduralPrefetchRequestPriority)) return;
             proceduralPrefetchRequestX = cx;
             proceduralPrefetchRequestZ = cz;
-            proceduralPrefetchRequestNether = nether;
+            proceduralPrefetchRequestDimension = dimensionId;
             proceduralPrefetchRequestSeed = seed;
             proceduralPrefetchRequestNoiseVersion = noiseVersion;
             proceduralPrefetchRequestPriority = priority;
@@ -338,7 +348,7 @@ final class VoxelWorld {
     private void runProceduralPrefetchWorker() {
         while (true) {
             int cx, cz, requestSeed, requestNoiseVersion;
-            boolean dimension;
+            int dimension;
             synchronized (proceduralPrefetchLock) {
                 while (!proceduralPrefetchPending || proceduralPrefetchReady) {
                     try { proceduralPrefetchLock.wait(10000L); }
@@ -350,14 +360,14 @@ final class VoxelWorld {
                 }
                 cx = proceduralPrefetchRequestX;
                 cz = proceduralPrefetchRequestZ;
-                dimension = proceduralPrefetchRequestNether;
+                dimension = proceduralPrefetchRequestDimension;
                 requestSeed = proceduralPrefetchRequestSeed;
                 requestNoiseVersion = proceduralPrefetchRequestNoiseVersion;
                 proceduralPrefetchPending = false;
                 proceduralPrefetchBusy = true;
                 proceduralPrefetchBusyX = cx;
                 proceduralPrefetchBusyZ = cz;
-                proceduralPrefetchBusyNether = dimension;
+                proceduralPrefetchBusyDimension = dimension;
             }
 
             boolean generated = false;
@@ -375,7 +385,7 @@ final class VoxelWorld {
                 if (generated) {
                     proceduralPrefetchReadyX = cx;
                     proceduralPrefetchReadyZ = cz;
-                    proceduralPrefetchReadyNether = dimension;
+                    proceduralPrefetchReadyDimension = dimension;
                     proceduralPrefetchReadySeed = requestSeed;
                     proceduralPrefetchReadyNoiseVersion = requestNoiseVersion;
                     proceduralPrefetchReady = true;
@@ -391,7 +401,7 @@ final class VoxelWorld {
             if (!proceduralPrefetchReady) return;
             if (proceduralPrefetchReadySeed == seed &&
                     proceduralPrefetchReadyNoiseVersion == noiseVersion &&
-                    proceduralPrefetchReadyNether == nether) {
+                    proceduralPrefetchReadyDimension == dimensionId) {
                 int cx = proceduralPrefetchReadyX, cz = proceduralPrefetchReadyZ;
                 if (findProceduralCache(cx, cz) < 0) {
                     int cache = proceduralCacheCursor++ & (PROCEDURAL_CACHE_SIZE - 1);
@@ -411,10 +421,10 @@ final class VoxelWorld {
 
 
     private int findEdit(int x, int y, int z) {
-        return findEdit(x, y, z, nether);
+        return findEdit(x, y, z, dimensionId);
     }
 
-    private int findEdit(int x, int y, int z, boolean dimension) {
+    private int findEdit(int x, int y, int z, int dimension) {
         int hash = editHash(x, y, z, dimension);
         int slot = hash & (editLookup.length - 1);
         for (int probe = 0; probe < editLookup.length; probe++) {
@@ -422,24 +432,24 @@ final class VoxelWorld {
             if (value == 0) return -1;
             int i = value - 1;
             if (editX[i] == x && editY[i] == y && editZ[i] == z &&
-                editNether[i] == dimension) return i;
+                editDimension[i] == dimension) return i;
             slot = (slot + 1) & (editLookup.length - 1);
         }
         return -1;
     }
 
     private int ensureEdit(int x, int y, int z) {
-        return ensureEdit(x, y, z, nether);
+        return ensureEdit(x, y, z, dimensionId);
     }
 
-    private int ensureEdit(int x, int y, int z, boolean dimension) {
+    private int ensureEdit(int x, int y, int z, int dimension) {
         int i = findEdit(x, y, z, dimension);
         if (i >= 0) return i;
         if (editCount == editX.length) growEditArrays();
         if ((editCount + 1) * 2 > editLookup.length) rehashEdits(editLookup.length * 2);
         i = editCount++;
         editX[i] = x; editY[i] = y; editZ[i] = z;
-        editNether[i] = dimension;
+        editDimension[i] = (byte)dimension;
         int slot = editHash(x, y, z, dimension) & (editLookup.length - 1);
         while (editLookup[slot] != 0) slot = (slot + 1) & (editLookup.length - 1);
         editLookup[slot] = i + 1;
@@ -450,29 +460,29 @@ final class VoxelWorld {
         int size = editX.length * 2;
         int[] nx = new int[size], ny = new int[size], nz = new int[size];
         byte[] ni = new byte[size], nm = new byte[size];
-        boolean[] nd = new boolean[size];
+        byte[] nd = new byte[size];
         System.arraycopy(editX, 0, nx, 0, editCount);
         System.arraycopy(editY, 0, ny, 0, editCount);
         System.arraycopy(editZ, 0, nz, 0, editCount);
         System.arraycopy(editId, 0, ni, 0, editCount);
         System.arraycopy(editMeta, 0, nm, 0, editCount);
-        System.arraycopy(editNether, 0, nd, 0, editCount);
-        editX = nx; editY = ny; editZ = nz; editId = ni; editMeta = nm; editNether = nd;
+        System.arraycopy(editDimension, 0, nd, 0, editCount);
+        editX = nx; editY = ny; editZ = nz; editId = ni; editMeta = nm; editDimension = nd;
     }
 
     private void rehashEdits(int size) {
         int[] lookup = new int[size];
         for (int i = 0; i < editCount; i++) {
-            int slot = editHash(editX[i], editY[i], editZ[i], editNether[i]) & (size - 1);
+            int slot = editHash(editX[i], editY[i], editZ[i], editDimension[i]) & (size - 1);
             while (lookup[slot] != 0) slot = (slot + 1) & (size - 1);
             lookup[slot] = i + 1;
         }
         editLookup = lookup;
     }
 
-    private int editHash(int x, int y, int z, boolean inNether) {
+    private int editHash(int x, int y, int z, int dimension) {
         int hash = x * 73428767 ^ y * 912931 ^ z * 42317861;
-        return inNether ? hash ^ 0x6D2B79F5 : hash;
+        return hash ^ (dimension * 0x6D2B79F5);
     }
 
     int metadataAt(int x, int y, int z) {
@@ -629,7 +639,7 @@ final class VoxelWorld {
                 }
             } else {
                 int edit = scan - blockCount;
-                if (editNether[edit] != nether) continue;
+                if (editDimension[edit] != dimensionId) continue;
                 x = editX[edit]; y = editY[edit]; z = editZ[edit];
                 if (inside(x, z) || outsideWorld(x, z) ||
                         x < minX || x >= maxX || y < y0 || y >= y1 ||
@@ -679,7 +689,7 @@ final class VoxelWorld {
 
         // Beyond the saved array, player-placed sources are sparse edits.
         for (int i = 0; i < editCount && count < limit; i++) {
-            if (editNether[i] != nether) continue;
+            if (editDimension[i] != dimensionId) continue;
             int x = editX[i], y = editY[i], z = editZ[i];
             if (inside(x, z) || outsideWorld(x, z) ||
                     x < minX || x >= maxX || y < y0 || y >= y1 ||
@@ -1203,14 +1213,34 @@ final class VoxelWorld {
     }
 
     private void generateChunk(int cx, int cz, byte[] target) {
-        generateChunk(cx, cz, target, proceduralHeights, proceduralBiomes, nether);
+        generateChunk(cx, cz, target, proceduralHeights, proceduralBiomes, dimensionId);
+    }
+
+    private void generateEndChunk(int cx, int cz, byte[] target, int[] heights, byte[] biomes) {
+        final int centerX = WIDTH / 2, centerZ = DEPTH / 2;
+        for (int z = 0; z < CHUNK_XZ; z++) for (int x = 0; x < CHUNK_XZ; x++) {
+            int wx = cx * CHUNK_XZ + x, wz = cz * CHUNK_XZ + z;
+            int dx = wx - centerX, dz = wz - centerZ;
+            int rough = ((wx * 73428767 ^ wz * 912931 ^ seed) >>> 28) & 3;
+            int radius = 11 + rough, top = 32 + (rough & 1);
+            int base = (z * CHUNK_XZ + x) * HEIGHT;
+            for (int y = 0; y < HEIGHT; y++) {
+                byte id = Block.AIR;
+                if (y == 0) id = Block.BEDROCK;
+                else if (dx * dx + dz * dz <= radius * radius && y <= top && y >= top - 7) id = Block.STONE;
+                target[base + y] = id;
+            }
+            heights[z * CHUNK_XZ + x] = top; biomes[z * CHUNK_XZ + x] = 0;
+        }
     }
 
     private void generateChunk(int cx, int cz, byte[] target, int[] heights,
-                               byte[] biomes, boolean dimension) {
+                               byte[] biomes, int dimension) {
         InfdevTerrain.prepareNoise(seed, noiseVersion);
         setGenerationDiagnosticStage("VoxelWorld.generateChunk: validando dimensión; chunk cx=" + cx + ", cz=" + cz);
-        if (!dimension && worldType == TYPE_FLAT) {
+        if (dimension == DIM_END) {
+            generateEndChunk(cx, cz, target, heights, biomes);
+        } else if (dimension != DIM_NETHER && worldType == TYPE_FLAT) {
             for (int z = 0; z < CHUNK_XZ; z++) for (int x = 0; x < CHUNK_XZ; x++) {
                 int base = (z * CHUNK_XZ + x) * HEIGHT;
                 for (int y = 0; y < HEIGHT; y++)
@@ -1218,7 +1248,7 @@ final class VoxelWorld {
                 heights[z * CHUNK_XZ + x] = 4;
                 biomes[z * CHUNK_XZ + x] = 0;
             }
-        } else if (dimension) {
+        } else if (dimension == DIM_NETHER) {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generateNether; cx=" + cx + ", cz=" + cz);
             if (economicMode) InfdevTerrain.generateEconomicNether(seed, cx, cz, target, heights);
             else InfdevTerrain.generateNether(seed, cx, cz, target, heights);
@@ -1232,27 +1262,18 @@ final class VoxelWorld {
 
     }
 
-    synchronized void setNetherDimension(boolean enabled) {
-        if (nether == enabled) return;
-        if (otherDimensionBlocks != null && otherDimensionIsNether == enabled) {
-            byte[] oldBlocks = blocks;
-            byte[] oldWater = waterLevels;
-            blocks = otherDimensionBlocks;
-            waterLevels = otherDimensionWaterLevels;
-            otherDimensionBlocks = oldBlocks;
-            otherDimensionWaterLevels = oldWater;
-            otherDimensionIsNether = !enabled;
-            nether = enabled;
-        } else if (otherDimensionBlocks == null) {
-            otherDimensionBlocks = blocks;
-            otherDimensionWaterLevels = waterLevels;
-            otherDimensionIsNether = !enabled;
-            nether = enabled;
-            blocks = new byte[BLOCK_COUNT];
-            waterLevels = new byte[BLOCK_COUNT];
-            generate();
+    synchronized boolean setDimension(int targetDimension) {
+        if (targetDimension < 0 || targetDimension >= DIMENSION_COUNT) return false;
+        if (dimensionId == targetDimension) return true;
+        dimensionBlocks[dimensionId] = blocks; dimensionWaterLevels[dimensionId] = waterLevels;
+        if (dimensionBlocks[targetDimension] == null || dimensionWaterLevels[targetDimension] == null) {
+            dimensionBlocks[targetDimension] = new byte[BLOCK_COUNT]; dimensionWaterLevels[targetDimension] = new byte[BLOCK_COUNT];
+            blocks = dimensionBlocks[targetDimension]; waterLevels = dimensionWaterLevels[targetDimension];
+            dimensionId = targetDimension; nether = dimensionId == DIM_NETHER;
+            generate(); dimensionBlocks[dimensionId] = blocks; dimensionWaterLevels[dimensionId] = waterLevels;
         } else {
-            return;
+            blocks = dimensionBlocks[targetDimension]; waterLevels = dimensionWaterLevels[targetDimension];
+            dimensionId = targetDimension; nether = dimensionId == DIM_NETHER;
         }
         for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
             proceduralChunkX[i] = Integer.MIN_VALUE;
@@ -1264,18 +1285,17 @@ final class VoxelWorld {
         lavaTickCounter = 0;
         for (int i = 0; i < fluidQueued.length; i++) fluidQueued[i] = 0;
         if (nether) convertLegacyNetherWater();
-        queueSavedFlowingFluids();
-        fullRebuild = true;
-        revision++;
+        queueSavedFlowingFluids(); fullRebuild = true; revision++;
+        return true;
     }
-
+    synchronized void setNetherDimension(boolean enabled) { setDimension(enabled ? DIM_NETHER : DIM_OVERWORLD); }
     void switchDimension() { setNetherDimension(!nether); }
 
     private void convertLegacyNetherWater() {
         for (int i = 0; i < blocks.length; i++)
             if (blocks[i] == Block.WATER) blocks[i] = Block.LAVA;
         for (int i = 0; i < editCount; i++)
-            if (editNether[i] && editId[i] == Block.WATER) editId[i] = Block.LAVA;
+            if (editDimension[i] == DIM_NETHER && editId[i] == Block.WATER) editId[i] = Block.LAVA;
     }
 
     /** Activates a black-wool 4x5 frame when the player uses a diamond sword. */
@@ -1477,7 +1497,7 @@ final class VoxelWorld {
                 if (count > INFDEV_EDITS_PER_PAGE) count = INFDEV_EDITS_PER_PAGE;
                 ByteArrayOutputStream pageBytes = new ByteArrayOutputStream(16 + count * 12);
                 DataOutputStream pageOut = new DataOutputStream(pageBytes);
-                pageOut.writeInt(INFDEV_EDIT_PAGE_MAGIC_V2);
+                pageOut.writeInt(INFDEV_EDIT_PAGE_MAGIC_V3);
                 pageOut.writeInt(generation);
                 pageOut.writeInt(page);
                 pageOut.writeInt(pageCount);
@@ -1490,7 +1510,7 @@ final class VoxelWorld {
 
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(blocks.length * 2 + 64);
             DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(SEEDED_NOISE_WORLD_SAVE_MAGIC);
+            out.writeInt(DIMENSION_ID_WORLD_SAVE_MAGIC);
             out.writeByte(HEIGHT);
             out.writeByte(worldSize);
             out.writeByte(worldType);
@@ -1499,7 +1519,7 @@ final class VoxelWorld {
             out.writeInt(seed);
             out.writeByte(mode);
             out.writeUTF(worldName == null ? "Mundo" : worldName);
-            out.writeBoolean(nether);
+            out.writeByte(dimensionId);
             out.writeByte(selectedSlot);
             out.writeShort(inventory.length);
             for (int i = 0; i < inventory.length; i++) out.writeByte(inventory[i]);
@@ -1523,7 +1543,7 @@ final class VoxelWorld {
             store.setRecord(1, data, 0, data.length);
             editGeneration = generation;
             deleteOldEditPages(store, generation);
-            saveOtherDimension(storeName);
+            saveDimensionStores(storeName);
         } catch (Exception ignored) {
             // A failed save must not terminate play on devices with tiny RMS limits.
         } catch (OutOfMemoryError ignored) {
@@ -1535,50 +1555,30 @@ final class VoxelWorld {
         }
     }
 
-    private void saveOtherDimension(String storeName) {
-        if (otherDimensionBlocks == null || otherDimensionWaterLevels == null) return;
-        RecordStore dimStore = null;
-        try {
-            dimStore = RecordStore.openRecordStore(storeName + "-dim", true);
-            RecordEnumeration oldRecords = dimStore.enumerateRecords(null, null, false);
-            int[] oldIds = new int[dimStore.getNumRecords()];
-            int oldCount = 0;
-            while (oldRecords.hasNextElement()) oldIds[oldCount++] = oldRecords.nextRecordId();
-            oldRecords.destroy();
-            for (int i = 0; i < oldCount; i++) dimStore.deleteRecord(oldIds[i]);
-            int totalBytes = BLOCK_COUNT * 2;
-            int pageCount = (totalBytes + DIMENSION_PAGE_BYTES - 1) / DIMENSION_PAGE_BYTES;
-            ByteArrayOutputStream bytes = new ByteArrayOutputStream(10);
-            DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(DIMENSION_STORE_MAGIC);
-            out.writeBoolean(otherDimensionIsNether);
-            out.writeInt(totalBytes);
-            out.writeShort(pageCount);
-            out.flush();
-            byte[] data = bytes.toByteArray();
-            dimStore.addRecord(data, 0, data.length);
-            for (int page = 0; page < pageCount; page++) {
-                int offset = page * DIMENSION_PAGE_BYTES;
-                int length = totalBytes - offset;
-                if (length > DIMENSION_PAGE_BYTES) length = DIMENSION_PAGE_BYTES;
-                ByteArrayOutputStream pageBytes = new ByteArrayOutputStream(length + 10);
-                DataOutputStream pageOut = new DataOutputStream(pageBytes);
-                pageOut.writeInt(DIMENSION_PAGE_MAGIC);
-                pageOut.writeShort(page);
-                pageOut.writeShort(length);
-                for (int i = 0; i < length; i++) {
-                    int source = offset + i;
-                    pageOut.writeByte(source < BLOCK_COUNT ? otherDimensionBlocks[source] :
-                                      otherDimensionWaterLevels[source - BLOCK_COUNT]);
+    private void saveDimensionStores(String storeName) {
+        dimensionBlocks[dimensionId] = blocks; dimensionWaterLevels[dimensionId] = waterLevels;
+        for (int dimension = 0; dimension < DIMENSION_COUNT; dimension++) {
+            if (dimension == dimensionId || dimensionBlocks[dimension] == null || dimensionWaterLevels[dimension] == null) continue;
+            RecordStore rs = null;
+            try {
+                rs = RecordStore.openRecordStore(storeName + "-d" + dimension, true);
+                RecordEnumeration old = rs.enumerateRecords(null, null, false);
+                int[] ids = new int[rs.getNumRecords()]; int n = 0;
+                while (old.hasNextElement()) ids[n++] = old.nextRecordId();
+                old.destroy(); for (int i = 0; i < n; i++) rs.deleteRecord(ids[i]);
+                int total = BLOCK_COUNT * 2, pages = (total + DIMENSION_PAGE_BYTES - 1) / DIMENSION_PAGE_BYTES;
+                ByteArrayOutputStream hb = new ByteArrayOutputStream(12); DataOutputStream h = new DataOutputStream(hb);
+                h.writeInt(DIMENSION_SAVE_MAGIC_V2); h.writeByte(dimension); h.writeInt(total); h.writeShort(pages); h.flush();
+                byte[] hd = hb.toByteArray(); rs.addRecord(hd, 0, hd.length);
+                for (int page = 0; page < pages; page++) {
+                    int offset = page * DIMENSION_PAGE_BYTES, length = Math.min(DIMENSION_PAGE_BYTES, total - offset);
+                    ByteArrayOutputStream pb = new ByteArrayOutputStream(length + 8); DataOutputStream po = new DataOutputStream(pb);
+                    po.writeInt(DIMENSION_PAGE_MAGIC); po.writeShort(page); po.writeShort(length);
+                    for (int k = 0; k < length; k++) { int at = offset + k; po.writeByte(at < BLOCK_COUNT ? dimensionBlocks[dimension][at] : dimensionWaterLevels[dimension][at - BLOCK_COUNT]); }
+                    po.flush(); byte[] pd = pb.toByteArray(); rs.addRecord(pd, 0, pd.length);
                 }
-                pageOut.flush();
-                byte[] pageData = pageBytes.toByteArray();
-                dimStore.addRecord(pageData, 0, pageData.length);
-            }
-        } catch (Exception ignored) {
-        } catch (OutOfMemoryError ignored) {
-        } finally {
-            if (dimStore != null) try { dimStore.closeRecordStore(); } catch (RecordStoreException ignored) { }
+            } catch (Exception ignored) { } catch (OutOfMemoryError ignored) { }
+            finally { if (rs != null) try { rs.closeRecordStore(); } catch (RecordStoreException ignored) { } }
         }
     }
 
@@ -1646,9 +1646,9 @@ final class VoxelWorld {
             byte[] otherWater = new byte[BLOCK_COUNT];
             int shift = otherNether ? 0 : HEIGHT - savedHeight;
             expandSavedHeight(savedBlocks, savedWater, savedHeight, shift, otherBlocks, otherWater);
-            world.otherDimensionIsNether = otherNether;
-            world.otherDimensionBlocks = otherBlocks;
-            world.otherDimensionWaterLevels = otherWater;
+            int otherId = otherNether ? DIM_NETHER : DIM_OVERWORLD;
+            world.dimensionBlocks[otherId] = otherBlocks; world.dimensionWaterLevels[otherId] = otherWater;
+            world.otherDimensionIsNether = otherNether; world.otherDimensionBlocks = otherBlocks; world.otherDimensionWaterLevels = otherWater;
             if (otherNether) {
                 for (int i = 0; i < otherBlocks.length; i++)
                     if (otherBlocks[i] == Block.WATER) otherBlocks[i] = Block.LAVA;
@@ -1659,9 +1659,44 @@ final class VoxelWorld {
         }
     }
 
+    private static void loadDimensionStores(String storeName, VoxelWorld world) {
+        for (int dimension = 0; dimension < DIMENSION_COUNT; dimension++) {
+            if (dimension == world.dimensionId) continue;
+            RecordStore rs = null;
+            try {
+                rs = RecordStore.openRecordStore(storeName + "-d" + dimension, false);
+                if (rs.getNumRecords() < 2) continue;
+                byte[] hd = null; RecordEnumeration headers = rs.enumerateRecords(null, null, false);
+                try { while (headers.hasNextElement()) { byte[] c = rs.getRecord(headers.nextRecordId()); if (c.length >= 11 && new DataInputStream(new ByteArrayInputStream(c)).readInt() == DIMENSION_SAVE_MAGIC_V2) { hd = c; break; } } }
+                finally { headers.destroy(); }
+                if (hd == null) continue;
+                DataInputStream h = new DataInputStream(new ByteArrayInputStream(hd));
+                if (h.readInt() != DIMENSION_SAVE_MAGIC_V2 || h.readUnsignedByte() != dimension) continue;
+                int total = h.readInt(), pages = h.readUnsignedShort();
+                if (total != BLOCK_COUNT * 2 || pages != (total + DIMENSION_PAGE_BYTES - 1) / DIMENSION_PAGE_BYTES || rs.getNumRecords() != pages + 1) continue;
+                byte[] raw = new byte[total]; boolean[] loaded = new boolean[pages];
+                RecordEnumeration en = rs.enumerateRecords(null, null, false);
+                try { while (en.hasNextElement()) {
+                    byte[] pd = rs.getRecord(en.nextRecordId()); DataInputStream pi = new DataInputStream(new ByteArrayInputStream(pd));
+                    if (pi.readInt() != DIMENSION_PAGE_MAGIC) continue;
+                    int page = pi.readUnsignedShort(), len = pi.readUnsignedShort();
+                    if (page >= pages || loaded[page] || len != Math.min(DIMENSION_PAGE_BYTES, total - page * DIMENSION_PAGE_BYTES) || pi.available() != len) continue;
+                    pi.readFully(raw, page * DIMENSION_PAGE_BYTES, len); loaded[page] = true;
+                } } finally { en.destroy(); }
+                boolean complete = true; for (int n = 0; n < pages; n++) if (!loaded[n]) { complete = false; break; }
+                if (!complete) continue;
+                byte[] db = new byte[BLOCK_COUNT], dw = new byte[BLOCK_COUNT];
+                System.arraycopy(raw, 0, db, 0, BLOCK_COUNT); System.arraycopy(raw, BLOCK_COUNT, dw, 0, BLOCK_COUNT);
+                world.dimensionBlocks[dimension] = db; world.dimensionWaterLevels[dimension] = dw;
+                if (dimension == DIM_NETHER) for (int n = 0; n < db.length; n++) if (db[n] == Block.WATER) db[n] = Block.LAVA;
+            } catch (Exception ignored) { }
+            finally { if (rs != null) try { rs.closeRecordStore(); } catch (RecordStoreException ignored) { } }
+        }
+    }
+
     private void writeEdit(DataOutputStream out, int i) throws IOException {
         out.writeInt(editX[i]); out.writeByte(editY[i]); out.writeInt(editZ[i]);
-        out.writeByte(editId[i]); out.writeByte(editMeta[i]); out.writeBoolean(editNether[i]);
+        out.writeByte(editId[i]); out.writeByte(editMeta[i]); out.writeByte(editDimension[i]);
     }
 
     private static void deleteOldEditPages(RecordStore store, int keepGeneration) {
@@ -1677,7 +1712,7 @@ final class VoxelWorld {
                 if (data.length < 8) continue;
                 DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
                 int magic = in.readInt();
-                if ((magic == INFDEV_EDIT_PAGE_MAGIC || magic == INFDEV_EDIT_PAGE_MAGIC_V2) &&
+                if ((magic == INFDEV_EDIT_PAGE_MAGIC || magic == INFDEV_EDIT_PAGE_MAGIC_V2 || magic == INFDEV_EDIT_PAGE_MAGIC_V3) &&
                     in.readInt() != keepGeneration)
                     remove[count++] = recordId;
             }
@@ -1699,7 +1734,8 @@ final class VoxelWorld {
             byte[] data = store.getRecord(1);
             DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
             int format = in.readInt();
-            boolean seededNoiseFormat = format == SEEDED_NOISE_WORLD_SAVE_MAGIC;
+            boolean dimensionIdFormat = format == DIMENSION_ID_WORLD_SAVE_MAGIC;
+            boolean seededNoiseFormat = format == SEEDED_NOISE_WORLD_SAVE_MAGIC || dimensionIdFormat;
             boolean difficultyWorldFormat = format == DIFFICULTY_WORLD_SAVE_MAGIC || seededNoiseFormat;
             boolean configWorldFormat = format == CONFIG_WORLD_SAVE_MAGIC || difficultyWorldFormat;
             boolean deepWorldFormat = format == DEEP_WORLD_SAVE_MAGIC || configWorldFormat;
@@ -1708,7 +1744,8 @@ final class VoxelWorld {
                 format != 0x4D434637 && format != 0x4D434638 && format != 0x4D434639 &&
                 format != 0x4D434641 && format != 0x4D434642 && format != 0x4D434643 &&
                 format != 0x4D434644 && format != ALPHA_ITEM_SAVE_MAGIC &&
-                format != DIFFICULTY_WORLD_SAVE_MAGIC && format != SEEDED_NOISE_WORLD_SAVE_MAGIC && !deepWorldFormat) return null;
+                format != DIFFICULTY_WORLD_SAVE_MAGIC && format != SEEDED_NOISE_WORLD_SAVE_MAGIC &&
+                format != DIMENSION_ID_WORLD_SAVE_MAGIC && !deepWorldFormat) return null;
             int savedHeight = deepWorldFormat ? in.readUnsignedByte() : 24;
             if (savedHeight < 8 || savedHeight > HEIGHT) return null;
             int savedWorldSize = configWorldFormat ? in.readUnsignedByte() : SIZE_INFINITE;
@@ -1724,9 +1761,11 @@ final class VoxelWorld {
             world.difficulty = savedDifficulty < DIFFICULTY_PEACEFUL || savedDifficulty > DIFFICULTY_HARD ? DIFFICULTY_NORMAL : savedDifficulty;
             boolean alphaItemFormat = format == ALPHA_ITEM_SAVE_MAGIC || deepWorldFormat;
             boolean explicitDimensionFormat = format == 0x4D434644 || alphaItemFormat || seededNoiseFormat;
-            boolean savedNether = explicitDimensionFormat ? in.readBoolean() :
-                                  "NETHER".equalsIgnoreCase(world.worldName);
-            world.setNetherDimension(savedNether);
+            int savedDimension = dimensionIdFormat ? in.readUnsignedByte() :
+                    (explicitDimensionFormat ? (in.readBoolean() ? DIM_NETHER : DIM_OVERWORLD) :
+                     ("NETHER".equalsIgnoreCase(world.worldName) ? DIM_NETHER : DIM_OVERWORLD));
+            if (savedDimension >= DIMENSION_COUNT) savedDimension = DIM_OVERWORLD;
+            world.setDimension(savedDimension);
             world.saveStoreName = storeName;
             world.selectedSlot = in.readByte();
             boolean currentFormat = format == 0x4D434641 || format == 0x4D434642 ||
@@ -1832,7 +1871,7 @@ final class VoxelWorld {
             if (editPageCount > 0 && editPageCount <= store.getNumRecords())
                 loadEditPages(store, world, editGeneration, editPageCount, heightShift);
             if (world.nether) world.convertLegacyNetherWater();
-            if (explicitDimensionFormat) loadOtherDimension(storeName, world);
+            if (explicitDimensionFormat) { loadOtherDimension(storeName, world); loadDimensionStores(storeName, world); }
             world.editGeneration = editGeneration;
             if (format != 0x4D434636 && format != 0x4D434637 && format != 0x4D434638 &&
                 format != 0x4D434639 && !currentFormat)
@@ -1894,20 +1933,22 @@ final class VoxelWorld {
                 if (data.length < 18) continue;
                 DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
                 int pageMagic = in.readInt();
-                if ((pageMagic != INFDEV_EDIT_PAGE_MAGIC && pageMagic != INFDEV_EDIT_PAGE_MAGIC_V2) ||
+                if ((pageMagic != INFDEV_EDIT_PAGE_MAGIC && pageMagic != INFDEV_EDIT_PAGE_MAGIC_V2 && pageMagic != INFDEV_EDIT_PAGE_MAGIC_V3) ||
                     in.readInt() != generation) continue;
                 int page = in.readInt();
                 int storedPageCount = in.readInt();
                 int count = in.readUnsignedShort();
                 if (page < 0 || page >= pageCount || storedPageCount != pageCount ||
                     count > INFDEV_EDITS_PER_PAGE || loaded[page] ||
-                    in.available() < count * (pageMagic == INFDEV_EDIT_PAGE_MAGIC_V2 ? 12 : 11))
+                    in.available() < count * (pageMagic == INFDEV_EDIT_PAGE_MAGIC_V3 ? 12 : (pageMagic == INFDEV_EDIT_PAGE_MAGIC_V2 ? 12 : 11)))
                     continue;
                 loaded[page] = true;
                 for (int i = 0; i < count; i++) {
                     int x = in.readInt(), y = in.readUnsignedByte() + heightShift, z = in.readInt();
                     byte id = in.readByte(), meta = in.readByte();
-                    boolean dimension = pageMagic == INFDEV_EDIT_PAGE_MAGIC_V2 ? in.readBoolean() : world.nether;
+                    int dimension = pageMagic == INFDEV_EDIT_PAGE_MAGIC_V3 ? in.readUnsignedByte() :
+                            (pageMagic == INFDEV_EDIT_PAGE_MAGIC_V2 ? (in.readBoolean() ? DIM_NETHER : DIM_OVERWORLD) : world.dimensionId);
+                    if (dimension >= DIMENSION_COUNT) dimension = DIM_OVERWORLD;
                     int edit = world.ensureEdit(x, y, z, dimension);
                     if (edit >= 0) { world.editId[edit] = id; world.editMeta[edit] = meta; }
                 }
@@ -1944,6 +1985,7 @@ final class VoxelWorld {
         try {
             RecordStore.deleteRecordStore(storeName);
             try { RecordStore.deleteRecordStore(storeName + "-dim"); } catch (RecordStoreException ignored) { }
+            for (int d = 0; d < DIMENSION_COUNT; d++) try { RecordStore.deleteRecordStore(storeName + "-d" + d); } catch (RecordStoreException ignored) { }
             try { RecordStore.deleteRecordStore(storeName + "-chunks"); } catch (RecordStoreException ignored) { }
             return true;
         } catch (RecordStoreException ignored) {
