@@ -114,7 +114,12 @@ final class ChunkRenderer {
     private boolean chunkSnapshotPreparing;
     private int chunkSnapshotCursor, chunkSnapshotInvalidationVersion;
     private boolean chunkLightSnapshotValid;
-    private boolean chunkVoxelSnapshotValid;
+    private boolean chunkVoxelSnapshotValid, chunkVoxelSnapshotFull;
+    private boolean chunkSnapshotFull;
+    private int chunkSnapshotVoxelMinX, chunkSnapshotVoxelMaxX;
+    private int chunkSnapshotVoxelMinZ, chunkSnapshotVoxelMaxZ;
+    private int chunkSnapshotMetadataMinX, chunkSnapshotMetadataMaxX;
+    private int chunkSnapshotMetadataMinZ, chunkSnapshotMetadataMaxZ;
     private int chunkVoxelSnapshotX, chunkVoxelSnapshotY, chunkVoxelSnapshotZ, chunkVoxelSnapshotRevision;
     private int chunkSnapshotWorldRevision;
     private int chunkLightSnapshotX, chunkLightSnapshotY, chunkLightSnapshotZ;
@@ -1508,6 +1513,7 @@ final class ChunkRenderer {
         urgentSector = -1;
         chunkLightSnapshotValid = false;
         chunkVoxelSnapshotValid = false;
+        chunkVoxelSnapshotFull = false;
         if (installingChunk != null) {
             recycleChunkBuilders(installingChunk);
             installingChunk = null;
@@ -1807,14 +1813,46 @@ final class ChunkRenderer {
         }
         chunkSnapshotPreparing = true;
         chunkSnapshotWorldRevision = world.revision;
-        boolean cachedVoxels = chunkVoxelSnapshotValid &&
+        boolean cachedFullSnapshot = chunkVoxelSnapshotValid && chunkVoxelSnapshotFull &&
                 chunkVoxelSnapshotX == cx && chunkVoxelSnapshotY == cy &&
                 chunkVoxelSnapshotZ == cz && chunkVoxelSnapshotRevision == world.revision;
-        chunkSnapshotCursor = cachedVoxels ?
-                ChunkBuildSnapshot.PAD_AREA * (VoxelWorld.CHUNK_Y + 2) +
+        chunkSnapshotFull = !residentChunks[slot] || cachedFullSnapshot;
+        int sectorX = (chunkSnapshotSector & 1) * SECTOR_SIZE;
+        int sectorZ = (chunkSnapshotSector >> 1) * SECTOR_SIZE;
+        if (chunkSnapshotFull) {
+            chunkSnapshotVoxelMinX = -1;
+            chunkSnapshotVoxelMaxX = VoxelWorld.CHUNK_XZ;
+            chunkSnapshotVoxelMinZ = -1;
+            chunkSnapshotVoxelMaxZ = VoxelWorld.CHUNK_XZ;
+            chunkSnapshotMetadataMinX = 0;
+            chunkSnapshotMetadataMaxX = VoxelWorld.CHUNK_XZ - 1;
+            chunkSnapshotMetadataMinZ = 0;
+            chunkSnapshotMetadataMaxZ = VoxelWorld.CHUNK_XZ - 1;
+        } else {
+            // One voxel of horizontal halo plus the vertical padded layer is
+            // enough for this sector's six face tests and portal-axis lookup.
+            chunkSnapshotVoxelMinX = sectorX == 0 ? -1 : sectorX - 1;
+            chunkSnapshotVoxelMaxX = sectorX + SECTOR_SIZE == VoxelWorld.CHUNK_XZ ?
+                    VoxelWorld.CHUNK_XZ : sectorX + SECTOR_SIZE;
+            chunkSnapshotVoxelMinZ = sectorZ == 0 ? -1 : sectorZ - 1;
+            chunkSnapshotVoxelMaxZ = sectorZ + SECTOR_SIZE == VoxelWorld.CHUNK_XZ ?
+                    VoxelWorld.CHUNK_XZ : sectorZ + SECTOR_SIZE;
+            chunkSnapshotMetadataMinX = sectorX;
+            chunkSnapshotMetadataMaxX = sectorX + SECTOR_SIZE - 1;
+            chunkSnapshotMetadataMinZ = sectorZ;
+            chunkSnapshotMetadataMaxZ = sectorZ + SECTOR_SIZE - 1;
+            // A partial write invalidates the reusable full-chunk snapshot.
+            chunkVoxelSnapshotValid = false;
+        }
+        chunkSnapshotCursor = cachedFullSnapshot ? ChunkBuildSnapshot.PAD_AREA *
+                (VoxelWorld.CHUNK_Y + 2) +
                 VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ : 0;
-        chunkSnapshotVoxelX = chunkSnapshotVoxelY = chunkSnapshotVoxelZ = -1;
-        chunkSnapshotMetadataX = chunkSnapshotMetadataY = chunkSnapshotMetadataZ = 0;
+        chunkSnapshotVoxelX = chunkSnapshotVoxelMinX;
+        chunkSnapshotVoxelY = -1;
+        chunkSnapshotVoxelZ = chunkSnapshotVoxelMinZ;
+        chunkSnapshotMetadataX = chunkSnapshotMetadataMinX;
+        chunkSnapshotMetadataY = 0;
+        chunkSnapshotMetadataZ = chunkSnapshotMetadataMinZ;
         chunkSnapshotSlot = slot;
         chunkSnapshotX = cx;
         chunkSnapshotY = cy;
@@ -1844,8 +1882,12 @@ final class ChunkRenderer {
         int x0 = chunkSnapshotX * VoxelWorld.CHUNK_XZ;
         int y0 = chunkSnapshotY * VoxelWorld.CHUNK_Y;
         int z0 = chunkSnapshotZ * VoxelWorld.CHUNK_XZ;
-        int voxelCount = ChunkBuildSnapshot.PAD_AREA * (VoxelWorld.CHUNK_Y + 2);
-        int metadataCount = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ;
+        int voxelWidth = chunkSnapshotVoxelMaxX - chunkSnapshotVoxelMinX + 1;
+        int voxelDepth = chunkSnapshotVoxelMaxZ - chunkSnapshotVoxelMinZ + 1;
+        int voxelCount = voxelWidth * voxelDepth * (VoxelWorld.CHUNK_Y + 2);
+        int metadataWidth = chunkSnapshotMetadataMaxX - chunkSnapshotMetadataMinX + 1;
+        int metadataDepth = chunkSnapshotMetadataMaxZ - chunkSnapshotMetadataMinZ + 1;
+        int metadataCount = metadataWidth * metadataDepth * VoxelWorld.CHUNK_Y;
         int total = voxelCount + metadataCount;
         int snapshotBudget = isUrgentChunk(chunkSnapshotX, chunkSnapshotY, chunkSnapshotZ) ?
                 2048 : MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC;
@@ -1854,39 +1896,47 @@ final class ChunkRenderer {
 
         while (chunkSnapshotCursor < end) {
             if (chunkSnapshotCursor < voxelCount) {
-                int index = chunkSnapshotCursor++;
-                snapshot.voxels[index] = world.get(x0 + chunkSnapshotVoxelX,
+                chunkSnapshotCursor++;
+                int storageIndex = (chunkSnapshotVoxelY + 1) * ChunkBuildSnapshot.PAD_AREA +
+                        (chunkSnapshotVoxelZ + 1) * (VoxelWorld.CHUNK_XZ + 2) +
+                        chunkSnapshotVoxelX + 1;
+                snapshot.voxels[storageIndex] = world.get(x0 + chunkSnapshotVoxelX,
                         y0 + chunkSnapshotVoxelY, z0 + chunkSnapshotVoxelZ);
-                if (++chunkSnapshotVoxelX > VoxelWorld.CHUNK_XZ) {
-                    chunkSnapshotVoxelX = -1;
-                    if (++chunkSnapshotVoxelZ > VoxelWorld.CHUNK_XZ) {
-                        chunkSnapshotVoxelZ = -1;
+                if (++chunkSnapshotVoxelX > chunkSnapshotVoxelMaxX) {
+                    chunkSnapshotVoxelX = chunkSnapshotVoxelMinX;
+                    if (++chunkSnapshotVoxelZ > chunkSnapshotVoxelMaxZ) {
+                        chunkSnapshotVoxelZ = chunkSnapshotVoxelMinZ;
                         chunkSnapshotVoxelY++;
                     }
                 }
             } else {
-                int metadataIndex = chunkSnapshotCursor++ - voxelCount;
+                chunkSnapshotCursor++;
+                int metadataIndex = (chunkSnapshotMetadataY * VoxelWorld.CHUNK_XZ +
+                        chunkSnapshotMetadataZ) * VoxelWorld.CHUNK_XZ +
+                        chunkSnapshotMetadataX;
                 snapshot.metadata[metadataIndex] = (byte)world.metadataAt(
                         x0 + chunkSnapshotMetadataX, y0 + chunkSnapshotMetadataY,
                         z0 + chunkSnapshotMetadataZ);
-                if (++chunkSnapshotMetadataX >= VoxelWorld.CHUNK_XZ) {
-                    chunkSnapshotMetadataX = 0;
-                    if (++chunkSnapshotMetadataZ >= VoxelWorld.CHUNK_XZ) {
-                        chunkSnapshotMetadataZ = 0;
+                if (++chunkSnapshotMetadataX > chunkSnapshotMetadataMaxX) {
+                    chunkSnapshotMetadataX = chunkSnapshotMetadataMinX;
+                    if (++chunkSnapshotMetadataZ > chunkSnapshotMetadataMaxZ) {
+                        chunkSnapshotMetadataZ = chunkSnapshotMetadataMinZ;
                         chunkSnapshotMetadataY++;
                     }
                 }
             }
         }
         if (chunkSnapshotCursor < total) return;
-        if (!chunkVoxelSnapshotValid || chunkVoxelSnapshotX != chunkSnapshotX ||
-                chunkVoxelSnapshotY != chunkSnapshotY || chunkVoxelSnapshotZ != chunkSnapshotZ ||
-                chunkVoxelSnapshotRevision != chunkSnapshotWorldRevision) {
+        if (chunkSnapshotFull) {
             chunkVoxelSnapshotValid = true;
+            chunkVoxelSnapshotFull = true;
             chunkVoxelSnapshotX = chunkSnapshotX;
             chunkVoxelSnapshotY = chunkSnapshotY;
             chunkVoxelSnapshotZ = chunkSnapshotZ;
             chunkVoxelSnapshotRevision = chunkSnapshotWorldRevision;
+        } else {
+            chunkVoxelSnapshotValid = false;
+            chunkVoxelSnapshotFull = false;
         }
 
         int lightRevision = world.lightRevision;
