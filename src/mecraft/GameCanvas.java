@@ -1175,6 +1175,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 miningDamage = 0.99f;
                 return;
             }
+            if (id != Block.FIRE) renderer.spawnBlockParticles(x, y, z, id);
             if (world.mode == 0 && Block.dropsItem(id) && canHarvest)
                 renderer.spawnDroppedItem(dropId, x, y, z);
             renderer.swingHand();
