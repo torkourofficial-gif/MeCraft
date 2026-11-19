@@ -342,7 +342,7 @@ final class DroppedItemSystem {
             mesh.setRenderingEnable(false);
             spriteMesh.setRenderingEnable(false);
             tntFlashMesh.setRenderingEnable(false);
-            return picked;
+            return world.mode == 1 ? -1 : picked;
         }
         int highestActiveSlot = -1;
         for (int i = 0; i < CAPACITY; i++)
@@ -362,7 +362,7 @@ final class DroppedItemSystem {
         mesh.setRenderingEnable(hasBlocks);
         spriteMesh.setRenderingEnable(hasSprites);
         tntFlashMesh.setRenderingEnable(hasTntFlash);
-        return picked;
+        return world.mode == 1 ? -1 : picked;
     }
 
     boolean consumeExplosion() {
