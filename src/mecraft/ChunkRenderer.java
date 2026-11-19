@@ -9,6 +9,7 @@ import javax.microedition.m3g.CompositingMode;
 import javax.microedition.m3g.Graphics3D;
 import javax.microedition.m3g.Group;
 import javax.microedition.m3g.Image2D;
+import javax.microedition.m3g.IndexBuffer;
 import javax.microedition.m3g.Light;
 import javax.microedition.m3g.Mesh;
 import javax.microedition.m3g.Material;
@@ -135,6 +136,15 @@ final class ChunkRenderer {
     private final int[] chunkQuadIndexFaceCounts = new int[8];
     private final TriangleStripArray[] chunkQuadIndexBuffers = new TriangleStripArray[8];
     private int chunkQuadIndexCursor;
+    // Batch up to three bounded material segments into one M3G Mesh, as in ComcraftHD.
+    // The reusable arrays cap temporary Java heap use and avoid per-batch array churn.
+    private static final int CHUNK_BATCH_SEGMENTS = 3;
+    private static final int CHUNK_BATCH_MAX_VERTICES =
+            CHUNK_BATCH_SEGMENTS * MAX_FACE_BUILDER_VERTICES;
+    private final FaceBuilder[] chunkBatchBuilders = new FaceBuilder[CHUNK_BATCH_SEGMENTS];
+    private final short[] chunkBatchPositions = new short[CHUNK_BATCH_MAX_VERTICES * 3];
+    private final short[] chunkBatchTexCoords = new short[CHUNK_BATCH_MAX_VERTICES * 2];
+    private final byte[] chunkBatchColors = new byte[CHUNK_BATCH_MAX_VERTICES * 4];
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
     private final int[] dirtySectorMasks = new int[CACHE_SIZE];
@@ -2118,26 +2128,39 @@ final class ChunkRenderer {
                 chunk.meshBuildPhase = 1;
                 break;
             }
-            if (chunk.meshBuildCurrent == null)
-                chunk.meshBuildCurrent = chunk.faceBuilders[chunk.meshBuildIndex];
-            if (chunk.meshBuildCurrent == null) {
-                chunk.meshBuildIndex++;
-                continue;
+
+            int batchCount = 0;
+            while (batchCount < CHUNK_BATCH_SEGMENTS &&
+                    chunk.meshBuildIndex < chunk.faceBuilders.length) {
+                if (chunk.meshBuildCurrent == null) {
+                    chunk.meshBuildCurrent = chunk.faceBuilders[chunk.meshBuildIndex];
+                    if (chunk.meshBuildCurrent == null) {
+                        chunk.meshBuildIndex++;
+                        continue;
+                    }
+                }
+                FaceBuilder builder = chunk.meshBuildCurrent;
+                chunk.meshBuildCurrent = builder.next;
+                chunk.faceBuilders[chunk.meshBuildIndex] = chunk.meshBuildCurrent;
+                builder.next = null;
+                if (chunk.meshBuildCurrent == null) chunk.meshBuildIndex++;
+                if (builder.vertexCount > 0) {
+                    chunkBatchBuilders[batchCount++] = builder;
+                } else {
+                    recycleFaceBuilder(builder);
+                }
             }
-            FaceBuilder builder = chunk.meshBuildCurrent;
-            chunk.meshBuildCurrent = builder.next;
-            chunk.faceBuilders[chunk.meshBuildIndex] = chunk.meshBuildCurrent;
-            builder.next = null;
-            if (builder.vertexCount > 0) {
-                float scale = builder.tile == Block.sideTile(Block.GRASS) ?
-                        0.999f / 16.0f : 1.0f / 16.0f;
-                Mesh mesh = makeMesh(builder, tileAppearance(builder.tile), scale);
+            if (batchCount > 0) {
+                Mesh mesh = makeChunkBatchMesh(chunkBatchBuilders, batchCount);
                 mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
                 appendChunkMesh(chunk, mesh);
+                for (int i = 0; i < batchCount; i++) {
+                    recycleFaceBuilder(chunkBatchBuilders[i]);
+                    chunkBatchBuilders[i] = null;
+                }
                 budget--;
                 installed++;
             }
-            recycleFaceBuilder(builder);
         }
         if (chunk.meshBuildPhase == 1 && budget > 0 &&
                 (installed == 0 || System.currentTimeMillis() - installStarted <
@@ -2190,6 +2213,49 @@ final class ChunkRenderer {
             chunk.meshBuildPhase = 4;
         }
         return chunk.meshBuildPhase >= 4;
+    }
+
+    /**
+     * Build one M3G Mesh from up to three bounded material segments.
+     * Each segment keeps its own index buffer and Appearance, while all of
+     * them share one VertexBuffer. This cuts native Mesh/VertexBuffer creation
+     * and scene-graph attachment calls without increasing any FaceBuilder cap.
+     */
+    private Mesh makeChunkBatchMesh(FaceBuilder[] builders, int count) {
+        int totalVertices = 0;
+        for (int i = 0; i < count; i++) totalVertices += builders[i].vertexCount;
+
+        int vertexOffset = 0;
+        IndexBuffer[] indices = new IndexBuffer[count];
+        Appearance[] appearances = new Appearance[count];
+        for (int i = 0; i < count; i++) {
+            FaceBuilder builder = builders[i];
+            System.arraycopy(builder.p, 0, chunkBatchPositions, vertexOffset * 3,
+                    builder.vertexCount * 3);
+            System.arraycopy(builder.uv, 0, chunkBatchTexCoords, vertexOffset * 2,
+                    builder.vertexCount * 2);
+            System.arraycopy(builder.c, 0, chunkBatchColors, vertexOffset * 4,
+                    builder.vertexCount * 4);
+
+            int[] strips = new int[builder.faceCount];
+            for (int face = 0; face < strips.length; face++) strips[face] = 4;
+            indices[i] = new TriangleStripArray(vertexOffset, strips);
+            appearances[i] = tileAppearance(builder.tile);
+            vertexOffset += builder.vertexCount;
+        }
+
+        VertexArray positions = new VertexArray(totalVertices, 3, 2);
+        positions.set(0, totalVertices, chunkBatchPositions);
+        VertexArray texCoords = new VertexArray(totalVertices, 2, 2);
+        texCoords.set(0, totalVertices, chunkBatchTexCoords);
+        VertexArray colors = new VertexArray(totalVertices, 4, 1);
+        colors.set(0, totalVertices, chunkBatchColors);
+        VertexBuffer vertices = new VertexBuffer();
+        vertices.setPositions(positions, 1.0f, null);
+        // The tiny shared inset preserves the grass-side atlas seam guard.
+        vertices.setTexCoords(0, texCoords, 0.999f / 16.0f, null);
+        vertices.setColors(colors);
+        return new Mesh(vertices, indices, appearances);
     }
 
     private void recycleChunkBuilders(Chunk chunk) {
