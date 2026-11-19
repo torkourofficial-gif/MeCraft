@@ -1524,7 +1524,7 @@ final class ChunkRenderer {
 
     /** Attach only the mesh just created this frame; never flush a full sector at once. */
     private void attachChunkSectorMeshes(int i, int cx, int cy, int cz, int sector,
-                                         Chunk replacement, int firstMesh) {
+                                         Chunk replacement) {
         Chunk parent = ensureChunkRoot(i, cx, cy, cz);
         int start = replacement.meshAttachedCount;
         int end = replacement.meshBuildAt;
@@ -1558,12 +1558,11 @@ final class ChunkRenderer {
         Chunk parent = ensureChunkRoot(i, cx, cy, cz);
 
         Chunk previous = parent.sectors[sector];
-        // Attach the finished replacement first. If M3G rejects an allocation,
-        // roll back only these new children and leave the previous sector intact.
+        // Meshes are normally attached incrementally as they are created.
+        // This catches an empty/new sector or any not-yet-attached final mesh.
         if (replacement != null && replacement.meshes != null &&
                 replacement.meshAttachedCount < replacement.meshBuildAt) {
-            attachChunkSectorMeshes(i, cx, cy, cz, sector, replacement,
-                    replacement.meshAttachedCount);
+            attachChunkSectorMeshes(i, cx, cy, cz, sector, replacement);
         }
 
         if (previous != null && previous != replacement) {
@@ -1863,7 +1862,7 @@ final class ChunkRenderer {
                     }
                     if (installingChunk.meshBuildAt > firstNewMesh) {
                         attachChunkSectorMeshes(installingSlot, installingX, installingY, installingZ,
-                                installingSector, installingChunk, firstNewMesh);
+                                installingSector, installingChunk);
                     }
                     if (chunkFinished) {
                         replaceChunkSector(installingSlot, installingX, installingY, installingZ,
