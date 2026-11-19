@@ -1932,8 +1932,8 @@ final class ChunkRenderer {
         int metadataDepth = chunkSnapshotMetadataMaxZ - chunkSnapshotMetadataMinZ + 1;
         int metadataCount = metadataWidth * metadataDepth * VoxelWorld.CHUNK_Y;
         int total = voxelCount + metadataCount;
-        int snapshotBudget = isUrgentChunk(chunkSnapshotX, chunkSnapshotY, chunkSnapshotZ) ?
-                2048 : MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC;
+        // Urgency changes queue order only; keep terrain reads frame-bounded.
+        int snapshotBudget = MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC;
         int end = chunkSnapshotCursor + snapshotBudget;
         if (end > total) end = total;
 
@@ -1999,8 +1999,7 @@ final class ChunkRenderer {
                     snapshot.lightX, snapshot.lightY, snapshot.lightZ,
                     snapshot.lightRadius, snapshot.lavaSource, MAX_CHUNK_TORCHES,
                     TORCH_LIGHT_RADIUS, LAVA_LIGHT_RADIUS,
-                    isUrgentChunk(chunkSnapshotX, chunkSnapshotY, chunkSnapshotZ) ?
-                            4096 : MAX_CHUNK_LIGHT_SCAN_CELLS_PER_SYNC,
+                    MAX_CHUNK_LIGHT_SCAN_CELLS_PER_SYNC,
                     snapshot.lightScanState);
             if (!lightsReady) return;
             snapshot.lightCount = snapshot.lightScanState[1];
