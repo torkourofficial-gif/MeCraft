@@ -1838,7 +1838,10 @@ final class ChunkRenderer {
                     chunkWorldX[installingSlot] == installingX &&
                     chunkWorldY[installingSlot] == installingY &&
                     chunkWorldZ[installingSlot] == installingZ;
-            if (installingEpoch != streamEpoch || !slotMatches) {
+            boolean editStillCurrent = slotMatches &&
+                    chunkSectorInvalidationVersion[installingSlot * SECTOR_COUNT + installingSector] ==
+                    installingInvalidationVersion;
+            if (installingEpoch != streamEpoch || !slotMatches || !editStillCurrent) {
                 recycleChunkBuilders(installingChunk);
                 if (slotMatches) markChunkDirtyMask(installingSlot, 1 << installingSector);
                 installingChunk = null;
