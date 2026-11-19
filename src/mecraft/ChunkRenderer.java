@@ -1535,11 +1535,10 @@ final class ChunkRenderer {
             chunks[i] = null;
         }
         residentChunks[i] = false;
-        // A removed chunk must be fully rebuilt on re-entry; also invalidate any
-        // snapshot or worker result still targeting the old resident geometry.
+        // A removed chunk must be fully rebuilt on re-entry. The all-sector mask
+        // rejects stale worker/install results without discarding a reusable snapshot.
         dirtyChunks[i] = true;
         dirtySectorMasks[i] = ALL_SECTORS_MASK;
-        chunkInvalidationVersion[i]++;
         chunkFrustumVisible[i] = false;
     }
 
