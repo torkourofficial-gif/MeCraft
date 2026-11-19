@@ -1511,34 +1511,33 @@ final class ChunkRenderer {
     }
 
     /**
-     * Build the replacement under a detached group. The resident sector stays
-     * visible until every new M3G mesh is ready, avoiding the temporary hole
-     * previously shown after breaking a block.
+     * Attach the completed replacement meshes immediately before retiring the
+     * old sector. Both operations happen in one renderer sync, so no empty
+     * frame is shown and no extra M3G Group is needed per sector.
      */
     private void attachChunkSectorMeshes(int i, int cx, int cy, int cz, int sector,
                                          Chunk replacement) {
-        if (replacement.meshRoot == null) replacement.meshRoot = new Group();
-        Group staging = replacement.meshRoot;
+        Chunk parent = ensureChunkRoot(i, cx, cy, cz);
         int start = replacement.meshAttachedCount;
         int end = replacement.meshBuildAt;
         try {
             for (int m = start; m < end; m++) {
                 Mesh mesh = replacement.meshes[m];
                 if (mesh != null) {
-                    staging.addChild(mesh);
+                    parent.meshRoot.addChild(mesh);
                     replacement.meshAttachedCount = m + 1;
                 }
             }
         } catch (OutOfMemoryError exhausted) {
             for (int m = replacement.meshAttachedCount - 1; m >= start; m--) {
-                try { staging.removeChild(replacement.meshes[m]); }
+                try { parent.meshRoot.removeChild(replacement.meshes[m]); }
                 catch (RuntimeException ignored) { }
             }
             replacement.meshAttachedCount = start;
             throw exhausted;
         } catch (RuntimeException failed) {
             for (int m = replacement.meshAttachedCount - 1; m >= start; m--) {
-                try { staging.removeChild(replacement.meshes[m]); }
+                try { parent.meshRoot.removeChild(replacement.meshes[m]); }
                 catch (RuntimeException ignored) { }
             }
             replacement.meshAttachedCount = start;
@@ -1556,9 +1555,6 @@ final class ChunkRenderer {
                 replacement.meshAttachedCount < replacement.meshBuildAt) {
             attachChunkSectorMeshes(i, cx, cy, cz, sector, replacement);
         }
-        if (replacement != null && replacement.meshRoot != null)
-            parent.meshRoot.addChild(replacement.meshRoot);
-
         if (previous != null && previous != replacement) {
             if (previous.meshRoot != null) {
                 parent.meshRoot.removeChild(previous.meshRoot);
@@ -2928,7 +2924,7 @@ final class ChunkRenderer {
 
     private static final class Chunk {
         Mesh[] meshes;
-        // Parent chunk root or detached per-sector staging root.
+        // Shared parent root for the resident chunk; sectors keep direct mesh lists.
         Group meshRoot;
         Chunk[] sectors;
         FaceBuilder[] faceBuilders;
