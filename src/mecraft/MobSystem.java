@@ -57,6 +57,7 @@ final class MobSystem {
     private final Appearance fireballAppearance;
     private final Group scene;
     private final DroppedItemSystem drops;
+    private final ParticleSystem particles;
     private final Appearance fireAppearance;
     private Appearance spiderEyesAppearance;
     private Image fleeceImage;
@@ -72,9 +73,10 @@ final class MobSystem {
     private boolean zombiesNightActive;
     private int nextArrow;
 
-    MobSystem(Group scene, DroppedItemSystem drops) throws IOException {
+    MobSystem(Group scene, DroppedItemSystem drops, ParticleSystem particles) throws IOException {
         this.scene = scene;
         this.drops = drops;
+        this.particles = particles;
         fireAppearance = skin(texture(GameAssets.image("fire.png")));
         fireballAppearance = createFireballAppearance();
         // Skeleton texture is needed by the fixed arrow pool; other species
@@ -373,6 +375,7 @@ final class MobSystem {
 
     private void beginDeath(Mob mob) {
         if (!mob.alive || mob.dying) return;
+        particles.spawnMobDeath(mob.x, mob.y, mob.z);
         // Death is a one-shot state change on this low-end renderer. Do not
         // keep a dead actor in the scene graph for a 20-tick transform animation.
         mob.alive = false;
