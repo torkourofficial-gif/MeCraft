@@ -57,7 +57,6 @@ final class MobSystem {
     private final Appearance fireballAppearance;
     private final Group scene;
     private final DroppedItemSystem drops;
-    private final ParticleSystem particles;
     private final Appearance fireAppearance;
     private Appearance spiderEyesAppearance;
     private Image fleeceImage;
@@ -73,10 +72,9 @@ final class MobSystem {
     private boolean zombiesNightActive;
     private int nextArrow;
 
-    MobSystem(Group scene, DroppedItemSystem drops, ParticleSystem particles) throws IOException {
+    MobSystem(Group scene, DroppedItemSystem drops) throws IOException {
         this.scene = scene;
         this.drops = drops;
-        this.particles = particles;
         fireAppearance = skin(texture(GameAssets.image("fire.png")));
         fireballAppearance = createFireballAppearance();
         // Skeleton texture is needed by the fixed arrow pool; other species
@@ -384,9 +382,6 @@ final class MobSystem {
         mob.fireTicks = 0;
         mob.fireMesh.setRenderingEnable(false);
         mob.root.setRenderingEnable(false);
-        // The hidden pooled model is reset when it respawns; touching its
-        // materials and pose here only creates extra native M3G state changes.
-        particles.spawnMobDeath(mob.x, mob.y, mob.z);
     }
 
     private void updateDeath(int slot, Mob mob) {
