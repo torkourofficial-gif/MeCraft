@@ -1493,35 +1493,52 @@ final class ChunkRenderer {
             chunks[i] = parent;
             terrain.addChild(parent.meshRoot);
         }
+
         Chunk previous = parent.sectors[sector];
+        // Attach the finished replacement first. If M3G rejects an allocation,
+        // roll back only these new children and leave the previous sector intact.
+        int attached = 0;
+        if (replacement != null && replacement.meshes != null) {
+            try {
+                for (int m = 0; m < replacement.meshBuildAt; m++) {
+                    Mesh mesh = replacement.meshes[m];
+                    if (mesh != null) {
+                        parent.meshRoot.addChild(mesh);
+                        attached++;
+                    }
+                }
+            } catch (OutOfMemoryError exhausted) {
+                for (int m = replacement.meshBuildAt - 1; m >= 0 && attached > 0; m--) {
+                    Mesh mesh = replacement.meshes[m];
+                    if (mesh != null) {
+                        try { parent.meshRoot.removeChild(mesh); } catch (RuntimeException ignored) { }
+                        attached--;
+                    }
+                }
+                throw exhausted;
+            } catch (RuntimeException failed) {
+                for (int m = replacement.meshBuildAt - 1; m >= 0 && attached > 0; m--) {
+                    Mesh mesh = replacement.meshes[m];
+                    if (mesh != null) {
+                        try { parent.meshRoot.removeChild(mesh); } catch (RuntimeException ignored) { }
+                        attached--;
+                    }
+                }
+                throw failed;
+            }
+        }
+
         if (previous != null) {
             if (previous.meshRoot != null) {
                 parent.meshRoot.removeChild(previous.meshRoot);
             } else if (previous.meshes != null) {
-                // Sector meshes are direct children of the single chunk root.
+                // Installed sector meshes are direct children of the shared chunk root.
                 for (int m = 0; m < previous.meshBuildAt; m++)
                     if (previous.meshes[m] != null) parent.meshRoot.removeChild(previous.meshes[m]);
             }
             recycleChunkBuilders(previous);
         }
         parent.sectors[sector] = replacement;
-        if (replacement != null) {
-            // Keep one scene-graph Group per chunk, not one extra Group per sector.
-            // New sector meshes are attached only after the complete replacement is ready.
-            if (replacement.meshRoot != null) {
-                for (int m = 0; m < replacement.meshBuildAt; m++) {
-                    Mesh mesh = replacement.meshes[m];
-                    if (mesh != null) {
-                        replacement.meshRoot.removeChild(mesh);
-                        parent.meshRoot.addChild(mesh);
-                    }
-                }
-                replacement.meshRoot = null;
-            } else if (replacement.meshes != null) {
-                for (int m = 0; m < replacement.meshBuildAt; m++)
-                    if (replacement.meshes[m] != null) parent.meshRoot.addChild(replacement.meshes[m]);
-            }
-        }
         chunkWorldX[i] = cx;
         chunkWorldY[i] = cy;
         chunkWorldZ[i] = cz;
