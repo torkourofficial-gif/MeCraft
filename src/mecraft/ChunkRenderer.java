@@ -2412,7 +2412,7 @@ final class ChunkRenderer {
                 sectorZ + SECTOR_SIZE_Z : VoxelWorld.CHUNK_XZ - 1;
         // Only copy this sector and a one-voxel horizontal halo. The halo supplies
         // neighbor visibility tests at internal sector edges without touching the
-        // other three sectors' scratch data.
+        // neighboring sectors' scratch data.
         for (int localY = 0; localY < VoxelWorld.CHUNK_Y; localY++) {
             int y = y0 + localY;
             for (int localZ = haloMinZ; localZ <= haloMaxZ; localZ++) {
