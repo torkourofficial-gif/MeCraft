@@ -2191,23 +2191,33 @@ final class ChunkRenderer {
         int sectorX = (sector & 1) * SECTOR_SIZE;
         int sectorZ = (sector >> 1) * SECTOR_SIZE;
 
-        prepareChunkLightMap(snapshot, x0, y0, z0, x1, y1, z1);
+        prepareChunkLightMap(snapshot, x0, y0, z0, x1, y1, z1, sectorX, sectorZ);
 
         // Copy voxels once into a compact linear buffer. Special geometry is
         // collected in the same pass, avoiding repeated coordinate arithmetic.
         int nonAirBlocks = 0;
-        int localIndex = 0;
-        for (int y = y0; y < y1; y++) {
-            int localY = y - y0;
-            for (int z = z0; z < z1; z++) {
-                int localZ = z - z0;
-                int localX = 0;
-                for (int x = x0; x < x1; x++, localIndex++, localX++) {
-                    byte id = snapshot.block(x - x0, y - y0, z - z0);
-                    chunkVoxelScratch[localIndex] = id;
-                    chunkLightScratch[localIndex] = (byte)(id == Block.LAVA ? 14 : torchLightAt(localIndex));
-                    if (id == Block.AIR || localX < sectorX || localX >= sectorX + SECTOR_SIZE ||
+        int haloMinX = sectorX > 0 ? sectorX - 1 : 0;
+        int haloMaxX = sectorX + SECTOR_SIZE < VoxelWorld.CHUNK_XZ ?
+                sectorX + SECTOR_SIZE : VoxelWorld.CHUNK_XZ - 1;
+        int haloMinZ = sectorZ > 0 ? sectorZ - 1 : 0;
+        int haloMaxZ = sectorZ + SECTOR_SIZE < VoxelWorld.CHUNK_XZ ?
+                sectorZ + SECTOR_SIZE : VoxelWorld.CHUNK_XZ - 1;
+        // Only copy this sector and a one-voxel horizontal halo. The halo supplies
+        // neighbor visibility tests at internal sector edges without touching the
+        // other three sectors' scratch data.
+        for (int localY = 0; localY < VoxelWorld.CHUNK_Y; localY++) {
+            int y = y0 + localY;
+            for (int localZ = haloMinZ; localZ <= haloMaxZ; localZ++) {
+                int z = z0 + localZ;
+                int row = localY * CHUNK_AREA + localZ * VoxelWorld.CHUNK_XZ;
+                for (int localX = haloMinX; localX <= haloMaxX; localX++) {
+                    byte id = snapshot.block(localX, localY, localZ);
+                    int voxelIndex = row + localX;
+                    chunkVoxelScratch[voxelIndex] = id;
+                    if (localX < sectorX || localX >= sectorX + SECTOR_SIZE ||
                             localZ < sectorZ || localZ >= sectorZ + SECTOR_SIZE) continue;
+                    chunkLightScratch[voxelIndex] = (byte)(id == Block.LAVA ? 14 : torchLightAt(voxelIndex));
+                    if (id == Block.AIR) continue;
                     nonAirBlocks++;
                     if (id == Block.PORTAL) {
                         if (portals == null) portals = acquirePortalBuilder();
@@ -2569,9 +2579,14 @@ final class ChunkRenderer {
      * changes lighting lookup from "all sources per voxel" to one byte read.
      */
     private void prepareChunkLightMap(ChunkBuildSnapshot snapshot, int x0, int y0, int z0,
-                                      int x1, int y1, int z1) {
-        int volume = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ;
-        for (int i = 0; i < volume; i++) chunkLightScratch[i] = 0;
+                                      int x1, int y1, int z1, int sectorX, int sectorZ) {
+        // Light values are consumed only by vertices in this sector.
+        for (int y = 0; y < VoxelWorld.CHUNK_Y; y++) {
+            int row = y * CHUNK_AREA;
+            for (int z = sectorZ; z < sectorZ + SECTOR_SIZE; z++)
+                for (int x = sectorX; x < sectorX + SECTOR_SIZE; x++)
+                    chunkLightScratch[row + z * VoxelWorld.CHUNK_XZ + x] = 0;
+        }
         for (int source = 0; source < snapshot.lightCount; source++) {
             int sx = snapshot.lightX[source];
             int sy = snapshot.lightY[source];
@@ -2580,12 +2595,12 @@ final class ChunkRenderer {
             int minX = sx - radius, maxX = sx + radius;
             int minY = sy - radius, maxY = sy + radius;
             int minZ = sz - radius, maxZ = sz + radius;
-            if (minX < x0) minX = x0;
-            if (maxX >= x1) maxX = x1 - 1;
+            if (minX < x0 + sectorX) minX = x0 + sectorX;
+            if (maxX >= x0 + sectorX + SECTOR_SIZE) maxX = x0 + sectorX + SECTOR_SIZE - 1;
             if (minY < y0) minY = y0;
             if (maxY >= y1) maxY = y1 - 1;
-            if (minZ < z0) minZ = z0;
-            if (maxZ >= z1) maxZ = z1 - 1;
+            if (minZ < z0 + sectorZ) minZ = z0 + sectorZ;
+            if (maxZ >= z0 + sectorZ + SECTOR_SIZE) maxZ = z0 + sectorZ + SECTOR_SIZE - 1;
             int multiplier = snapshot.lavaSource[source] ? 2 : 3;
             for (int y = minY; y <= maxY; y++) {
                 int dy = Math.abs(y - sy);
