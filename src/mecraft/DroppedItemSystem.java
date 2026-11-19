@@ -315,12 +315,20 @@ final class DroppedItemSystem {
             float dy = y[i] - (world.playerY + 0.9f);
             float dz = z[i] - world.playerZ;
             boolean inPickupRange = dx * dx + dy * dy + dz * dz <= PICKUP_RADIUS_SQUARED;
-            if (pickupDelay[i] == 0 && picked < 0 && inventory[id] < ItemCatalog.maxStack(id) && inPickupRange) {
-                inventory[id]++;
+            boolean creativePickup = world.mode == 1;
+            if (pickupDelay[i] == 0 && picked < 0 && inPickupRange &&
+                    (creativePickup || inventory[id] < ItemCatalog.maxStack(id))) {
+                // Creative players can clear drops by touching them, but never
+                // transfer those items into the persistent inventory.
+                if (!creativePickup) {
+                    inventory[id]++;
+                    picked = id;
+                } else {
+                    picked = id; // Keep pickup processing to one item per tick.
+                }
                 itemId[i] = 0;
                 tntFuse[i] = 0;
                 activeCount--;
-                picked = id;
                 writeItem(i);
             } else {
                 writeItem(i);
