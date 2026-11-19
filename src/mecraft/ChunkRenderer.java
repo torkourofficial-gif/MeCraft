@@ -37,7 +37,8 @@ final class ChunkRenderer {
     // A material is split into bounded linked segments; no builder grows without limit.
     private static final int MAX_FACE_BUILDER_VERTICES = 2048;
     private static final int MAX_CHUNK_MESHES_PER_SYNC = 1;
-    private static final int MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 4096;
+    private static final int MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 512;
+    private static final int MAX_URGENT_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 4096;
     private static final int MAX_CHUNK_LIGHT_SCAN_CELLS_PER_SYNC = 512;
     private static final long MAX_CHUNK_MESH_INSTALL_MILLIS = 6L;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
@@ -1955,8 +1956,11 @@ final class ChunkRenderer {
         int metadataDepth = chunkSnapshotMetadataMaxZ - chunkSnapshotMetadataMinZ + 1;
         int metadataCount = metadataWidth * metadataDepth * VoxelWorld.CHUNK_Y;
         int total = voxelCount + metadataCount;
-        // Urgency changes queue order only; keep terrain reads frame-bounded.
-        int snapshotBudget = MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC;
+        // Spend a larger bounded slice on the block the player just edited;
+        // keep off-screen/background terrain work at the smaller budget.
+        int snapshotBudget = isUrgentChunk(chunkSnapshotX, chunkSnapshotY, chunkSnapshotZ) ?
+                MAX_URGENT_CHUNK_SNAPSHOT_CELLS_PER_SYNC :
+                MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC;
         int end = chunkSnapshotCursor + snapshotBudget;
         if (end > total) end = total;
 
