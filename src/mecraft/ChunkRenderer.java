@@ -1842,14 +1842,15 @@ final class ChunkRenderer {
                     // Player edits get queue priority, not a larger per-frame
                     // allocation burst. Keep the same HTC frame budget for every chunk.
                     int meshBudget = MAX_CHUNK_MESHES_PER_SYNC;
-                    if (finishChunkMeshStep(installingChunk, meshBudget)) {
+                    boolean chunkFinished = finishChunkMeshStep(installingChunk, meshBudget);
+                    if (!installingPreviousSectorReleased && installingChunk.meshBuildAt > 0) {
+                        releasePreviousChunkSector(installingSlot, installingSector);
+                        installingPreviousSectorReleased = true;
+                    }
+                    if (chunkFinished) {
                         replaceChunkSector(installingSlot, installingX, installingY, installingZ,
                                 installingSector, installingChunk);
                         installingChunk = null;
-                    } else if (!installingPreviousSectorReleased &&
-                            installingChunk.meshBuildAt > 0) {
-                        releasePreviousChunkSector(installingSlot, installingSector);
-                        installingPreviousSectorReleased = true;
                     }
                 } catch (OutOfMemoryError exhausted) {
                     recycleChunkBuilders(installingChunk);
