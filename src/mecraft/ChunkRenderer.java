@@ -1572,6 +1572,7 @@ final class ChunkRenderer {
         int lastRz = lastChunkZ - centerZ + MAX_STREAM_RADIUS;
         int best = -1;
         float bestDistance = Float.MAX_VALUE;
+        boolean urgentChunkVisible = false;
 
         // Search and rank candidates only in the active window, not all 648
         // cache slots. In shortest mode this is 32 sectors (2x2x8).
@@ -1600,6 +1601,8 @@ final class ChunkRenderer {
                         // even when its cached coordinates already match.
                         chunkFrustumVisible[i] = visible;
                     }
+                    if (visible && isUrgentChunk(cx, cy, cz))
+                        urgentChunkVisible = true;
                     if (!visible) continue;
                     if (!residentChunks[i] || dirtyChunks[i]) {
                         if (isUrgentChunk(cx, cy, cz)) {
@@ -1618,9 +1621,17 @@ final class ChunkRenderer {
             }
         }
 
+        // If the edited chunk has left the active visible window, release its
+        // priority. Its dirty state is retained when resident; if it later re-enters,
+        // normal streaming rebuilds it. Otherwise stale urgency can starve all streaming.
+        boolean urgentPending = urgentChunkX != Integer.MIN_VALUE;
+        if (urgentPending && !urgentChunkVisible) {
+            urgentChunkX = urgentChunkY = urgentChunkZ = Integer.MIN_VALUE;
+            urgentPending = false;
+        }
+
         // If a player edit arrives while background streaming is in progress,
         // abandon unfinished background work so the edited chunk goes first.
-        boolean urgentPending = urgentChunkX != Integer.MIN_VALUE;
         if (urgentPending && chunkSnapshotPreparing &&
                 !isUrgentChunk(chunkSnapshotX, chunkSnapshotY, chunkSnapshotZ)) {
             chunkSnapshotPreparing = false;
