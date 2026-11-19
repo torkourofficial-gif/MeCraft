@@ -75,11 +75,11 @@ final class ParticleSystem {
 
     void spawnBlockDestroy(int bx, int by, int bz, int blockId) {
         spawn(bx + 0.30f, by + 0.38f, bz + 0.50f,
-                -0.035f, 0.055f, 0.012f, 0.075f, Block.sideTile(blockId));
+                -0.035f, 0.055f, 0.012f, 0.075f, Block.sideTile((byte) blockId));
         spawn(bx + 0.68f, by + 0.55f, bz + 0.32f,
-                0.030f, 0.070f, -0.025f, 0.075f, Block.sideTile(blockId));
+                0.030f, 0.070f, -0.025f, 0.075f, Block.sideTile((byte) blockId));
         spawn(bx + 0.48f, by + 0.72f, bz + 0.68f,
-                0.008f, 0.085f, 0.035f, 0.065f, Block.sideTile(blockId));
+                0.008f, 0.085f, 0.035f, 0.065f, Block.sideTile((byte) blockId));
         uploadTextureCoordinates();
     }
 
