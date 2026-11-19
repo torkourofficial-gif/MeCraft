@@ -18,6 +18,8 @@ final class ParticleSystem {
     private static final int VERTICES = CAPACITY * 4;
     private static final float SCALE = 256.0f;
     private static final int LIFE = 8;
+    private static final float[] EXPLOSION_X = { -1.0f, -0.7f, 0.0f, 0.7f, 1.0f, 0.7f, 0.0f, -0.7f };
+    private static final float[] EXPLOSION_Z = { 0.0f, -0.7f, -1.0f, -0.7f, 0.0f, 0.7f, 1.0f, 0.7f };
 
     final Mesh mesh;
     private final float[] x = new float[CAPACITY];
@@ -43,9 +45,10 @@ final class ParticleSystem {
         short bound = (short)(16.0f * SCALE);
         for (int i = 0; i < VERTICES; i++) {
             int p = i * 3;
-            positions[p] = (short)-bound;
-            positions[p + 1] = (short)-bound;
-            positions[p + 2] = (short)-bound;
+            int corner = (i >> 2) & 7;
+            positions[p] = (short)((corner & 1) == 0 ? -bound : bound);
+            positions[p + 1] = (short)((corner & 2) == 0 ? -bound : bound);
+            positions[p + 2] = (short)((corner & 4) == 0 ? -bound : bound);
         }
         positionArray.set(0, VERTICES, positions);
         texCoordArray.set(0, VERTICES, texCoords);
@@ -79,12 +82,10 @@ final class ParticleSystem {
 
     /** Eight tiny fire-colored squares make the TNT blast readable without a heavy emitter. */
     void spawnExplosion(float px, float py, float pz) {
-        final float[] dx = { -1.0f, -0.7f, 0.0f, 0.7f, 1.0f, 0.7f, 0.0f, -0.7f };
-        final float[] dz = { 0.0f, -0.7f, -1.0f, -0.7f, 0.0f, 0.7f, 1.0f, 0.7f };
         int tile = Block.sideTile(Block.FIRE);
         for (int i = 0; i < CAPACITY; i++) {
             float lift = (i & 1) == 0 ? 0.055f : 0.095f;
-            spawn(px, py, pz, dx[i] * 0.105f, lift, dz[i] * 0.105f,
+            spawn(px, py, pz, EXPLOSION_X[i] * 0.105f, lift, EXPLOSION_Z[i] * 0.105f,
                     0.16f, tile);
         }
         uploadTextureCoordinates();
