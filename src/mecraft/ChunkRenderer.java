@@ -1506,50 +1506,67 @@ final class ChunkRenderer {
         parent.sectors[sector] = null;
     }
 
-    private void replaceChunkSector(int i, int cx, int cy, int cz, int sector, Chunk replacement) {
+    private Chunk ensureChunkRoot(int i, int cx, int cy, int cz) {
         Chunk parent = chunks[i];
-        if (parent == null) {
-            parent = new Chunk();
-            parent.sectors = new Chunk[SECTOR_COUNT];
-            parent.meshRoot = new Group();
-            parent.meshRoot.setRenderingEnable(chunkFrustumVisible[i]);
-            parent.worldX = cx * VoxelWorld.CHUNK_XZ;
-            parent.worldY = cy * VoxelWorld.CHUNK_Y;
-            parent.worldZ = cz * VoxelWorld.CHUNK_XZ;
-            parent.renderingEnabled = chunkFrustumVisible[i];
-            chunks[i] = parent;
-            terrain.addChild(parent.meshRoot);
+        if (parent != null) return parent;
+        parent = new Chunk();
+        parent.sectors = new Chunk[SECTOR_COUNT];
+        parent.meshRoot = new Group();
+        parent.meshRoot.setRenderingEnable(chunkFrustumVisible[i]);
+        parent.worldX = cx * VoxelWorld.CHUNK_XZ;
+        parent.worldY = cy * VoxelWorld.CHUNK_Y;
+        parent.worldZ = cz * VoxelWorld.CHUNK_XZ;
+        parent.renderingEnabled = chunkFrustumVisible[i];
+        chunks[i] = parent;
+        terrain.addChild(parent.meshRoot);
+        return parent;
+    }
+
+    /** Attach only the mesh just created this frame; never flush a full sector at once. */
+    private void attachChunkSectorMeshes(int i, int cx, int cy, int cz, int sector,
+                                         Chunk replacement, int firstMesh) {
+        Chunk parent = ensureChunkRoot(i, cx, cy, cz);
+        int start = replacement.meshAttachedCount;
+        int end = replacement.meshBuildAt;
+        try {
+            for (int m = start; m < end; m++) {
+                Mesh mesh = replacement.meshes[m];
+                if (mesh != null) {
+                    parent.meshRoot.addChild(mesh);
+                    replacement.meshAttachedCount = m + 1;
+                }
+            }
+        } catch (OutOfMemoryError exhausted) {
+            for (int m = replacement.meshAttachedCount - 1; m >= start; m--) {
+                try { parent.meshRoot.removeChild(replacement.meshes[m]); }
+                catch (RuntimeException ignored) { }
+            }
+            replacement.meshAttachedCount = start;
+            throw exhausted;
+        } catch (RuntimeException failed) {
+            for (int m = replacement.meshAttachedCount - 1; m >= start; m--) {
+                try { parent.meshRoot.removeChild(replacement.meshes[m]); }
+                catch (RuntimeException ignored) { }
+            }
+            replacement.meshAttachedCount = start;
+            throw failed;
         }
+        parent.sectors[sector] = replacement;
+    }
+
+    private void replaceChunkSector(int i, int cx, int cy, int cz, int sector, Chunk replacement) {
+        Chunk parent = ensureChunkRoot(i, cx, cy, cz);
 
         Chunk previous = parent.sectors[sector];
         // Attach the finished replacement first. If M3G rejects an allocation,
         // roll back only these new children and leave the previous sector intact.
-        int attached = 0;
-        if (replacement != null && replacement.meshes != null) {
-            try {
-                for (int m = 0; m < replacement.meshBuildAt; m++) {
-                    Mesh mesh = replacement.meshes[m];
-                    if (mesh != null) {
-                        parent.meshRoot.addChild(mesh);
-                        attached++;
-                    }
-                }
-            } catch (OutOfMemoryError exhausted) {
-                for (int m = attached - 1; m >= 0; m--) {
-                    try { parent.meshRoot.removeChild(replacement.meshes[m]); }
-                    catch (RuntimeException ignored) { }
-                }
-                throw exhausted;
-            } catch (RuntimeException failed) {
-                for (int m = attached - 1; m >= 0; m--) {
-                    try { parent.meshRoot.removeChild(replacement.meshes[m]); }
-                    catch (RuntimeException ignored) { }
-                }
-                throw failed;
-            }
+        if (replacement != null && replacement.meshes != null &&
+                replacement.meshAttachedCount < replacement.meshBuildAt) {
+            attachChunkSectorMeshes(i, cx, cy, cz, sector, replacement,
+                    replacement.meshAttachedCount);
         }
 
-        if (previous != null) {
+        if (previous != null && previous != replacement) {
             if (previous.meshRoot != null) {
                 parent.meshRoot.removeChild(previous.meshRoot);
             } else if (previous.meshes != null) {
@@ -1838,10 +1855,15 @@ final class ChunkRenderer {
                     // Player edits get queue priority, not a larger per-frame
                     // allocation burst. Keep the same HTC frame budget for every chunk.
                     int meshBudget = MAX_CHUNK_MESHES_PER_SYNC;
+                    int firstNewMesh = installingChunk.meshBuildAt;
                     boolean chunkFinished = finishChunkMeshStep(installingChunk, meshBudget);
-                    if (!installingPreviousSectorReleased && installingChunk.meshBuildAt > 0) {
+                    if (!installingPreviousSectorReleased && installingChunk.meshBuildAt > firstNewMesh) {
                         releasePreviousChunkSector(installingSlot, installingSector);
                         installingPreviousSectorReleased = true;
+                    }
+                    if (installingChunk.meshBuildAt > firstNewMesh) {
+                        attachChunkSectorMeshes(installingSlot, installingX, installingY, installingZ,
+                                installingSector, installingChunk, firstNewMesh);
                     }
                     if (chunkFinished) {
                         replaceChunkSector(installingSlot, installingX, installingY, installingZ,
@@ -2925,6 +2947,7 @@ final class ChunkRenderer {
         boolean renderingEnabled;
         int worldX, worldY, worldZ;
         int meshBuildIndex, meshBuildPhase, meshBuildAt;
+        int meshAttachedCount;
         FaceBuilder meshBuildCurrent;
     }
 
