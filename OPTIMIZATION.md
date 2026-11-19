@@ -172,3 +172,14 @@ The particle hot-path and the bounded player/mob texture changes are intentional
 - New-world loading remains visible for at least five seconds, with any remaining delay sleeping only on the loader thread. This is a minimum display time, not a timeout: a slow device can take longer.
 - The extra reusable staging memory is bounded to one block chunk plus its height and biome columns. Thread creation and MIN_PRIORITY use APIs present in CLDC 1.1; priority is advisory and does not guarantee CPU scheduling on every device ([CLDC 1.1 Thread API](https://docs.oracle.com/javame/config/cldc/ref-impl/cldc1.1/jsr139/java/lang/Thread.html)).
 - No HTC S730 timing or FPS measurement is available yet. The optimization removes the common synchronous generation from mesh capture, but does not promise 20 FPS or eliminate cache-miss stalls.
+
+
+## Local block-edit rebuilds (November 2026)
+
+Chunk mesh invalidation is now divided into eight rectangular sectors per 16x8x16 chunk (4x8x8 voxels each), instead of four 8x8x8 sectors. A normal block edit therefore rebuilds at most 256 central voxels, plus a one-voxel horizontal visibility halo, rather than 512. Greedy meshing, atlas materials, special block geometry, and the existing worker/M3G ownership model are preserved.
+
+The urgent snapshot path now uses the same 512-cell per-frame budget as background snapshots. A partial edit snapshot is copied over bounded frame slices instead of using a 4096-cell urgent burst. For a 4x8 sector, the padded voxel region and metadata total 856 cells, so it takes at most two 512-cell sync slices before the worker receives the build.
+
+The sector grid uses four columns and two rows. Dirty-region masks, urgent-sector selection, sector snapshot coordinates, mesh traversal, and per-sector light rasterization all use the rectangular dimensions. This keeps edits local while limiting the additional sector bookkeeping compared with a 4x4 grid.
+
+Validation note: source-level invariants were checked against the current branch and chunk dimensions (16x8x16). A Java ME SDK/CLDC 1.1 + JSR-184 toolchain and HTC S730/JBed runtime were not available in this environment, so compilation, device heap measurements, and frame-time benchmarks remain to be run before claiming a 20 FPS result.
