@@ -28,8 +28,10 @@ final class ChunkRenderer {
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
-    private static final int SECTOR_SIZE = VoxelWorld.CHUNK_XZ / 2;
-    private static final int SECTOR_COUNT = 4;
+    // Small rebuild islands: one edit rebuilds at most 4x16x4 voxels.
+    private static final int SECTOR_SIZE = VoxelWorld.CHUNK_XZ / 4;
+    private static final int SECTORS_PER_AXIS = VoxelWorld.CHUNK_XZ / SECTOR_SIZE;
+    private static final int SECTOR_COUNT = SECTORS_PER_AXIS * SECTORS_PER_AXIS;
     private static final int ALL_SECTORS_MASK = (1 << SECTOR_COUNT) - 1;
     private static final int TORCH_LIGHT_RADIUS = 4;
     private static final int LAVA_LIGHT_RADIUS = 6;
@@ -38,7 +40,8 @@ final class ChunkRenderer {
     private static final int MAX_FACE_BUILDER_VERTICES = 2048;
     private static final int MAX_CHUNK_MESHES_PER_SYNC = 1;
     private static final int MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 512;
-    private static final int MAX_URGENT_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 4096;
+    // Even the edited sector is copied in ordinary frame-sized slices.
+    private static final int MAX_URGENT_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 512;
     private static final int MAX_CHUNK_LIGHT_SCAN_CELLS_PER_SYNC = 512;
     private static final long MAX_CHUNK_MESH_INSTALL_MILLIS = 6L;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
@@ -1298,7 +1301,7 @@ final class ChunkRenderer {
         urgentChunkZ = cz;
         int localX = x - cx * VoxelWorld.CHUNK_XZ;
         int localZ = z - cz * VoxelWorld.CHUNK_XZ;
-        urgentSector = (localZ >= SECTOR_SIZE ? 2 : 0) + (localX >= SECTOR_SIZE ? 1 : 0);
+        urgentSector = (localZ / SECTOR_SIZE) * SECTORS_PER_AXIS + localX / SECTOR_SIZE;
 
         // For the usual one-voxel edit, sync() will invalidate this exact
         // chunk neighborhood from VoxelWorld.changedX/Y/Z. Avoid doing the
@@ -1447,13 +1450,14 @@ final class ChunkRenderer {
         int z0 = chunkWorldZ[slot] * VoxelWorld.CHUNK_XZ;
         int localMinX = minX - x0, localMaxX = maxX - x0;
         int localMinZ = minZ - z0, localMaxZ = maxZ - z0;
-        int firstX = localMinX < SECTOR_SIZE ? 0 : 1;
-        int lastX = localMaxX < SECTOR_SIZE ? 0 : 1;
-        int firstZ = localMinZ < SECTOR_SIZE ? 0 : 1;
-        int lastZ = localMaxZ < SECTOR_SIZE ? 0 : 1;
+        int firstX = localMinX / SECTOR_SIZE;
+        int lastX = localMaxX / SECTOR_SIZE;
+        int firstZ = localMinZ / SECTOR_SIZE;
+        int lastZ = localMaxZ / SECTOR_SIZE;
         int mask = 0;
         for (int sz = firstZ; sz <= lastZ; sz++)
-            for (int sx = firstX; sx <= lastX; sx++) mask |= 1 << (sz * 2 + sx);
+            for (int sx = firstX; sx <= lastX; sx++)
+                mask |= 1 << (sz * SECTORS_PER_AXIS + sx);
         if (!residentChunks[slot]) mask = ALL_SECTORS_MASK;
         markChunkDirtyMask(slot, mask);
     }
@@ -1904,8 +1908,8 @@ final class ChunkRenderer {
                 chunkVoxelSnapshotX == cx && chunkVoxelSnapshotY == cy &&
                 chunkVoxelSnapshotZ == cz && chunkVoxelSnapshotVersion == chunkInvalidationVersion[slot];
         chunkSnapshotFull = !residentChunks[slot] || cachedFullSnapshot;
-        int sectorX = (chunkSnapshotSector & 1) * SECTOR_SIZE;
-        int sectorZ = (chunkSnapshotSector >> 1) * SECTOR_SIZE;
+        int sectorX = (chunkSnapshotSector % SECTORS_PER_AXIS) * SECTOR_SIZE;
+        int sectorZ = (chunkSnapshotSector / SECTORS_PER_AXIS) * SECTOR_SIZE;
         if (chunkSnapshotFull) {
             chunkSnapshotVoxelMinX = -1;
             chunkSnapshotVoxelMaxX = VoxelWorld.CHUNK_XZ;
@@ -2390,8 +2394,8 @@ final class ChunkRenderer {
         int x1 = x0 + VoxelWorld.CHUNK_XZ;
         int y1 = y0 + VoxelWorld.CHUNK_Y;
         int z1 = z0 + VoxelWorld.CHUNK_XZ;
-        int sectorX = (sector & 1) * SECTOR_SIZE;
-        int sectorZ = (sector >> 1) * SECTOR_SIZE;
+        int sectorX = (sector % SECTORS_PER_AXIS) * SECTOR_SIZE;
+        int sectorZ = (sector / SECTORS_PER_AXIS) * SECTOR_SIZE;
 
         prepareChunkLightMap(snapshot, x0, y0, z0, x1, y1, z1, sectorX, sectorZ);
 
