@@ -1504,6 +1504,8 @@ final class ChunkRenderer {
     private void rebuildWorld(VoxelWorld world) {
         streamEpoch++;
         chunkSnapshotPreparing = false;
+        urgentChunkX = urgentChunkY = urgentChunkZ = Integer.MIN_VALUE;
+        urgentSector = -1;
         chunkLightSnapshotValid = false;
         chunkVoxelSnapshotValid = false;
         if (installingChunk != null) {
@@ -1702,6 +1704,7 @@ final class ChunkRenderer {
         boolean urgentPending = urgentChunkX != Integer.MIN_VALUE;
         if (urgentPending && !urgentChunkVisible) {
             urgentChunkX = urgentChunkY = urgentChunkZ = Integer.MIN_VALUE;
+            urgentSector = -1;
             urgentPending = false;
         }
 
