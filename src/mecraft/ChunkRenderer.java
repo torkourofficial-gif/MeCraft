@@ -1637,7 +1637,11 @@ final class ChunkRenderer {
             chunkSnapshotPreparing = false;
         }
         if (urgentPending && installingChunk != null &&
+                installingChunk.meshBuildAt == 0 &&
                 !isUrgentChunk(installingX, installingY, installingZ)) {
+            // Preempt only before native M3G meshes exist. Once installation has
+            // allocated scene objects, finish it incrementally instead of
+            // abandoning native allocations during a player edit.
             recycleChunkBuilders(installingChunk);
             if (installingSlot >= 0 && installingSlot < CACHE_SIZE)
                 dirtyChunks[installingSlot] = true;
