@@ -173,7 +173,7 @@ final class ChunkRenderer {
     private final FaceBuilder[] chunkFaceBuilderTails = new FaceBuilder[TILE_COUNT];
     // A bounded pool avoids allocating FaceBuilder arrays for every streamed
     // chunk without retaining one builder for every possible tile/light pair.
-    private final FaceBuilder[] freeFaceBuilders = new FaceBuilder[16];
+    private final FaceBuilder[] freeFaceBuilders = new FaceBuilder[8];
     private int freeFaceBuilderCount;
     private final FlowerBuilder[] freeFlowerBuilders = new FlowerBuilder[2];
     private final FireBuilder[] freeFireBuilders = new FireBuilder[2];
