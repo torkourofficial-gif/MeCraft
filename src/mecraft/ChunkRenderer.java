@@ -114,6 +114,9 @@ final class ChunkRenderer {
     private boolean chunkSnapshotPreparing;
     private int chunkSnapshotCursor, chunkSnapshotInvalidationVersion;
     private boolean chunkLightSnapshotValid;
+    private boolean chunkVoxelSnapshotValid;
+    private int chunkVoxelSnapshotX, chunkVoxelSnapshotY, chunkVoxelSnapshotZ, chunkVoxelSnapshotRevision;
+    private int chunkSnapshotWorldRevision;
     private int chunkLightSnapshotX, chunkLightSnapshotY, chunkLightSnapshotZ;
     private int chunkLightSnapshotRevision, chunkLightSnapshotCount;
     private int chunkSnapshotVoxelX, chunkSnapshotVoxelY, chunkSnapshotVoxelZ;
@@ -1429,6 +1432,7 @@ final class ChunkRenderer {
         int mask = 0;
         for (int sz = firstZ; sz <= lastZ; sz++)
             for (int sx = firstX; sx <= lastX; sx++) mask |= 1 << (sz * 2 + sx);
+        if (!residentChunks[slot]) mask = ALL_SECTORS_MASK;
         markChunkDirtyMask(slot, mask);
     }
 
@@ -1505,6 +1509,7 @@ final class ChunkRenderer {
         streamEpoch++;
         chunkSnapshotPreparing = false;
         chunkLightSnapshotValid = false;
+        chunkVoxelSnapshotValid = false;
         if (installingChunk != null) {
             recycleChunkBuilders(installingChunk);
             installingChunk = null;
@@ -1802,7 +1807,13 @@ final class ChunkRenderer {
             return;
         }
         chunkSnapshotPreparing = true;
-        chunkSnapshotCursor = 0;
+        chunkSnapshotWorldRevision = world.revision;
+        boolean cachedVoxels = chunkVoxelSnapshotValid &&
+                chunkVoxelSnapshotX == cx && chunkVoxelSnapshotY == cy &&
+                chunkVoxelSnapshotZ == cz && chunkVoxelSnapshotRevision == world.revision;
+        chunkSnapshotCursor = cachedVoxels ?
+                ChunkBuildSnapshot.PAD_AREA * (VoxelWorld.CHUNK_Y + 2) +
+                VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ : 0;
         chunkSnapshotVoxelX = chunkSnapshotVoxelY = chunkSnapshotVoxelZ = -1;
         chunkSnapshotMetadataX = chunkSnapshotMetadataY = chunkSnapshotMetadataZ = 0;
         chunkSnapshotSlot = slot;
@@ -1822,7 +1833,7 @@ final class ChunkRenderer {
                 chunkWorldY[slot] == chunkSnapshotY &&
                 chunkWorldZ[slot] == chunkSnapshotZ;
         if (chunkSnapshotEpoch != streamEpoch || !slotMatches ||
-                !chunkFrustumVisible[slot] ||
+                world.revision != chunkSnapshotWorldRevision || !chunkFrustumVisible[slot] ||
                 chunkInvalidationVersion[slot] != chunkSnapshotInvalidationVersion ||
                 chunkBuildWorkerBusy || buildResultReady || installingChunk != null) {
             chunkSnapshotPreparing = false;
@@ -1869,6 +1880,15 @@ final class ChunkRenderer {
             }
         }
         if (chunkSnapshotCursor < total) return;
+        if (!chunkVoxelSnapshotValid || chunkVoxelSnapshotX != chunkSnapshotX ||
+                chunkVoxelSnapshotY != chunkSnapshotY || chunkVoxelSnapshotZ != chunkSnapshotZ ||
+                chunkVoxelSnapshotRevision != chunkSnapshotWorldRevision) {
+            chunkVoxelSnapshotValid = true;
+            chunkVoxelSnapshotX = chunkSnapshotX;
+            chunkVoxelSnapshotY = chunkSnapshotY;
+            chunkVoxelSnapshotZ = chunkSnapshotZ;
+            chunkVoxelSnapshotRevision = chunkSnapshotWorldRevision;
+        }
 
         int lightRevision = world.lightRevision;
         boolean cachedLights = chunkLightSnapshotValid &&
