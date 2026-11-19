@@ -80,6 +80,13 @@ final class ParticleSystem {
         uploadTextureCoordinates();
     }
 
+    void spawnMobDeath(float px, float py, float pz) {
+        int tile = Block.sideTile(Block.DIRT);
+        spawn(px - 0.12f, py + 0.25f, pz, -0.025f, 0.045f, 0.0f, 0.06f, tile);
+        spawn(px + 0.12f, py + 0.35f, pz, 0.025f, 0.055f, 0.015f, 0.06f, tile);
+        uploadTextureCoordinates();
+    }
+
     /** Eight tiny fire-colored squares make the TNT blast readable without a heavy emitter. */
     void spawnExplosion(float px, float py, float pz) {
         int tile = Block.sideTile(Block.LAVA);
