@@ -223,7 +223,6 @@ final class ChunkRenderer {
     private Mesh heldCreativeBlockMesh;
     private VertexArray heldCreativeBlockUVArray;
     private final short[] heldCreativeBlockUV = new short[48];
-    private final ParticleSystem particles;
     private final DroppedItemSystem droppedItems;
     private final MobSystem mobs;
     private int visibleHeldItem = -1;
@@ -353,9 +352,8 @@ final class ChunkRenderer {
         itemSpriteIconRoll.setOrientation(335.0f, 0.0f, 0.0f, 1.0f);
         itemSpriteOrigin.setTranslation(-15.0f / 16.0f, -1.0f / 16.0f, 0.0f);
         buildHeldItems();
-        particles = new ParticleSystem(atlas);
         droppedItems = new DroppedItemSystem(atlas, itemAtlas);
-        mobs = new MobSystem(scene, droppedItems, particles);
+        mobs = new MobSystem(scene, droppedItems);
 
         camera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
         externalCamera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
@@ -370,7 +368,6 @@ final class ChunkRenderer {
         scene.addChild(cameraPivot);
         scene.addChild(terrain);
         scene.addChild(railSystem.group);
-        scene.addChild(particles.mesh);
         scene.addChild(droppedItems.mesh);
         scene.addChild(droppedItems.spriteMesh);
         scene.addChild(droppedItems.tntFlashMesh);
@@ -1207,14 +1204,6 @@ final class ChunkRenderer {
         }
     }
 
-    void spawnBlockDestroy(int x, int y, int z, int tile) {
-        particles.spawnBlockDestroy(x, y, z, tile);
-    }
-
-    void updateParticles(VoxelWorld world, float yaw, float pitch) {
-        particles.update(world, yaw, pitch);
-    }
-
     void spawnDroppedItem(int itemId, int x, int y, int z) {
         droppedItems.spawn(itemId, x, y, z);
     }
@@ -1228,8 +1217,6 @@ final class ChunkRenderer {
         if (droppedItems.consumeExplosion()) {
             mobs.damageFromExplosion(world, droppedItems.explosionX(),
                     droppedItems.explosionY(), droppedItems.explosionZ(), 4.0f);
-            particles.spawnBlockDestroy(droppedItems.explosionX(), droppedItems.explosionY(),
-                    droppedItems.explosionZ(), Block.atlasTile(Block.TNT));
         }
         return picked;
     }
