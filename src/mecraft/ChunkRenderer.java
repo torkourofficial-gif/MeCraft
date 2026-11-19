@@ -2151,12 +2151,17 @@ final class ChunkRenderer {
                 }
             }
             if (batchCount > 0) {
-                Mesh mesh = makeChunkBatchMesh(chunkBatchBuilders, batchCount);
-                mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
-                appendChunkMesh(chunk, mesh);
-                for (int i = 0; i < batchCount; i++) {
-                    recycleFaceBuilder(chunkBatchBuilders[i]);
-                    chunkBatchBuilders[i] = null;
+                try {
+                    Mesh mesh = makeChunkBatchMesh(chunkBatchBuilders, batchCount);
+                    mesh.setTranslation(chunk.worldX, chunk.worldY, chunk.worldZ);
+                    appendChunkMesh(chunk, mesh);
+                } finally {
+                    // Builders have been detached from the chunk's tile lists.
+                    // Always return them to the bounded pool, even if M3G allocation fails.
+                    for (int i = 0; i < batchCount; i++) {
+                        recycleFaceBuilder(chunkBatchBuilders[i]);
+                        chunkBatchBuilders[i] = null;
+                    }
                 }
                 budget--;
                 installed++;
