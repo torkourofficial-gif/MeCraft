@@ -1711,7 +1711,7 @@ final class ChunkRenderer {
             // abandoning native allocations during a player edit.
             recycleChunkBuilders(installingChunk);
             if (installingSlot >= 0 && installingSlot < CACHE_SIZE)
-                dirtyChunks[installingSlot] = true;
+                markChunkDirtyMask(installingSlot, 1 << installingSector);
             installingChunk = null;
         }
 
@@ -1740,7 +1740,7 @@ final class ChunkRenderer {
                 completed.worldZ = cz * VoxelWorld.CHUNK_XZ;
             } else {
                 if (completed != null) recycleChunkBuilders(completed);
-                if (slotMatches) dirtyChunks[slot] = true;
+                if (slotMatches) markChunkDirtyMask(slot, 1 << readySector);
             }
         }
         if (installingChunk != null) {
@@ -1752,7 +1752,7 @@ final class ChunkRenderer {
                     installingInvalidationVersion != chunkInvalidationVersion[installingSlot] ||
                     (dirtySectorMasks[installingSlot] & (1 << installingSector)) != 0) {
                 recycleChunkBuilders(installingChunk);
-                if (slotMatches) dirtyChunks[installingSlot] = true;
+                if (slotMatches) markChunkDirtyMask(installingSlot, 1 << installingSector);
                 installingChunk = null;
             } else {
                 try {
@@ -1766,11 +1766,11 @@ final class ChunkRenderer {
                     }
                 } catch (OutOfMemoryError exhausted) {
                     recycleChunkBuilders(installingChunk);
-                    dirtyChunks[installingSlot] = true;
+                    markChunkDirtyMask(installingSlot, 1 << installingSector);
                     installingChunk = null;
                 } catch (RuntimeException failed) {
                     recycleChunkBuilders(installingChunk);
-                    dirtyChunks[installingSlot] = true;
+                    markChunkDirtyMask(installingSlot, 1 << installingSector);
                     installingChunk = null;
                 }
             }
@@ -1779,7 +1779,7 @@ final class ChunkRenderer {
             advanceChunkBuildSnapshot(world);
         }
         if (!chunkSnapshotPreparing && best >= 0 &&
-                (!residentChunks[best] || dirtyChunks[best]) &&
+                (!residentChunks[best] || dirtySectorMasks[best] != 0) &&
                 !chunkBuildWorkerBusy && !buildResultReady && installingChunk == null) {
             beginChunkBuildSnapshot(world, best, chunkWorldX[best],
                     chunkWorldY[best], chunkWorldZ[best]);
@@ -1791,7 +1791,7 @@ final class ChunkRenderer {
                                          int cx, int cy, int cz) {
         chunkSnapshotSector = nextDirtySector(slot, cx, cz);
         if (!world.prepareProceduralChunksForSection(cx, cz)) {
-            dirtyChunks[slot] = true;
+            dirtyChunks[slot] = dirtySectorMasks[slot] != 0;
             return;
         }
         chunkSnapshotPreparing = true;
@@ -1819,7 +1819,7 @@ final class ChunkRenderer {
                 chunkInvalidationVersion[slot] != chunkSnapshotInvalidationVersion ||
                 chunkBuildWorkerBusy || buildResultReady || installingChunk != null) {
             chunkSnapshotPreparing = false;
-            if (slotMatches) dirtyChunks[slot] = true;
+            if (slotMatches) dirtyChunks[slot] = dirtySectorMasks[slot] != 0;
             return;
         }
 
@@ -1889,7 +1889,7 @@ final class ChunkRenderer {
         snapshot.nether = world.nether;
         if (chunkInvalidationVersion[slot] != chunkSnapshotInvalidationVersion) {
             chunkSnapshotPreparing = false;
-            dirtyChunks[slot] = true;
+            dirtyChunks[slot] = dirtySectorMasks[slot] != 0;
             return;
         }
         if (!cachedLights) {
@@ -1904,7 +1904,7 @@ final class ChunkRenderer {
         synchronized (chunkBuildWorkerLock) {
             if (chunkBuildWorkerBusy || buildResultReady || installingChunk != null) {
                 chunkSnapshotPreparing = false;
-                dirtyChunks[slot] = true;
+                dirtyChunks[slot] = dirtySectorMasks[slot] != 0;
                 return;
             }
             chunkBuildWorkerBusy = true;
@@ -1934,12 +1934,12 @@ final class ChunkRenderer {
                     chunkBuildThread = null;
                     chunkBuildWorkerBusy = false;
                     chunkBuildRequestPending = false;
-                    dirtyChunks[slot] = true;
+                    markChunkDirtyMask(slot, 1 << chunkSnapshotSector);
                 } catch (RuntimeException failed) {
                     chunkBuildThread = null;
                     chunkBuildWorkerBusy = false;
                     chunkBuildRequestPending = false;
-                    dirtyChunks[slot] = true;
+                    markChunkDirtyMask(slot, 1 << chunkSnapshotSector);
                 }
             } else {
                 chunkBuildWorkerLock.notifyAll();
