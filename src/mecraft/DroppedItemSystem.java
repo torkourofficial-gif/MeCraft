@@ -343,9 +343,12 @@ final class DroppedItemSystem {
         if (uploadSlots < renderedSlotCount) uploadSlots = renderedSlotCount;
         int uploadVertices = uploadSlots * VERTICES_PER_ITEM;
         if (uploadVertices > 0) {
-            if (hasBlocks) positionArray.set(0, uploadVertices, positions);
-            if (hasSprites) spritePositionArray.set(0, uploadVertices, spritePositions);
-            if (hasTntFlash) tntFlashPositionArray.set(0, uploadVertices, tntFlashPositions);
+            // Upload every pool view over the same prefix: a slot may have
+            // changed from TNT/block to sprite (or become empty), so disabled
+            // mesh groups still need their stale native vertices cleared.
+            positionArray.set(0, uploadVertices, positions);
+            spritePositionArray.set(0, uploadVertices, spritePositions);
+            tntFlashPositionArray.set(0, uploadVertices, tntFlashPositions);
         }
         renderedSlotCount = highestActiveSlot + 1;
         mesh.setRenderingEnable(hasBlocks);
