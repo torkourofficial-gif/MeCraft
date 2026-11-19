@@ -132,9 +132,9 @@ final class ParticleSystem {
         }
     }
 
-    /** Small brown puffs emitted after a mob finishes its death fall. */
+    /** Tiny death puff; keep the one-shot effect cheap on CLDC devices. */
     void spawnMobDeath(float px, float py, float pz) {
-        for (int n = 0; n < 16; n++) {
+        for (int n = 0; n < 4; n++) {
             int i = cursor++;
             if (cursor == CAPACITY) cursor = 0;
             activate(i);
