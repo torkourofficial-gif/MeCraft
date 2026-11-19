@@ -1302,11 +1302,7 @@ final class ChunkRenderer {
                                 floorMod(chunkX, MAX_STREAM_SPAN);
                         if (chunkWorldX[slot] == chunkX && chunkWorldY[slot] == chunkY &&
                                 chunkWorldZ[slot] == chunkZ)
-                            markChunkDirtyRegion(slot,
-                                    Math.max(world.bulkChangedMinX - 1, chunkX * VoxelWorld.CHUNK_XZ),
-                                    Math.min(world.bulkChangedMaxX + 1, (chunkX + 1) * VoxelWorld.CHUNK_XZ - 1),
-                                    Math.max(world.bulkChangedMinZ - 1, chunkZ * VoxelWorld.CHUNK_XZ),
-                                    Math.min(world.bulkChangedMaxZ + 1, (chunkZ + 1) * VoxelWorld.CHUNK_XZ - 1));
+                            markChunkDirty(slot);
                     }
                 }
             }
