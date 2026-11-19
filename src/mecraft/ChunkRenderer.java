@@ -28,10 +28,12 @@ final class ChunkRenderer {
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
-    // Small rebuild islands: one edit rebuilds at most 4x16x4 voxels.
-    private static final int SECTOR_SIZE = VoxelWorld.CHUNK_XZ / 4;
-    private static final int SECTORS_PER_AXIS = VoxelWorld.CHUNK_XZ / SECTOR_SIZE;
-    private static final int SECTOR_COUNT = SECTORS_PER_AXIS * SECTORS_PER_AXIS;
+    // Rectangular rebuild islands keep edits local without multiplying sector count excessively.
+    private static final int SECTOR_SIZE_X = VoxelWorld.CHUNK_XZ / 4;
+    private static final int SECTOR_SIZE_Z = VoxelWorld.CHUNK_XZ / 2;
+    private static final int SECTORS_X = VoxelWorld.CHUNK_XZ / SECTOR_SIZE_X;
+    private static final int SECTORS_Z = VoxelWorld.CHUNK_XZ / SECTOR_SIZE_Z;
+    private static final int SECTOR_COUNT = SECTORS_X * SECTORS_Z;
     private static final int ALL_SECTORS_MASK = (1 << SECTOR_COUNT) - 1;
     private static final int TORCH_LIGHT_RADIUS = 4;
     private static final int LAVA_LIGHT_RADIUS = 6;
@@ -1301,7 +1303,7 @@ final class ChunkRenderer {
         urgentChunkZ = cz;
         int localX = x - cx * VoxelWorld.CHUNK_XZ;
         int localZ = z - cz * VoxelWorld.CHUNK_XZ;
-        urgentSector = (localZ / SECTOR_SIZE) * SECTORS_PER_AXIS + localX / SECTOR_SIZE;
+        urgentSector = (localZ / SECTOR_SIZE_Z) * SECTORS_X + localX / SECTOR_SIZE_X;
 
         // For the usual one-voxel edit, sync() will invalidate this exact
         // chunk neighborhood from VoxelWorld.changedX/Y/Z. Avoid doing the
@@ -1450,14 +1452,14 @@ final class ChunkRenderer {
         int z0 = chunkWorldZ[slot] * VoxelWorld.CHUNK_XZ;
         int localMinX = minX - x0, localMaxX = maxX - x0;
         int localMinZ = minZ - z0, localMaxZ = maxZ - z0;
-        int firstX = localMinX / SECTOR_SIZE;
-        int lastX = localMaxX / SECTOR_SIZE;
-        int firstZ = localMinZ / SECTOR_SIZE;
-        int lastZ = localMaxZ / SECTOR_SIZE;
+        int firstX = localMinX / SECTOR_SIZE_X;
+        int lastX = localMaxX / SECTOR_SIZE_X;
+        int firstZ = localMinZ / SECTOR_SIZE_Z;
+        int lastZ = localMaxZ / SECTOR_SIZE_Z;
         int mask = 0;
         for (int sz = firstZ; sz <= lastZ; sz++)
             for (int sx = firstX; sx <= lastX; sx++)
-                mask |= 1 << (sz * SECTORS_PER_AXIS + sx);
+                mask |= 1 << (sz * SECTORS_X + sx);
         if (!residentChunks[slot]) mask = ALL_SECTORS_MASK;
         markChunkDirtyMask(slot, mask);
     }
@@ -1908,8 +1910,8 @@ final class ChunkRenderer {
                 chunkVoxelSnapshotX == cx && chunkVoxelSnapshotY == cy &&
                 chunkVoxelSnapshotZ == cz && chunkVoxelSnapshotVersion == chunkInvalidationVersion[slot];
         chunkSnapshotFull = !residentChunks[slot] || cachedFullSnapshot;
-        int sectorX = (chunkSnapshotSector % SECTORS_PER_AXIS) * SECTOR_SIZE;
-        int sectorZ = (chunkSnapshotSector / SECTORS_PER_AXIS) * SECTOR_SIZE;
+        int sectorX = (chunkSnapshotSector % SECTORS_X) * SECTOR_SIZE_X;
+        int sectorZ = (chunkSnapshotSector / SECTORS_X) * SECTOR_SIZE_Z;
         if (chunkSnapshotFull) {
             chunkSnapshotVoxelMinX = -1;
             chunkSnapshotVoxelMaxX = VoxelWorld.CHUNK_XZ;
@@ -1923,15 +1925,15 @@ final class ChunkRenderer {
             // One voxel of horizontal halo plus the vertical padded layer is
             // enough for this sector's six face tests and portal-axis lookup.
             chunkSnapshotVoxelMinX = sectorX == 0 ? -1 : sectorX - 1;
-            chunkSnapshotVoxelMaxX = sectorX + SECTOR_SIZE == VoxelWorld.CHUNK_XZ ?
-                    VoxelWorld.CHUNK_XZ : sectorX + SECTOR_SIZE;
+            chunkSnapshotVoxelMaxX = sectorX + SECTOR_SIZE_X == VoxelWorld.CHUNK_XZ ?
+                    VoxelWorld.CHUNK_XZ : sectorX + SECTOR_SIZE_X;
             chunkSnapshotVoxelMinZ = sectorZ == 0 ? -1 : sectorZ - 1;
-            chunkSnapshotVoxelMaxZ = sectorZ + SECTOR_SIZE == VoxelWorld.CHUNK_XZ ?
-                    VoxelWorld.CHUNK_XZ : sectorZ + SECTOR_SIZE;
+            chunkSnapshotVoxelMaxZ = sectorZ + SECTOR_SIZE_Z == VoxelWorld.CHUNK_XZ ?
+                    VoxelWorld.CHUNK_XZ : sectorZ + SECTOR_SIZE_Z;
             chunkSnapshotMetadataMinX = sectorX;
-            chunkSnapshotMetadataMaxX = sectorX + SECTOR_SIZE - 1;
+            chunkSnapshotMetadataMaxX = sectorX + SECTOR_SIZE_X - 1;
             chunkSnapshotMetadataMinZ = sectorZ;
-            chunkSnapshotMetadataMaxZ = sectorZ + SECTOR_SIZE - 1;
+            chunkSnapshotMetadataMaxZ = sectorZ + SECTOR_SIZE_Z - 1;
             // A partial write invalidates the reusable full-chunk snapshot.
             chunkVoxelSnapshotValid = false;
         }
@@ -2394,8 +2396,8 @@ final class ChunkRenderer {
         int x1 = x0 + VoxelWorld.CHUNK_XZ;
         int y1 = y0 + VoxelWorld.CHUNK_Y;
         int z1 = z0 + VoxelWorld.CHUNK_XZ;
-        int sectorX = (sector % SECTORS_PER_AXIS) * SECTOR_SIZE;
-        int sectorZ = (sector / SECTORS_PER_AXIS) * SECTOR_SIZE;
+        int sectorX = (sector % SECTORS_X) * SECTOR_SIZE_X;
+        int sectorZ = (sector / SECTORS_X) * SECTOR_SIZE_Z;
 
         prepareChunkLightMap(snapshot, x0, y0, z0, x1, y1, z1, sectorX, sectorZ);
 
@@ -2403,11 +2405,11 @@ final class ChunkRenderer {
         // collected in the same pass, avoiding repeated coordinate arithmetic.
         int nonAirBlocks = 0;
         int haloMinX = sectorX > 0 ? sectorX - 1 : 0;
-        int haloMaxX = sectorX + SECTOR_SIZE < VoxelWorld.CHUNK_XZ ?
-                sectorX + SECTOR_SIZE : VoxelWorld.CHUNK_XZ - 1;
+        int haloMaxX = sectorX + SECTOR_SIZE_X < VoxelWorld.CHUNK_XZ ?
+                sectorX + SECTOR_SIZE_X : VoxelWorld.CHUNK_XZ - 1;
         int haloMinZ = sectorZ > 0 ? sectorZ - 1 : 0;
-        int haloMaxZ = sectorZ + SECTOR_SIZE < VoxelWorld.CHUNK_XZ ?
-                sectorZ + SECTOR_SIZE : VoxelWorld.CHUNK_XZ - 1;
+        int haloMaxZ = sectorZ + SECTOR_SIZE_Z < VoxelWorld.CHUNK_XZ ?
+                sectorZ + SECTOR_SIZE_Z : VoxelWorld.CHUNK_XZ - 1;
         // Only copy this sector and a one-voxel horizontal halo. The halo supplies
         // neighbor visibility tests at internal sector edges without touching the
         // other three sectors' scratch data.
@@ -2420,8 +2422,8 @@ final class ChunkRenderer {
                     byte id = snapshot.block(localX, localY, localZ);
                     int voxelIndex = row + localX;
                     chunkVoxelScratch[voxelIndex] = id;
-                    if (localX < sectorX || localX >= sectorX + SECTOR_SIZE ||
-                            localZ < sectorZ || localZ >= sectorZ + SECTOR_SIZE) continue;
+                    if (localX < sectorX || localX >= sectorX + SECTOR_SIZE_X ||
+                            localZ < sectorZ || localZ >= sectorZ + SECTOR_SIZE_Z) continue;
                     chunkLightScratch[voxelIndex] = (byte)(id == Block.LAVA ? 14 : torchLightAt(voxelIndex));
                     if (id == Block.AIR) continue;
                     nonAirBlocks++;
@@ -2458,9 +2460,11 @@ final class ChunkRenderer {
         // the merged rectangles preserve the original per-block texture scale.
         int[] mask = greedyMaskScratch;
         for (int face = 0; face < 6; face++) {
-            int slices = face == 0 || face == 5 ? VoxelWorld.CHUNK_Y : SECTOR_SIZE;
-            int width = SECTOR_SIZE;
-            int height = face == 0 || face == 5 ? SECTOR_SIZE : VoxelWorld.CHUNK_Y;
+            int slices = face == 0 || face == 5 ? VoxelWorld.CHUNK_Y :
+                    (face == 1 || face == 2 ? SECTOR_SIZE_X : SECTOR_SIZE_Z);
+            int width = face == 0 || face == 5 ? SECTOR_SIZE_X :
+                    (face == 1 || face == 2 ? SECTOR_SIZE_Z : SECTOR_SIZE_X);
+            int height = face == 0 || face == 5 ? SECTOR_SIZE_Z : VoxelWorld.CHUNK_Y;
             for (int slice = 0; slice < slices; slice++) {
                 for (int b = 0; b < height; b++) {
                     int row = b * width;
@@ -2789,8 +2793,8 @@ final class ChunkRenderer {
         // Light values are consumed only by vertices in this sector.
         for (int y = 0; y < VoxelWorld.CHUNK_Y; y++) {
             int row = y * CHUNK_AREA;
-            for (int z = sectorZ; z < sectorZ + SECTOR_SIZE; z++)
-                for (int x = sectorX; x < sectorX + SECTOR_SIZE; x++)
+            for (int z = sectorZ; z < sectorZ + SECTOR_SIZE_Z; z++)
+                for (int x = sectorX; x < sectorX + SECTOR_SIZE_X; x++)
                     chunkLightScratch[row + z * VoxelWorld.CHUNK_XZ + x] = 0;
         }
         for (int source = 0; source < snapshot.lightCount; source++) {
@@ -2802,11 +2806,11 @@ final class ChunkRenderer {
             int minY = sy - radius, maxY = sy + radius;
             int minZ = sz - radius, maxZ = sz + radius;
             if (minX < x0 + sectorX) minX = x0 + sectorX;
-            if (maxX >= x0 + sectorX + SECTOR_SIZE) maxX = x0 + sectorX + SECTOR_SIZE - 1;
+            if (maxX >= x0 + sectorX + SECTOR_SIZE_X) maxX = x0 + sectorX + SECTOR_SIZE_X - 1;
             if (minY < y0) minY = y0;
             if (maxY >= y1) maxY = y1 - 1;
             if (minZ < z0 + sectorZ) minZ = z0 + sectorZ;
-            if (maxZ >= z0 + sectorZ + SECTOR_SIZE) maxZ = z0 + sectorZ + SECTOR_SIZE - 1;
+            if (maxZ >= z0 + sectorZ + SECTOR_SIZE_Z) maxZ = z0 + sectorZ + SECTOR_SIZE_Z - 1;
             int multiplier = snapshot.lavaSource[source] ? 2 : 3;
             for (int y = minY; y <= maxY; y++) {
                 int dy = Math.abs(y - sy);
