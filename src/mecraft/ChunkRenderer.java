@@ -1535,8 +1535,11 @@ final class ChunkRenderer {
             chunks[i] = null;
         }
         residentChunks[i] = false;
-        dirtyChunks[i] = false;
-        dirtySectorMasks[i] = 0;
+        // A removed chunk must be fully rebuilt on re-entry; also invalidate any
+        // snapshot or worker result still targeting the old resident geometry.
+        dirtyChunks[i] = true;
+        dirtySectorMasks[i] = ALL_SECTORS_MASK;
+        chunkInvalidationVersion[i]++;
         chunkFrustumVisible[i] = false;
     }
 
