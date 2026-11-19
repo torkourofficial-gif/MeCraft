@@ -2925,7 +2925,7 @@ final class ChunkRenderer {
 
     private static final class Chunk {
         Mesh[] meshes;
-        // Shared scene root for a resident chunk and its incrementally attached sector meshes.
+        // Parent chunk root or detached per-sector staging root.
         Group meshRoot;
         Chunk[] sectors;
         FaceBuilder[] faceBuilders;
