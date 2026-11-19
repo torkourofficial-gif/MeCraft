@@ -1685,8 +1685,9 @@ final class ChunkRenderer {
                 installingChunk = null;
             } else {
                 try {
-                    int meshBudget = isUrgentChunk(installingX, installingY, installingZ) ?
-                            4 : MAX_CHUNK_MESHES_PER_SYNC;
+                    // Player edits get queue priority, not a larger per-frame
+                    // allocation burst. Keep the same HTC frame budget for every chunk.
+                    int meshBudget = MAX_CHUNK_MESHES_PER_SYNC;
                     if (finishChunkMeshStep(installingChunk, meshBudget)) {
                         replaceChunk(installingSlot, installingX, installingY, installingZ, installingChunk);
                         installingChunk = null;
