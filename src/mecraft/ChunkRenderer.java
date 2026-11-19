@@ -42,8 +42,8 @@ final class ChunkRenderer {
     private static final int MAX_FACE_BUILDER_VERTICES = 2048;
     private static final int MAX_CHUNK_MESHES_PER_SYNC = 1;
     private static final int MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 512;
-    // Even the edited sector is copied in ordinary frame-sized slices.
-    private static final int MAX_URGENT_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 512;
+    // Edited sectors use a larger bounded copy slice; background streaming stays conservative.
+    private static final int MAX_URGENT_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 2048;
     private static final int MAX_CHUNK_LIGHT_SCAN_CELLS_PER_SYNC = 512;
     private static final long MAX_CHUNK_MESH_INSTALL_MILLIS = 6L;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
@@ -1843,11 +1843,11 @@ final class ChunkRenderer {
                 installingChunk = null;
             } else {
                 try {
-                    // Player edits get queue priority, not a larger per-frame
-                    // allocation burst. Keep the same HTC frame budget for every chunk.
+                    // Player edits get queue priority and a larger bounded mesh budget;
+                    // the shared 6 ms install time slice still limits frame impact.
                     // Finish the edited sector sooner, but keep the old mesh visible
                     // until the replacement is complete and can be swapped atomically.
-                    int meshBudget = isUrgentChunk(installingX, installingY, installingZ) ? 3 :
+                    int meshBudget = isUrgentChunk(installingX, installingY, installingZ) ? 6 :
                             MAX_CHUNK_MESHES_PER_SYNC;
                     boolean chunkFinished = finishChunkMeshStep(installingChunk, meshBudget);
                     if (chunkFinished) {
