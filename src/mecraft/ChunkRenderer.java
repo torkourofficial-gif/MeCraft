@@ -2884,6 +2884,7 @@ final class ChunkRenderer {
 
     private static final class Chunk {
         Mesh[] meshes;
+        // Shared scene root for a resident chunk; sector build records keep meshes detached.
         Group meshRoot;
         Chunk[] sectors;
         FaceBuilder[] faceBuilders;
