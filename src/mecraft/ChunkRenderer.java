@@ -132,6 +132,7 @@ final class ChunkRenderer {
     private Chunk installingChunk;
     private int installingSlot, installingX, installingY, installingZ, installingEpoch, installingSector;
     private int installingInvalidationVersion;
+    private boolean installingPreviousSectorReleased;
     // Small direct-mapped reuse cache for common quad-strip index buffers.
     private final int[] chunkQuadIndexFaceCounts = new int[8];
     private final TriangleStripArray[] chunkQuadIndexBuffers = new TriangleStripArray[8];
@@ -154,6 +155,8 @@ final class ChunkRenderer {
     private int urgentChunkZ = Integer.MIN_VALUE;
     private int urgentSector = -1;
     private final int[] chunkInvalidationVersion = new int[CACHE_SIZE];
+    // Per-sector tokens stop unrelated edits in this chunk cancelling valid work.
+    private final int[] chunkSectorInvalidationVersion = new int[CACHE_SIZE * SECTOR_COUNT];
     private final boolean[] chunkFrustumVisible = new boolean[CACHE_SIZE];
     private final int[] chunkWorldX = new int[CACHE_SIZE];
     private final int[] chunkWorldY = new int[CACHE_SIZE];
@@ -1432,6 +1435,9 @@ final class ChunkRenderer {
         dirtySectorMasks[slot] |= mask;
         dirtyChunks[slot] = true;
         chunkInvalidationVersion[slot]++;
+        int base = slot * SECTOR_COUNT;
+        for (int sector = 0; sector < SECTOR_COUNT; sector++)
+            if ((mask & (1 << sector)) != 0) chunkSectorInvalidationVersion[base + sector]++;
     }
 
     private void markChunkDirtyRegion(int slot, int minX, int maxX, int minZ, int maxZ) {
@@ -1481,6 +1487,21 @@ final class ChunkRenderer {
         if (chunkFrustumVisible[i] == visible) return;
         chunkFrustumVisible[i] = visible;
         setChunkRenderingEnabled(chunks[i], visible);
+    }
+
+    private void releasePreviousChunkSector(int i, int sector) {
+        Chunk parent = chunks[i];
+        if (parent == null || parent.sectors == null) return;
+        Chunk previous = parent.sectors[sector];
+        if (previous == null) return;
+        if (previous.meshRoot != null) {
+            parent.meshRoot.removeChild(previous.meshRoot);
+        } else if (previous.meshes != null) {
+            for (int m = 0; m < previous.meshBuildAt; m++)
+                if (previous.meshes[m] != null) parent.meshRoot.removeChild(previous.meshes[m]);
+        }
+        recycleChunkBuilders(previous);
+        parent.sectors[sector] = null;
     }
 
     private void replaceChunkSector(int i, int cx, int cy, int cz, int sector, Chunk replacement) {
@@ -1789,13 +1810,14 @@ final class ChunkRenderer {
             boolean urgentCanPreempt = urgentChunkX != Integer.MIN_VALUE &&
                     !isUrgentChunk(cx, cy, cz);
             if (completed != null && epoch == streamEpoch && slotMatches &&
-                    readyInvalidationVersion == chunkInvalidationVersion[slot] &&
+                    readyInvalidationVersion == chunkSectorInvalidationVersion[slot * SECTOR_COUNT + readySector] &&
                     (dirtySectorMasks[slot] & (1 << readySector)) == 0 && !urgentCanPreempt) {
                 installingChunk = completed;
                 installingSlot = slot; installingX = cx; installingY = cy; installingZ = cz;
                 installingEpoch = epoch;
                 installingSector = readySector;
                 installingInvalidationVersion = readyInvalidationVersion;
+                installingPreviousSectorReleased = false;
                 completed.worldX = cx * VoxelWorld.CHUNK_XZ;
                 completed.worldY = cy * VoxelWorld.CHUNK_Y;
                 completed.worldZ = cz * VoxelWorld.CHUNK_XZ;
@@ -1810,7 +1832,7 @@ final class ChunkRenderer {
                     chunkWorldY[installingSlot] == installingY &&
                     chunkWorldZ[installingSlot] == installingZ;
             if (installingEpoch != streamEpoch || !slotMatches ||
-                    installingInvalidationVersion != chunkInvalidationVersion[installingSlot] ||
+                    installingInvalidationVersion != chunkSectorInvalidationVersion[installingSlot * SECTOR_COUNT + installingSector] ||
                     (dirtySectorMasks[installingSlot] & (1 << installingSector)) != 0) {
                 recycleChunkBuilders(installingChunk);
                 if (slotMatches) markChunkDirtyMask(installingSlot, 1 << installingSector);
@@ -1824,6 +1846,10 @@ final class ChunkRenderer {
                         replaceChunkSector(installingSlot, installingX, installingY, installingZ,
                                 installingSector, installingChunk);
                         installingChunk = null;
+                    } else if (!installingPreviousSectorReleased &&
+                            installingChunk.meshBuildAt > 0) {
+                        releasePreviousChunkSector(installingSlot, installingSector);
+                        installingPreviousSectorReleased = true;
                     }
                 } catch (OutOfMemoryError exhausted) {
                     recycleChunkBuilders(installingChunk);
@@ -1901,7 +1927,8 @@ final class ChunkRenderer {
         chunkSnapshotY = cy;
         chunkSnapshotZ = cz;
         chunkSnapshotEpoch = streamEpoch;
-        chunkSnapshotInvalidationVersion = chunkInvalidationVersion[slot];
+        chunkSnapshotInvalidationVersion = chunkSectorInvalidationVersion[
+                slot * SECTOR_COUNT + chunkSnapshotSector];
         chunkBuildSnapshot.lightScanState[0] = 0;
         chunkBuildSnapshot.lightScanState[1] = 0;
     }
@@ -1914,7 +1941,7 @@ final class ChunkRenderer {
                 chunkWorldZ[slot] == chunkSnapshotZ;
         if (chunkSnapshotEpoch != streamEpoch || !slotMatches ||
                 !chunkFrustumVisible[slot] ||
-                chunkInvalidationVersion[slot] != chunkSnapshotInvalidationVersion ||
+                chunkSectorInvalidationVersion[slot * SECTOR_COUNT + chunkSnapshotSector] != chunkSnapshotInvalidationVersion ||
                 chunkBuildWorkerBusy || buildResultReady || installingChunk != null) {
             chunkSnapshotPreparing = false;
             if (slotMatches) dirtyChunks[slot] = dirtySectorMasks[slot] != 0;
