@@ -122,7 +122,7 @@ The particle hot-path and the bounded player/mob texture changes are intentional
 - Chunk edit invalidation now addresses only the affected ring-cache coordinates. Ordinary boundary edits touch at most eight neighboring chunks; torch edits inspect only chunk coordinates intersecting the light radius, instead of scanning the full 648-slot cache on every world revision.
 - Procedural terrain lookup checks the last-hit chunk before searching a 16-entry cache (up from eight). The bounded block-data payload grows from 128 KiB to 256 KiB so the full 3x3 short-distance window plus nearby chunks can stay resident, reducing full terrain regeneration while vertical sections stream.
 - Reuse the camera ray basis while yaw and pitch are unchanged. Block tracing, boat/cart targeting, and LAN player projection share the cached trigonometric values.
-- The eight-quad particle pool computes one camera-facing basis per active update; it skips all particle work when empty.
+- The eight-quad particle pool caches its camera-facing basis until yaw or pitch changes; it skips all particle work when empty.
 
 ### Frame-budget and hot-path refinements
 
