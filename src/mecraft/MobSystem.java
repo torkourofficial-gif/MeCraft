@@ -374,26 +374,25 @@ final class MobSystem {
     }
 
     private void beginDeath(Mob mob) {
-        if (mob.dying) return;
+        if (!mob.alive || mob.dying) return;
+        // Death is a one-shot state change on this low-end renderer. Do not
+        // keep a dead actor in the scene graph for a 20-tick transform animation.
         mob.alive = false;
-        mob.dying = true;
+        mob.dying = false;
         mob.deathTicks = 0;
         mob.hurtTicks = 0;
         mob.fireTicks = 0;
         mob.fireMesh.setRenderingEnable(false);
-        mob.setHurt(true);
-        mob.root.setRenderingEnable(true);
+        mob.root.setRenderingEnable(false);
+        mob.setHurt(false);
+        mob.pose.setOrientation(0.0f, 0.0f, 0.0f, 1.0f);
+        particles.spawnMobDeath(mob.x, mob.y, mob.z);
     }
 
     private void updateDeath(int slot, Mob mob) {
-        mob.deathTicks++;
-        int frame = mob.deathTicks;
-        if (frame > DEATH_ROLL.length) frame = DEATH_ROLL.length;
-        mob.pose.setOrientation(DEATH_ROLL[frame - 1], 0.0f, 0.0f, 1.0f);
-        if (mob.deathTicks >= DEATH_ROLL.length) {
-            particles.spawnMobDeath(mob.x, mob.y, mob.z);
-            releaseMob(slot);
-        }
+        // Kept as a defensive cleanup for any legacy dying actor restored in memory.
+        mob.root.setRenderingEnable(false);
+        releaseMob(slot);
     }
 
     private void reset(VoxelWorld world) {
