@@ -37,6 +37,9 @@ final class ParticleSystem {
     private final VertexArray texCoordArray;
     private int cursor;
     private int activeCount;
+    private float cameraYaw, cameraPitch;
+    private float rightX, rightZ, upX, upY, upZ;
+    private boolean cameraBasisValid;
 
     ParticleSystem(Texture2D atlas) {
         positionArray = new VertexArray(VERTICES, 3, 2);
@@ -126,13 +129,18 @@ final class ParticleSystem {
             mesh.setRenderingEnable(false);
             return;
         }
-        float yaw = yawDegrees * 0.0174532925f;
-        float pitch = pitchDegrees * 0.0174532925f;
-        float rightX = (float)Math.cos(yaw);
-        float rightZ = -(float)Math.sin(yaw);
-        float upX = -(float)(Math.sin(yaw) * Math.sin(pitch));
-        float upY = (float)Math.cos(pitch);
-        float upZ = -(float)(Math.cos(yaw) * Math.sin(pitch));
+        if (!cameraBasisValid || cameraYaw != yawDegrees || cameraPitch != pitchDegrees) {
+            float yaw = yawDegrees * 0.0174532925f;
+            float pitch = pitchDegrees * 0.0174532925f;
+            rightX = (float)Math.cos(yaw);
+            rightZ = -(float)Math.sin(yaw);
+            upX = -(float)(Math.sin(yaw) * Math.sin(pitch));
+            upY = (float)Math.cos(pitch);
+            upZ = -(float)(Math.cos(yaw) * Math.sin(pitch));
+            cameraYaw = yawDegrees;
+            cameraPitch = pitchDegrees;
+            cameraBasisValid = true;
+        }
         float originX = world.playerX;
         float originY = world.playerY;
         float originZ = world.playerZ;
