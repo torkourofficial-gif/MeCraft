@@ -278,16 +278,15 @@ final class DroppedItemSystem {
             float entityHalfSize = primedTnt ? 0.5f : HALF_SIZE;
             vy[i] -= 0.04f;
             float preCollisionVerticalVelocity = vy[i];
-            move(world, i, entityHalfSize);
+            boolean landed = move(world, i, entityHalfSize);
             vx[i] *= 0.98f;
             vy[i] *= 0.98f;
             vz[i] *= 0.98f;
-            boolean onGround = world.isSolidAt(floorBlock(x[i]),
-                floorBlock(y[i] - entityHalfSize - 0.01f), floorBlock(z[i]));
-            if (onGround) {
+            if (landed) {
                 vx[i] *= 0.7f;
                 vz[i] *= 0.7f;
-                // EntityTNTPrimed bounces when it lands instead of sticking.
+                // Bounce from the actual downward collision, not a second
+                // floor probe after move() has already snapped the entity.
                 if (primedTnt && preCollisionVerticalVelocity < 0.0f)
                     vy[i] = -preCollisionVerticalVelocity * 0.5f * 0.98f;
             }
@@ -374,7 +373,8 @@ final class DroppedItemSystem {
         }
     }
 
-    private void move(VoxelWorld world, int i, float halfSize) {
+    /** Moves one entity and reports a real downward ground collision. */
+    private boolean move(VoxelWorld world, int i, float halfSize) {
         float next = x[i] + vx[i];
         if (collides(world, next, y[i], z[i], halfSize)) vx[i] = 0.0f;
         else x[i] = next;
@@ -383,14 +383,20 @@ final class DroppedItemSystem {
         if (collides(world, x[i], y[i], next, halfSize)) vz[i] = 0.0f;
         else z[i] = next;
 
+        boolean landed = false;
         next = y[i] + vy[i];
         if (collides(world, x[i], next, z[i], halfSize)) {
-            if (vy[i] < 0.0f) y[i] = floorBlock(next - halfSize) + 1.0f + halfSize;
-            else y[i] = floorBlock(next + halfSize) - halfSize;
+            if (vy[i] < 0.0f) {
+                y[i] = floorBlock(next - halfSize) + 1.0f + halfSize;
+                landed = true;
+            } else {
+                y[i] = floorBlock(next + halfSize) - halfSize;
+            }
             vy[i] = 0.0f;
         } else {
             y[i] = next;
         }
+        return landed;
     }
 
     private boolean collides(VoxelWorld world, float px, float py, float pz, float halfSize) {
