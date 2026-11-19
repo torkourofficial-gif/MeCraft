@@ -82,7 +82,7 @@ final class ParticleSystem {
 
     /** Eight tiny fire-colored squares make the TNT blast readable without a heavy emitter. */
     void spawnExplosion(float px, float py, float pz) {
-        int tile = Block.sideTile(Block.FIRE);
+        int tile = Block.sideTile(Block.LAVA);
         for (int i = 0; i < CAPACITY; i++) {
             float lift = (i & 1) == 0 ? 0.055f : 0.095f;
             spawn(px, py, pz, EXPLOSION_X[i] * 0.105f, lift, EXPLOSION_Z[i] * 0.105f,
@@ -101,11 +101,11 @@ final class ParticleSystem {
         vx[i] = sx; vy[i] = sy; vz[i] = sz;
         size[i] = particleSize;
         age[i] = 0;
-        int tx = (tile & 15) * 16;
-        int ty = (tile >> 4) * 16;
+        int tx = (tile & 15) * 16 + 1;
+        int ty = (tile >> 4) * 16 + 1;
         int at = i * 8;
-        texCoords[at] = (short)tx; texCoords[at + 1] = (short)(ty + 16);
-        texCoords[at + 2] = (short)(tx + 16); texCoords[at + 3] = (short)(ty + 16);
+        texCoords[at] = (short)tx; texCoords[at + 1] = (short)(ty + 14);
+        texCoords[at + 2] = (short)(tx + 14); texCoords[at + 3] = (short)(ty + 16);
         texCoords[at + 4] = (short)tx; texCoords[at + 5] = (short)ty;
         texCoords[at + 6] = (short)(tx + 16); texCoords[at + 7] = (short)ty;
     }
