@@ -1514,12 +1514,9 @@ final class ChunkRenderer {
                 }
                 throw exhausted;
             } catch (RuntimeException failed) {
-                for (int m = replacement.meshBuildAt - 1; m >= 0 && attached > 0; m--) {
-                    Mesh mesh = replacement.meshes[m];
-                    if (mesh != null) {
-                        try { parent.meshRoot.removeChild(mesh); } catch (RuntimeException ignored) { }
-                        attached--;
-                    }
+                for (int m = attached - 1; m >= 0; m--) {
+                    try { parent.meshRoot.removeChild(replacement.meshes[m]); }
+                    catch (RuntimeException ignored) { }
                 }
                 throw failed;
             }
