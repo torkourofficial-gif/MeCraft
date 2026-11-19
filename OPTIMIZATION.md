@@ -4,12 +4,13 @@ This branch contains a conservative hot-path optimization for the existing MIDP 
 
 ## Applied
 
-### ParticleSystem: sparse updates and immutable UVs
+### ParticleSystem: fixed eight-quad cosmetic pool
 
-- Added a fixed 64-entry active-slot list and counter. An empty particle pool now disables its mesh and returns before doing trigonometry, collision queries, vertex writes, or M3G buffer uploads. Simulation iterates active entries rather than all 64 slots.
-- Render data is packed into the first N mesh slots each update. `VertexArray.set` uploads only the live prefix (and the prior prefix once to clear expired particles), instead of sending all 256 vertices for a typical 16-particle burst.
-- Atlas UVs are immutable for each particle and now upload only after spawn, overwrite, or expiration changes packed ordering. Positions and colors still use partial vertex ranges each update. This follows the JSR-184 `VertexArray.set(firstVertex, numVertices, values)` range API.
-- The pool remains fixed-size and allocation-free during update/spawn. Block-break debris now uses four fragments and lasts 12 ticks (0.6 seconds at 20 updates/second), down from eight fragments and 24 ticks. Other particle types retain their prior counts and lifetimes.
+- Replaced the former particle simulation with one fixed pool of eight camera-facing quads.
+- Block breaking emits three small chips, mob death emits two dust chips, and TNT detonation emits eight outward-moving lava-colored sparks.
+- Effects have a short fixed lifetime and simple drift only. There are no world collision probes, no alpha blending, no per-particle M3G objects, and no allocations during update.
+- The mesh, position array, UV array, and strip layout are created once and reused. The pool is deliberately shared, so a large TNT burst can replace older cosmetic chips rather than increasing work or memory.
+- This is intended to restore a little visual feedback without returning to the previous particle-system cost. Its actual frame-time impact still needs testing on the target J2ME runtime.
 
 ## Memory optimizations applied
 
@@ -57,9 +58,9 @@ These changes reduce duplicate player-skin texture objects and avoid startup con
 
 - Reuses one low-priority chunk worker across nearby streaming requests. It sleeps between requests and exits after ten idle seconds so it does not retain an inactive renderer.
 - Chunk work is serial: one chunk build or one M3G installation is active at a time. Results remain valid across edits to unrelated chunks; an affected chunk is invalidated through its dirty cache coordinate. A streaming epoch rejects results after a full world rebuild.
-- M3G installation is capped at four meshes per renderer sync and yields after roughly six milliseconds once at least one mesh is installed. The larger count improves throughput for small meshes while preserving the time slice; a single large M3G creation can exceed it. M3G objects and scene mutations stay on the game thread.
+- Normal M3G installation is capped at one mesh per renderer sync; the urgent edited sector may install up to three segments, still yielding after roughly six milliseconds once at least one mesh is installed. A single large M3G creation can exceed the slice. M3G objects and scene mutations stay on the game thread.
 - The worker builds Java geometry from a copied chunk snapshot and reuses bounded scratch buffers and FaceBuilder storage.
-- Each resident chunk now has one Group root. New Mesh nodes are attached to its detached root during the paced install; replacement and eviction swap/remove one scene child instead of looping over every Mesh in the visible terrain Group.
+- Each resident chunk has one parent Group root. A replacement sector is built under its own detached Group and attached only when complete; the old sector remains visible until the swap. Eviction removes the sector Group instead of looping over every Mesh in the visible terrain Group.
 - Each greedy mesh rebuild still remeshes the affected 16×8×16 section, but the worker now yields between face directions so lower-priority CPU work gives the game loop scheduling opportunities. The renderer also reuses a bounded cache of common quad-strip IndexBuffers during M3G mesh installation, avoiding repeated strip-array allocations and TriangleStripArray construction after edits.
 - Existing camera-window prioritization and stale world/slot checks remain in place.
 
@@ -121,13 +122,13 @@ The particle hot-path and the bounded player/mob texture changes are intentional
 - Chunk edit invalidation now addresses only the affected ring-cache coordinates. Ordinary boundary edits touch at most eight neighboring chunks; torch edits inspect only chunk coordinates intersecting the light radius, instead of scanning the full 648-slot cache on every world revision.
 - Procedural terrain lookup checks the last-hit chunk before searching a 16-entry cache (up from eight). The bounded block-data payload grows from 128 KiB to 256 KiB so the full 3x3 short-distance window plus nearby chunks can stay resident, reducing full terrain regeneration while vertical sections stream.
 - Reuse the camera ray basis while yaw and pitch are unchanged. Block tracing, boat/cart targeting, and LAN player projection share the cached trigonometric values.
-- Particle billboards also reuse their camera-facing basis until the view changes.
+- The eight-quad particle pool computes one camera-facing basis per active update; it skips all particle work when empty.
 
 ### Frame-budget and hot-path refinements
 
 - Added separate timing for M3G scene rendering and the 2D HUD, alongside the existing update and renderer-sync timings. Stall reports now expose the expensive stage instead of treating asynchronous `repaint()` as render time.
 - Generated-terrain completion notifications now invalidate only the matching 3x3 chunk neighborhood across vertical sections, using the renderer's direct-mapped slot calculation rather than scanning the entire resident cache for each notification. Chunk builds for unaffected coordinates survive the global world revision changing, so ongoing mining no longer repeatedly discards unrelated streaming work.
-- Chunk mesh installation is capped at two meshes per renderer sync and yields after roughly six milliseconds once at least one mesh is installed. A single M3G allocation can exceed the slice, and actual timing depends on the JSR-184 implementation.
+- Normal chunk mesh installation is capped at one mesh per renderer sync, with up to three for the urgent edited sector, and yields after roughly six milliseconds once at least one mesh is installed. A single M3G allocation can exceed the slice, and actual timing depends on the JSR-184 implementation.
 - Day/night updates avoid repeatedly sending nearly identical sunlight intensity values into M3G.
 - Distant mobs retain per-tick AI and physics, while articulated pose updates are performed every other tick to reduce scene-graph property churn. Nearby mobs keep full-rate animation.
 - These are workload reductions, not measured FPS gains. The 20 FPS target still requires profiling on the HTC S730 and the 8 MB emulator.
