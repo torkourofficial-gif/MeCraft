@@ -605,7 +605,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         renderer.updateFieldOfView(sprinting);
         renderer.updateCamera(world, cameraPitch);
         renderer.setHurtCameraRoll(hurtCameraRoll());
-        renderer.updateParticles(world, world.yaw, cameraPitch);
         if (lanGameActive) updateLanSynchronization();
     }
 
@@ -1146,7 +1145,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 damageTool(hotbar[world.selectedSlot],
                         ItemCatalog.durabilityCost(hotbar[world.selectedSlot]));
             renderer.syncEditedBlock(world, x, lowerY, z);
-            renderer.spawnBlockDestroy(x, lowerY, z, debrisTile);
             resetMining();
             miningHitWait = 5;
             return;
@@ -1201,7 +1199,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             // Prioritize the edited chunk so the terrain change is visible as soon as
             // its bounded mesh build completes; unrelated chunks remain incremental.
             renderer.syncEditedBlock(world, x, y, z);
-            if (id != Block.FIRE) renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
             resetMining();
             miningHitWait = 5;
         }
