@@ -27,6 +27,9 @@ final class ChunkRenderer {
     private static final int MAX_STREAM_SPAN = MAX_STREAM_RADIUS * 2 + 1;
     static final int CACHE_SIZE = MAX_STREAM_SPAN * MAX_STREAM_SPAN * VoxelWorld.CHUNKS_Y;
     private static final int TILE_COUNT = 256;
+    private static final int SECTOR_SIZE = VoxelWorld.CHUNK_XZ / 2;
+    private static final int SECTOR_COUNT = 4;
+    private static final int ALL_SECTORS_MASK = (1 << SECTOR_COUNT) - 1;
     private static final int TORCH_LIGHT_RADIUS = 4;
     private static final int LAVA_LIGHT_RADIUS = 6;
     private static final int MAX_CHUNK_TORCHES = 128;
@@ -99,12 +102,13 @@ final class ChunkRenderer {
     private final ChunkBuildSnapshot chunkBuildSnapshot = new ChunkBuildSnapshot();
     private volatile Chunk readyChunk;
     private volatile boolean buildResultReady;
-    private volatile int readySlot, readyX, readyY, readyZ, readyEpoch;
+    private volatile int readySlot, readyX, readyY, readyZ, readyEpoch, readySector, readyInvalidationVersion;
     private final Object chunkBuildWorkerLock = new Object();
     private volatile boolean chunkBuildWorkerBusy;
     private boolean chunkBuildRequestPending;
     private int chunkBuildRequestSlot, chunkBuildRequestX, chunkBuildRequestY;
-    private int chunkBuildRequestZ, chunkBuildRequestEpoch;
+    private int chunkBuildRequestZ, chunkBuildRequestEpoch, chunkBuildRequestSector;
+    private int chunkBuildRequestInvalidationVersion;
     private Thread chunkBuildThread;
     // Copy world data into the worker snapshot in bounded frame-sized slices.
     private boolean chunkSnapshotPreparing;
@@ -115,19 +119,23 @@ final class ChunkRenderer {
     private int chunkSnapshotVoxelX, chunkSnapshotVoxelY, chunkSnapshotVoxelZ;
     private int chunkSnapshotMetadataX, chunkSnapshotMetadataY, chunkSnapshotMetadataZ;
     private int chunkSnapshotSlot, chunkSnapshotX, chunkSnapshotY, chunkSnapshotZ, chunkSnapshotEpoch;
+    private int chunkSnapshotSector;
     private int streamEpoch;
     private Chunk installingChunk;
-    private int installingSlot, installingX, installingY, installingZ, installingEpoch;
+    private int installingSlot, installingX, installingY, installingZ, installingEpoch, installingSector;
+    private int installingInvalidationVersion;
     // Small direct-mapped reuse cache for common quad-strip index buffers.
     private final int[] chunkQuadIndexFaceCounts = new int[8];
     private final TriangleStripArray[] chunkQuadIndexBuffers = new TriangleStripArray[8];
     private int chunkQuadIndexCursor;
     private final boolean[] residentChunks = new boolean[CACHE_SIZE];
     private final boolean[] dirtyChunks = new boolean[CACHE_SIZE];
+    private final int[] dirtySectorMasks = new int[CACHE_SIZE];
     // The most recent player edit is rebuilt before background streaming work.
     private int urgentChunkX = Integer.MIN_VALUE;
     private int urgentChunkY = Integer.MIN_VALUE;
     private int urgentChunkZ = Integer.MIN_VALUE;
+    private int urgentSector = -1;
     private final int[] chunkInvalidationVersion = new int[CACHE_SIZE];
     private final boolean[] chunkFrustumVisible = new boolean[CACHE_SIZE];
     private final int[] chunkWorldX = new int[CACHE_SIZE];
@@ -1266,6 +1274,9 @@ final class ChunkRenderer {
         urgentChunkX = cx;
         urgentChunkY = cy;
         urgentChunkZ = cz;
+        int localX = x - cx * VoxelWorld.CHUNK_XZ;
+        int localZ = z - cz * VoxelWorld.CHUNK_XZ;
+        urgentSector = (localZ >= SECTOR_SIZE ? 2 : 0) + (localX >= SECTOR_SIZE ? 1 : 0);
 
         // For the usual one-voxel edit, sync() will invalidate this exact
         // chunk neighborhood from VoxelWorld.changedX/Y/Z. Avoid doing the
@@ -1288,7 +1299,11 @@ final class ChunkRenderer {
                                 floorMod(chunkX, MAX_STREAM_SPAN);
                         if (chunkWorldX[slot] == chunkX && chunkWorldY[slot] == chunkY &&
                                 chunkWorldZ[slot] == chunkZ)
-                            markChunkDirty(slot);
+                            markChunkDirtyRegion(slot,
+                                    Math.max(world.bulkChangedMinX - 1, chunkX * VoxelWorld.CHUNK_XZ),
+                                    Math.min(world.bulkChangedMaxX + 1, (chunkX + 1) * VoxelWorld.CHUNK_XZ - 1),
+                                    Math.max(world.bulkChangedMinZ - 1, chunkZ * VoxelWorld.CHUNK_XZ),
+                                    Math.min(world.bulkChangedMaxZ + 1, (chunkZ + 1) * VoxelWorld.CHUNK_XZ - 1));
                     }
                 }
             }
@@ -1377,15 +1392,50 @@ final class ChunkRenderer {
                             floorMod(chunkX, MAX_STREAM_SPAN);
                     if (chunkWorldX[slot] == chunkX && chunkWorldY[slot] == chunkY &&
                             chunkWorldZ[slot] == chunkZ)
-                        markChunkDirty(slot);
+                        markChunkDirtyRegion(slot,
+                                Math.max(x - (torchChanged ? TORCH_LIGHT_RADIUS : (lx == 0 ? 1 : 0)), chunkX * VoxelWorld.CHUNK_XZ),
+                                Math.min(x + (torchChanged ? TORCH_LIGHT_RADIUS : (lx == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0)), (chunkX + 1) * VoxelWorld.CHUNK_XZ - 1),
+                                Math.max(z - (torchChanged ? TORCH_LIGHT_RADIUS : (lz == 0 ? 1 : 0)), chunkZ * VoxelWorld.CHUNK_XZ),
+                                Math.min(z + (torchChanged ? TORCH_LIGHT_RADIUS : (lz == VoxelWorld.CHUNK_XZ - 1 ? 1 : 0)), (chunkZ + 1) * VoxelWorld.CHUNK_XZ - 1));
                 }
             }
         }
     }
 
     private void markChunkDirty(int slot) {
+        markChunkDirtyMask(slot, ALL_SECTORS_MASK);
+    }
+
+    private void markChunkDirtyMask(int slot, int mask) {
+        if (mask == 0) return;
+        dirtySectorMasks[slot] |= mask;
         dirtyChunks[slot] = true;
         chunkInvalidationVersion[slot]++;
+    }
+
+    private void markChunkDirtyRegion(int slot, int minX, int maxX, int minZ, int maxZ) {
+        int x0 = chunkWorldX[slot] * VoxelWorld.CHUNK_XZ;
+        int z0 = chunkWorldZ[slot] * VoxelWorld.CHUNK_XZ;
+        int localMinX = minX - x0, localMaxX = maxX - x0;
+        int localMinZ = minZ - z0, localMaxZ = maxZ - z0;
+        int firstX = localMinX < SECTOR_SIZE ? 0 : 1;
+        int lastX = localMaxX < SECTOR_SIZE ? 0 : 1;
+        int firstZ = localMinZ < SECTOR_SIZE ? 0 : 1;
+        int lastZ = localMaxZ < SECTOR_SIZE ? 0 : 1;
+        int mask = 0;
+        for (int sz = firstZ; sz <= lastZ; sz++)
+            for (int sx = firstX; sx <= lastX; sx++) mask |= 1 << (sz * 2 + sx);
+        markChunkDirtyMask(slot, mask);
+    }
+
+    private int nextDirtySector(int slot, int cx, int cz) {
+        int mask = dirtySectorMasks[slot];
+        if (!residentChunks[slot]) return 0;
+        if (isUrgentChunk(cx, chunkWorldY[slot], cz) && urgentSector >= 0 &&
+                (mask & (1 << urgentSector)) != 0) return urgentSector;
+        for (int sector = 0; sector < SECTOR_COUNT; sector++)
+            if ((mask & (1 << sector)) != 0) return sector;
+        return 0;
     }
 
     private int floorDiv(int value, int divisor) {
@@ -1411,28 +1461,39 @@ final class ChunkRenderer {
         setChunkRenderingEnabled(chunks[i], visible);
     }
 
-    /** Replace one chunk immediately, matching the October 29 streaming path. */
-    private void replaceChunk(int i, int cx, int cy, int cz, Chunk replacement) {
-        Chunk previous = chunks[i];
+    private void replaceChunkSector(int i, int cx, int cy, int cz, int sector, Chunk replacement) {
+        Chunk parent = chunks[i];
+        if (parent == null) {
+            parent = new Chunk();
+            parent.sectors = new Chunk[SECTOR_COUNT];
+            parent.meshRoot = new Group();
+            parent.meshRoot.setRenderingEnable(false);
+            parent.worldX = cx * VoxelWorld.CHUNK_XZ;
+            parent.worldY = cy * VoxelWorld.CHUNK_Y;
+            parent.worldZ = cz * VoxelWorld.CHUNK_XZ;
+            parent.renderingEnabled = chunkFrustumVisible[i];
+            chunks[i] = parent;
+            terrain.addChild(parent.meshRoot);
+        }
+        Chunk previous = parent.sectors[sector];
         if (previous != null) {
-            if (previous.meshRoot != null) terrain.removeChild(previous.meshRoot);
+            if (previous.meshRoot != null) parent.meshRoot.removeChild(previous.meshRoot);
             recycleChunkBuilders(previous);
         }
-        chunks[i] = replacement;
+        parent.sectors[sector] = replacement;
+        if (replacement != null && replacement.meshRoot != null) {
+            replacement.renderingEnabled = parent.renderingEnabled;
+            replacement.meshRoot.setRenderingEnable(replacement.renderingEnabled);
+            parent.meshRoot.addChild(replacement.meshRoot);
+        }
         chunkWorldX[i] = cx;
         chunkWorldY[i] = cy;
         chunkWorldZ[i] = cz;
         residentChunks[i] = true;
-        dirtyChunks[i] = false;
-        if (isUrgentChunk(cx, cy, cz)) {
+        dirtyChunks[i] = dirtySectorMasks[i] != 0;
+        if (isUrgentChunk(cx, cy, cz) && dirtySectorMasks[i] == 0) {
             urgentChunkX = urgentChunkY = urgentChunkZ = Integer.MIN_VALUE;
-        }
-        if (replacement != null) {
-            replacement.renderingEnabled = chunkFrustumVisible[i];
-            if (replacement.meshRoot != null) {
-                replacement.meshRoot.setRenderingEnable(replacement.renderingEnabled);
-                terrain.addChild(replacement.meshRoot);
-            }
+            urgentSector = -1;
         }
     }
 
@@ -1463,6 +1524,7 @@ final class ChunkRenderer {
         }
         residentChunks[i] = false;
         dirtyChunks[i] = false;
+        dirtySectorMasks[i] = 0;
         chunkFrustumVisible[i] = false;
     }
 
@@ -1598,7 +1660,8 @@ final class ChunkRenderer {
 
                     if (!sameChunk) {
                         chunkWorldX[i] = cx; chunkWorldY[i] = cy; chunkWorldZ[i] = cz;
-                        dirtyChunks[i] = false;
+                        dirtySectorMasks[i] = ALL_SECTORS_MASK;
+                        dirtyChunks[i] = true;
                         chunkFrustumVisible[i] = visible;
                     } else if (!residentChunks[i]) {
                         // Preserve visibility for a pending or re-requested slot
@@ -1608,7 +1671,7 @@ final class ChunkRenderer {
                     if (visible && isUrgentChunk(cx, cy, cz))
                         urgentChunkVisible = true;
                     if (!visible) continue;
-                    if (!residentChunks[i] || dirtyChunks[i]) {
+                    if (!residentChunks[i] || dirtySectorMasks[i] != 0) {
                         if (isUrgentChunk(cx, cy, cz)) {
                             // A just-edited chunk wins over all camera-distance candidates.
                             best = i;
@@ -1665,10 +1728,13 @@ final class ChunkRenderer {
             boolean urgentCanPreempt = urgentChunkX != Integer.MIN_VALUE &&
                     !isUrgentChunk(cx, cy, cz);
             if (completed != null && epoch == streamEpoch && slotMatches &&
-                    !dirtyChunks[slot] && !urgentCanPreempt) {
+                    readyInvalidationVersion == chunkInvalidationVersion[slot] &&
+                    (dirtySectorMasks[slot] & (1 << readySector)) == 0 && !urgentCanPreempt) {
                 installingChunk = completed;
                 installingSlot = slot; installingX = cx; installingY = cy; installingZ = cz;
                 installingEpoch = epoch;
+                installingSector = readySector;
+                installingInvalidationVersion = readyInvalidationVersion;
                 completed.worldX = cx * VoxelWorld.CHUNK_XZ;
                 completed.worldY = cy * VoxelWorld.CHUNK_Y;
                 completed.worldZ = cz * VoxelWorld.CHUNK_XZ;
@@ -1683,7 +1749,8 @@ final class ChunkRenderer {
                     chunkWorldY[installingSlot] == installingY &&
                     chunkWorldZ[installingSlot] == installingZ;
             if (installingEpoch != streamEpoch || !slotMatches ||
-                    dirtyChunks[installingSlot]) {
+                    installingInvalidationVersion != chunkInvalidationVersion[installingSlot] ||
+                    (dirtySectorMasks[installingSlot] & (1 << installingSector)) != 0) {
                 recycleChunkBuilders(installingChunk);
                 if (slotMatches) dirtyChunks[installingSlot] = true;
                 installingChunk = null;
@@ -1693,7 +1760,8 @@ final class ChunkRenderer {
                     // allocation burst. Keep the same HTC frame budget for every chunk.
                     int meshBudget = MAX_CHUNK_MESHES_PER_SYNC;
                     if (finishChunkMeshStep(installingChunk, meshBudget)) {
-                        replaceChunk(installingSlot, installingX, installingY, installingZ, installingChunk);
+                        replaceChunkSector(installingSlot, installingX, installingY, installingZ,
+                                installingSector, installingChunk);
                         installingChunk = null;
                     }
                 } catch (OutOfMemoryError exhausted) {
@@ -1721,6 +1789,7 @@ final class ChunkRenderer {
 
     private void beginChunkBuildSnapshot(VoxelWorld world, int slot,
                                          int cx, int cy, int cz) {
+        chunkSnapshotSector = nextDirtySector(slot, cx, cz);
         if (!world.prepareProceduralChunksForSection(cx, cz)) {
             dirtyChunks[slot] = true;
             return;
@@ -1845,7 +1914,10 @@ final class ChunkRenderer {
             chunkBuildRequestY = chunkSnapshotY;
             chunkBuildRequestZ = chunkSnapshotZ;
             chunkBuildRequestEpoch = chunkSnapshotEpoch;
-            dirtyChunks[slot] = false;
+            chunkBuildRequestSector = chunkSnapshotSector;
+            chunkBuildRequestInvalidationVersion = chunkSnapshotInvalidationVersion;
+            dirtySectorMasks[slot] &= ~(1 << chunkSnapshotSector);
+            dirtyChunks[slot] = dirtySectorMasks[slot] != 0;
             chunkSnapshotPreparing = false;
             if (chunkBuildThread == null) {
                 try {
@@ -1881,7 +1953,7 @@ final class ChunkRenderer {
      */
     private void runChunkBuildWorker() {
         while (true) {
-            int slot, cx, cy, cz, epoch;
+            int slot, cx, cy, cz, epoch, sector, invalidationVersion;
             synchronized (chunkBuildWorkerLock) {
                 while (!chunkBuildRequestPending) {
                     try {
@@ -1899,11 +1971,13 @@ final class ChunkRenderer {
                 cy = chunkBuildRequestY;
                 cz = chunkBuildRequestZ;
                 epoch = chunkBuildRequestEpoch;
+                sector = chunkBuildRequestSector;
+                invalidationVersion = chunkBuildRequestInvalidationVersion;
             }
 
             Chunk data = null;
             try {
-                data = buildChunk(chunkBuildSnapshot, cx, cy, cz);
+                data = buildChunk(chunkBuildSnapshot, cx, cy, cz, sector);
                 if (data == null) {
                     data = new Chunk();
                     data.faceBuilders = new FaceBuilder[TILE_COUNT];
@@ -1920,6 +1994,8 @@ final class ChunkRenderer {
                 readyY = cy;
                 readyZ = cz;
                 readyEpoch = epoch;
+                readySector = sector;
+                readyInvalidationVersion = invalidationVersion;
                 readyChunk = data;
                 buildResultReady = true;
                 chunkBuildWorkerBusy = false;
@@ -2042,6 +2118,13 @@ final class ChunkRenderer {
 
     private void recycleChunkBuilders(Chunk chunk) {
         if (chunk == null) return;
+        if (chunk.sectors != null) {
+            for (int i = 0; i < chunk.sectors.length; i++) {
+                recycleChunkBuilders(chunk.sectors[i]);
+                chunk.sectors[i] = null;
+            }
+            chunk.sectors = null;
+        }
         if (chunk.faceBuilders != null) {
             for (int i = 0; i < chunk.faceBuilders.length; i++) {
                 FaceBuilder builder = chunk.faceBuilders[i];
@@ -2069,7 +2152,7 @@ final class ChunkRenderer {
         }
     }
 
-    private Chunk buildChunk(ChunkBuildSnapshot snapshot, int cx, int cy, int cz) {
+    private Chunk buildChunk(ChunkBuildSnapshot snapshot, int cx, int cy, int cz, int sector) {
         FaceBuilder[] builders = chunkFaceBuilders;
         FaceBuilder[] builderTails = chunkFaceBuilderTails;
         for (int i = 0; i < builders.length; i++) { builders[i] = null; builderTails[i] = null; }
@@ -2082,6 +2165,8 @@ final class ChunkRenderer {
         int x1 = x0 + VoxelWorld.CHUNK_XZ;
         int y1 = y0 + VoxelWorld.CHUNK_Y;
         int z1 = z0 + VoxelWorld.CHUNK_XZ;
+        int sectorX = (sector & 1) * SECTOR_SIZE;
+        int sectorZ = (sector >> 1) * SECTOR_SIZE;
 
         prepareChunkLightMap(snapshot, x0, y0, z0, x1, y1, z1);
 
@@ -2098,7 +2183,8 @@ final class ChunkRenderer {
                     byte id = snapshot.block(x - x0, y - y0, z - z0);
                     chunkVoxelScratch[localIndex] = id;
                     chunkLightScratch[localIndex] = (byte)(id == Block.LAVA ? 14 : torchLightAt(localIndex));
-                    if (id == Block.AIR) continue;
+                    if (id == Block.AIR || localX < sectorX || localX >= sectorX + SECTOR_SIZE ||
+                            localZ < sectorZ || localZ >= sectorZ + SECTOR_SIZE) continue;
                     nonAirBlocks++;
                     if (id == Block.PORTAL) {
                         if (portals == null) portals = acquirePortalBuilder();
@@ -2133,20 +2219,20 @@ final class ChunkRenderer {
         // the merged rectangles preserve the original per-block texture scale.
         int[] mask = greedyMaskScratch;
         for (int face = 0; face < 6; face++) {
-            int slices = face == 0 || face == 5 ? VoxelWorld.CHUNK_Y : VoxelWorld.CHUNK_XZ;
-            int width = VoxelWorld.CHUNK_XZ;
-            int height = face == 0 || face == 5 ? VoxelWorld.CHUNK_XZ : VoxelWorld.CHUNK_Y;
+            int slices = face == 0 || face == 5 ? VoxelWorld.CHUNK_Y : SECTOR_SIZE;
+            int width = SECTOR_SIZE;
+            int height = face == 0 || face == 5 ? SECTOR_SIZE : VoxelWorld.CHUNK_Y;
             for (int slice = 0; slice < slices; slice++) {
                 for (int b = 0; b < height; b++) {
                     int row = b * width;
                     for (int a = 0; a < width; a++) {
                         int x, y, z;
                         if (face == 0 || face == 5) {
-                            x = x0 + a; y = y0 + slice; z = z0 + b;
+                            x = x0 + sectorX + a; y = y0 + slice; z = z0 + sectorZ + b;
                         } else if (face == 1 || face == 2) {
-                            x = x0 + slice; y = y0 + b; z = z0 + a;
+                            x = x0 + sectorX + slice; y = y0 + b; z = z0 + sectorZ + a;
                         } else {
-                            x = x0 + a; y = y0 + b; z = z0 + slice;
+                            x = x0 + sectorX + a; y = y0 + b; z = z0 + sectorZ + slice;
                         }
                         int voxelIndex = (((y - y0) * VoxelWorld.CHUNK_XZ) + (z - z0)) *
                                 VoxelWorld.CHUNK_XZ + (x - x0);
@@ -2207,13 +2293,13 @@ final class ChunkRenderer {
                         }
                         int x, y, z, faceWidth, faceHeight;
                         if (face == 0 || face == 5) {
-                            x = a; y = slice; z = b;
+                            x = sectorX + a; y = slice; z = sectorZ + b;
                             faceWidth = rectWidth; faceHeight = rectHeight;
                         } else if (face == 1 || face == 2) {
-                            x = slice; y = b; z = a;
+                            x = sectorX + slice; y = b; z = sectorZ + a;
                             faceWidth = rectWidth; faceHeight = rectHeight;
                         } else {
-                            x = a; y = b; z = slice;
+                            x = sectorX + a; y = b; z = sectorZ + slice;
                             faceWidth = rectWidth; faceHeight = rectHeight;
                         }
                         int encoded = key - 1;
@@ -2598,13 +2684,20 @@ final class ChunkRenderer {
     private void updateFireMeshes() {
         for (int i = 0; i < chunks.length; i++) {
             Chunk chunk = chunks[i];
-            if (chunk != null && chunk.fires != null) chunk.fires.setFrame(fireAnimationFrame);
+            if (chunk == null) continue;
+            if (chunk.sectors != null) {
+                for (int sector = 0; sector < chunk.sectors.length; sector++) {
+                    Chunk part = chunk.sectors[sector];
+                    if (part != null && part.fires != null) part.fires.setFrame(fireAnimationFrame);
+                }
+            } else if (chunk.fires != null) chunk.fires.setFrame(fireAnimationFrame);
         }
     }
 
     private static final class Chunk {
         Mesh[] meshes;
         Group meshRoot;
+        Chunk[] sectors;
         FaceBuilder[] faceBuilders;
         FlowerBuilder flowers;
         FireBuilder fires;
