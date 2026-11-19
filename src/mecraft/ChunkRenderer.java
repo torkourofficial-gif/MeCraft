@@ -1495,14 +1495,32 @@ final class ChunkRenderer {
         }
         Chunk previous = parent.sectors[sector];
         if (previous != null) {
-            if (previous.meshRoot != null) parent.meshRoot.removeChild(previous.meshRoot);
+            if (previous.meshRoot != null) {
+                parent.meshRoot.removeChild(previous.meshRoot);
+            } else if (previous.meshes != null) {
+                // Sector meshes are direct children of the single chunk root.
+                for (int m = 0; m < previous.meshBuildAt; m++)
+                    if (previous.meshes[m] != null) parent.meshRoot.removeChild(previous.meshes[m]);
+            }
             recycleChunkBuilders(previous);
         }
         parent.sectors[sector] = replacement;
-        if (replacement != null && replacement.meshRoot != null) {
-            replacement.renderingEnabled = parent.renderingEnabled;
-            replacement.meshRoot.setRenderingEnable(replacement.renderingEnabled);
-            parent.meshRoot.addChild(replacement.meshRoot);
+        if (replacement != null) {
+            // Keep one scene-graph Group per chunk, not one extra Group per sector.
+            // New sector meshes are attached only after the complete replacement is ready.
+            if (replacement.meshRoot != null) {
+                for (int m = 0; m < replacement.meshBuildAt; m++) {
+                    Mesh mesh = replacement.meshes[m];
+                    if (mesh != null) {
+                        replacement.meshRoot.removeChild(mesh);
+                        parent.meshRoot.addChild(mesh);
+                    }
+                }
+                replacement.meshRoot = null;
+            } else if (replacement.meshes != null) {
+                for (int m = 0; m < replacement.meshBuildAt; m++)
+                    if (replacement.meshes[m] != null) parent.meshRoot.addChild(replacement.meshes[m]);
+            }
         }
         chunkWorldX[i] = cx;
         chunkWorldY[i] = cy;
@@ -2095,12 +2113,9 @@ final class ChunkRenderer {
      * stay on the game thread.
      */
     private void appendChunkMesh(Chunk chunk, Mesh mesh) {
-        if (chunk.meshRoot == null) {
-            chunk.meshRoot = new Group();
-            chunk.meshRoot.setRenderingEnable(false);
-        }
+        // Keep generated meshes detached until the whole sector is ready.
+        // replaceChunkSector attaches them directly to the chunk's shared root.
         chunk.meshes[chunk.meshBuildAt++] = mesh;
-        chunk.meshRoot.addChild(mesh);
     }
 
     private boolean finishChunkMeshStep(Chunk chunk, int maxMeshes) {
