@@ -139,7 +139,6 @@ final class ChunkRenderer {
     private Chunk installingChunk;
     private int installingSlot, installingX, installingY, installingZ, installingEpoch, installingSector;
     private int installingInvalidationVersion;
-    private boolean installingPreviousSectorReleased;
     // Small direct-mapped reuse cache for common quad-strip index buffers.
     private final int[] chunkQuadIndexFaceCounts = new int[8];
     private final TriangleStripArray[] chunkQuadIndexBuffers = new TriangleStripArray[8];
@@ -224,6 +223,7 @@ final class ChunkRenderer {
     private VertexArray heldCreativeBlockUVArray;
     private final short[] heldCreativeBlockUV = new short[48];
     private final DroppedItemSystem droppedItems;
+    private final ParticleSystem particles;
     private final MobSystem mobs;
     private int visibleHeldItem = -1;
     private int handSwingTicks = 8;
@@ -353,6 +353,7 @@ final class ChunkRenderer {
         itemSpriteOrigin.setTranslation(-15.0f / 16.0f, -1.0f / 16.0f, 0.0f);
         buildHeldItems();
         droppedItems = new DroppedItemSystem(atlas, itemAtlas);
+        particles = new ParticleSystem(atlas);
         mobs = new MobSystem(scene, droppedItems);
 
         camera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
@@ -371,6 +372,7 @@ final class ChunkRenderer {
         scene.addChild(droppedItems.mesh);
         scene.addChild(droppedItems.spriteMesh);
         scene.addChild(droppedItems.tntFlashMesh);
+        scene.addChild(particles.mesh);
         scene.setActiveCamera(camera);
         sky.setDepthClearEnable(true);
         scene.setBackground(sky);
@@ -1208,6 +1210,10 @@ final class ChunkRenderer {
         droppedItems.spawn(itemId, x, y, z);
     }
 
+    void spawnBlockParticles(int x, int y, int z, int blockId) {
+        particles.spawnBlockDestroy(x, y, z, blockId);
+    }
+
     boolean spawnPrimedTnt(int x, int y, int z, int fuse) {
         return droppedItems.spawnPrimedTnt(x, y, z, fuse);
     }
@@ -1215,9 +1221,13 @@ final class ChunkRenderer {
     int updateDroppedItems(VoxelWorld world, int[] inventory, PlayerPhysics physics) {
         int picked = droppedItems.update(world, inventory, physics);
         if (droppedItems.consumeExplosion()) {
-            mobs.damageFromExplosion(world, droppedItems.explosionX(),
-                    droppedItems.explosionY(), droppedItems.explosionZ(), 4.0f);
+            int ex = droppedItems.explosionX();
+            int ey = droppedItems.explosionY();
+            int ez = droppedItems.explosionZ();
+            particles.spawnExplosion(ex + 0.5f, ey + 0.5f, ez + 0.5f);
+            mobs.damageFromExplosion(world, ex, ey, ez, 4.0f);
         }
+        particles.update(world, world.yaw, cameraPitch);
         return picked;
     }
 
@@ -1484,21 +1494,6 @@ final class ChunkRenderer {
         setChunkRenderingEnabled(chunks[i], visible);
     }
 
-    private void releasePreviousChunkSector(int i, int sector) {
-        Chunk parent = chunks[i];
-        if (parent == null || parent.sectors == null) return;
-        Chunk previous = parent.sectors[sector];
-        if (previous == null) return;
-        if (previous.meshRoot != null) {
-            parent.meshRoot.removeChild(previous.meshRoot);
-        } else if (previous.meshes != null) {
-            for (int m = 0; m < previous.meshBuildAt; m++)
-                if (previous.meshes[m] != null) parent.meshRoot.removeChild(previous.meshes[m]);
-        }
-        recycleChunkBuilders(previous);
-        parent.sectors[sector] = null;
-    }
-
     private Chunk ensureChunkRoot(int i, int cx, int cy, int cz) {
         Chunk parent = chunks[i];
         if (parent != null) return parent;
@@ -1515,48 +1510,54 @@ final class ChunkRenderer {
         return parent;
     }
 
-    /** Attach only the mesh just created this frame; never flush a full sector at once. */
+    /**
+     * Build the replacement under a detached group. The resident sector stays
+     * visible until every new M3G mesh is ready, avoiding the temporary hole
+     * previously shown after breaking a block.
+     */
     private void attachChunkSectorMeshes(int i, int cx, int cy, int cz, int sector,
                                          Chunk replacement) {
-        Chunk parent = ensureChunkRoot(i, cx, cy, cz);
+        if (replacement.meshRoot == null) replacement.meshRoot = new Group();
+        Group staging = replacement.meshRoot;
         int start = replacement.meshAttachedCount;
         int end = replacement.meshBuildAt;
         try {
             for (int m = start; m < end; m++) {
                 Mesh mesh = replacement.meshes[m];
                 if (mesh != null) {
-                    parent.meshRoot.addChild(mesh);
+                    staging.addChild(mesh);
                     replacement.meshAttachedCount = m + 1;
                 }
             }
         } catch (OutOfMemoryError exhausted) {
             for (int m = replacement.meshAttachedCount - 1; m >= start; m--) {
-                try { parent.meshRoot.removeChild(replacement.meshes[m]); }
+                try { staging.removeChild(replacement.meshes[m]); }
                 catch (RuntimeException ignored) { }
             }
             replacement.meshAttachedCount = start;
             throw exhausted;
         } catch (RuntimeException failed) {
             for (int m = replacement.meshAttachedCount - 1; m >= start; m--) {
-                try { parent.meshRoot.removeChild(replacement.meshes[m]); }
+                try { staging.removeChild(replacement.meshes[m]); }
                 catch (RuntimeException ignored) { }
             }
             replacement.meshAttachedCount = start;
             throw failed;
         }
-        parent.sectors[sector] = replacement;
     }
 
     private void replaceChunkSector(int i, int cx, int cy, int cz, int sector, Chunk replacement) {
         Chunk parent = ensureChunkRoot(i, cx, cy, cz);
 
         Chunk previous = parent.sectors[sector];
-        // Meshes are normally attached incrementally as they are created.
-        // This catches an empty/new sector or any not-yet-attached final mesh.
+        // Attach the completed sector as one scene-graph operation, then retire
+        // the old geometry in the same sync. No intermediate empty sector.
         if (replacement != null && replacement.meshes != null &&
                 replacement.meshAttachedCount < replacement.meshBuildAt) {
             attachChunkSectorMeshes(i, cx, cy, cz, sector, replacement);
         }
+        if (replacement != null && replacement.meshRoot != null)
+            parent.meshRoot.addChild(replacement.meshRoot);
 
         if (previous != null && previous != replacement) {
             if (previous.meshRoot != null) {
@@ -1824,7 +1825,6 @@ final class ChunkRenderer {
                 installingEpoch = epoch;
                 installingSector = readySector;
                 installingInvalidationVersion = readyInvalidationVersion;
-                installingPreviousSectorReleased = false;
                 completed.worldX = cx * VoxelWorld.CHUNK_XZ;
                 completed.worldY = cy * VoxelWorld.CHUNK_Y;
                 completed.worldZ = cz * VoxelWorld.CHUNK_XZ;
@@ -1846,17 +1846,11 @@ final class ChunkRenderer {
                 try {
                     // Player edits get queue priority, not a larger per-frame
                     // allocation burst. Keep the same HTC frame budget for every chunk.
-                    int meshBudget = MAX_CHUNK_MESHES_PER_SYNC;
-                    int firstNewMesh = installingChunk.meshBuildAt;
+                    // Finish the edited sector sooner, but keep the old mesh visible
+                    // until the replacement is complete and can be swapped atomically.
+                    int meshBudget = isUrgentChunk(installingX, installingY, installingZ) ? 3 :
+                            MAX_CHUNK_MESHES_PER_SYNC;
                     boolean chunkFinished = finishChunkMeshStep(installingChunk, meshBudget);
-                    if (!installingPreviousSectorReleased && installingChunk.meshBuildAt > firstNewMesh) {
-                        releasePreviousChunkSector(installingSlot, installingSector);
-                        installingPreviousSectorReleased = true;
-                    }
-                    if (installingChunk.meshBuildAt > firstNewMesh) {
-                        attachChunkSectorMeshes(installingSlot, installingX, installingY, installingZ,
-                                installingSector, installingChunk);
-                    }
                     if (chunkFinished) {
                         replaceChunkSector(installingSlot, installingX, installingY, installingZ,
                                 installingSector, installingChunk);
