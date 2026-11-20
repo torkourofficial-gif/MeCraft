@@ -1347,14 +1347,60 @@ final class VoxelWorld {
         fullRebuild = true;
     }
 
-    boolean activateEndPortalAtWool(int x, int y, int z) {
-        if (get(x, y, z) != Block.WOOL) return false;
-        int[] frame = findPortalFrameForWool(x, y, z);
-        if (frame == null) return false;
-        if (!activatePortalAtWool(x, y, z)) return false;
-        setPortalTypeAtFrame(frame, 1);
+    void setEndPortalFrameFacing(int x, int y, int z, int facing) {
+        if (get(x, y, z) != Block.END_PORTAL_FRAME) return;
+        setMetadata(x, y, z, facing & 3);
+        changedOldId = Block.END_PORTAL_FRAME;
+        changedX = x; changedY = y; changedZ = z;
+        revision++;
+        fullRebuild = true;
+    }
+
+    boolean insertEndPortalEye(int x, int y, int z) {
+        if (get(x, y, z) != Block.END_PORTAL_FRAME) return false;
+        int meta = metadataAt(x, y, z);
+        if ((meta & 4) != 0) return false;
+        setMetadata(x, y, z, meta | 4);
+        changedOldId = Block.END_PORTAL_FRAME;
+        changedX = x; changedY = y; changedZ = z;
+        revision++;
+        int[] ring = findEndPortalRing(x, y, z);
+        if (ring != null) {
+            for (int u = 1; u <= 3; u++) for (int v = 1; v <= 3; v++) {
+                int px = ring[0] + u, pz = ring[2] + v;
+                set(px, ring[1], pz, Block.PORTAL);
+                setMetadata(px, ring[1], pz, 1);
+            }
+        }
+        fullRebuild = true;
         return true;
     }
+
+    private int[] findEndPortalRing(int x, int y, int z) {
+        for (int ox = x - 4; ox <= x; ox++) for (int oz = z - 4; oz <= z; oz++) {
+            if (isEndPortalRing(ox, y, oz)) return new int[] { ox, y, oz };
+        }
+        return null;
+    }
+
+    private boolean isEndPortalRing(int ox, int y, int oz) {
+        if (y <= 0 || y >= HEIGHT) return false;
+        for (int u = 1; u <= 3; u++) {
+            if (!isEyedEndFrame(ox + u, y, oz, 0) ||
+                    !isEyedEndFrame(ox + u, y, oz + 4, 2)) return false;
+            if (!isEyedEndFrame(ox, y, oz + u, 3) ||
+                    !isEyedEndFrame(ox + 4, y, oz + u, 1)) return false;
+        }
+        return true;
+    }
+
+    private boolean isEyedEndFrame(int x, int y, int z, int facing) {
+        int metadata = metadataAt(x, y, z);
+        return get(x, y, z) == Block.END_PORTAL_FRAME &&
+                (metadata & 4) != 0 && (metadata & 3) == facing;
+    }
+
+    boolean activateEndPortalAtWool(int x, int y, int z) { return false; }
 
     boolean touchesPortal(float px, float py, float pz) {
         int minX = floorBlock(px - 0.31f), maxX = floorBlock(px + 0.31f);
