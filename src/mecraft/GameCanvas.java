@@ -188,8 +188,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private boolean lookUp, lookDown, lookLeft, lookRight;
     private VoxelWorld world;
     private ChunkRenderer renderer;
-    // Completed by the loading worker; M3G scene changes are deferred to paint().
-    private volatile boolean dimensionSceneSetupPending;
     private boolean ridingBoat;
     private boolean ridingMinecart;
     private MusicController music;
@@ -1734,54 +1732,38 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (world == null || renderer == null ||
                 world.dimensionId != VoxelWorld.DIM_OVERWORLD || state != PLAYING) return;
 
-        // Keep all native M3G work on the Canvas/render thread. The worker only
-        // changes voxel data and player state while the loading screen is shown.
-        state = LOADING;
+        // Use the same dimension-refresh path as the Nether: change the world,
+        // refresh the existing renderer, then let the ordinary game loop keep
+        // ticking and repainting every frame. The End does not need a separate
+        // LOADING state or a second frame-presentation pipeline.
         loadingMessage = Language.text("Generando el End...");
         portalChargeTicks = 0;
-        dimensionSceneSetupPending = false;
         clearKeys();
         resetMining();
-        repaint();
-        serviceRepaints();
 
-        Thread loader = new Thread(new Runnable() {
-            public void run() {
-                String stage = "cambiando a la dimension End";
-                try {
-                    System.gc();
-                    stage = "generando la isla central del End";
-                    if (!world.setDimension(VoxelWorld.DIM_END)) {
-                        state = PLAYING;
-                        repaint();
-                        return;
-                    }
+        try {
+            System.gc();
+            if (!world.setDimension(VoxelWorld.DIM_END)) return;
 
-                    // One-way arrival: the End owns the active voxel arrays.
-                    int centerX = VoxelWorld.WIDTH / 2;
-                    int centerZ = VoxelWorld.DEPTH / 2;
-                    world.playerX = centerX + 0.5f;
-                    world.playerZ = centerZ + 0.5f;
-                    world.playerY = world.surfaceY(centerX, centerZ) + 1.05f;
-                    world.yaw = 0.0f;
-                    playerPhysics.reset();
-                    copyInventoryToWorld();
+            int centerX = VoxelWorld.WIDTH / 2;
+            int centerZ = VoxelWorld.DEPTH / 2;
+            world.playerX = centerX + 0.5f;
+            world.playerZ = centerZ + 0.5f;
+            world.playerY = world.surfaceY(centerX, centerZ) + 1.05f;
+            world.yaw = 0.0f;
+            playerPhysics.reset();
+            copyInventoryToWorld();
 
-                    // paint() consumes this flag and performs mob/M3G setup,
-                    // chunk streaming and camera updates on the render thread.
-                    dimensionSceneSetupPending = true;
-                    // Stay in LOADING until the Canvas thread has completed
-                    // all scene setup; the game loop must not tick old entities.
-                    repaint();
-                } catch (OutOfMemoryError exhausted) {
-                    showError("No hay memoria suficiente para cargar el End. Reduce la distancia de renderizado y vuelve a intentarlo.");
-                } catch (Throwable problem) {
-                    showDiagnostic(stage, problem);
-                }
-            }
-        });
-        try { loader.setPriority(Thread.MIN_PRIORITY); } catch (RuntimeException ignored) { }
-        loader.start();
+            renderer.onDimensionChanged(world);
+            renderer.updateDayNight(world);
+            renderer.updateCamera(world, cameraPitch);
+            renderer.sync(world);
+            world.save();
+        } catch (OutOfMemoryError exhausted) {
+            showError("No hay memoria suficiente para cargar el End. Reduce la distancia de renderizado y vuelve a intentarlo.");
+        } catch (Throwable problem) {
+            showDiagnostic("actualizando el renderer del End", problem);
+        }
     }
 
     private void travelThroughPortal() {
@@ -3381,61 +3363,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     protected synchronized void paint(Graphics g) {
-        boolean rendererSyncedForLoading = false;
-
-        if (state == LOADING && dimensionSceneSetupPending) {
-            String stage = "preparando entidades del End";
-            try {
-                dimensionSceneSetupPending = false;
-                renderer.onDimensionChanged(world);
-                stage = "actualizando iluminacion del End";
-                renderer.updateDayNight(world);
-                stage = "actualizando camara del End";
-                renderer.updateCamera(world, cameraPitch);
-            } catch (OutOfMemoryError exhausted) {
-                showError("No hay memoria suficiente para preparar la escena del End.");
-            } catch (Throwable problem) {
-                showDiagnostic(stage, problem);
-            }
-        }
-
-        // Keep the loading screen visible until the chunk containing the
-        // player's arrival point has all of its sector meshes installed.
-        // sync() advances the existing bounded streaming pipeline one frame
-        // at a time; no artificial sleep or blocking wait is needed.
-        if (state == LOADING && world != null && renderer != null &&
-                world.dimensionId == VoxelWorld.DIM_END && !dimensionSceneSetupPending) {
-            String stage = "construyendo los chunks centrales del End";
-            try {
-                long syncStarted = System.currentTimeMillis();
-                if (!rendererSyncedForLoading) renderer.sync(world);
-                long syncTime = System.currentTimeMillis() - syncStarted;
-                profileRenderSync = syncTime;
-                if (syncTime > profileMaxRenderSync) profileMaxRenderSync = syncTime;
-                rendererSyncedForLoading = true;
-                if (renderer.isChunkReadyAt(world.playerX, world.playerY, world.playerZ)) {
-                    state = PLAYING;
-                } else {
-                    loadingMessage = Language.text("Construyendo chunks visibles...");
-                }
-            } catch (OutOfMemoryError exhausted) {
-                showError("No hay memoria suficiente para construir el terreno del End.");
-            } catch (Throwable problem) {
-                showDiagnostic(stage, problem);
-            }
-        }
 
         if (state == MENU || state == TOUCH_SETUP) panoramaTick++;
         if (state == TOUCH_SETUP) {
             drawTouchSetup(g);
         } else if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH ||
-            state == CREATIVE_INVENTORY || state == GAME_OVER || state == CHEST_INVENTORY || state == FURNACE_INVENTORY ||
-            (state == LOADING && world != null && renderer != null &&
-             world.dimensionId == VoxelWorld.DIM_END && !dimensionSceneSetupPending)) {
+            state == CREATIVE_INVENTORY || state == GAME_OVER || state == CHEST_INVENTORY || state == FURNACE_INVENTORY) {
             String stage = "actualizando mallas M3G";
             try {
                 long syncStarted = System.currentTimeMillis();
-                if (!rendererSyncedForLoading) renderer.sync(world);
+                renderer.sync(world);
                 long syncTime = System.currentTimeMillis() - syncStarted;
                 profileRenderSync = syncTime;
                 if (syncTime > profileMaxRenderSync) profileMaxRenderSync = syncTime;
@@ -3481,9 +3418,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 if (state == CREATIVE_INVENTORY) drawCreativeInventory(g);
                 profileHudWork = System.currentTimeMillis() - hudStarted;
                 if (profileHudWork > profileMaxHudWork) profileMaxHudWork = profileHudWork;
-                // Keep presenting the 3D scene while End chunks are installed.
-                // The loading overlay is 2D and must not replace the M3G frame.
-                if (state == LOADING) drawLoading(g);
             } catch (OutOfMemoryError exhausted) {
                 showError("M3G agotó la memoria disponible durante el dibujo. Cierra y vuelve a abrir el mundo para liberar recursos.");
                 drawError(g);
