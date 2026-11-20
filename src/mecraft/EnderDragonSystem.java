@@ -25,6 +25,8 @@ final class EnderDragonSystem {
     private final Group[] frontLegs = new Group[2];
     private final Group[] rearLegs = new Group[2];
     private final Group jaw = new Group();
+    private VertexBuffer cubeVertexBuffer;
+    private TriangleStripArray cubeIndexBuffer;
     private int worldSeed = Integer.MIN_VALUE;
     private int tick;
     private int attackCooldown;
@@ -46,6 +48,7 @@ final class EnderDragonSystem {
         polygon.setCulling(PolygonMode.CULL_NONE);
         polygon.setShading(PolygonMode.SHADE_FLAT);
         appearance.setPolygonMode(polygon);
+        createSharedCubeGeometry();
 
         addBox(root, 1.6f, 1.35f, 3.8f, 0.0f, 0.0f, 0.0f, appearance);
         addBox(root, 0.85f, 0.85f, 1.0f, 0.0f, 0.35f, -2.15f, appearance);
@@ -91,49 +94,40 @@ final class EnderDragonSystem {
         scene.addChild(root);
     }
 
-    private void addBox(Group parent, float width, float height, float depth,
-                        float x, float y, float z, Appearance appearance) {
-        Group part = new Group();
-        part.setTranslation(x, y, z);
-        part.addChild(makeBox(width, height, depth, appearance));
-        parent.addChild(part);
-    }
-
-    private Mesh makeBox(float width, float height, float depth, Appearance appearance) {
-        short[] positions = new short[24 * 3];
-        short[] uv = new short[24 * 2];
-        float x0 = -width * 0.5f, x1 = width * 0.5f;
-        float y0 = -height * 0.5f, y1 = height * 0.5f;
-        float z0 = -depth * 0.5f, z1 = depth * 0.5f;
-        float[][][] faces = new float[][][] {
-            {{x1,y0,z1},{x1,y0,z0},{x1,y1,z0},{x1,y1,z1}},
-            {{x0,y0,z0},{x0,y0,z1},{x0,y1,z1},{x0,y1,z0}},
-            {{x1,y0,z1},{x0,y0,z1},{x0,y0,z0},{x1,y0,z0}},
-            {{x1,y1,z0},{x0,y1,z0},{x0,y1,z1},{x1,y1,z1}},
-            {{x1,y0,z0},{x0,y0,z0},{x0,y1,z0},{x1,y1,z0}},
-            {{x0,y0,z1},{x1,y0,z1},{x1,y1,z1},{x0,y1,z1}}
+    private void createSharedCubeGeometry() {
+        short[] positions = new short[] {
+            32,-32,32, 32,-32,-32, 32,32,-32, 32,32,32,
+            -32,-32,-32, -32,-32,32, -32,32,32, -32,32,-32,
+            32,-32,32, -32,-32,32, -32,-32,-32, 32,-32,-32,
+            32,32,-32, -32,32,-32, -32,32,32, 32,32,32,
+            32,-32,-32, -32,-32,-32, -32,32,-32, 32,32,-32,
+            -32,-32,32, 32,-32,32, 32,32,32, -32,32,32
         };
-        int at = 0;
-        for (int face = 0; face < 6; face++) {
-            for (int corner = 0; corner < 4; corner++) {
-                float[] p = faces[face][corner];
-                positions[at * 3] = (short)(p[0] * 64.0f);
-                positions[at * 3 + 1] = (short)(p[1] * 64.0f);
-                positions[at * 3 + 2] = (short)(p[2] * 64.0f);
-                uv[at * 2] = (short)((corner == 0 || corner == 3) ? 0 : 1024);
-                uv[at * 2 + 1] = (short)(corner < 2 ? 1024 : 0);
-                at++;
-            }
-        }
+        short[] uv = new short[] {
+            0,1024,1024,1024,1024,0,0,0,
+            0,1024,1024,1024,1024,0,0,0,
+            0,1024,1024,1024,1024,0,0,0,
+            0,1024,1024,1024,1024,0,0,0,
+            0,1024,1024,1024,1024,0,0,0,
+            0,1024,1024,1024,1024,0,0,0
+        };
         VertexArray pa = new VertexArray(24, 3, 2);
         pa.set(0, 24, positions);
         VertexArray ta = new VertexArray(24, 2, 2);
         ta.set(0, 24, uv);
-        VertexBuffer vb = new VertexBuffer();
-        vb.setPositions(pa, 1.0f / 64.0f, null);
-        vb.setTexCoords(0, ta, 1.0f / 1024.0f, null);
-        int[] strips = {4,4,4,4,4,4};
-        return new Mesh(vb, new TriangleStripArray(0, strips), appearance);
+        cubeVertexBuffer = new VertexBuffer();
+        cubeVertexBuffer.setPositions(pa, 1.0f / 64.0f, null);
+        cubeVertexBuffer.setTexCoords(0, ta, 1.0f / 1024.0f, null);
+        cubeIndexBuffer = new TriangleStripArray(0, new int[] {4,4,4,4,4,4});
+    }
+
+    private void addBox(Group parent, float width, float height, float depth,
+                        float x, float y, float z, Appearance appearance) {
+        Group part = new Group();
+        part.setTranslation(x, y, z);
+        part.setScale(width, height, depth);
+        part.addChild(new Mesh(cubeVertexBuffer, cubeIndexBuffer, appearance));
+        parent.addChild(part);
     }
 
     int update(VoxelWorld world) {
