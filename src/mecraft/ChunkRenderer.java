@@ -589,9 +589,7 @@ final class ChunkRenderer {
     }
 
     /** Render the first-person hand and held block in a final overlay pass. */
-    void render(Graphics3D graphics, VoxelWorld world) {
-        // M3G scene graph creation and animation are confined to the paint thread.
-        updateEnderDragonVisual(world);
+    void render(Graphics3D graphics) {
         boolean showHand = cameraMode == 0;
         if (showHand) handPivot.setRenderingEnable(false);
         try {
@@ -1327,7 +1325,7 @@ final class ChunkRenderer {
         return damage;
     }
 
-    private void updateEnderDragonVisual(VoxelWorld world) {
+    void updateEnderDragonVisual(VoxelWorld world) {
         if (enderDragon == null && !enderDragonLoadFailed &&
                 world.dimensionId == VoxelWorld.DIM_END) {
             try {
