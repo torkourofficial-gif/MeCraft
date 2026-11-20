@@ -78,6 +78,7 @@ final class Block {
     static final byte LAVA = (byte)findTileBlock(237);
     /** Alpha 1.2.6 rail block uses terrain atlas tile 128 and is rendered as a thin plane. */
     static final byte RAIL = (byte)findTileBlock(128);
+    static final byte END_PORTAL_FRAME = (byte)findTileBlock(158);
 
     private static int findTileBlock(int tile) {
         for (int i = DECORATIVE_START; i < TILE.length; i++)
@@ -120,6 +121,8 @@ final class Block {
         // the normal block range. Reuse an unnamed placeholder slot to keep
         // COUNT (and the item IDs stored after the block range) stable.
         replaceTile(result, 41, 61);
+        // Reuse unnamed legacy slot 79; do not shift saved block or item IDs.
+        replaceTile(result, 95, 158);
         return result;
     }
 
@@ -169,7 +172,7 @@ final class Block {
     private static boolean hasAtlasTexture(int tile) {
         if (tile < 0 || tile >= 256) return false;
         if (tile == 14 || tile == 31 || tile == 61 || tile == 62 || tile == 96 || tile == 99 || tile == 102 ||
-            tile == 103 || tile == 104 || tile == 105 || tile == 115) return true;
+            tile == 158 || tile == 159 || tile == 174 || tile == 175 || tile == 103 || tile == 104 || tile == 105 || tile == 115) return true;
         return TEXTURED_TILE_ROWS[tile >> 4].charAt(tile & 15) != '.';
     }
 
@@ -257,6 +260,7 @@ final class Block {
         if (tile == 105) return "Piedra luminosa";
         if (tile == 112) return "Riel";
         if (tile == 128) return "Riel";
+        if (tile == 158) return "Marco del portal del End";
         return null;
     }
 
@@ -424,6 +428,7 @@ final class Block {
     }
 
     static int renderTile(byte id, int face, int woolColor) {
+        if (id == END_PORTAL_FRAME) return face == 0 ? 158 : (face == 5 ? 175 : 159);
         return id == WOOL && woolColor > 0 ? WOOL_TINT_TILE_START + woolColor : faceTile(id, face);
     }
 
