@@ -3443,7 +3443,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     graphics3D.setViewport(0, 0, getWidth(), getHeight());
                     stage = "dibujando World M3G";
                     long renderStarted = System.currentTimeMillis();
-                    renderer.render(graphics3D);
+                    renderer.render(graphics3D, world);
                     profileRenderWork = System.currentTimeMillis() - renderStarted;
                     if (profileRenderWork > profileMaxRenderWork)
                         profileMaxRenderWork = profileRenderWork;
