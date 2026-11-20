@@ -210,6 +210,8 @@ final class ChunkRenderer {
     private int fireAnimationFrame;
     private int portalFrameSize = 16;
     private int portalAnimationTick;
+    private int endPortalAnimationTick;
+    private int endPortalAnimationFrame;
     private int portalAnimationFrame;
     private final Appearance[] tileAppearances = new Appearance[TILE_COUNT];
     private final Appearance flowerAppearance;
@@ -699,7 +701,12 @@ final class ChunkRenderer {
             portalAnimationTick = 0;
             portalAnimationFrame = (portalAnimationFrame + 1) & 7;
             portalAppearance.setTexture(0, portalFrames[portalAnimationFrame]);
-            endPortalAppearance.setTexture(0, endPortalFrames[portalAnimationFrame]);
+        }
+        // One End animation frame every 8 game ticks (about 400 ms).
+        if (++endPortalAnimationTick >= 8) {
+            endPortalAnimationTick = 0;
+            endPortalAnimationFrame = (endPortalAnimationFrame + 1) & 7;
+            endPortalAppearance.setTexture(0, endPortalFrames[endPortalAnimationFrame]);
         }
         if (++fireAnimationTick >= 2) {
             fireAnimationTick = 0;
@@ -2807,13 +2814,19 @@ final class ChunkRenderer {
     private void makeEndPortalFrames() {
         final int size = 16;
         int[] pixels = new int[size * size];
+        final int[] starColors = {
+            0xFF66D9FF, 0xFF8C7BFF, 0xFF45E6C4,
+            0xFFD86BFF, 0xFF6F9BFF, 0xFFFF83C8
+        };
         for (int frame = 0; frame < 8; frame++) {
             for (int i = 0; i < pixels.length; i++) pixels[i] = 0xFF000000;
-            // Deterministic moving white points on a fully black surface.
-            for (int star = 0; star < 13; star++) {
-                int x = (star * 7 + frame * (star % 3 + 1)) & 15;
-                int y = (star * 11 + frame * (star % 4 + 1)) & 15;
-                pixels[y * size + x] = (star % 4 == 0) ? 0xFFFFFFFF : 0xFFD8D8D8;
+            // Sparse one-pixel stars, with only a tiny drift between frames.
+            for (int star = 0; star < 18; star++) {
+                int baseX = (star * 7 + (star / 3) * 3) & 15;
+                int baseY = (star * 11 + (star / 4) * 5) & 15;
+                int x = (baseX + ((star & 1) == 0 ? frame / 4 : 0)) & 15;
+                int y = (baseY + ((star % 3) == 0 ? frame / 4 : 0)) & 15;
+                pixels[y * size + x] = starColors[star % starColors.length];
             }
             Image image = Image.createRGBImage(pixels, size, size, true);
             Texture2D texture = new Texture2D(new Image2D(Image2D.RGBA, image));
