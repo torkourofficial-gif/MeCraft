@@ -1313,9 +1313,14 @@ final class VoxelWorld {
                         get(px, frame[1] + v, pz) != Block.PORTAL) return false;
             }
         }
-        // All six portal cells can straddle chunk boundaries; invalidate the
-        // full visible mesh set instead of rebuilding only the last cell's chunk.
-        fullRebuild = true;
+        // The portal interior is a compact 2x3 edit. Invalidate only resident
+        // sections touching it instead of resetting the complete world renderer.
+        int minX = frame[3] == 0 ? frame[0] + 1 : frame[0];
+        int maxX = frame[3] == 0 ? frame[0] + 2 : frame[0];
+        int minZ = frame[3] == 0 ? frame[2] : frame[2] + 1;
+        int maxZ = frame[3] == 0 ? frame[2] : frame[2] + 2;
+        recordBulkChangedRegion(minX, frame[1] + 1, minZ,
+                maxX, frame[1] + 3, maxZ);
         return true;
     }
 
@@ -1342,13 +1347,27 @@ final class VoxelWorld {
 
     void setPortalTypeAtFrame(int[] frame, int type) {
         if (frame == null) return;
+        boolean changed = false;
         for (int v = 1; v <= 3; v++) for (int u = 1; u <= 2; u++) {
             int px = frame[3] == 0 ? frame[0] + u : frame[0];
             int pz = frame[3] == 0 ? frame[2] : frame[2] + u;
-            if (get(px, frame[1] + v, pz) == Block.PORTAL)
+            if (get(px, frame[1] + v, pz) == Block.PORTAL &&
+                    metadataAt(px, frame[1] + v, pz) != type) {
                 setMetadata(px, frame[1] + v, pz, type);
+                changedX = px; changedY = frame[1] + v; changedZ = pz;
+                changedOldId = Block.PORTAL;
+                changed = true;
+            }
         }
-        fullRebuild = true;
+        if (changed) {
+            revision++;
+            int minX = frame[3] == 0 ? frame[0] + 1 : frame[0];
+            int maxX = frame[3] == 0 ? frame[0] + 2 : frame[0];
+            int minZ = frame[3] == 0 ? frame[2] : frame[2] + 1;
+            int maxZ = frame[3] == 0 ? frame[2] : frame[2] + 2;
+            recordBulkChangedRegion(minX, frame[1] + 1, minZ,
+                    maxX, frame[1] + 3, maxZ);
+        }
     }
 
     void setEndPortalFrameFacing(int x, int y, int z, int facing) {
@@ -1509,7 +1528,12 @@ final class VoxelWorld {
                                     get(x, candidateY + v, z) != Block.PORTAL) return null;
                         }
                     }
-                    fullRebuild = true;
+                    // The generated 4x5 frame and its 2x3 portal occupy one
+                    // small region; only resident sectors intersecting it need
+                    // rebuilding, even when the structure crosses a chunk edge.
+                    recordBulkChangedRegion(bx, candidateY, bz,
+                            bx + (axis == 0 ? 3 : 0), candidateY + 4,
+                            bz + (axis == 0 ? 0 : 3));
                     return new int[] { bx, candidateY, bz, axis };
                 }
             }
