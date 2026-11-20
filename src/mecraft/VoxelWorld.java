@@ -1386,10 +1386,10 @@ final class VoxelWorld {
     private boolean isEndPortalRing(int ox, int y, int oz) {
         if (y <= 0 || y >= HEIGHT) return false;
         for (int u = 1; u <= 3; u++) {
-            if (!isEyedEndFrame(ox + u, y, oz, 0) ||
-                    !isEyedEndFrame(ox + u, y, oz + 4, 2)) return false;
-            if (!isEyedEndFrame(ox, y, oz + u, 3) ||
-                    !isEyedEndFrame(ox + 4, y, oz + u, 1)) return false;
+            if (!isEyedEndFrame(ox + u, y, oz, 3) ||
+                    !isEyedEndFrame(ox + u, y, oz + 4, 1)) return false;
+            if (!isEyedEndFrame(ox, y, oz + u, 2) ||
+                    !isEyedEndFrame(ox + 4, y, oz + u, 0)) return false;
         }
         return true;
     }
