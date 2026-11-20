@@ -212,6 +212,15 @@ final class EnderDragonSystem {
 
     private float yawTo(float dx, float dz) {
         if (dx == 0.0f && dz == 0.0f) return 0.0f;
-        return (float)(Math.atan2(dx, dz) * 57.29578);
+        double angle;
+        if (dz > 0.0f) {
+            angle = Math.atan(dx / dz);
+        } else if (dz < 0.0f) {
+            angle = Math.atan(dx / dz);
+            angle += dx >= 0.0f ? Math.PI : -Math.PI;
+        } else {
+            angle = dx > 0.0f ? Math.PI * 0.5 : -Math.PI * 0.5;
+        }
+        return (float)(angle * 57.29578);
     }
 }
