@@ -1499,6 +1499,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             return;
         }
         if (selected == ItemCatalog.END_PORTAL_EYE) {
+            if (world.mode == 0 && inventory[selected] <= 0) return;
             int[] target = trace(5.0f);
             if (target != null && world.activateEndPortalAtWool(target[0], target[1], target[2])) {
                 if (world.mode == 0 && inventory[selected] > 0) inventory[selected]--;

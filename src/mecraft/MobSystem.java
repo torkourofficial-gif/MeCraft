@@ -477,7 +477,7 @@ final class MobSystem {
         mob.yaw = random.nextInt(360);
         mob.targetYaw = mob.yaw;
         mob.age = 0;
-        mob.health = mob.type == SLIME ? 1 : (isHostile(mob.type) ? 20 : 10);
+        mob.health = mob.type == SLIME ? 1 : (mob.type == ENDERMAN ? 40 : (isHostile(mob.type) ? 20 : 10));
         mob.slimeSize = mob.type == SLIME ? 1 : 1;
         mob.deathTicks = mob.fireTicks = mob.burnDamageTicks = 0;
         mob.attackDelay = mob.fuseTicks = mob.fleeTicks = mob.hurtTicks = 0;
@@ -702,7 +702,7 @@ final class MobSystem {
         mob.targetYaw = mob.yaw;
         mob.age = random.nextInt(100);
         mob.nextWander = tick + 20 + random.nextInt(100);
-        mob.health = 20;
+        mob.health = mob.type == ENDERMAN ? 40 : 20;
         mob.slimeSize = mob.type == SLIME ? 1 << random.nextInt(3) : 1;
         if (mob.type == SLIME) mob.health = mob.slimeSize * mob.slimeSize;
         mob.hurtTicks = 0;
