@@ -2341,6 +2341,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     public synchronized void keyPressed(int keyCode) {
+        if (endPortalTransitionPending) return;
         if (state == DEBUG_ITEMS) {
             int action = gameAction(keyCode);
             if (keyCode == KEY_NUM0 || keyCode == KEY_POUND) {
