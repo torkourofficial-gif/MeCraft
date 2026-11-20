@@ -1274,6 +1274,10 @@ final class ChunkRenderer {
         return picked;
     }
 
+    void onDimensionChanged(VoxelWorld world) {
+        mobs.onDimensionChanged(world);
+    }
+
     int updateMobs(VoxelWorld world) {
         return mobs.update(world) + dragon.update(world);
     }
