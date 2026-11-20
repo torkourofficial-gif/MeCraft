@@ -1770,7 +1770,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     // paint() consumes this flag and performs mob/M3G setup,
                     // chunk streaming and camera updates on the render thread.
                     dimensionSceneSetupPending = true;
-                    state = PLAYING;
+                    // Stay in LOADING until the Canvas thread has completed
+                    // all scene setup; the game loop must not tick old entities.
                     repaint();
                 } catch (OutOfMemoryError exhausted) {
                     showError("No hay memoria suficiente para cargar el End. Reduce la distancia de renderizado y vuelve a intentarlo.");
@@ -3381,6 +3382,23 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     protected synchronized void paint(Graphics g) {
 
+        if (state == LOADING && dimensionSceneSetupPending) {
+            String stage = "preparando entidades del End";
+            try {
+                dimensionSceneSetupPending = false;
+                renderer.onDimensionChanged(world);
+                stage = "actualizando iluminacion del End";
+                renderer.updateDayNight(world);
+                stage = "actualizando camara del End";
+                renderer.updateCamera(world, cameraPitch);
+                state = PLAYING;
+            } catch (OutOfMemoryError exhausted) {
+                showError("No hay memoria suficiente para preparar la escena del End.");
+            } catch (Throwable problem) {
+                showDiagnostic(stage, problem);
+            }
+        }
+
         if (state == MENU || state == TOUCH_SETUP) panoramaTick++;
         if (state == TOUCH_SETUP) {
             drawTouchSetup(g);
@@ -3388,15 +3406,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             state == CREATIVE_INVENTORY || state == GAME_OVER || state == CHEST_INVENTORY || state == FURNACE_INVENTORY) {
             String stage = "actualizando mallas M3G";
             try {
-                if (dimensionSceneSetupPending) {
-                    dimensionSceneSetupPending = false;
-                    stage = "preparando entidades del End";
-                    renderer.onDimensionChanged(world);
-                    stage = "actualizando iluminacion del End";
-                    renderer.updateDayNight(world);
-                    stage = "actualizando camara del End";
-                    renderer.updateCamera(world, cameraPitch);
-                }
                 long syncStarted = System.currentTimeMillis();
                 renderer.sync(world);
                 long syncTime = System.currentTimeMillis() - syncStarted;
