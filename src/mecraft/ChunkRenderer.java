@@ -1827,6 +1827,11 @@ final class ChunkRenderer {
         // the frustum only filtered new builds while old meshes kept rendering.
         for (int i = 0; i < CACHE_SIZE; i++) {
             if (!residentChunks[i]) continue;
+            if (world.dimensionId == VoxelWorld.DIM_END &&
+                    (chunkWorldY[i] < firstChunkY || chunkWorldY[i] > lastChunkY)) {
+                removeChunk(i);
+                continue;
+            }
             boolean outsideWindow = chunkWorldX[i] < firstChunkX || chunkWorldX[i] > lastChunkX ||
                     chunkWorldZ[i] < firstChunkZ || chunkWorldZ[i] > lastChunkZ;
             if (outsideWindow) removeChunk(i);
@@ -1845,7 +1850,13 @@ final class ChunkRenderer {
 
         // Search and rank candidates only in the active window, not all 648
         // cache slots. In shortest mode this is 32 sectors (2x2x8).
-        for (int cy = 0; cy < VoxelWorld.CHUNKS_Y; cy++) {
+        int firstChunkY = world.dimensionId == VoxelWorld.DIM_END ?
+                InfdevTerrain.END_ISLAND_MIN_Y / VoxelWorld.CHUNK_Y : 0;
+        int lastChunkY = world.dimensionId == VoxelWorld.DIM_END ?
+                InfdevTerrain.END_ISLAND_MAX_Y / VoxelWorld.CHUNK_Y : VoxelWorld.CHUNKS_Y - 1;
+        // The End island only occupies Y=25..33. Do not rank, snapshot or
+        // stream the six vertical chunk layers that can only contain air.
+        for (int cy = firstChunkY; cy <= lastChunkY; cy++) {
             for (int rz = firstRz; rz <= lastRz; rz++) {
                 for (int rx = firstRx; rx <= lastRx; rx++) {
                     int cx = centerX + rx - MAX_STREAM_RADIUS;
@@ -1999,11 +2010,37 @@ final class ChunkRenderer {
         }
     }
 
+    private boolean isEndSectorEmpty(VoxelWorld world, int cx, int cy, int cz, int sector) {
+        int x0 = cx * VoxelWorld.CHUNK_XZ +
+                (sector % SECTORS_X) * SECTOR_SIZE_X;
+        int z0 = cz * VoxelWorld.CHUNK_XZ +
+                (sector / SECTORS_X) * SECTOR_SIZE_Z;
+        int y0 = cy * VoxelWorld.CHUNK_Y;
+        for (int y = 0; y < VoxelWorld.CHUNK_Y; y++) {
+            for (int z = 0; z < SECTOR_SIZE_Z; z++) {
+                for (int x = 0; x < SECTOR_SIZE_X; x++) {
+                    if (world.get(x0 + x, y0 + y, z0 + z) != Block.AIR) return false;
+                }
+            }
+        }
+        return true;
+    }
+
     private void beginChunkBuildSnapshot(VoxelWorld world, int slot,
                                          int cx, int cy, int cz) {
         chunkSnapshotSector = nextDirtySector(slot, cx, cz);
         if (!world.prepareProceduralChunksForSection(cx, cz)) {
             dirtyChunks[slot] = dirtySectorMasks[slot] != 0;
+            return;
+        }
+        if (world.dimensionId == VoxelWorld.DIM_END &&
+                isEndSectorEmpty(world, cx, cy, cz, chunkSnapshotSector)) {
+            // Empty End sectors need no worker snapshot, lighting scan or M3G mesh.
+            // Mark the sector resident so the next sector can be considered.
+            dirtySectorMasks[slot] &= ~(1 << chunkSnapshotSector);
+            Chunk empty = new Chunk();
+            empty.faceBuilders = new FaceBuilder[TILE_COUNT];
+            replaceChunkSector(slot, cx, cy, cz, chunkSnapshotSector, empty);
             return;
         }
         chunkSnapshotPreparing = true;
