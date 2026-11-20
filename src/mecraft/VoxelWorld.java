@@ -1353,11 +1353,29 @@ final class VoxelWorld {
 
     void setEndPortalFrameFacing(int x, int y, int z, int facing) {
         if (get(x, y, z) != Block.END_PORTAL_FRAME) return;
-        setMetadata(x, y, z, facing & 3);
+        int next = facing & 3;
+        if ((metadataAt(x, y, z) & 3) == next) return;
+        setMetadata(x, y, z, next);
         changedOldId = Block.END_PORTAL_FRAME;
         changedX = x; changedY = y; changedZ = z;
         revision++;
-        fullRebuild = true;
+    }
+
+    /** Adds a bounded multi-block edit to the renderer's local dirty region. */
+    private void recordBulkChangedRegion(int minX, int minY, int minZ,
+            int maxX, int maxY, int maxZ) {
+        if (!bulkChangedPending) {
+            bulkChangedMinX = minX; bulkChangedMinY = minY; bulkChangedMinZ = minZ;
+            bulkChangedMaxX = maxX; bulkChangedMaxY = maxY; bulkChangedMaxZ = maxZ;
+        } else {
+            if (minX < bulkChangedMinX) bulkChangedMinX = minX;
+            if (minY < bulkChangedMinY) bulkChangedMinY = minY;
+            if (minZ < bulkChangedMinZ) bulkChangedMinZ = minZ;
+            if (maxX > bulkChangedMaxX) bulkChangedMaxX = maxX;
+            if (maxY > bulkChangedMaxY) bulkChangedMaxY = maxY;
+            if (maxZ > bulkChangedMaxZ) bulkChangedMaxZ = maxZ;
+        }
+        bulkChangedPending = true;
     }
 
     boolean insertEndPortalEye(int x, int y, int z) {
@@ -1375,8 +1393,11 @@ final class VoxelWorld {
                 set(px, ring[1], pz, Block.PORTAL);
                 setMetadata(px, ring[1], pz, 3);
             }
+            // The 5x5 bound covers all nine portal cells and all four frame sides.
+            // ChunkRenderer rebuilds only resident sectors intersecting this area.
+            recordBulkChangedRegion(ring[0], ring[1], ring[2],
+                    ring[0] + 4, ring[1], ring[2] + 4);
         }
-        fullRebuild = true;
         return true;
     }
 
