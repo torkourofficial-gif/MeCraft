@@ -231,7 +231,6 @@ final class ChunkRenderer {
     private final ParticleSystem particles;
     private final DroppedItemSystem droppedItems;
     private final MobSystem mobs;
-    private final EnderDragonSystem dragon;
     private int visibleHeldItem = -1;
     private int handSwingTicks = 8;
     private boolean handSwinging;
@@ -364,7 +363,6 @@ final class ChunkRenderer {
         particles = new ParticleSystem(atlas);
         droppedItems = new DroppedItemSystem(atlas, itemAtlas);
         mobs = new MobSystem(scene, droppedItems, particles);
-        dragon = new EnderDragonSystem(scene);
 
         camera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
         externalCamera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
@@ -1313,7 +1311,7 @@ final class ChunkRenderer {
     }
 
     int updateMobs(VoxelWorld world) {
-        return mobs.update(world) + dragon.update(world);
+        return mobs.update(world);
     }
 
     boolean spawnMobFromEgg(VoxelWorld world, int eggType, float x, float y, float z) {
@@ -1374,8 +1372,7 @@ final class ChunkRenderer {
     }
 
     int hitMob(VoxelWorld world, float dirX, float dirY, float dirZ, int damage) {
-        int dragonHit = dragon.hit(world, dirX, dirY, dirZ, damage);
-        return dragonHit >= 0 ? dragonHit : mobs.hit(world, dirX, dirY, dirZ, damage);
+        return mobs.hit(world, dirX, dirY, dirZ, damage);
     }
 
     boolean shootPlayerArrow(VoxelWorld world, float pitch) {
