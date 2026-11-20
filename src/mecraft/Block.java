@@ -365,7 +365,7 @@ final class Block {
     }
 
     static boolean faceVisible(byte current, byte neighbor) {
-        if (neighbor == AIR || isFlower(neighbor) || isDoor(neighbor) || neighbor == RAIL) return true;
+        if (neighbor == AIR || neighbor == END_PORTAL_FRAME || isFlower(neighbor) || isDoor(neighbor) || neighbor == RAIL) return true;
         if (isFluid(neighbor)) return current != neighbor;
         if (neighbor == LEAVES) return current != LEAVES;
         return false;
