@@ -232,7 +232,7 @@ final class ChunkRenderer {
     private final DroppedItemSystem droppedItems;
     private final MobSystem mobs;
     // Created only after the End has finished loading, keeping its M3G model out of the loading peak.
-    private EnderDragonSystem enderDragon;
+    private volatile EnderDragonSystem enderDragon;
     private boolean enderDragonLoadFailed;
     private int pendingEnderDragonDamage;
     private int visibleHeldItem = -1;
