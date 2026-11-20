@@ -196,7 +196,7 @@ final class ItemCatalog {
     }
 
     static boolean isSpawnEgg(int id) {
-        return id >= SPAWN_EGG_PIG && id < COUNT;
+        return id >= SPAWN_EGG_PIG && id < SPAWN_EGG_PIG + SPAWN_EGG_COUNT;
     }
 
     static int spawnEggType(int id) {
@@ -212,6 +212,7 @@ final class ItemCatalog {
 
     static int iconIndex(int id) {
         if (isSpawnEgg(id)) return -1;
+        if (id == END_PORTAL_EYE) return 133;
         // Alpha's wooden door item icon in items.png (tile 43).
         if (id == Block.DOOR) return 43;
         if (id == Block.IRON_DOOR) return 44;
@@ -227,6 +228,7 @@ final class ItemCatalog {
     }
 
     static String name(int id) {
+        if (id == END_PORTAL_EYE) return "Ojo de Ender";
         if (isSpawnEgg(id)) {
             String[] eggNames = new String[] { "Huevo de spawn de cerdo", "Huevo de spawn de oveja",
                 "Huevo de spawn de zombi", "Huevo de spawn de creeper", "Huevo de spawn de esqueleto",

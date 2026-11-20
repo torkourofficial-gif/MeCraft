@@ -259,6 +259,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private float overworldPortalReturnX, overworldPortalReturnY, overworldPortalReturnZ;
     private float netherPortalReturnX, netherPortalReturnY, netherPortalReturnZ;
     private boolean hasOverworldPortalReturn, hasNetherPortalReturn;
+    private final float[] dimensionReturnX = new float[VoxelWorld.DIMENSION_COUNT];
+    private final float[] dimensionReturnY = new float[VoxelWorld.DIMENSION_COUNT];
+    private final float[] dimensionReturnZ = new float[VoxelWorld.DIMENSION_COUNT];
+    private final boolean[] hasDimensionReturn = new boolean[VoxelWorld.DIMENSION_COUNT];
     private static final int PORTAL_CHARGE_TICKS = 100;
     private Image waterTint;
     private Image chestOverlayImage;
@@ -1494,6 +1498,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             useSpawnEgg(selected);
             return;
         }
+        if (selected == ItemCatalog.END_PORTAL_EYE) {
+            int[] target = trace(5.0f);
+            if (target != null && world.activateEndPortalAtWool(target[0], target[1], target[2])) {
+                if (world.mode == 0 && inventory[selected] > 0) inventory[selected]--;
+                renderer.swingHand();
+                copyInventoryToWorld();
+                renderer.sync(world);
+                world.save();
+                repaint();
+            }
+            return;
+        }
         if (selected == ItemCatalog.BOAT) {
             placeBoat();
             return;
@@ -1702,7 +1718,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     private void travelThroughPortal() {
-        boolean leavingNether = world.nether;
+        int sourceDimension = world.dimensionId;
+        int portalType = world.portalTypeAt(world.playerX, world.playerY, world.playerZ);
+        int targetDimension;
+        if (portalType == 1) {
+            targetDimension = sourceDimension == VoxelWorld.DIM_END ?
+                    VoxelWorld.DIM_OVERWORLD : VoxelWorld.DIM_END;
+        } else {
+            targetDimension = sourceDimension == VoxelWorld.DIM_NETHER ?
+                    VoxelWorld.DIM_OVERWORLD : VoxelWorld.DIM_NETHER;
+        }
         float sourceX = world.playerX, sourceY = world.playerY, sourceZ = world.playerZ;
         int sx = (int)sourceX, sy = (int)sourceY, sz = (int)sourceZ;
         int[] source = null;
@@ -1711,58 +1736,64 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 for (int x = sx - 1; x <= sx + 1 && source == null; x++)
                     source = world.portalFrameAt(x, y, z);
         int axis = source == null ? 0 : source[3];
+        dimensionReturnX[sourceDimension] = sourceX;
+        dimensionReturnY[sourceDimension] = sourceY;
+        dimensionReturnZ[sourceDimension] = sourceZ;
+        hasDimensionReturn[sourceDimension] = true;
 
-        // Remember the exact position in the dimension being left, so the
-        // return trip goes back to the same portal instead of relying on 8:1 rounding.
-        if (leavingNether) {
-            netherPortalReturnX = sourceX;
-            netherPortalReturnY = sourceY;
-            netherPortalReturnZ = sourceZ;
-            hasNetherPortalReturn = true;
-        } else {
-            overworldPortalReturnX = sourceX;
-            overworldPortalReturnY = sourceY;
-            overworldPortalReturnZ = sourceZ;
-            hasOverworldPortalReturn = true;
+        float tx = sourceX, tz = sourceZ;
+        if (targetDimension == VoxelWorld.DIM_END) {
+            tx = VoxelWorld.WIDTH * 0.5f;
+            tz = VoxelWorld.DEPTH * 0.5f;
+        } else if (sourceDimension == VoxelWorld.DIM_NETHER) {
+            tx = sourceX * 8.0f;
+            tz = sourceZ * 8.0f;
+        } else if (targetDimension == VoxelWorld.DIM_NETHER) {
+            tx = sourceX / 8.0f;
+            tz = sourceZ / 8.0f;
+        }
+        if (!world.setDimension(targetDimension)) {
+            portalChargeTicks = 0;
+            return;
         }
 
-        float tx = leavingNether ? sourceX * 8.0f : sourceX / 8.0f;
-        float tz = leavingNether ? sourceZ * 8.0f : sourceZ / 8.0f;
-        world.switchDimension();
-
-        // If this dimension has already been visited, restore its exact entry
-        // position. This also avoids landing at a nearby, unrelated portal.
-        boolean hasReturn = world.nether ? hasNetherPortalReturn : hasOverworldPortalReturn;
-        if (hasReturn) {
-            world.playerX = world.nether ? netherPortalReturnX : overworldPortalReturnX;
-            world.playerY = world.nether ? netherPortalReturnY : overworldPortalReturnY;
-            world.playerZ = world.nether ? netherPortalReturnZ : overworldPortalReturnZ;
+        if (hasDimensionReturn[targetDimension]) {
+            world.playerX = dimensionReturnX[targetDimension];
+            world.playerY = dimensionReturnY[targetDimension];
+            world.playerZ = dimensionReturnZ[targetDimension];
         } else {
-            int[] destination = world.findPortalNear((int)tx, (int)tz);
-            if (destination == null) {
-                int bx = (int)tx, bz = (int)tz;
-                if (bx < 2) bx = 2;
-                if (bz < 2) bz = 2;
-                if (bx > VoxelWorld.WIDTH - 6) bx = VoxelWorld.WIDTH - 6;
-                if (bz > VoxelWorld.DEPTH - 6) bz = VoxelWorld.DEPTH - 6;
-                int by = world.surfaceY(bx + 1, bz + 1) + 1;
-                if (by < 1) by = 1;
-                if (by > VoxelWorld.HEIGHT - 6) by = VoxelWorld.HEIGHT - 6;
+            int[] destination = null;
+            if (targetDimension == VoxelWorld.DIM_END) {
+                int bx = VoxelWorld.WIDTH / 2 - 2;
+                int bz = VoxelWorld.DEPTH / 2 - 2;
+                int by = world.surfaceY(VoxelWorld.WIDTH / 2, VoxelWorld.DEPTH / 2) + 1;
                 destination = world.createPortalAt(bx, by, bz, axis);
+                if (destination != null) world.setPortalTypeAtFrame(destination, 1);
+            } else {
+                destination = world.findPortalNear((int)tx, (int)tz);
+                if (destination == null) {
+                    int bx = (int)tx, bz = (int)tz;
+                    if (bx < 2) bx = 2;
+                    if (bz < 2) bz = 2;
+                    if (bx > VoxelWorld.WIDTH - 6) bx = VoxelWorld.WIDTH - 6;
+                    if (bz > VoxelWorld.DEPTH - 6) bz = VoxelWorld.DEPTH - 6;
+                    int by = world.surfaceY(bx + 1, bz + 1) + 1;
+                    if (by < 1) by = 1;
+                    if (by > VoxelWorld.HEIGHT - 6) by = VoxelWorld.HEIGHT - 6;
+                    destination = world.createPortalAt(bx, by, bz, axis);
+                    if (destination != null && portalType == 1) world.setPortalTypeAtFrame(destination, 1);
+                }
             }
             if (destination == null) {
-                world.switchDimension();
+                world.setDimension(sourceDimension);
                 portalChargeTicks = 0;
                 return;
             }
-            int[] d = destination;
-            world.playerX = d[3] == 0 ? d[0] + 2.5f : d[0] + 0.5f;
-            world.playerZ = d[3] == 0 ? d[2] + 0.5f : d[2] + 2.5f;
-            world.playerY = d[1] + 1.05f;
+            world.playerX = destination[3] == 0 ? destination[0] + 2.5f : destination[0] + 0.5f;
+            world.playerZ = destination[3] == 0 ? destination[2] + 0.5f : destination[2] + 2.5f;
+            world.playerY = destination[1] + 1.05f;
         }
 
-        // Keep the player above the destination floor if the saved Y is no
-        // longer safe (for example, terrain changed around the portal).
         int px = (int)world.playerX, pz = (int)world.playerZ;
         int floor = world.surfaceY(px, pz);
         if (world.playerY < floor + 1.0f || world.playerY > VoxelWorld.HEIGHT - 2)
@@ -1775,7 +1806,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         copyInventoryToWorld();
         world.save();
     }
-
 
     private void openFurnace(int x,int y,int z) {
         if(state!=PLAYING||world==null)return;

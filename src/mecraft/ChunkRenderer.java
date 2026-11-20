@@ -226,6 +226,7 @@ final class ChunkRenderer {
     private final ParticleSystem particles;
     private final DroppedItemSystem droppedItems;
     private final MobSystem mobs;
+    private final EnderDragonSystem dragon;
     private int visibleHeldItem = -1;
     private int handSwingTicks = 8;
     private boolean handSwinging;
@@ -356,6 +357,7 @@ final class ChunkRenderer {
         particles = new ParticleSystem(atlas);
         droppedItems = new DroppedItemSystem(atlas, itemAtlas);
         mobs = new MobSystem(scene, droppedItems, particles);
+        dragon = new EnderDragonSystem(scene);
 
         camera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
         externalCamera.setPerspective(cameraFov, (float)width / (float)height, 0.1f, cameraFar);
@@ -1235,7 +1237,7 @@ final class ChunkRenderer {
     }
 
     int updateMobs(VoxelWorld world) {
-        return mobs.update(world);
+        return mobs.update(world) + dragon.update(world);
     }
 
     boolean spawnMobFromEgg(VoxelWorld world, int eggType, float x, float y, float z) {
@@ -1244,6 +1246,16 @@ final class ChunkRenderer {
 
     /** Applies Indev's 24000-tick celestial curve; torch light is baked into voxel face colors. */
     void updateDayNight(VoxelWorld world) {
+        if (world.dimensionId == VoxelWorld.DIM_END) {
+            currentDaylight = 0.58f;
+            currentSkyColor = 0xFF10051D;
+            if (appliedSunlightIntensity != 0.62f) {
+                sunlight.setIntensity(0.62f);
+                appliedSunlightIntensity = 0.62f;
+            }
+            updateTorchLights(world);
+            return;
+        }
         if (world.nether) {
             currentDaylight = 0.32f;
             currentSkyColor = 0xFF4A1717;
@@ -1286,7 +1298,8 @@ final class ChunkRenderer {
     }
 
     int hitMob(VoxelWorld world, float dirX, float dirY, float dirZ, int damage) {
-        return mobs.hit(world, dirX, dirY, dirZ, damage);
+        int dragonHit = dragon.hit(world, dirX, dirY, dirZ, damage);
+        return dragonHit >= 0 ? dragonHit : mobs.hit(world, dirX, dirY, dirZ, damage);
     }
 
     boolean shootPlayerArrow(VoxelWorld world, float pitch) {
@@ -2059,7 +2072,7 @@ final class ChunkRenderer {
             if (!lightsReady) return;
             snapshot.lightCount = snapshot.lightScanState[1];
         }
-        snapshot.nether = world.nether;
+        snapshot.dimensionId = world.dimensionId;
         // Edits made while copying leave this sector dirty. Finish this build,
         // then rebuild once from the final world state instead of restarting the
         // entire snapshot on every mining tick.
@@ -2506,7 +2519,7 @@ final class ChunkRenderer {
                             else neighbor = snapshot.block(nx - x0, ny - y0, nz - z0);
                             if (Block.faceVisible(id, neighbor)) {
                                 int metadata = snapshot.metadata(x - x0, y - y0, z - z0);
-                                int tile = renderWorldTile(snapshot.nether, id, face, metadata);
+                                int tile = renderWorldTile(snapshot.dimensionId, id, face, metadata);
                                 int light = chunkLightScratch[voxelIndex] & 255;
                                 key = light * TILE_COUNT + tile + 1;
                             }
@@ -2837,9 +2850,10 @@ final class ChunkRenderer {
         return chunkLightScratch[localIndex] & 255;
     }
 
-    private int renderWorldTile(boolean nether, byte id, int face, int metadata) {
+    private int renderWorldTile(int dimensionId, byte id, int face, int metadata) {
         if (id == Block.LAVA) return 234;
-        if (nether) {
+        if (dimensionId == VoxelWorld.DIM_END && id == Block.STONE) return 121;
+        if (dimensionId == VoxelWorld.DIM_NETHER) {
             if (id == Block.STONE) return 232;
             if (id == Block.SAND) return 233;
             if (id == Block.WATER) return 234;
@@ -3019,7 +3033,7 @@ final class ChunkRenderer {
         private static final int PAD_AREA = PAD * PAD;
         final byte[] voxels = new byte[PAD_AREA * (VoxelWorld.CHUNK_Y + 2)];
         final byte[] metadata = new byte[VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
-        boolean nether;
+        int dimensionId;
         final int[] lightX = new int[MAX_CHUNK_TORCHES];
         final int[] lightY = new int[MAX_CHUNK_TORCHES];
         final int[] lightZ = new int[MAX_CHUNK_TORCHES];

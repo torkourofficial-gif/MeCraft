@@ -28,11 +28,12 @@ final class MobSystem {
     private static final int SLIME = 8;
     private static final int GHAST = 9;
     private static final int PIG_ZOMBIE = 10;
+    private static final int ENDERMAN = 11;
     private static final int MOB_COUNT = 14;
     private static final String[] MOB_TEXTURE_FILES = {
         "pig.png", "sheep.png", "zombie.png", "creeper.png", "skeleton.png",
         "cow.png", "alpha_chicken.png", "alpha_spider.png", "alpha_slime.png",
-        "alpha_ghast.png", "alpha_pigzombie.png"
+        "alpha_ghast.png", "alpha_pigzombie.png", "enderman.png"
     };
     private static final float DESPAWN_DISTANCE_SQUARED = 32.0f * 32.0f;
     private static final int PASSIVE_RESPAWN_INTERVAL = 80;
@@ -61,11 +62,11 @@ final class MobSystem {
     private final Appearance fireAppearance;
     private Appearance spiderEyesAppearance;
     private Image fleeceImage;
-    private final Texture2D[] mobTextures = new Texture2D[11];
+    private final Texture2D[] mobTextures = new Texture2D[12];
     private final Texture2D[] fleeceTextures = new Texture2D[WoolColors.COUNT];
     private final Random random = new Random(1L);
     private int worldSeed = Integer.MIN_VALUE;
-    private boolean netherMode;
+    private int dimensionMode;
     private boolean economicMode;
     private int difficulty = VoxelWorld.DIFFICULTY_NORMAL;
     private int tick;
@@ -95,10 +96,10 @@ final class MobSystem {
 
     /** Returns damage dealt to the player on this tick. */
     int update(VoxelWorld world) {
-        if (worldSeed != world.seed || netherMode != world.nether || economicMode != world.economicMode) reset(world);
+        if (worldSeed != world.seed || dimensionMode != world.dimensionId || economicMode != world.economicMode) reset(world);
         tick++;
         unloadDistantMobs(world);
-        if (!world.nether && tick % PASSIVE_RESPAWN_INTERVAL == 0) respawnPassiveMob(world);
+        if (world.dimensionId == VoxelWorld.DIM_OVERWORLD && tick % PASSIVE_RESPAWN_INTERVAL == 0) respawnPassiveMob(world);
         updateHostileCycle(world);
         if (attackCooldown > 0) attackCooldown--;
         int playerDamage = 0;
@@ -397,7 +398,7 @@ final class MobSystem {
 
     private void reset(VoxelWorld world) {
         worldSeed = world.seed;
-        netherMode = world.nether;
+        dimensionMode = world.dimensionId;
         economicMode = world.economicMode;
         difficulty = world.difficulty;
         tick = 0;
@@ -419,7 +420,8 @@ final class MobSystem {
     private int mobTypeForSlot(int slot) {
         // Nether spawns are restricted to Nether creatures plus skeletons.
         // Reuse the fixed actor slots instead of allocating a larger entity array.
-        if (netherMode) {
+        if (dimensionMode == VoxelWorld.DIM_END) return ENDERMAN;
+        if (dimensionMode == VoxelWorld.DIM_NETHER) {
             if (slot == 2 || slot == 10) return GHAST;
             if (slot == 5) return SKELETON;
             return PIG_ZOMBIE;
@@ -626,7 +628,7 @@ final class MobSystem {
             zombiesNightActive = false;
             return;
         }
-        boolean night = world.nether || world.isNight();
+        boolean night = world.dimensionId == VoxelWorld.DIM_NETHER || world.dimensionId == VoxelWorld.DIM_END || world.isNight();
         for (int i = 0; i < mobs.length; i++) {
             if (isHostile(mobTypeForSlot(i)) && (mobs[i] == null || !mobs[i].eggSpawned) &&
                     !hostileAllowed(mobTypeForSlot(i), world) && mobs[i] != null) releaseMob(i);
@@ -1002,7 +1004,7 @@ final class MobSystem {
             mob.arms[1].setOrientation(-flap, 0, 0, 1);
             return;
         }
-        if (mob.type == ZOMBIE || mob.type == SKELETON || mob.type == PIG_ZOMBIE) {
+        if (mob.type == ZOMBIE || mob.type == SKELETON || mob.type == PIG_ZOMBIE || mob.type == ENDERMAN) {
             // ModelBiped.animate() uses a 1.4 radian stride (about 80 degrees).
             // The original renderer flips model Y, so its X-axis pose rotations
             // invert when represented by these M3G groups.
@@ -1084,11 +1086,12 @@ final class MobSystem {
 
     private boolean isHostile(int type) {
         return type == ZOMBIE || type == CREEPER || type == SKELETON || type == SPIDER ||
-               type == SLIME || type == GHAST || type == PIG_ZOMBIE;
+               type == SLIME || type == GHAST || type == PIG_ZOMBIE || type == ENDERMAN;
     }
 
     /** Alpha entity dimensions, kept separate from the 16-pixel block scale. */
     private float mobHeight(Mob mob) {
+        if (mob.type == ENDERMAN) return 2.9f;
         if (mob.type == SPIDER) return 0.9f;
         if (mob.type == GHAST) return 4.0f;
         if (mob.type == SLIME) return 0.6f * mob.slimeSize;
@@ -1099,6 +1102,7 @@ final class MobSystem {
     }
 
     private float mobWidth(Mob mob) {
+        if (mob.type == ENDERMAN) return 0.6f;
         if (mob.type == SPIDER) return 1.4f;
         if (mob.type == GHAST) return 4.0f;
         if (mob.type == SLIME) return 0.6f * mob.slimeSize;
@@ -1109,17 +1113,20 @@ final class MobSystem {
 
     /** Economic mode trims one mob slot without making the world feel empty. */
     private boolean hostileSlotAllowed(int slot, VoxelWorld world) {
+        if (world.dimensionId == VoxelWorld.DIM_END) return slot >= 11;
         if (world.economicMode && slot == (world.nether ? 13 : 11)) return false;
         return world.difficulty != VoxelWorld.DIFFICULTY_EASY || slot <= 9;
     }
 
     /** Keep one fewer passive mob in Economic mode (about a 14% reduction). */
     private boolean passiveSlotAllowed(int slot, VoxelWorld world) {
+        if (world.dimensionId == VoxelWorld.DIM_END) return false;
         return !world.economicMode || slot != 6 || isHostile(mobTypeForSlot(slot));
     }
 
     private boolean hostileAllowed(int type, VoxelWorld world) {
         if (world.difficulty == VoxelWorld.DIFFICULTY_PEACEFUL) return false;
+        if (world.dimensionId == VoxelWorld.DIM_END) return type == ENDERMAN;
         if (world.nether) return type == GHAST || type == PIG_ZOMBIE || type == SKELETON;
         return type != GHAST && type != PIG_ZOMBIE;
     }
@@ -1471,6 +1478,7 @@ final class MobSystem {
             root.addChild(pose);
             if (type == ZOMBIE || type == PIG_ZOMBIE) buildZombie(appearance, true);
             else if (type == SKELETON) buildZombie(appearance, false);
+            else if (type == ENDERMAN) buildEnderman(appearance);
             else if (type == CREEPER) buildCreeper(appearance);
             else if (type == COW) buildCow(appearance);
             else if (type == SPIDER) buildSpider(appearance, spiderEyes);
@@ -1634,6 +1642,33 @@ final class MobSystem {
                         0.0f, -(12.0f - JOINT_OVERLAP) / 32.0f, 0.0f, 0, 0, 1, 0,
                         skin, 0.0f, 0.0f, 0.0f, i == 1);
                 legs[i] = leg;
+            }
+        }
+
+        private void buildEnderman(Appearance appearance) {
+            head.setTranslation(0.0f, 2.45f, 0.0f);
+            pose.addChild(head);
+            addPart(head, 0, 0, 8, 8, 8, 8, 8, 8,
+                    0.0f, 0.0f, 0.0f, 0, 0, 1, 0, appearance);
+            addPart(pose, 16, 16, 8, 12, 4, 8, 12, 4,
+                    0.0f, 1.35f, 0.0f, 0, 0, 1, 0, appearance);
+            for (int side = 0; side < 2; side++) {
+                float sign = side == 0 ? -1.0f : 1.0f;
+                Group arm = new Group();
+                arm.setTranslation(sign * 0.3125f, 1.35f, 0.0f);
+                pose.addChild(arm);
+                Group armPitch = new Group();
+                arm.addChild(armPitch);
+                addPart(armPitch, 56, 0, 2, 30, 2, 2, 30, 2,
+                        0.0f, -0.9375f, 0.0f, 0, 0, 1, 0, appearance);
+                arms[side] = arm;
+                armsPitch[side] = armPitch;
+                Group leg = new Group();
+                leg.setTranslation(sign * 0.125f, 0.70f, 0.0f);
+                pose.addChild(leg);
+                addPart(leg, 0, 16, 2, 30, 2, 2, 30, 2,
+                        0.0f, -0.9375f, 0.0f, 0, 0, 1, 0, appearance);
+                legs[side] = leg;
             }
         }
 

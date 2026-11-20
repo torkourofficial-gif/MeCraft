@@ -25,6 +25,8 @@ final class SkySystem {
     private final Group celestialRotation = new Group();
     private final Background skyBackground;
     private final Mesh stars;
+    private final Mesh sun;
+    private final Mesh moon;
     private final Material starsMaterial;
     private final byte[] gradientColors = new byte[GRADIENT_HEIGHT * 3];
     private Image2D skyGradient;
@@ -37,14 +39,16 @@ final class SkySystem {
     private int lastStarColor;
     private boolean starVisibilityReady;
     private boolean lastStarsVisible;
+    private boolean endModeReady;
+    private boolean lastEndMode;
 
     SkySystem(Group cameraPivot, Background background, int width, int height) throws IOException {
         skyBackground = background;
         yawCounter.addChild(celestialRotation);
         cameraPivot.addChild(yawCounter);
 
-        Mesh sun = skyQuad(32.0f, 9.6f, textureAppearance("sun.png"));
-        Mesh moon = skyQuad(-32.0f, 6.4f, textureAppearance("moon.png"));
+        sun = skyQuad(32.0f, 9.6f, textureAppearance("sun.png"));
+        moon = skyQuad(-32.0f, 6.4f, textureAppearance("moon.png"));
         celestialRotation.addChild(sun);
         celestialRotation.addChild(moon);
 
@@ -81,12 +85,19 @@ final class SkySystem {
     void update(VoxelWorld world, float yaw, float celestialAngle,
             float daylight, int skyColor) {
         yawCounter.setOrientation(-yaw, 0.0f, 1.0f, 0.0f);
+        boolean endMode = world.dimensionId == VoxelWorld.DIM_END;
+        if (!endModeReady || endMode != lastEndMode) {
+            sun.setRenderingEnable(!endMode);
+            moon.setRenderingEnable(!endMode);
+            lastEndMode = endMode;
+            endModeReady = true;
+        }
         celestialRotation.setOrientation(celestialAngle * 57.29578f,
                 1.0f, 0.0f, 0.0f);
         updateGradient(daylight, skyColor);
         float night = 1.0f - daylight;
         float starLevel = night * night;
-        boolean starsVisible = !world.nether && starLevel > 0.015f;
+        boolean starsVisible = world.dimensionId == VoxelWorld.DIM_END || (!world.nether && starLevel > 0.015f);
         if (!starVisibilityReady || starsVisible != lastStarsVisible) {
             stars.setRenderingEnable(starsVisible);
             lastStarsVisible = starsVisible;

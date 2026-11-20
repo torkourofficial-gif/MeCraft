@@ -1200,13 +1200,13 @@ final class VoxelWorld {
         setGenerationDiagnosticStage("VoxelWorld.generate: asignando posición Z del jugador");
         playerZ = spawnCenter + 0.5f;
         setGenerationDiagnosticStage("VoxelWorld.generate: calculando altura inicial del jugador");
-        int spawnHeight = nether ? (economicMode ?
+        int spawnHeight = dimensionId == DIM_END ? 33 : (nether ? (economicMode ?
                 InfdevTerrain.economicNetherFloorHeight(seed, spawnCenter, spawnCenter) :
                 InfdevTerrain.netherFloorHeight(seed, spawnCenter, spawnCenter)) :
                 (worldType == TYPE_FLAT ? 4 :
                  (economicMode ?
                   InfdevTerrain.economicSurfaceHeight(seed, spawnCenter, spawnCenter) :
-                  InfdevTerrain.surfaceHeight(seed, spawnCenter, spawnCenter)));
+                  InfdevTerrain.surfaceHeight(seed, spawnCenter, spawnCenter))));
         playerY = spawnHeight + 1.0f;
         setGenerationDiagnosticStage("VoxelWorld.generate: asignando yaw inicial");
         yaw = 0f;
@@ -1321,6 +1321,37 @@ final class VoxelWorld {
         if (get(x - 1, y, z) == Block.PORTAL || get(x + 1, y, z) == Block.PORTAL) return 0;
         if (get(x, y, z - 1) == Block.PORTAL || get(x, y, z + 1) == Block.PORTAL) return 1;
         return 0;
+    }
+
+    int portalTypeAt(float px, float py, float pz) {
+        int minX = floorBlock(px - 0.31f), maxX = floorBlock(px + 0.31f);
+        int minY = floorBlock(py), maxY = floorBlock(py + 1.8f);
+        int minZ = floorBlock(pz - 0.31f), maxZ = floorBlock(pz + 0.31f);
+        for (int y = minY; y <= maxY; y++)
+            for (int z = minZ; z <= maxZ; z++)
+                for (int x = minX; x <= maxX; x++)
+                    if (get(x, y, z) == Block.PORTAL) return metadataAt(x, y, z) & 1;
+        return 0;
+    }
+
+    void setPortalTypeAtFrame(int[] frame, int type) {
+        if (frame == null) return;
+        for (int v = 1; v <= 3; v++) for (int u = 1; u <= 2; u++) {
+            int px = frame[3] == 0 ? frame[0] + u : frame[0];
+            int pz = frame[3] == 0 ? frame[2] : frame[2] + u;
+            if (get(px, frame[1] + v, pz) == Block.PORTAL)
+                setMetadata(px, frame[1] + v, pz, type);
+        }
+        fullRebuild = true;
+    }
+
+    boolean activateEndPortalAtWool(int x, int y, int z) {
+        if (get(x, y, z) != Block.WOOL) return false;
+        int[] frame = findPortalFrameForWool(x, y, z);
+        if (frame == null) return false;
+        if (!activatePortalAtWool(x, y, z)) return false;
+        setPortalTypeAtFrame(frame, 1);
+        return true;
     }
 
     boolean touchesPortal(float px, float py, float pz) {
