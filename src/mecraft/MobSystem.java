@@ -729,6 +729,10 @@ final class MobSystem {
     }
 
     private boolean validSpawn(VoxelWorld world, int x, int z) {
+        if (world.dimensionId == VoxelWorld.DIM_END) {
+            int dx = x - VoxelWorld.WIDTH / 2, dz = z - VoxelWorld.DEPTH / 2;
+            if (dx * dx + dz * dz > 100) return false;
+        }
         int y = world.surfaceY(x, z);
         byte ground = world.get(x, y, z);
         return Block.solid(ground) && ground != Block.LEAVES &&

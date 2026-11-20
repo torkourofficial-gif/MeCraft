@@ -1223,14 +1223,16 @@ final class VoxelWorld {
             int dx = wx - centerX, dz = wz - centerZ;
             int rough = ((wx * 73428767 ^ wz * 912931 ^ seed) >>> 28) & 3;
             int radius = 11 + rough, top = 32 + (rough & 1);
+            boolean island = dx * dx + dz * dz <= radius * radius;
             int base = (z * CHUNK_XZ + x) * HEIGHT;
             for (int y = 0; y < HEIGHT; y++) {
                 byte id = Block.AIR;
                 if (y == 0) id = Block.BEDROCK;
-                else if (dx * dx + dz * dz <= radius * radius && y <= top && y >= top - 7) id = Block.STONE;
+                else if (island && y <= top && y >= top - 7) id = Block.STONE;
                 target[base + y] = id;
             }
-            heights[z * CHUNK_XZ + x] = top; biomes[z * CHUNK_XZ + x] = 0;
+            heights[z * CHUNK_XZ + x] = island ? top : 0;
+            biomes[z * CHUNK_XZ + x] = 0;
         }
     }
 
