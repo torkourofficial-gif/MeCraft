@@ -256,6 +256,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private int playerLavaBurnTicks;
     private int playerLavaDamageTicks = 20;
     private int portalChargeTicks;
+    private boolean endPortalTransitionPending;
     private float overworldPortalReturnX, overworldPortalReturnY, overworldPortalReturnZ;
     private float netherPortalReturnX, netherPortalReturnY, netherPortalReturnZ;
     private boolean hasOverworldPortalReturn, hasNetherPortalReturn;
@@ -432,7 +433,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     private void updateGameLocked() {
-        if (!visible || state != PLAYING || world == null || renderer == null) return;
+        if (endPortalTransitionPending || !visible || state != PLAYING || world == null || renderer == null) return;
         if (lanGameActive) processLanPacketsLocked();
         if (sprintToggleTimer > 0) sprintToggleTimer--;
         if (pendingIronDoorTicks > 0 && --pendingIronDoorTicks == 0)
@@ -1729,21 +1730,33 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     private void travelThroughEndPortal() {
-        if (world == null || renderer == null ||
+        if (endPortalTransitionPending || world == null || renderer == null ||
                 world.dimensionId != VoxelWorld.DIM_OVERWORLD || state != PLAYING) return;
 
-        // Use the same dimension-refresh path as the Nether: change the world,
-        // refresh the existing renderer, then let the ordinary game loop keep
-        // ticking and repainting every frame. The End does not need a separate
-        // LOADING state or a second frame-presentation pipeline.
+        // Defer the dimension switch to paint(). The game update thread must not
+        // hold the Canvas monitor while generating the End: paint() owns the M3G
+        // scene and must be allowed to rebuild it and present the first frame.
+        endPortalTransitionPending = true;
         loadingMessage = Language.text("Generando el End...");
         portalChargeTicks = 0;
         clearKeys();
         resetMining();
+        repaint();
+    }
 
+    private void completeEndPortalTransition() {
+        if (!endPortalTransitionPending) return;
         try {
-            System.gc();
-            if (!world.setDimension(VoxelWorld.DIM_END)) return;
+            if (world == null || renderer == null ||
+                    world.dimensionId != VoxelWorld.DIM_OVERWORLD) {
+                endPortalTransitionPending = false;
+                return;
+            }
+
+            if (!world.setDimension(VoxelWorld.DIM_END)) {
+                endPortalTransitionPending = false;
+                return;
+            }
 
             int centerX = VoxelWorld.WIDTH / 2;
             int centerZ = VoxelWorld.DEPTH / 2;
@@ -1757,12 +1770,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             renderer.onDimensionChanged(world);
             renderer.updateDayNight(world);
             renderer.updateCamera(world, cameraPitch);
-            renderer.sync(world);
             world.save();
         } catch (OutOfMemoryError exhausted) {
             showError("No hay memoria suficiente para cargar el End. Reduce la distancia de renderizado y vuelve a intentarlo.");
         } catch (Throwable problem) {
             showDiagnostic("actualizando el renderer del End", problem);
+        } finally {
+            endPortalTransitionPending = false;
         }
     }
 
@@ -3371,6 +3385,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             state == CREATIVE_INVENTORY || state == GAME_OVER || state == CHEST_INVENTORY || state == FURNACE_INVENTORY) {
             String stage = "actualizando mallas M3G";
             try {
+                completeEndPortalTransition();
                 long syncStarted = System.currentTimeMillis();
                 renderer.sync(world);
                 long syncTime = System.currentTimeMillis() - syncStarted;
