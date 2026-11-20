@@ -130,7 +130,7 @@ final class EnderDragonSystem {
         parent.addChild(part);
     }
 
-    int update(VoxelWorld world) {
+    synchronized int update(VoxelWorld world) {
         if (worldSeed != world.seed) {
             worldSeed = world.seed;
             tick = 0;
@@ -174,7 +174,7 @@ final class EnderDragonSystem {
         return 0;
     }
 
-    int hit(VoxelWorld world, float dirX, float dirY, float dirZ, int damage) {
+    synchronized int hit(VoxelWorld world, float dirX, float dirY, float dirZ, int damage) {
         if (world.dimensionId != VoxelWorld.DIM_END || defeated) return -1;
         float ox = world.playerX, oy = world.playerY + 1.62f, oz = world.playerZ;
         float angle = tick * 0.025f;
