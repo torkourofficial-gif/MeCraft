@@ -1418,7 +1418,7 @@ final class VoxelWorld {
             }
             for (int u = 1; u <= 3; u++) for (int v = 1; v <= 3; v++) {
                 int px = ring[0] + u, pz = ring[2] + v;
-                set(px, ring[1], pz, Block.PORTAL);
+                set(px, ring[1], pz, Block.END_PORTAL);
                 setMetadata(px, ring[1], pz, 3);
             }
             // The 5x5 bound covers the frame metadata and all nine portal cells.
@@ -1468,6 +1468,18 @@ final class VoxelWorld {
                 for (int x = minX; x <= maxX; x++)
                     if (get(x, y, z) == Block.PORTAL &&
                             (y >= floorBlock(py) || (metadataAt(x, y, z) & 2) != 0)) return true;
+        return false;
+    }
+
+    /** The End portal is a horizontal, dedicated block and activates on contact. */
+    boolean touchesEndPortal(float px, float py, float pz) {
+        int minX = floorBlock(px - 0.31f), maxX = floorBlock(px + 0.31f);
+        int minY = floorBlock(py) - 1, maxY = floorBlock(py + 1.8f);
+        int minZ = floorBlock(pz - 0.31f), maxZ = floorBlock(pz + 0.31f);
+        for (int y = minY; y <= maxY; y++)
+            for (int z = minZ; z <= maxZ; z++)
+                for (int x = minX; x <= maxX; x++)
+                    if (get(x, y, z) == Block.END_PORTAL) return true;
         return false;
     }
 
