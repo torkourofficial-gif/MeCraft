@@ -91,7 +91,8 @@ final class ItemCatalog {
     static final int SPAWN_EGG_GHAST = SPAWN_EGG_SLIME + 1;
     static final int SPAWN_EGG_PIG_ZOMBIE = SPAWN_EGG_GHAST + 1;
     static final int SPAWN_EGG_COUNT = 11;
-    static final int COUNT = SPAWN_EGG_PIG_ZOMBIE + 1;
+    static final int END_PORTAL_EYE = SPAWN_EGG_PIG + SPAWN_EGG_COUNT;
+    static final int COUNT = END_PORTAL_EYE + 1;
 
     static final int SWORD = 0;
     static final int SHOVEL = 1;
