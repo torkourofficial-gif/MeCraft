@@ -1764,6 +1764,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     world.playerY = world.surfaceY(centerX, centerZ) + 1.05f;
 
                     playerPhysics.reset();
+                    renderer.onDimensionChanged(world);
                     stage = "construyendo los chunks visibles del End";
                     loadingMessage = Language.text("Construyendo el End...");
                     renderer.sync(world);
