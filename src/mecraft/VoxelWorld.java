@@ -1293,17 +1293,36 @@ final class VoxelWorld {
     synchronized boolean setDimension(int targetDimension) {
         if (targetDimension < 0 || targetDimension >= DIMENSION_COUNT) return false;
         if (dimensionId == targetDimension) return true;
-        dimensionBlocks[dimensionId] = blocks; dimensionWaterLevels[dimensionId] = waterLevels;
-        if (dimensionBlocks[targetDimension] == null || dimensionWaterLevels[targetDimension] == null) {
-            dimensionBlocks[targetDimension] = new byte[BLOCK_COUNT]; dimensionWaterLevels[targetDimension] = new byte[BLOCK_COUNT];
-            blocks = dimensionBlocks[targetDimension]; waterLevels = dimensionWaterLevels[targetDimension];
-            dimensionId = targetDimension; nether = dimensionId == DIM_NETHER;
-            if (dimensionId == DIM_END) generateEndWorld();
-            else generate();
-            dimensionBlocks[dimensionId] = blocks; dimensionWaterLevels[dimensionId] = waterLevels;
+        // The End is intentionally one-way. Reuse the active world's arrays
+        // instead of allocating another full BLOCK_COUNT pair (several MB on
+        // CLDC devices). This avoids an allocation spike at portal entry.
+        if (dimensionId == DIM_END && targetDimension != DIM_END) return false;
+        dimensionBlocks[dimensionId] = blocks;
+        dimensionWaterLevels[dimensionId] = waterLevels;
+        if (targetDimension == DIM_END &&
+                (dimensionBlocks[DIM_END] == null || dimensionWaterLevels[DIM_END] == null)) {
+            dimensionBlocks[DIM_END] = blocks;
+            dimensionWaterLevels[DIM_END] = waterLevels;
+            dimensionId = DIM_END;
+            nether = false;
+            generateEndWorld();
+        } else if (dimensionBlocks[targetDimension] == null ||
+                dimensionWaterLevels[targetDimension] == null) {
+            // Other dimensions retain their independent storage as before.
+            dimensionBlocks[targetDimension] = new byte[BLOCK_COUNT];
+            dimensionWaterLevels[targetDimension] = new byte[BLOCK_COUNT];
+            blocks = dimensionBlocks[targetDimension];
+            waterLevels = dimensionWaterLevels[targetDimension];
+            dimensionId = targetDimension;
+            nether = dimensionId == DIM_NETHER;
+            generate();
+            dimensionBlocks[dimensionId] = blocks;
+            dimensionWaterLevels[dimensionId] = waterLevels;
         } else {
-            blocks = dimensionBlocks[targetDimension]; waterLevels = dimensionWaterLevels[targetDimension];
-            dimensionId = targetDimension; nether = dimensionId == DIM_NETHER;
+            blocks = dimensionBlocks[targetDimension];
+            waterLevels = dimensionWaterLevels[targetDimension];
+            dimensionId = targetDimension;
+            nether = dimensionId == DIM_NETHER;
         }
         for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
             proceduralChunkX[i] = Integer.MIN_VALUE;
