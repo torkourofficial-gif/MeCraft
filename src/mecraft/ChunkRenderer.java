@@ -2621,7 +2621,6 @@ final class ChunkRenderer {
         if ((metadata & 4) != 0) {
             int ex0=x0+5, ex1=x0+11, ez0=z0+5, ez1=z0+11, ey0=top, ey1=y0+16;
             addFrameQuad(builders,tails,174,ex0,ey1,ez0,ex1,ey1,ez1,0);
-            addFrameQuad(builders,tails,174,ex0,ey0,ez0,ex1,ey0,ez1,5);
             addFrameQuad(builders,tails,174,ex0,ey0,ez0,ex1,ey1,ez0,3);
             addFrameQuad(builders,tails,174,ex0,ey0,ez1,ex1,ey1,ez1,4);
             addFrameQuad(builders,tails,174,ex0,ey0,ez0,ex0,ey1,ez1,1);
