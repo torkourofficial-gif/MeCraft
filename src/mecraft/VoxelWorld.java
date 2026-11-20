@@ -1226,7 +1226,7 @@ final class VoxelWorld {
         setGenerationDiagnosticStage("VoxelWorld.generateChunk: validando dimensión; chunk cx=" + cx + ", cz=" + cz);
         if (dimension == DIM_END) {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generateEnd; cx=" + cx + ", cz=" + cz);
-            InfdevTerrain.generateEnd(seed, cx, cz, target, heights);
+            InfdevTerrain.generateEnd(seed, cx, cz, target, heights, biomes);
         } else if (dimension != DIM_NETHER && worldType == TYPE_FLAT) {
             for (int z = 0; z < CHUNK_XZ; z++) for (int x = 0; x < CHUNK_XZ; x++) {
                 int base = (z * CHUNK_XZ + x) * HEIGHT;
