@@ -200,6 +200,41 @@ final class InfdevTerrain {
         generateNether(seed, chunkX, chunkZ, blocks, floorHeights, false);
     }
 
+    /**
+     * End island generator. Uses the same 16x16x64 chunk contract as the
+     * Overworld and Nether, while keeping every column outside the island empty.
+     */
+    static void generateEnd(int seed, int chunkX, int chunkZ, byte[] blocks,
+                            int[] surfaceHeights) {
+        if (blocks == null || blocks.length < CHUNK_VOLUME || surfaceHeights == null ||
+                surfaceHeights.length < CHUNK_SIZE * CHUNK_SIZE) return;
+        VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generateEnd: generando chunk " +
+                chunkX + "," + chunkZ);
+        final int centerX = VoxelWorld.WIDTH / 2;
+        final int centerZ = VoxelWorld.DEPTH / 2;
+        int originX = chunkX * CHUNK_SIZE;
+        int originZ = chunkZ * CHUNK_SIZE;
+        for (int z = 0; z < CHUNK_SIZE; z++) {
+            for (int x = 0; x < CHUNK_SIZE; x++) {
+                int wx = originX + x;
+                int wz = originZ + z;
+                int dx = wx - centerX;
+                int dz = wz - centerZ;
+                int rough = ((wx * 73428767 ^ wz * 912931 ^ seed) >>> 28) & 3;
+                int radius = 23 + rough;
+                int top = 32 + (rough & 1);
+                boolean island = dx * dx + dz * dz <= radius * radius;
+                int column = z * CHUNK_SIZE + x;
+                int base = column * WORLD_HEIGHT;
+                surfaceHeights[column] = island ? top : 0;
+                for (int y = 0; y < WORLD_HEIGHT; y++) {
+                    blocks[base + y] = island && y <= top && y >= top - 7 ?
+                            Block.END_STONE : Block.AIR;
+                }
+            }
+        }
+    }
+
     /** Economic Nether uses fewer height-noise samples while retaining lava rivers. */
     static void generateEconomicNether(int seed, int chunkX, int chunkZ, byte[] blocks,
                                        int[] floorHeights) {
