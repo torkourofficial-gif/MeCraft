@@ -233,6 +233,8 @@ final class ChunkRenderer {
     private final MobSystem mobs;
     // Created only after the End has finished loading, keeping its M3G model out of the loading peak.
     private EnderDragonSystem enderDragon;
+    private boolean enderDragonLoadFailed;
+    private int pendingEnderDragonDamage;
     private int visibleHeldItem = -1;
     private int handSwingTicks = 8;
     private boolean handSwinging;
@@ -587,7 +589,9 @@ final class ChunkRenderer {
     }
 
     /** Render the first-person hand and held block in a final overlay pass. */
-    void render(Graphics3D graphics) {
+    void render(Graphics3D graphics, VoxelWorld world) {
+        // M3G scene graph creation and animation are confined to the paint thread.
+        updateEnderDragonVisual(world);
         boolean showHand = cameraMode == 0;
         if (showHand) handPivot.setRenderingEnable(false);
         try {
@@ -1313,16 +1317,35 @@ final class ChunkRenderer {
     }
 
     int updateMobs(VoxelWorld world) {
-        if (world.dimensionId == VoxelWorld.DIM_END && enderDragon == null) {
+        int damage = mobs.update(world);
+        // Dragon damage is produced by its render-thread animation and consumed
+        // here on the gameplay thread. Never touch M3G from this method.
+        synchronized (this) {
+            damage += pendingEnderDragonDamage;
+            pendingEnderDragonDamage = 0;
+        }
+        return damage;
+    }
+
+    private void updateEnderDragonVisual(VoxelWorld world) {
+        if (enderDragon == null && !enderDragonLoadFailed &&
+                world.dimensionId == VoxelWorld.DIM_END) {
             try {
                 enderDragon = new EnderDragonSystem(scene);
-            } catch (IOException ignored) {
-                enderDragon = null;
+            } catch (Throwable unavailable) {
+                // A model/texture failure must not terminate the gameplay loop.
+                enderDragonLoadFailed = true;
+                System.out.println("MeCraft: no se pudo crear el Ender Dragon: " + unavailable);
             }
         }
-        int damage = mobs.update(world);
-        if (enderDragon != null) damage += enderDragon.update(world);
-        return damage;
+        if (enderDragon != null) {
+            int damage = enderDragon.update(world);
+            if (damage > 0) {
+                synchronized (this) {
+                    pendingEnderDragonDamage += damage;
+                }
+            }
+        }
     }
 
     boolean spawnMobFromEgg(VoxelWorld world, int eggType, float x, float y, float z) {
