@@ -231,6 +231,8 @@ final class ChunkRenderer {
     private final ParticleSystem particles;
     private final DroppedItemSystem droppedItems;
     private final MobSystem mobs;
+    // Created only after the End has finished loading, keeping its M3G model out of the loading peak.
+    private EnderDragonSystem enderDragon;
     private int visibleHeldItem = -1;
     private int handSwingTicks = 8;
     private boolean handSwinging;
@@ -1311,7 +1313,16 @@ final class ChunkRenderer {
     }
 
     int updateMobs(VoxelWorld world) {
-        return mobs.update(world);
+        if (world.dimensionId == VoxelWorld.DIM_END && enderDragon == null) {
+            try {
+                enderDragon = new EnderDragonSystem(scene);
+            } catch (IOException ignored) {
+                enderDragon = null;
+            }
+        }
+        int damage = mobs.update(world);
+        if (enderDragon != null) damage += enderDragon.update(world);
+        return damage;
     }
 
     boolean spawnMobFromEgg(VoxelWorld world, int eggType, float x, float y, float z) {
@@ -1372,6 +1383,10 @@ final class ChunkRenderer {
     }
 
     int hitMob(VoxelWorld world, float dirX, float dirY, float dirZ, int damage) {
+        if (enderDragon != null) {
+            int result = enderDragon.hit(world, dirX, dirY, dirZ, damage);
+            if (result >= 0) return result;
+        }
         return mobs.hit(world, dirX, dirY, dirZ, damage);
     }
 
