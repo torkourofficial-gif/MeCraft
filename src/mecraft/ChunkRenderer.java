@@ -195,6 +195,7 @@ final class ChunkRenderer {
     private BoatEntity boat;
     private MinecartEntity minecart;
     private final Texture2D[] portalFrames = new Texture2D[8];
+    private final Texture2D[] endPortalFrames = new Texture2D[8];
     private final Texture2D[] crackFrames = new Texture2D[10];
     private final Appearance crackAppearance;
     private final Mesh crackMesh;
@@ -202,6 +203,7 @@ final class ChunkRenderer {
     private final short[] crackPositionData = new short[] { 0,0,0, 0,1,0, 1,0,0, 1,1,0 };
     private final short[] crackUVData = new short[] { 0,16, 0,0, 16,16, 16,0 };
     private final Appearance portalAppearance;
+    private final Appearance endPortalAppearance;
     private final Texture2D worldFireTexture;
     private final Appearance worldFireAppearance;
     private int fireAnimationTick;
@@ -273,6 +275,7 @@ final class ChunkRenderer {
         cartTexture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
         railSystem = new RailSystem(atlas);
         makePortalFrames(GameAssets.image("portal.png"));
+        makeEndPortalFrames();
         makeCrackFrames(terrainImage);
         crackAppearance = createFirstPersonAppearance(crackFrames[0], true, false, false);
         // Unlike the first-person hand, cracks must respect terrain depth so they
@@ -294,6 +297,7 @@ final class ChunkRenderer {
         crackMesh.setRenderingEnable(false);
         scene.addChild(crackMesh);
         portalAppearance = createPortalAppearance(portalFrames[0]);
+        endPortalAppearance = createPortalAppearance(endPortalFrames[0]);
         Image fireImage = GameAssets.image("fire.png");
         worldFireTexture = new Texture2D(new Image2D(Image2D.RGBA, fireImage));
         worldFireTexture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
@@ -695,6 +699,7 @@ final class ChunkRenderer {
             portalAnimationTick = 0;
             portalAnimationFrame = (portalAnimationFrame + 1) & 7;
             portalAppearance.setTexture(0, portalFrames[portalAnimationFrame]);
+            endPortalAppearance.setTexture(0, endPortalFrames[portalAnimationFrame]);
         }
         if (++fireAnimationTick >= 2) {
             fireAnimationTick = 0;
@@ -2467,11 +2472,13 @@ final class ChunkRenderer {
                     chunkLightScratch[voxelIndex] = (byte)(id == Block.LAVA ? 14 : torchLightAt(voxelIndex));
                     if (id == Block.AIR) continue;
                     nonAirBlocks++;
-                    if (id == Block.PORTAL) {
+                    if (id == Block.PORTAL || id == Block.END_PORTAL) {
                         if (portals == null) portals = acquirePortalBuilder();
                         portals.add(localX, localY, localZ,
                                 snapshot.portalAxisAt(localX, localY, localZ), portalFrameSize,
-                                (snapshot.metadata(localX, localY, localZ) & 2) != 0 ? 1 : 0);
+                                id == Block.END_PORTAL ? 1 :
+                                ((snapshot.metadata(localX, localY, localZ) & 2) != 0 ? 1 : 0),
+                                id == Block.END_PORTAL);
                     } else if (id == Block.END_PORTAL_FRAME) {
                         addEndPortalFrameGeometry(builders, builderTails, localX, localY, localZ,
                                 snapshot.metadata(localX, localY, localZ));
@@ -2793,7 +2800,27 @@ final class ChunkRenderer {
         vertices.setTexCoords(0, texCoords, 1.0f / portalFrameSize, null);
         int[] strips = new int[vertexCount / 4];
         for (int i = 0; i < strips.length; i++) strips[i] = 4;
-        return new Mesh(vertices, new TriangleStripArray(0, strips), portalAppearance);
+        return new Mesh(vertices, new TriangleStripArray(0, strips),
+                data.endPortal ? endPortalAppearance : portalAppearance);
+    }
+
+    private void makeEndPortalFrames() {
+        final int size = 16;
+        int[] pixels = new int[size * size];
+        for (int frame = 0; frame < 8; frame++) {
+            for (int i = 0; i < pixels.length; i++) pixels[i] = 0xFF000000;
+            // Deterministic moving white points on a fully black surface.
+            for (int star = 0; star < 13; star++) {
+                int x = (star * 7 + frame * (star % 3 + 1)) & 15;
+                int y = (star * 11 + frame * (star % 4 + 1)) & 15;
+                pixels[y * size + x] = (star % 4 == 0) ? 0xFFFFFFFF : 0xFFD8D8D8;
+            }
+            Image image = Image.createRGBImage(pixels, size, size, true);
+            Texture2D texture = new Texture2D(new Image2D(Image2D.RGBA, image));
+            texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
+            texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
+            endPortalFrames[frame] = texture;
+        }
     }
 
     private void makePortalFrames(Image source) {
@@ -3134,10 +3161,12 @@ final class ChunkRenderer {
         short[] p = new short[48];
         short[] uv = new short[32];
         int vertexCount;
+        boolean endPortal;
 
-        void reset() { vertexCount = 0; }
+        void reset() { vertexCount = 0; endPortal = false; }
 
-        void add(int x, int y, int z, int axis, int frameSize, int portalType) {
+        void add(int x, int y, int z, int axis, int frameSize, int portalType, boolean isEndPortal) {
+            if (isEndPortal) endPortal = true;
             ensure(vertexCount + 4);
             int x0 = x * 256, x1 = x0 + 256;
             int y0 = y * 256, y1 = y0 + 256;
