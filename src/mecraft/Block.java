@@ -100,7 +100,7 @@ final class Block {
         }
         // The atlas also contains the old door, foliage, and rail tile cells.
         int[] lowerAtlasTiles = new int[] { 81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,
-                                            97,98,99,100,101,112,128 };
+                                            97,98,99,100,101,112,121,128 };
         for (int i = 0; i < lowerAtlasTiles.length; i++) {
             int tile = lowerAtlasTiles[i];
             if (!isExistingTile(tile) && hasAtlasTexture(tile) && !containsTile(temporary, count, tile))
