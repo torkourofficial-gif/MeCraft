@@ -1172,6 +1172,32 @@ final class VoxelWorld {
         }
     }
 
+    /** Build the compact End island directly, without the procedural chunk pipeline. */
+    private void generateEndWorld() {
+        setGenerationDiagnosticStage("VoxelWorld: generando isla central del End");
+        for (int i = 0; i < blocks.length; i++) {
+            blocks[i] = Block.AIR;
+            waterLevels[i] = 0;
+        }
+        int centerX = WIDTH / 2, centerZ = DEPTH / 2;
+        for (int z = 0; z < DEPTH; z++) {
+            for (int x = 0; x < WIDTH; x++) {
+                blocks[index(x, 0, z)] = Block.BEDROCK;
+                int dx = x - centerX, dz = z - centerZ;
+                int rough = ((x * 73428767 ^ z * 912931 ^ seed) >>> 28) & 3;
+                int radius = 11 + rough;
+                if (dx * dx + dz * dz > radius * radius) continue;
+                int top = 32 + (rough & 1);
+                for (int y = top - 7; y <= top; y++)
+                    blocks[index(x, y, z)] = Block.STONE;
+            }
+        }
+        playerX = centerX + 0.5f;
+        playerZ = centerZ + 0.5f;
+        playerY = 34.0f;
+        yaw = 0.0f;
+    }
+
     private void generate() {
         setGenerationDiagnosticStage("VoxelWorld.generate: preparando bucle de chunks");
         for (int cz = 0; cz < CHUNKS_Z; cz++) {
@@ -1272,7 +1298,9 @@ final class VoxelWorld {
             dimensionBlocks[targetDimension] = new byte[BLOCK_COUNT]; dimensionWaterLevels[targetDimension] = new byte[BLOCK_COUNT];
             blocks = dimensionBlocks[targetDimension]; waterLevels = dimensionWaterLevels[targetDimension];
             dimensionId = targetDimension; nether = dimensionId == DIM_NETHER;
-            generate(); dimensionBlocks[dimensionId] = blocks; dimensionWaterLevels[dimensionId] = waterLevels;
+            if (dimensionId == DIM_END) generateEndWorld();
+            else generate();
+            dimensionBlocks[dimensionId] = blocks; dimensionWaterLevels[dimensionId] = waterLevels;
         } else {
             blocks = dimensionBlocks[targetDimension]; waterLevels = dimensionWaterLevels[targetDimension];
             dimensionId = targetDimension; nether = dimensionId == DIM_NETHER;
