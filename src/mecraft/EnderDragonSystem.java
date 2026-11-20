@@ -21,6 +21,10 @@ final class EnderDragonSystem {
     private final Group root = new Group();
     private final Group leftWing = new Group();
     private final Group rightWing = new Group();
+    private final Group[] tailSegments = new Group[6];
+    private final Group[] frontLegs = new Group[2];
+    private final Group[] rearLegs = new Group[2];
+    private final Group jaw = new Group();
     private int worldSeed = Integer.MIN_VALUE;
     private int tick;
     private int attackCooldown;
@@ -44,10 +48,36 @@ final class EnderDragonSystem {
         appearance.setPolygonMode(polygon);
 
         addBox(root, 1.6f, 1.35f, 3.8f, 0.0f, 0.0f, 0.0f, appearance);
-        addBox(root, 1.0f, 1.1f, 2.0f, 0.0f, 0.30f, -2.1f, appearance);
-        addBox(root, 1.15f, 0.95f, 1.15f, 0.0f, 0.55f, -3.45f, appearance);
-        addBox(root, 0.95f, 0.28f, 0.85f, 0.0f, 0.12f, -3.55f, appearance);
-        addBox(root, 0.65f, 0.65f, 3.0f, 0.0f, 0.0f, 3.2f, appearance);
+        addBox(root, 0.85f, 0.85f, 1.0f, 0.0f, 0.35f, -2.15f, appearance);
+        addBox(root, 0.72f, 0.72f, 0.85f, 0.0f, 0.42f, -2.85f, appearance);
+        addBox(root, 0.62f, 0.62f, 0.72f, 0.0f, 0.48f, -3.45f, appearance);
+        addBox(root, 1.15f, 0.95f, 1.15f, 0.0f, 0.55f, -4.05f, appearance);
+        jaw.setTranslation(0.0f, 0.12f, -4.25f);
+        root.addChild(jaw);
+        addBox(jaw, 0.95f, 0.28f, 0.85f, 0.0f, 0.0f, 0.0f, appearance);
+        for (int i = 0; i < tailSegments.length; i++) {
+            Group segment = new Group();
+            segment.setTranslation(0.0f, 0.0f, 2.35f + i * 0.52f);
+            root.addChild(segment);
+            float size = 0.58f - i * 0.065f;
+            addBox(segment, size, size, 0.72f, 0.0f, 0.0f, 0.0f, appearance);
+            tailSegments[i] = segment;
+        }
+        for (int side = 0; side < 2; side++) {
+            float sign = side == 0 ? -1.0f : 1.0f;
+            Group front = new Group();
+            front.setTranslation(sign * 0.68f, -0.48f, -1.05f);
+            root.addChild(front);
+            addBox(front, 0.50f, 1.45f, 0.50f, 0.0f, -0.62f, 0.0f, appearance);
+            addBox(front, 0.40f, 0.28f, 0.92f, 0.0f, -1.42f, -0.18f, appearance);
+            frontLegs[side] = front;
+            Group rear = new Group();
+            rear.setTranslation(sign * 0.72f, -0.45f, 1.72f);
+            root.addChild(rear);
+            addBox(rear, 0.92f, 1.75f, 0.92f, 0.0f, -0.78f, 0.0f, appearance);
+            addBox(rear, 0.72f, 0.32f, 1.10f, 0.0f, -1.75f, 0.10f, appearance);
+            rearLegs[side] = rear;
+        }
 
         leftWing.setTranslation(-0.9f, 0.35f, -0.1f);
         rightWing.setTranslation(0.9f, 0.35f, -0.1f);
@@ -122,8 +152,9 @@ final class EnderDragonSystem {
         tick++;
         if (attackCooldown > 0) attackCooldown--;
         float angle = tick * 0.025f;
-        float x = VoxelWorld.WIDTH * 0.5f + (float)Math.cos(angle) * 9.0f;
-        float z = VoxelWorld.DEPTH * 0.5f + (float)Math.sin(angle) * 9.0f;
+        float orbitRadius = tick % 240 < 150 ? 9.0f : 4.5f;
+        float x = VoxelWorld.WIDTH * 0.5f + (float)Math.cos(angle) * orbitRadius;
+        float z = VoxelWorld.DEPTH * 0.5f + (float)Math.sin(angle) * orbitRadius;
         float y = 38.0f + (float)Math.sin(angle * 2.0f) * 2.0f;
         float dx = world.playerX - x, dz = world.playerZ - z;
         root.setTranslation(x, y, z);
@@ -131,8 +162,18 @@ final class EnderDragonSystem {
         float flap = (float)Math.sin(tick * 0.22f) * 38.0f;
         leftWing.setOrientation(flap, 0.0f, 0.0f, 1.0f);
         rightWing.setOrientation(-flap, 0.0f, 0.0f, 1.0f);
+        jaw.setOrientation((float)Math.sin(tick * 0.16f) * 9.0f, 1.0f, 0.0f, 0.0f);
+        for (int i = 0; i < tailSegments.length; i++) {
+            float sway = (float)Math.sin(tick * 0.08f + i * 0.45f) * (2.0f + i * 0.5f);
+            tailSegments[i].setOrientation(sway, 0.0f, 1.0f, 0.0f);
+        }
+        float legSwing = (float)Math.sin(tick * 0.22f) * 12.0f;
+        for (int i = 0; i < 2; i++) {
+            frontLegs[i].setOrientation(legSwing, 1.0f, 0.0f, 0.0f);
+            rearLegs[i].setOrientation(-legSwing, 1.0f, 0.0f, 0.0f);
+        }
         float distance = dx * dx + (world.playerY + 1.0f - y) * (world.playerY + 1.0f - y) + dz * dz;
-        if (distance < 9.0f && attackCooldown == 0) {
+        if (distance < 36.0f && attackCooldown == 0) {
             attackCooldown = 30;
             return 6;
         }
@@ -143,8 +184,9 @@ final class EnderDragonSystem {
         if (world.dimensionId != VoxelWorld.DIM_END || defeated) return -1;
         float ox = world.playerX, oy = world.playerY + 1.62f, oz = world.playerZ;
         float angle = tick * 0.025f;
-        float cx = VoxelWorld.WIDTH * 0.5f + (float)Math.cos(angle) * 9.0f;
-        float cz = VoxelWorld.DEPTH * 0.5f + (float)Math.sin(angle) * 9.0f;
+        float orbitRadius = tick % 240 < 150 ? 9.0f : 4.5f;
+        float cx = VoxelWorld.WIDTH * 0.5f + (float)Math.cos(angle) * orbitRadius;
+        float cz = VoxelWorld.DEPTH * 0.5f + (float)Math.sin(angle) * orbitRadius;
         float cy = 38.0f + (float)Math.sin(angle * 2.0f) * 2.0f;
         float along = (cx - ox) * dirX + (cy - oy) * dirY + (cz - oz) * dirZ;
         if (along < 0.0f || along > 7.0f) return -1;
