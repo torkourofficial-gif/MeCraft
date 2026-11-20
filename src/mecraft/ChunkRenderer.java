@@ -1823,6 +1823,11 @@ final class ChunkRenderer {
             lastChunkZ = centerZ + Math.max(0, Math.max(forwardChunkZ, cornerZ));
         }
 
+        int firstChunkY = world.dimensionId == VoxelWorld.DIM_END ?
+                InfdevTerrain.END_ISLAND_MIN_Y / VoxelWorld.CHUNK_Y : 0;
+        int lastChunkY = world.dimensionId == VoxelWorld.DIM_END ?
+                InfdevTerrain.END_ISLAND_MAX_Y / VoxelWorld.CHUNK_Y : VoxelWorld.CHUNKS_Y - 1;
+
         // Apply the actual camera frustum to already-resident chunks too; previously
         // the frustum only filtered new builds while old meshes kept rendering.
         for (int i = 0; i < CACHE_SIZE; i++) {
@@ -1850,10 +1855,6 @@ final class ChunkRenderer {
 
         // Search and rank candidates only in the active window, not all 648
         // cache slots. In shortest mode this is 32 sectors (2x2x8).
-        int firstChunkY = world.dimensionId == VoxelWorld.DIM_END ?
-                InfdevTerrain.END_ISLAND_MIN_Y / VoxelWorld.CHUNK_Y : 0;
-        int lastChunkY = world.dimensionId == VoxelWorld.DIM_END ?
-                InfdevTerrain.END_ISLAND_MAX_Y / VoxelWorld.CHUNK_Y : VoxelWorld.CHUNKS_Y - 1;
         // The End island only occupies Y=25..33. Do not rank, snapshot or
         // stream the six vertical chunk layers that can only contain air.
         for (int cy = firstChunkY; cy <= lastChunkY; cy++) {
