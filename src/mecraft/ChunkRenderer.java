@@ -2382,7 +2382,7 @@ final class ChunkRenderer {
         // FaceBuilder stores world positions and atlas UVs in 1/256 units.
         // Keep the same scale as the original per-material chunk mesh path.
         vertices.setPositions(positions, 1.0f / 256.0f, null);
-        vertices.setTexCoords(0, texCoords, 1.0f / 256.0f, null);
+        vertices.setTexCoords(0, texCoords, 1.0f / 16.0f, null);
         vertices.setColors(colors);
         return new Mesh(vertices, indices, appearances);
     }
