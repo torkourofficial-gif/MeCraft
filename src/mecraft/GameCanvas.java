@@ -188,6 +188,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private boolean lookUp, lookDown, lookLeft, lookRight;
     private VoxelWorld world;
     private ChunkRenderer renderer;
+    // Completed by the loading worker; M3G scene changes are deferred to paint().
+    private volatile boolean dimensionSceneSetupPending;
     private boolean ridingBoat;
     private boolean ridingMinecart;
     private MusicController music;
@@ -1732,12 +1734,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (world == null || renderer == null ||
                 world.dimensionId != VoxelWorld.DIM_OVERWORLD || state != PLAYING) return;
 
-        // Stop gameplay before doing the expensive dimension switch. The
-        // existing MIDP loading screen remains visible while the worker
-        // prepares the End terrain and rebuilds its visible M3G chunks.
+        // Keep all native M3G work on the Canvas/render thread. The worker only
+        // changes voxel data and player state while the loading screen is shown.
         state = LOADING;
         loadingMessage = Language.text("Generando el End...");
         portalChargeTicks = 0;
+        dimensionSceneSetupPending = false;
         clearKeys();
         resetMining();
         repaint();
@@ -1755,22 +1757,19 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                         return;
                     }
 
-                    // The End portal is one-way: spawn on the island and do
-                    // not create a return portal.
+                    // One-way arrival: the End owns the active voxel arrays.
                     int centerX = VoxelWorld.WIDTH / 2;
                     int centerZ = VoxelWorld.DEPTH / 2;
                     world.playerX = centerX + 0.5f;
                     world.playerZ = centerZ + 0.5f;
                     world.playerY = world.surfaceY(centerX, centerZ) + 1.05f;
-
+                    world.yaw = 0.0f;
                     playerPhysics.reset();
-                    renderer.onDimensionChanged(world);
-                    stage = "construyendo los chunks visibles del End";
-                    loadingMessage = Language.text("Construyendo el End...");
-                    renderer.sync(world);
-                    renderer.updateDayNight(world);
-                    renderer.updateCamera(world, cameraPitch);
                     copyInventoryToWorld();
+
+                    // paint() consumes this flag and performs mob/M3G setup,
+                    // chunk streaming and camera updates on the render thread.
+                    dimensionSceneSetupPending = true;
                     state = PLAYING;
                     repaint();
                 } catch (OutOfMemoryError exhausted) {
@@ -1780,6 +1779,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 }
             }
         });
+        try { loader.setPriority(Thread.MIN_PRIORITY); } catch (RuntimeException ignored) { }
         loader.start();
     }
 
@@ -3388,6 +3388,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             state == CREATIVE_INVENTORY || state == GAME_OVER || state == CHEST_INVENTORY || state == FURNACE_INVENTORY) {
             String stage = "actualizando mallas M3G";
             try {
+                if (dimensionSceneSetupPending) {
+                    dimensionSceneSetupPending = false;
+                    stage = "preparando entidades del End";
+                    renderer.onDimensionChanged(world);
+                    stage = "actualizando iluminacion del End";
+                    renderer.updateDayNight(world);
+                    stage = "actualizando camara del End";
+                    renderer.updateCamera(world, cameraPitch);
+                }
                 long syncStarted = System.currentTimeMillis();
                 renderer.sync(world);
                 long syncTime = System.currentTimeMillis() - syncStarted;
