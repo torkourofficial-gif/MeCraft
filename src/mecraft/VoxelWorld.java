@@ -1327,12 +1327,16 @@ final class VoxelWorld {
 
     int portalTypeAt(float px, float py, float pz) {
         int minX = floorBlock(px - 0.31f), maxX = floorBlock(px + 0.31f);
-        int minY = floorBlock(py), maxY = floorBlock(py + 1.8f);
+        int minY = floorBlock(py) - 1, maxY = floorBlock(py + 1.8f);
         int minZ = floorBlock(pz - 0.31f), maxZ = floorBlock(pz + 0.31f);
         for (int y = minY; y <= maxY; y++)
             for (int z = minZ; z <= maxZ; z++)
                 for (int x = minX; x <= maxX; x++)
-                    if (get(x, y, z) == Block.PORTAL) return metadataAt(x, y, z) & 1;
+                    if (get(x, y, z) == Block.PORTAL) {
+                        int metadata = metadataAt(x, y, z);
+                        if (y < floorBlock(py) && (metadata & 2) == 0) continue;
+                        return metadata & 1;
+                    }
         return 0;
     }
 
@@ -1369,7 +1373,7 @@ final class VoxelWorld {
             for (int u = 1; u <= 3; u++) for (int v = 1; v <= 3; v++) {
                 int px = ring[0] + u, pz = ring[2] + v;
                 set(px, ring[1], pz, Block.PORTAL);
-                setMetadata(px, ring[1], pz, 1);
+                setMetadata(px, ring[1], pz, 3);
             }
         }
         fullRebuild = true;
@@ -1404,12 +1408,13 @@ final class VoxelWorld {
 
     boolean touchesPortal(float px, float py, float pz) {
         int minX = floorBlock(px - 0.31f), maxX = floorBlock(px + 0.31f);
-        int minY = floorBlock(py), maxY = floorBlock(py + 1.8f);
+        int minY = floorBlock(py) - 1, maxY = floorBlock(py + 1.8f);
         int minZ = floorBlock(pz - 0.31f), maxZ = floorBlock(pz + 0.31f);
         for (int y = minY; y <= maxY; y++)
             for (int z = minZ; z <= maxZ; z++)
                 for (int x = minX; x <= maxX; x++)
-                    if (get(x, y, z) == Block.PORTAL) return true;
+                    if (get(x, y, z) == Block.PORTAL &&
+                            (y >= floorBlock(py) || (metadataAt(x, y, z) & 2) != 0)) return true;
         return false;
     }
 
