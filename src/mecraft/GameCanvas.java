@@ -3433,7 +3433,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             String stage = "actualizando mallas M3G";
             try {
                 long syncStarted = System.currentTimeMillis();
-                renderer.sync(world);
+                if (!rendererSyncedForLoading) renderer.sync(world);
                 long syncTime = System.currentTimeMillis() - syncStarted;
                 profileRenderSync = syncTime;
                 if (syncTime > profileMaxRenderSync) profileMaxRenderSync = syncTime;
