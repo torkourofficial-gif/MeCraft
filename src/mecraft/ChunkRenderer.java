@@ -2040,7 +2040,6 @@ final class ChunkRenderer {
             // Mark the sector resident so the next sector can be considered.
             dirtySectorMasks[slot] &= ~(1 << chunkSnapshotSector);
             Chunk empty = new Chunk();
-            empty.faceBuilders = new FaceBuilder[TILE_COUNT];
             replaceChunkSector(slot, cx, cy, cz, chunkSnapshotSector, empty);
             return;
         }
