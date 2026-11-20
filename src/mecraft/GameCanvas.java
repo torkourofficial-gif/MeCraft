@@ -544,7 +544,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         } else {
             portalChargeTicks = 0;
         }
-        if (state != PLAYING) return;
+        if (endPortalTransitionPending || state != PLAYING) return;
         int mobDamage = renderer.updateMobs(world);
         if (world.mode == 0 && mobDamage > 0) damagePlayer(mobDamage);
         if (state != PLAYING) return;
