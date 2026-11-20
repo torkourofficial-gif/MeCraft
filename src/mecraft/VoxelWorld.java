@@ -1282,8 +1282,12 @@ final class VoxelWorld {
             // in-place, then regenerate only if the saved End is truly empty.
             int centerX = WIDTH / 2, centerZ = DEPTH / 2;
             boolean hasEndStone = false;
-            for (int z = centerZ - 27; z <= centerZ + 27; z++) {
-                for (int x = centerX - 27; x <= centerX + 27; x++) {
+            int minZ = Math.max(0, centerZ - 27);
+            int maxZ = Math.min(DEPTH - 1, centerZ + 27);
+            int minX = Math.max(0, centerX - 27);
+            int maxX = Math.min(WIDTH - 1, centerX + 27);
+            for (int z = minZ; z <= maxZ; z++) {
+                for (int x = minX; x <= maxX; x++) {
                     for (int y = 24; y <= 40; y++) {
                         int at = index(x, y, z);
                         if (blocks[at] == (byte)-1) blocks[at] = Block.END_STONE;
