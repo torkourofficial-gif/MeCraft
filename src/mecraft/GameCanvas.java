@@ -1205,7 +1205,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             // Prioritize the edited chunk so the terrain change is visible as soon as
             // its bounded mesh build completes; unrelated chunks remain incremental.
             renderer.syncEditedBlock(world, x, y, z);
-            if (id != Block.FIRE) renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
+            // End Portal Frames use a special multi-tile model; skip the
+            // generic debris atlas path for this block.
+            if (id != Block.FIRE && id != Block.END_PORTAL_FRAME)
+                renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
             resetMining();
             miningHitWait = 5;
         }
