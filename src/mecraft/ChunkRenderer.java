@@ -1293,9 +1293,18 @@ final class ChunkRenderer {
         Chunk chunk = chunks[slot];
         if (chunkWorldX[slot] != cx || chunkWorldY[slot] != cy ||
                 chunkWorldZ[slot] != cz || !residentChunks[slot] ||
+                dirtySectorMasks[slot] != 0 || dirtyChunks[slot] ||
                 chunk == null || chunk.sectors == null) return false;
+        // attachChunkSectorMeshes() publishes a sector while its remaining
+        // M3G meshes are still being installed. The dirty mask is cleared only
+        // by replaceChunkSector() after the complete sector has finished.
+        // Never leave LOADING based on a partially attached sector.
         for (int i = 0; i < chunk.sectors.length; i++)
             if (chunk.sectors[i] == null) return false;
+        if (installingChunk != null && installingSlot == slot) return false;
+        if (buildResultReady && readySlot == slot) return false;
+        if (chunkSnapshotPreparing && chunkSnapshotX == cx &&
+                chunkSnapshotY == cy && chunkSnapshotZ == cz) return false;
         return true;
     }
 
