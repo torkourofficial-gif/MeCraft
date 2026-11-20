@@ -3429,7 +3429,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (state == TOUCH_SETUP) {
             drawTouchSetup(g);
         } else if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH ||
-            state == CREATIVE_INVENTORY || state == GAME_OVER || state == CHEST_INVENTORY || state == FURNACE_INVENTORY) {
+            state == CREATIVE_INVENTORY || state == GAME_OVER || state == CHEST_INVENTORY || state == FURNACE_INVENTORY ||
+            (state == LOADING && world != null && renderer != null &&
+             world.dimensionId == VoxelWorld.DIM_END && !dimensionSceneSetupPending)) {
             String stage = "actualizando mallas M3G";
             try {
                 long syncStarted = System.currentTimeMillis();
@@ -3479,6 +3481,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 if (state == CREATIVE_INVENTORY) drawCreativeInventory(g);
                 profileHudWork = System.currentTimeMillis() - hudStarted;
                 if (profileHudWork > profileMaxHudWork) profileMaxHudWork = profileHudWork;
+                // Keep presenting the 3D scene while End chunks are installed.
+                // The loading overlay is 2D and must not replace the M3G frame.
+                if (state == LOADING) drawLoading(g);
             } catch (OutOfMemoryError exhausted) {
                 showError("M3G agotó la memoria disponible durante el dibujo. Cierra y vuelve a abrir el mundo para liberar recursos.");
                 drawError(g);
