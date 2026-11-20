@@ -1278,6 +1278,27 @@ final class ChunkRenderer {
         mobs.onDimensionChanged(world);
     }
 
+    /**
+     * True only after every horizontal sector of the player's current chunk
+     * has been installed into the M3G scene. Merely queuing Java geometry is
+     * not enough: the arrival terrain must actually be drawable.
+     */
+    boolean isChunkReadyAt(float x, float y, float z) {
+        int cx = floorDiv((int)x, VoxelWorld.CHUNK_XZ);
+        int cy = floorDiv((int)y, VoxelWorld.CHUNK_Y);
+        int cz = floorDiv((int)z, VoxelWorld.CHUNK_XZ);
+        if (cy < 0 || cy >= VoxelWorld.CHUNKS_Y) return false;
+        int slot = (cy * MAX_STREAM_SPAN + floorMod(cz, MAX_STREAM_SPAN)) *
+                MAX_STREAM_SPAN + floorMod(cx, MAX_STREAM_SPAN);
+        Chunk chunk = chunks[slot];
+        if (chunkWorldX[slot] != cx || chunkWorldY[slot] != cy ||
+                chunkWorldZ[slot] != cz || !residentChunks[slot] ||
+                chunk == null || chunk.sectors == null) return false;
+        for (int i = 0; i < chunk.sectors.length; i++)
+            if (chunk.sectors[i] == null) return false;
+        return true;
+    }
+
     int updateMobs(VoxelWorld world) {
         return mobs.update(world) + dragon.update(world);
     }
