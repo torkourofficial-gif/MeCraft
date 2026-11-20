@@ -396,6 +396,12 @@ final class MobSystem {
         releaseMob(slot);
     }
 
+    /** Immediately discard actors from the previous dimension before its scene is shown. */
+    void onDimensionChanged(VoxelWorld world) {
+        if (world == null) return;
+        reset(world);
+    }
+
     private void reset(VoxelWorld world) {
         worldSeed = world.seed;
         dimensionMode = world.dimensionId;
