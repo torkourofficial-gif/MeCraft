@@ -176,7 +176,7 @@ final class Block {
     private static boolean hasAtlasTexture(int tile) {
         if (tile < 0 || tile >= 256) return false;
         if (tile == 14 || tile == 31 || tile == 61 || tile == 62 || tile == 96 || tile == 99 || tile == 102 ||
-            tile == 158 || tile == 159 || tile == 174 || tile == 175 || tile == 103 || tile == 104 || tile == 105 || tile == 115) return true;
+            tile == 121 || tile == 158 || tile == 159 || tile == 174 || tile == 175 || tile == 103 || tile == 104 || tile == 105 || tile == 115) return true;
         return TEXTURED_TILE_ROWS[tile >> 4].charAt(tile & 15) != '.';
     }
 
