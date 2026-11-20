@@ -1182,14 +1182,15 @@ final class VoxelWorld {
         int centerX = WIDTH / 2, centerZ = DEPTH / 2;
         for (int z = 0; z < DEPTH; z++) {
             for (int x = 0; x < WIDTH; x++) {
-                blocks[index(x, 0, z)] = Block.BEDROCK;
                 int dx = x - centerX, dz = z - centerZ;
                 int rough = ((x * 73428767 ^ z * 912931 ^ seed) >>> 28) & 3;
-                int radius = 11 + rough;
+                // One isolated, irregular End island. Everything outside it,
+                // including the bottom of the world, remains empty void.
+                int radius = 23 + rough;
                 if (dx * dx + dz * dz > radius * radius) continue;
                 int top = 32 + (rough & 1);
                 for (int y = top - 7; y <= top; y++)
-                    blocks[index(x, y, z)] = Block.STONE;
+                    blocks[index(x, y, z)] = Block.END_STONE;
             }
         }
         playerX = centerX + 0.5f;
@@ -1248,13 +1249,12 @@ final class VoxelWorld {
             int wx = cx * CHUNK_XZ + x, wz = cz * CHUNK_XZ + z;
             int dx = wx - centerX, dz = wz - centerZ;
             int rough = ((wx * 73428767 ^ wz * 912931 ^ seed) >>> 28) & 3;
-            int radius = 11 + rough, top = 32 + (rough & 1);
+            int radius = 23 + rough, top = 32 + (rough & 1);
             boolean island = dx * dx + dz * dz <= radius * radius;
             int base = (z * CHUNK_XZ + x) * HEIGHT;
             for (int y = 0; y < HEIGHT; y++) {
                 byte id = Block.AIR;
-                if (y == 0) id = Block.BEDROCK;
-                else if (island && y <= top && y >= top - 7) id = Block.STONE;
+                if (island && y <= top && y >= top - 7) id = Block.END_STONE;
                 target[base + y] = id;
             }
             heights[z * CHUNK_XZ + x] = island ? top : 0;
