@@ -402,6 +402,7 @@ final class Block {
 
     /** Indev terrain tile for the renderer's face order: top, x-, x+, z-, z+, bottom. */
     static int faceTile(byte id, int face) {
+        if (id == END_PORTAL_FRAME) return face == 0 ? 158 : (face == 5 ? 175 : 159);
         if (id == LAVA) return 234;
         if (id == DOOR) return face == 0 || face == 5 ? 81 : 97;
         if (id == IRON_DOOR) return face == 0 || face == 5 ? 82 : 98;
