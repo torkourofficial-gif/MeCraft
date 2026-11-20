@@ -1257,24 +1257,46 @@ final class VoxelWorld {
         // End terrain. A fresh dimension is generated through generate(), which
         // dispatches each chunk to InfdevTerrain.generateEnd().
         if (dimensionId == DIM_END && targetDimension != DIM_END) return false;
-        dimensionBlocks[dimensionId] = blocks;
-        dimensionWaterLevels[dimensionId] = waterLevels;
-        if (dimensionBlocks[targetDimension] == null ||
-                dimensionWaterLevels[targetDimension] == null) {
-            dimensionBlocks[targetDimension] = new byte[BLOCK_COUNT];
-            dimensionWaterLevels[targetDimension] = new byte[BLOCK_COUNT];
-            blocks = dimensionBlocks[targetDimension];
-            waterLevels = dimensionWaterLevels[targetDimension];
-            dimensionId = targetDimension;
-            nether = dimensionId == DIM_NETHER;
+        boolean createEndInCurrentArrays = targetDimension == DIM_END &&
+                (dimensionBlocks[DIM_END] == null ||
+                 dimensionWaterLevels[DIM_END] == null);
+        if (createEndInCurrentArrays) {
+            // The End is a one-way destination. Reuse the active voxel arrays
+            // instead of allocating another full blocks + metadata pair while
+            // retaining the Overworld arrays. This avoids a large heap spike
+            // on small CLDC devices during dimension travel.
+            dimensionBlocks[dimensionId] = null;
+            dimensionWaterLevels[dimensionId] = null;
+            dimensionId = DIM_END;
+            nether = false;
+            dimensionBlocks[DIM_END] = blocks;
+            dimensionWaterLevels[DIM_END] = waterLevels;
+            // waterLevels also stores block metadata, so clear it before the
+            // freshly generated End replaces the old dimension's contents.
+            for (int i = 0; i < waterLevels.length; i++) waterLevels[i] = 0;
             generate();
+            dimensionBlocks[DIM_END] = blocks;
+            dimensionWaterLevels[DIM_END] = waterLevels;
+        } else {
             dimensionBlocks[dimensionId] = blocks;
             dimensionWaterLevels[dimensionId] = waterLevels;
-        } else {
-            blocks = dimensionBlocks[targetDimension];
-            waterLevels = dimensionWaterLevels[targetDimension];
-            dimensionId = targetDimension;
-            nether = dimensionId == DIM_NETHER;
+            if (dimensionBlocks[targetDimension] == null ||
+                    dimensionWaterLevels[targetDimension] == null) {
+                dimensionBlocks[targetDimension] = new byte[BLOCK_COUNT];
+                dimensionWaterLevels[targetDimension] = new byte[BLOCK_COUNT];
+                blocks = dimensionBlocks[targetDimension];
+                waterLevels = dimensionWaterLevels[targetDimension];
+                dimensionId = targetDimension;
+                nether = dimensionId == DIM_NETHER;
+                generate();
+                dimensionBlocks[dimensionId] = blocks;
+                dimensionWaterLevels[dimensionId] = waterLevels;
+            } else {
+                blocks = dimensionBlocks[targetDimension];
+                waterLevels = dimensionWaterLevels[targetDimension];
+                dimensionId = targetDimension;
+                nether = dimensionId == DIM_NETHER;
+            }
         }
         if (targetDimension == DIM_END) {
             // Older builds stored End Stone with block ID -1 because atlas tile
