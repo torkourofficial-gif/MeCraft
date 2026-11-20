@@ -1328,6 +1328,23 @@ final class VoxelWorld {
             dimensionId = targetDimension;
             nether = dimensionId == DIM_NETHER;
         }
+        if (targetDimension == DIM_END) {
+            // Older builds stored End Stone with block ID -1 because atlas tile
+            // 121 was missing from Block.EXTRA_TILES. Repair that saved island
+            // in-place, then regenerate only if the saved End is truly empty.
+            int centerX = WIDTH / 2, centerZ = DEPTH / 2;
+            boolean hasEndStone = false;
+            for (int z = centerZ - 27; z <= centerZ + 27; z++) {
+                for (int x = centerX - 27; x <= centerX + 27; x++) {
+                    for (int y = 24; y <= 40; y++) {
+                        int at = index(x, y, z);
+                        if (blocks[at] == (byte)-1) blocks[at] = Block.END_STONE;
+                        if (blocks[at] == Block.END_STONE) hasEndStone = true;
+                    }
+                }
+            }
+            if (!hasEndStone) generateEndWorld();
+        }
         for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
             proceduralChunkX[i] = Integer.MIN_VALUE;
             proceduralChunkZ[i] = Integer.MIN_VALUE;
