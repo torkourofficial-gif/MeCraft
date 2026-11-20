@@ -1220,31 +1220,13 @@ final class VoxelWorld {
         generateChunk(cx, cz, target, proceduralHeights, proceduralBiomes, dimensionId);
     }
 
-    private void generateEndChunk(int cx, int cz, byte[] target, int[] heights, byte[] biomes) {
-        final int centerX = WIDTH / 2, centerZ = DEPTH / 2;
-        for (int z = 0; z < CHUNK_XZ; z++) for (int x = 0; x < CHUNK_XZ; x++) {
-            int wx = cx * CHUNK_XZ + x, wz = cz * CHUNK_XZ + z;
-            int dx = wx - centerX, dz = wz - centerZ;
-            int rough = ((wx * 73428767 ^ wz * 912931 ^ seed) >>> 28) & 3;
-            int radius = 23 + rough, top = 32 + (rough & 1);
-            boolean island = dx * dx + dz * dz <= radius * radius;
-            int base = (z * CHUNK_XZ + x) * HEIGHT;
-            for (int y = 0; y < HEIGHT; y++) {
-                byte id = Block.AIR;
-                if (island && y <= top && y >= top - 7) id = Block.END_STONE;
-                target[base + y] = id;
-            }
-            heights[z * CHUNK_XZ + x] = island ? top : 0;
-            biomes[z * CHUNK_XZ + x] = 0;
-        }
-    }
-
     private void generateChunk(int cx, int cz, byte[] target, int[] heights,
                                byte[] biomes, int dimension) {
         InfdevTerrain.prepareNoise(seed, noiseVersion);
         setGenerationDiagnosticStage("VoxelWorld.generateChunk: validando dimensión; chunk cx=" + cx + ", cz=" + cz);
         if (dimension == DIM_END) {
-            generateEndChunk(cx, cz, target, heights, biomes);
+            setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generateEnd; cx=" + cx + ", cz=" + cz);
+            InfdevTerrain.generateEnd(seed, cx, cz, target, heights);
         } else if (dimension != DIM_NETHER && worldType == TYPE_FLAT) {
             for (int z = 0; z < CHUNK_XZ; z++) for (int x = 0; x < CHUNK_XZ; x++) {
                 int base = (z * CHUNK_XZ + x) * HEIGHT;
@@ -1273,7 +1255,7 @@ final class VoxelWorld {
         // Like the Nether, the End owns independent block and fluid arrays.
         // Keep the End one-way, but never overwrite the Overworld arrays with
         // End terrain. A fresh dimension is generated through generate(), which
-        // dispatches each chunk to generateEndChunk().
+        // dispatches each chunk to InfdevTerrain.generateEnd().
         if (dimensionId == DIM_END && targetDimension != DIM_END) return false;
         dimensionBlocks[dimensionId] = blocks;
         dimensionWaterLevels[dimensionId] = waterLevels;
@@ -1309,7 +1291,12 @@ final class VoxelWorld {
                     }
                 }
             }
-            if (!hasEndStone) generateEndWorld();
+            if (!hasEndStone) {
+                // Rebuild an empty or invalid legacy End through the same chunk pipeline.
+                generate();
+                dimensionBlocks[DIM_END] = blocks;
+                dimensionWaterLevels[DIM_END] = waterLevels;
+            }
         }
         for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
             proceduralChunkX[i] = Integer.MIN_VALUE;
