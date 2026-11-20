@@ -3381,6 +3381,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     protected synchronized void paint(Graphics g) {
+        boolean rendererSyncedForLoading = false;
 
         if (state == LOADING && dimensionSceneSetupPending) {
             String stage = "preparando entidades del End";
@@ -3391,9 +3392,34 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 renderer.updateDayNight(world);
                 stage = "actualizando camara del End";
                 renderer.updateCamera(world, cameraPitch);
-                state = PLAYING;
             } catch (OutOfMemoryError exhausted) {
                 showError("No hay memoria suficiente para preparar la escena del End.");
+            } catch (Throwable problem) {
+                showDiagnostic(stage, problem);
+            }
+        }
+
+        // Keep the loading screen visible until the chunk containing the
+        // player's arrival point has all of its sector meshes installed.
+        // sync() advances the existing bounded streaming pipeline one frame
+        // at a time; no artificial sleep or blocking wait is needed.
+        if (state == LOADING && world != null && renderer != null &&
+                world.dimensionId == VoxelWorld.DIM_END && !dimensionSceneSetupPending) {
+            String stage = "construyendo los chunks centrales del End";
+            try {
+                long syncStarted = System.currentTimeMillis();
+                if (!rendererSyncedForLoading) renderer.sync(world);
+                long syncTime = System.currentTimeMillis() - syncStarted;
+                profileRenderSync = syncTime;
+                if (syncTime > profileMaxRenderSync) profileMaxRenderSync = syncTime;
+                rendererSyncedForLoading = true;
+                if (renderer.isChunkReadyAt(world.playerX, world.playerY, world.playerZ)) {
+                    state = PLAYING;
+                } else {
+                    loadingMessage = Language.text("Construyendo chunks visibles...");
+                }
+            } catch (OutOfMemoryError exhausted) {
+                showError("No hay memoria suficiente para construir el terreno del End.");
             } catch (Throwable problem) {
                 showDiagnostic(stage, problem);
             }
