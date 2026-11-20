@@ -2443,7 +2443,11 @@ final class ChunkRenderer {
                     if (id == Block.PORTAL) {
                         if (portals == null) portals = acquirePortalBuilder();
                         portals.add(localX, localY, localZ,
-                                snapshot.portalAxisAt(localX, localY, localZ), portalFrameSize);
+                                snapshot.portalAxisAt(localX, localY, localZ), portalFrameSize,
+                                snapshot.metadata(localX, localY, localZ) & 1);
+                    } else if (id == Block.END_PORTAL_FRAME) {
+                        addEndPortalFrameGeometry(builders, builderTails, localX, localY, localZ,
+                                snapshot.metadata(localX, localY, localZ));
                     } else if (id == Block.FIRE) {
                         if (fires == null) fires = acquireFireBuilder();
                         fires.add(localX, localY, localZ);
@@ -2494,7 +2498,7 @@ final class ChunkRenderer {
                                 VoxelWorld.CHUNK_XZ + (x - x0);
                         byte id = chunkVoxelScratch[voxelIndex];
                         int key = 0;
-                        if (id != Block.AIR && id != Block.RAIL && !Block.isFlower(id) && !Block.isDoor(id) &&
+                        if (id != Block.AIR && id != Block.RAIL && id != Block.END_PORTAL_FRAME && !Block.isFlower(id) && !Block.isDoor(id) &&
                             !(face == 5 && y == 0)) {
                             int nx = x, ny = y, nz = z;
                             if (face == 0) ny++;
@@ -2604,6 +2608,43 @@ final class ChunkRenderer {
         return chunk;
     }
 
+    private void addEndPortalFrameGeometry(FaceBuilder[] builders, FaceBuilder[] tails,
+            int x, int y, int z, int metadata) {
+        int x0 = x * 16, x1 = x0 + 16, z0 = z * 16, z1 = z0 + 16;
+        int y0 = y * 16, top = y0 + 13;
+        addFrameQuad(builders, tails, 158, x0,y0+13,z0, x1,y0+13,z1, 0);
+        addFrameQuad(builders, tails, 175, x0,y0,z0, x1,y0,z1, 5);
+        addFrameQuad(builders, tails, 159, x0,y0,z0, x1,top,z0, 3);
+        addFrameQuad(builders, tails, 159, x0,y0,z1, x1,top,z1, 4);
+        addFrameQuad(builders, tails, 159, x0,y0,z0, x0,top,z1, 1);
+        addFrameQuad(builders, tails, 159, x1,y0,z0, x1,top,z1, 2);
+        if ((metadata & 4) != 0) {
+            int ex0=x0+5, ex1=x0+11, ez0=z0+5, ez1=z0+11, ey0=top, ey1=y0+16;
+            addFrameQuad(builders,tails,174,ex0,ey1,ez0,ex1,ey1,ez1,0);
+            addFrameQuad(builders,tails,174,ex0,ey0,ez0,ex1,ey0,ez1,5);
+            addFrameQuad(builders,tails,174,ex0,ey0,ez0,ex1,ey1,ez0,3);
+            addFrameQuad(builders,tails,174,ex0,ey0,ez1,ex1,ey1,ez1,4);
+            addFrameQuad(builders,tails,174,ex0,ey0,ez0,ex0,ey1,ez1,1);
+            addFrameQuad(builders,tails,174,ex1,ey0,ez0,ex1,ey1,ez1,2);
+        }
+    }
+
+    private void addFrameQuad(FaceBuilder[] builders, FaceBuilder[] tails, int tile,
+            int x0,int y0,int z0,int x1,int y1,int z1,int face) {
+        FaceBuilder b = tails[tile];
+        if (b == null) {
+            b = acquireFaceBuilder(tile);
+            builders[tile] = b;
+            tails[tile] = b;
+        } else if (b.vertexCount + 4 > MAX_FACE_BUILDER_VERTICES) {
+            FaceBuilder next = acquireFaceBuilder(tile);
+            b.next = next;
+            tails[tile] = next;
+            b = next;
+        }
+        b.addSubQuad(x0,y0,z0,x1,y1,z1,face);
+    }
+
     private void add(FaceBuilder[] builders, int tile, int x, int y, int z, int face) {
         if (builders[tile] == null) builders[tile] = new FaceBuilder(tile);
         builders[tile].add(x, y, z, face);
@@ -2681,7 +2722,7 @@ final class ChunkRenderer {
         colors.set(0, vertexCount, data.c);
 
         VertexBuffer vertices = new VertexBuffer();
-        vertices.setPositions(positions, 1.0f, null);
+        vertices.setPositions(positions, 1.0f / 256.0f, null);
         vertices.setTexCoords(0, texCoords, textureScale, null);
         vertices.setColors(colors);
         TriangleStripArray triangles = chunkQuadIndices(data.faceCount);
@@ -3070,13 +3111,17 @@ final class ChunkRenderer {
 
         void reset() { vertexCount = 0; }
 
-        void add(int x, int y, int z, int axis, int frameSize) {
+        void add(int x, int y, int z, int axis, int frameSize, int portalType) {
             ensure(vertexCount + 4);
             int x0 = x * 256, x1 = x0 + 256;
             int y0 = y * 256, y1 = y0 + 256;
             int z0 = z * 256, z1 = z0 + 256;
             int u1 = frameSize;
-            if (axis == 0) {
+            if (portalType == 1) {
+                int plane = y0 + 3;
+                vertex(x0,plane,z0,0,frameSize); vertex(x0,plane,z1,0,0);
+                vertex(x1,plane,z0,u1,frameSize); vertex(x1,plane,z1,u1,0);
+            } else if (axis == 0) {
                 int plane = z0 + 128;
                 vertex(x0,y0,plane, 0,frameSize); vertex(x0,y1,plane, 0,0);
                 vertex(x1,y0,plane, u1,frameSize); vertex(x1,y1,plane, u1,0);
@@ -3327,11 +3372,31 @@ final class ChunkRenderer {
 
         private void vertex(int x, int y, int z, int u, int v, int shade) {
             int pi = vertexCount * 3;
-            p[pi] = (short)x; p[pi + 1] = (short)y; p[pi + 2] = (short)z;
+            p[pi] = (short)(x * 256); p[pi + 1] = (short)(y * 256); p[pi + 2] = (short)(z * 256);
             int ti = vertexCount * 2;
             uv[ti] = (short)u; uv[ti + 1] = (short)v;
             int ci = vertexCount * 4;
             c[ci] = (byte)shade; c[ci + 1] = (byte)shade; c[ci + 2] = (byte)shade; c[ci + 3] = (byte)(tile == Block.atlasTile(Block.WATER) ? 160 : 255);
+            vertexCount++;
+        }
+
+        void addSubQuad(int x0,int y0,int z0,int x1,int y1,int z1,int face) {
+            ensure(vertexCount + 4);
+            int u0=(tile & 15)*16+1, v0=(tile >> 4)*16+1, u1=u0+14, v1=v0+14;
+            int shade=face==0?255:(face==5?135:(face<=2?205:180));
+            if(face==0){vertexSub(x0,y1,z0,u0,v1,shade);vertexSub(x0,y1,z1,u0,v0,shade);vertexSub(x1,y1,z0,u1,v1,shade);vertexSub(x1,y1,z1,u1,v0,shade);}
+            else if(face==1){vertexSub(x0,y0,z0,u1,v1,shade);vertexSub(x0,y0,z1,u0,v1,shade);vertexSub(x0,y1,z0,u1,v0,shade);vertexSub(x0,y1,z1,u0,v0,shade);}
+            else if(face==2){vertexSub(x1,y0,z0,u0,v1,shade);vertexSub(x1,y1,z0,u0,v0,shade);vertexSub(x1,y0,z1,u1,v1,shade);vertexSub(x1,y1,z1,u1,v0,shade);}
+            else if(face==3){vertexSub(x0,y0,z0,u0,v1,shade);vertexSub(x0,y1,z0,u0,v0,shade);vertexSub(x1,y0,z0,u1,v1,shade);vertexSub(x1,y1,z0,u1,v0,shade);}
+            else if(face==4){vertexSub(x0,y0,z1,u1,v1,shade);vertexSub(x1,y0,z1,u0,v1,shade);vertexSub(x0,y1,z1,u1,v0,shade);vertexSub(x1,y1,z1,u0,v0,shade);}
+            else {vertexSub(x0,y0,z0,u0,v0,shade);vertexSub(x1,y0,z0,u1,v0,shade);vertexSub(x0,y0,z1,u0,v1,shade);vertexSub(x1,y0,z1,u1,v1,shade);}
+            faceCount++;
+        }
+
+        private void vertexSub(int x16,int y16,int z16,int u,int v,int shade) {
+            int pi=vertexCount*3; p[pi]=(short)(x16*16); p[pi+1]=(short)(y16*16); p[pi+2]=(short)(z16*16);
+            int ti=vertexCount*2; uv[ti]=(short)u; uv[ti+1]=(short)v;
+            int ci=vertexCount*4; c[ci]=(byte)shade; c[ci+1]=(byte)shade; c[ci+2]=(byte)shade; c[ci+3]=(byte)255;
             vertexCount++;
         }
 
