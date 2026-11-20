@@ -3434,6 +3434,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 int heldBlock = hotbar[world.selectedSlot];
                 renderer.updateHeldItem(heldBlock,
                     world.mode == 1 || inventory[heldBlock] > 0);
+                stage = "actualizando Ender Dragon M3G";
+                renderer.updateEnderDragonVisual(world);
                 stage = "obteniendo contexto Graphics3D";
                 Graphics3D graphics3D = Graphics3D.getInstance();
                 stage = "enlazando Graphics del Canvas a M3G";
@@ -3443,7 +3445,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     graphics3D.setViewport(0, 0, getWidth(), getHeight());
                     stage = "dibujando World M3G";
                     long renderStarted = System.currentTimeMillis();
-                    renderer.render(graphics3D, world);
+                    renderer.render(graphics3D);
                     profileRenderWork = System.currentTimeMillis() - renderStarted;
                     if (profileRenderWork > profileMaxRenderWork)
                         profileMaxRenderWork = profileRenderWork;
