@@ -1295,16 +1295,20 @@ final class ChunkRenderer {
                 chunkWorldZ[slot] != cz || !residentChunks[slot] ||
                 dirtySectorMasks[slot] != 0 || dirtyChunks[slot] ||
                 chunk == null || chunk.sectors == null) return false;
-        // attachChunkSectorMeshes() publishes a sector while its remaining
-        // M3G meshes are still being installed. The dirty mask is cleared only
-        // by replaceChunkSector() after the complete sector has finished.
-        // Never leave LOADING based on a partially attached sector.
+        // attachChunkSectorMeshes() publishes a sector before all of its M3G
+        // meshes are installed. The dirty bit may already be cleared when its
+        // Java snapshot is handed to the worker, so also reject every in-flight
+        // stage for this exact chunk until replaceChunkSector() finishes it.
         for (int i = 0; i < chunk.sectors.length; i++)
             if (chunk.sectors[i] == null) return false;
         if (installingChunk != null && installingSlot == slot) return false;
         if (buildResultReady && readySlot == slot) return false;
         if (chunkSnapshotPreparing && chunkSnapshotX == cx &&
                 chunkSnapshotY == cy && chunkSnapshotZ == cz) return false;
+        if (chunkBuildWorkerBusy && chunkBuildRequestX == cx &&
+                chunkBuildRequestY == cy && chunkBuildRequestZ == cz) return false;
+        if (chunkBuildRequestPending && chunkBuildRequestX == cx &&
+                chunkBuildRequestY == cy && chunkBuildRequestZ == cz) return false;
         return true;
     }
 
