@@ -1334,7 +1334,10 @@ final class VoxelWorld {
         lavaTickCounter = 0;
         for (int i = 0; i < fluidQueued.length; i++) fluidQueued[i] = 0;
         if (nether) convertLegacyNetherWater();
-        queueSavedFlowingFluids(); fullRebuild = true; revision++;
+        // The End is a dry, isolated island. Do not scan the entire voxel
+        // volume looking for saved fluid updates when entering that dimension.
+        if (dimensionId != DIM_END) queueSavedFlowingFluids();
+        fullRebuild = true; revision++;
         return true;
     }
     synchronized void setNetherDimension(boolean enabled) { setDimension(enabled ? DIM_NETHER : DIM_OVERWORLD); }
