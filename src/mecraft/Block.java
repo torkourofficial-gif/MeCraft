@@ -372,6 +372,7 @@ final class Block {
     }
 
     static int topTile(byte id) {
+        if (id == END_PORTAL_FRAME) return 158;
         // Alpha 1.2.6 BlockChest: blockIndexInTexture=26, top/bottom use 26-1.
         if (id == CHEST) return 25;
         if (id == TNT) return 9;
@@ -385,6 +386,7 @@ final class Block {
     }
 
     static int sideTile(byte id) {
+        if (id == END_PORTAL_FRAME) return 159;
         // Alpha 1.2.6 BlockChest: ordinary sides use tile 26; the front is 27.
         if (id == CHEST) return 26;
         if (id == DOOR) return 97;
