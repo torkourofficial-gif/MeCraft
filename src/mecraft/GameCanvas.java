@@ -1364,6 +1364,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         boolean placed = coloredWool ? world.setWool(x, y, z,
                 ItemCatalog.woolColor(selectedItem)) : world.set(x, y, z, (byte)block);
         if (!placed) return;
+        if (block == Block.END_PORTAL_FRAME) {
+            int facing = (floorBlock(world.yaw * 4.0f / 360.0f + 0.5f) + 2) & 3;
+            world.setEndPortalFrameFacing(x, y, z, facing);
+        }
         if (block == Block.CHEST) {
             // Match the horizontal direction the player is looking toward.
             int facing = floorBlock((world.yaw + 45.0f) / 90.0f) & 3;
@@ -1501,7 +1505,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (selected == ItemCatalog.END_PORTAL_EYE) {
             if (world.mode == 0 && inventory[selected] <= 0) return;
             int[] target = trace(5.0f);
-            if (target != null && world.activateEndPortalAtWool(target[0], target[1], target[2])) {
+            if (target != null && world.insertEndPortalEye(target[0], target[1], target[2])) {
                 if (world.mode == 0 && inventory[selected] > 0) inventory[selected]--;
                 renderer.swingHand();
                 copyInventoryToWorld();
