@@ -530,14 +530,17 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             if (world.difficulty == VoxelWorld.DIFFICULTY_EASY) fallDamage++;
             damagePlayer(fallDamage);
         }
-        if (world.touchesPortal(world.playerX, world.playerY, world.playerZ)) {
+        if (world.touchesEndPortal(world.playerX, world.playerY, world.playerZ)) {
+            // The End is one-way: transfer immediately, without the Nether's
+            // five-second portal charge.
+            portalChargeTicks = 0;
+            travelThroughEndPortal();
+        } else if (world.touchesPortal(world.playerX, world.playerY, world.playerZ)) {
             if (++portalChargeTicks >= PORTAL_CHARGE_TICKS) {
                 portalChargeTicks = 0;
                 travelThroughPortal();
             }
         } else {
-            // Leaving even briefly cancels the transfer, so the player can step
-            // out of the destination portal during the same five-second window.
             portalChargeTicks = 0;
         }
         if (state != PLAYING) return;
@@ -1725,8 +1728,31 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         world.save();
     }
 
+    private void travelThroughEndPortal() {
+        if (world.dimensionId != VoxelWorld.DIM_OVERWORLD) return;
+        if (!world.setDimension(VoxelWorld.DIM_END)) return;
+
+        // Spawn directly on the central End island. Do not create a return
+        // portal: the End portal is intentionally one-way.
+        int centerX = VoxelWorld.WIDTH / 2;
+        int centerZ = VoxelWorld.DEPTH / 2;
+        world.playerX = centerX + 0.5f;
+        world.playerZ = centerZ + 0.5f;
+        world.playerY = world.surfaceY(centerX, centerZ) + 1.05f;
+
+        portalChargeTicks = 0;
+        resetMining();
+        playerPhysics.reset();
+        renderer.sync(world);
+        renderer.updateDayNight(world);
+        renderer.updateCamera(world, cameraPitch);
+        copyInventoryToWorld();
+        repaint();
+    }
+
     private void travelThroughPortal() {
         int sourceDimension = world.dimensionId;
+        if (sourceDimension == VoxelWorld.DIM_END) return;
         int portalType = world.portalTypeAt(world.playerX, world.playerY, world.playerZ);
         int targetDimension;
         if (portalType == 1) {
