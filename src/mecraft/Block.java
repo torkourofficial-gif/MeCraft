@@ -100,7 +100,7 @@ final class Block {
         }
         // The atlas also contains the old door, foliage, and rail tile cells.
         int[] lowerAtlasTiles = new int[] { 81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,
-                                            97,98,99,100,101,112,121,128 };
+                                            97,98,99,100,101,112,128 };
         for (int i = 0; i < lowerAtlasTiles.length; i++) {
             int tile = lowerAtlasTiles[i];
             if (!isExistingTile(tile) && hasAtlasTexture(tile) && !containsTile(temporary, count, tile))
@@ -125,8 +125,10 @@ final class Block {
         // the normal block range. Reuse an unnamed placeholder slot to keep
         // COUNT (and the item IDs stored after the block range) stable.
         replaceTile(result, 41, 61);
-        // Reuse unnamed legacy slot 79; do not shift saved block or item IDs.
-        replaceTile(result, 95, 158);
+        // Reuse two unnamed legacy atlas entries for End blocks. Keep EXTRA_TILES
+        // length unchanged so saved block/item IDs remain stable.
+        replaceTile(result, 94, 158);
+        replaceTile(result, 95, 121);
         return result;
     }
 
