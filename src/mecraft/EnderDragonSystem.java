@@ -199,7 +199,7 @@ final class EnderDragonSystem {
         if (health <= 0) {
             health = 0;
             defeated = true;
-            root.setRenderingEnable(false);
+            // The render-thread update hides the model on its next frame.
         }
         return 1;
     }
