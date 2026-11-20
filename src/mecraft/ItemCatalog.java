@@ -309,7 +309,8 @@ final class ItemCatalog {
         if (kind == PICKAXE) return block == Block.STONE || block == Block.COBBLESTONE ||
                                     block == Block.COAL || block == Block.IRON ||
                                     block == Block.GOLD_ORE || block == Block.DIAMOND_ORE ||
-                                    block == Block.REDSTONE_ORE || block == Block.GOLD_BLOCK ||
+                                    block == Block.REDSTONE_ORE || block == Block.END_STONE ||
+                                    block == Block.GOLD_BLOCK ||
                                     block == Block.IRON_BLOCK || block == Block.DIAMOND_BLOCK ||
                                     block == Block.NETHERRACK || block == Block.GLOWSTONE;
         if (kind == SHOVEL) return block == Block.GRASS || block == Block.DIRT ||
