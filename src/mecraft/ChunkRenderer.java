@@ -3144,7 +3144,9 @@ final class ChunkRenderer {
             int z0 = z * 256, z1 = z0 + 256;
             int u1 = frameSize;
             if (portalType == 1) {
-                int plane = y0 + 3;
+                // End Portal surface sits level with the End Portal Frame's
+                // 13/16-high top, forming the classic horizontal 3x3 plane.
+                int plane = y0 + 208;
                 vertex(x0,plane,z0,0,frameSize); vertex(x0,plane,z1,0,0);
                 vertex(x1,plane,z0,u1,frameSize); vertex(x1,plane,z1,u1,0);
             } else if (axis == 0) {
