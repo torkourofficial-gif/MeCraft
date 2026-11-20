@@ -1407,13 +1407,21 @@ final class VoxelWorld {
         revision++;
         int[] ring = findEndPortalRing(x, y, z);
         if (ring != null) {
+            // Normalize every frame to face the portal. Placement yaw conventions
+            // can differ between controls/camera modes, so activation is based on
+            // the complete 5x5 ring and all twelve eyes, not fragile facing bits.
+            for (int u = 1; u <= 3; u++) {
+                normalizeEndFrameFacing(ring[0] + u, ring[1], ring[2], 3);
+                normalizeEndFrameFacing(ring[0] + u, ring[1], ring[2] + 4, 1);
+                normalizeEndFrameFacing(ring[0], ring[1], ring[2] + u, 2);
+                normalizeEndFrameFacing(ring[0] + 4, ring[1], ring[2] + u, 0);
+            }
             for (int u = 1; u <= 3; u++) for (int v = 1; v <= 3; v++) {
                 int px = ring[0] + u, pz = ring[2] + v;
                 set(px, ring[1], pz, Block.PORTAL);
                 setMetadata(px, ring[1], pz, 3);
             }
-            // The 5x5 bound covers all nine portal cells and all four frame sides.
-            // ChunkRenderer rebuilds only resident sectors intersecting this area.
+            // The 5x5 bound covers the frame metadata and all nine portal cells.
             recordBulkChangedRegion(ring[0], ring[1], ring[2],
                     ring[0] + 4, ring[1], ring[2] + 4);
         }
@@ -1430,18 +1438,23 @@ final class VoxelWorld {
     private boolean isEndPortalRing(int ox, int y, int oz) {
         if (y <= 0 || y >= HEIGHT) return false;
         for (int u = 1; u <= 3; u++) {
-            if (!isEyedEndFrame(ox + u, y, oz, 3) ||
-                    !isEyedEndFrame(ox + u, y, oz + 4, 1)) return false;
-            if (!isEyedEndFrame(ox, y, oz + u, 2) ||
-                    !isEyedEndFrame(ox + 4, y, oz + u, 0)) return false;
+            if (!isEyedEndFrame(ox + u, y, oz) ||
+                    !isEyedEndFrame(ox + u, y, oz + 4)) return false;
+            if (!isEyedEndFrame(ox, y, oz + u) ||
+                    !isEyedEndFrame(ox + 4, y, oz + u)) return false;
         }
         return true;
     }
 
-    private boolean isEyedEndFrame(int x, int y, int z, int facing) {
-        int metadata = metadataAt(x, y, z);
+    private boolean isEyedEndFrame(int x, int y, int z) {
         return get(x, y, z) == Block.END_PORTAL_FRAME &&
-                (metadata & 4) != 0 && (metadata & 3) == facing;
+                (metadataAt(x, y, z) & 4) != 0;
+    }
+
+    private void normalizeEndFrameFacing(int x, int y, int z, int facing) {
+        int metadata = metadataAt(x, y, z);
+        if (get(x, y, z) == Block.END_PORTAL_FRAME && (metadata & 3) != facing)
+            setMetadata(x, y, z, (metadata & 4) | (facing & 3));
     }
 
     boolean activateEndPortalAtWool(int x, int y, int z) { return false; }
