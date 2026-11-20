@@ -1729,25 +1729,57 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     private void travelThroughEndPortal() {
-        if (world.dimensionId != VoxelWorld.DIM_OVERWORLD) return;
-        if (!world.setDimension(VoxelWorld.DIM_END)) return;
+        if (world == null || renderer == null ||
+                world.dimensionId != VoxelWorld.DIM_OVERWORLD || state != PLAYING) return;
 
-        // Spawn directly on the central End island. Do not create a return
-        // portal: the End portal is intentionally one-way.
-        int centerX = VoxelWorld.WIDTH / 2;
-        int centerZ = VoxelWorld.DEPTH / 2;
-        world.playerX = centerX + 0.5f;
-        world.playerZ = centerZ + 0.5f;
-        world.playerY = world.surfaceY(centerX, centerZ) + 1.05f;
-
+        // Stop gameplay before doing the expensive dimension switch. The
+        // existing MIDP loading screen remains visible while the worker
+        // prepares the End terrain and rebuilds its visible M3G chunks.
+        state = LOADING;
+        loadingMessage = Language.text("Generando el End...");
         portalChargeTicks = 0;
+        clearKeys();
         resetMining();
-        playerPhysics.reset();
-        renderer.sync(world);
-        renderer.updateDayNight(world);
-        renderer.updateCamera(world, cameraPitch);
-        copyInventoryToWorld();
         repaint();
+        serviceRepaints();
+
+        Thread loader = new Thread(new Runnable() {
+            public void run() {
+                String stage = "cambiando a la dimension End";
+                try {
+                    System.gc();
+                    stage = "generando la isla central del End";
+                    if (!world.setDimension(VoxelWorld.DIM_END)) {
+                        state = PLAYING;
+                        repaint();
+                        return;
+                    }
+
+                    // The End portal is one-way: spawn on the island and do
+                    // not create a return portal.
+                    int centerX = VoxelWorld.WIDTH / 2;
+                    int centerZ = VoxelWorld.DEPTH / 2;
+                    world.playerX = centerX + 0.5f;
+                    world.playerZ = centerZ + 0.5f;
+                    world.playerY = world.surfaceY(centerX, centerZ) + 1.05f;
+
+                    playerPhysics.reset();
+                    stage = "construyendo los chunks visibles del End";
+                    loadingMessage = Language.text("Construyendo el End...");
+                    renderer.sync(world);
+                    renderer.updateDayNight(world);
+                    renderer.updateCamera(world, cameraPitch);
+                    copyInventoryToWorld();
+                    state = PLAYING;
+                    repaint();
+                } catch (OutOfMemoryError exhausted) {
+                    showError("No hay memoria suficiente para cargar el End. Reduce la distancia de renderizado y vuelve a intentarlo.");
+                } catch (Throwable problem) {
+                    showDiagnostic(stage, problem);
+                }
+            }
+        });
+        loader.start();
     }
 
     private void travelThroughPortal() {
