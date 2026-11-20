@@ -2444,7 +2444,7 @@ final class ChunkRenderer {
                         if (portals == null) portals = acquirePortalBuilder();
                         portals.add(localX, localY, localZ,
                                 snapshot.portalAxisAt(localX, localY, localZ), portalFrameSize,
-                                snapshot.metadata(localX, localY, localZ) & 1);
+                                (snapshot.metadata(localX, localY, localZ) & 2) != 0 ? 1 : 0);
                     } else if (id == Block.END_PORTAL_FRAME) {
                         addEndPortalFrameGeometry(builders, builderTails, localX, localY, localZ,
                                 snapshot.metadata(localX, localY, localZ));
