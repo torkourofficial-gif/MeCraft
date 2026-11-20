@@ -2,6 +2,8 @@ package mecraft;
 
 /** Deterministic, column-oriented terrain generation for streamed Infdev chunks. */
 final class InfdevTerrain {
+    static final int END_ISLAND_MIN_Y = 25;
+    static final int END_ISLAND_MAX_Y = 33;
     static final int CHUNK_SIZE = 16;
     static final int WORLD_HEIGHT = VoxelWorld.HEIGHT;
     static final int SEA_LEVEL = VoxelWorld.SEA_LEVEL;
