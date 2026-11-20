@@ -320,8 +320,10 @@ final class Block {
     }
 
     static boolean dropsItem(byte id) {
-        // Fire is a transient world effect, never a collectible block.
-        return id != AIR && id != FIRE && !isFluid(id) && id != BEDROCK && id != TNT && id != PORTAL;
+        // Fire and End Portal Frames are not collectible drops; the frame's
+        // special multi-tile model is not a normal dropped block cube.
+        return id != AIR && id != FIRE && id != END_PORTAL_FRAME &&
+                !isFluid(id) && id != BEDROCK && id != TNT && id != PORTAL;
     }
 
     static int dropId(byte id) {
