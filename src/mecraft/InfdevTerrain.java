@@ -205,9 +205,10 @@ final class InfdevTerrain {
      * Overworld and Nether, while keeping every column outside the island empty.
      */
     static void generateEnd(int seed, int chunkX, int chunkZ, byte[] blocks,
-                            int[] surfaceHeights) {
+                            int[] surfaceHeights, byte[] biomes) {
         if (blocks == null || blocks.length < CHUNK_VOLUME || surfaceHeights == null ||
-                surfaceHeights.length < CHUNK_SIZE * CHUNK_SIZE) return;
+                surfaceHeights.length < CHUNK_SIZE * CHUNK_SIZE || biomes == null ||
+                biomes.length < CHUNK_SIZE * CHUNK_SIZE) return;
         VoxelWorld.setGenerationDiagnosticStage("InfdevTerrain.generateEnd: generando chunk " +
                 chunkX + "," + chunkZ);
         final int centerX = VoxelWorld.WIDTH / 2;
@@ -227,6 +228,7 @@ final class InfdevTerrain {
                 int column = z * CHUNK_SIZE + x;
                 int base = column * WORLD_HEIGHT;
                 surfaceHeights[column] = island ? top : 0;
+                biomes[column] = 0;
                 for (int y = 0; y < WORLD_HEIGHT; y++) {
                     blocks[base + y] = island && y <= top && y >= top - 7 ?
                             Block.END_STONE : Block.AIR;
