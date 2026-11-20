@@ -221,6 +221,7 @@ final class ChunkRenderer {
     private final short[] itemSpriteUV;
     private final Mesh[][] heldItemMeshes = new Mesh[Block.COUNT][];
     private Mesh heldCreativeBlockMesh;
+    private Mesh[] heldEndPortalFrameMeshes;
     private VertexArray heldCreativeBlockUVArray;
     private final short[] heldCreativeBlockUV = new short[48];
     private final ParticleSystem particles;
@@ -608,7 +609,10 @@ final class ChunkRenderer {
 
     private void setHeldVisualVisible(int itemId, boolean visible) {
         if (itemId <= Block.AIR) return;
-        if (itemId < Block.COUNT && Block.isDoor((byte)itemId)) {
+        if (itemId == (Block.END_PORTAL_FRAME & 255)) {
+            if (heldEndPortalFrameMeshes != null)
+                setMeshesVisible(heldEndPortalFrameMeshes, visible);
+        } else if (itemId < Block.COUNT && Block.isDoor((byte)itemId)) {
             if (visible) setItemSprite(itemId);
             itemSpriteMesh.setRenderingEnable(visible && ItemCatalog.iconIndex(itemId) >= 0);
         } else if (Block.isDecorative((byte)itemId) || itemId == Block.TNT ||
@@ -822,6 +826,28 @@ final class ChunkRenderer {
             heldItemMeshes[id] = meshes;
         }
         buildCreativeHeldBlock();
+        buildHeldEndPortalFrame();
+    }
+
+    private void buildHeldEndPortalFrame() {
+        FaceBuilder[] builders = new FaceBuilder[TILE_COUNT];
+        FaceBuilder[] tails = new FaceBuilder[TILE_COUNT];
+        addEndPortalFrameGeometry(builders, tails, 0, 0, 0, 0);
+        int count = 0;
+        for (int i = 0; i < builders.length; i++)
+            if (builders[i] != null) count++;
+        heldEndPortalFrameMeshes = new Mesh[count];
+        int at = 0;
+        for (int i = 0; i < builders.length; i++) {
+            FaceBuilder builder = builders[i];
+            if (builder == null) continue;
+            Mesh mesh = makeMesh(builder, heldItemAppearance);
+            mesh.setScale(0.34f, 0.34f, 0.34f);
+            mesh.setTranslation(-0.17f, -0.17f, -0.17f);
+            mesh.setRenderingEnable(false);
+            heldItemPitch.addChild(mesh);
+            heldEndPortalFrameMeshes[at++] = mesh;
+        }
     }
 
     private void buildCreativeHeldBlock() {
