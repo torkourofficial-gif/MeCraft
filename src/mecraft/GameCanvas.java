@@ -256,7 +256,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private int playerLavaBurnTicks;
     private int playerLavaDamageTicks = 20;
     private int portalChargeTicks;
-    private boolean endPortalTransitionPending;
+    private volatile boolean endPortalTransitionPending;
+    private volatile boolean endPortalTransitionRunning;
+    private volatile boolean endPortalWorldReady;
+    private volatile String endPortalTransitionFailure;
+    private volatile Throwable endPortalTransitionProblem;
     private float overworldPortalReturnX, overworldPortalReturnY, overworldPortalReturnZ;
     private float netherPortalReturnX, netherPortalReturnY, netherPortalReturnZ;
     private boolean hasOverworldPortalReturn, hasNetherPortalReturn;
@@ -1733,49 +1737,79 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (endPortalTransitionPending || world == null || renderer == null ||
                 world.dimensionId != VoxelWorld.DIM_OVERWORLD || state != PLAYING) return;
 
-        // Defer the dimension switch to paint(). The game update thread must not
-        // hold the Canvas monitor while generating the End: paint() owns the M3G
-        // scene and must be allowed to rebuild it and present the first frame.
+        // Generate and save voxel data on a separate thread. The Canvas paint
+        // thread must never wait for full-dimension generation or RMS writes.
         endPortalTransitionPending = true;
+        endPortalTransitionRunning = true;
+        endPortalWorldReady = false;
+        endPortalTransitionFailure = null;
+        endPortalTransitionProblem = null;
         loadingMessage = Language.text("Generando el End...");
+        state = LOADING;
         portalChargeTicks = 0;
         clearKeys();
         resetMining();
         repaint();
+
+        final VoxelWorld transitionWorld = world;
+        Thread generator = new Thread(new Runnable() {
+            public void run() {
+                try {
+                    if (!transitionWorld.setDimension(VoxelWorld.DIM_END))
+                        throw new IOException("No se pudo cambiar a la dimensión End");
+
+                    int centerX = VoxelWorld.WIDTH / 2;
+                    int centerZ = VoxelWorld.DEPTH / 2;
+                    transitionWorld.playerX = centerX + 0.5f;
+                    transitionWorld.playerZ = centerZ + 0.5f;
+                    transitionWorld.playerY = transitionWorld.surfaceY(centerX, centerZ) + 1.05f;
+                    transitionWorld.yaw = 0.0f;
+                    playerPhysics.reset();
+                    copyInventoryToWorld();
+                    // Persist before resuming gameplay, but never on the render thread.
+                    transitionWorld.save();
+                    endPortalWorldReady = true;
+                } catch (OutOfMemoryError exhausted) {
+                    endPortalTransitionFailure = "No hay memoria suficiente para cargar el End. Reduce la distancia de renderizado y vuelve a intentarlo.";
+                } catch (Throwable problem) {
+                    endPortalTransitionProblem = problem;
+                } finally {
+                    endPortalTransitionRunning = false;
+                    repaint();
+                }
+            }
+        });
+        generator.start();
     }
 
     private void completeEndPortalTransition() {
-        if (!endPortalTransitionPending) return;
+        if (!endPortalTransitionPending || endPortalTransitionRunning) return;
+        if (endPortalTransitionFailure != null) {
+            showError(endPortalTransitionFailure);
+            endPortalTransitionPending = false;
+            return;
+        }
+        if (endPortalTransitionProblem != null) {
+            showDiagnostic("generando y guardando el End", endPortalTransitionProblem);
+            endPortalTransitionPending = false;
+            return;
+        }
+        if (!endPortalWorldReady || world == null || renderer == null ||
+                world.dimensionId != VoxelWorld.DIM_END) return;
+
         try {
-            if (world == null || renderer == null ||
-                    world.dimensionId != VoxelWorld.DIM_OVERWORLD) {
-                endPortalTransitionPending = false;
-                return;
-            }
-
-            if (!world.setDimension(VoxelWorld.DIM_END)) {
-                endPortalTransitionPending = false;
-                return;
-            }
-
-            int centerX = VoxelWorld.WIDTH / 2;
-            int centerZ = VoxelWorld.DEPTH / 2;
-            world.playerX = centerX + 0.5f;
-            world.playerZ = centerZ + 0.5f;
-            world.playerY = world.surfaceY(centerX, centerZ) + 1.05f;
-            world.yaw = 0.0f;
-            playerPhysics.reset();
-            copyInventoryToWorld();
-
+            // Only M3G scene mutations remain on the paint/render thread.
             renderer.onDimensionChanged(world);
             renderer.updateDayNight(world);
             renderer.updateCamera(world, cameraPitch);
-            world.save();
+            endPortalWorldReady = false;
+            endPortalTransitionPending = false;
+            state = PLAYING;
         } catch (OutOfMemoryError exhausted) {
-            showError("No hay memoria suficiente para cargar el End. Reduce la distancia de renderizado y vuelve a intentarlo.");
+            showError("No hay memoria suficiente para preparar el renderer del End.");
+            endPortalTransitionPending = false;
         } catch (Throwable problem) {
             showDiagnostic("actualizando el renderer del End", problem);
-        } finally {
             endPortalTransitionPending = false;
         }
     }
@@ -3377,6 +3411,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     protected synchronized void paint(Graphics g) {
+
+        // The background worker only prepares voxel data. Final scene changes
+        // happen here, where M3G is already owned by the rendering thread.
+        if (state == LOADING && endPortalTransitionPending && !endPortalTransitionRunning)
+            completeEndPortalTransition();
 
         if (state == MENU || state == TOUCH_SETUP) panoramaTick++;
         if (state == TOUCH_SETUP) {
