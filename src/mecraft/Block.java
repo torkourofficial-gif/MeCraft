@@ -267,6 +267,7 @@ final class Block {
         if (tile == 104) return "Arena de almas";
         if (tile == 105) return "Piedra luminosa";
         if (tile == 112) return "Riel";
+        if (tile == 121) return "Piedra del End";
         if (tile == 128) return "Riel";
         if (tile == 158) return "Marco del portal del End";
         return null;
@@ -367,6 +368,7 @@ final class Block {
         if (id == GOLD_ORE || id == DIAMOND_ORE || id == REDSTONE_ORE) return 30;
         if (id == GOLD_BLOCK || id == IRON_BLOCK || id == DIAMOND_BLOCK) return 50;
         if (id == OBSIDIAN) return 100;
+        if (id == END_STONE) return 30;
         if (id == GLASS) return 3;
         if (isDoor(id)) return 30;
         if (id == COBBLESTONE) return 20;
@@ -412,6 +414,7 @@ final class Block {
 
     /** Indev terrain tile for the renderer's face order: top, x-, x+, z-, z+, bottom. */
     static int faceTile(byte id, int face) {
+        if (id == END_STONE) return 175;
         if (id == END_PORTAL_FRAME) return face == 0 ? 158 : (face == 5 ? 175 : 159);
         if (id == LAVA) return 234;
         if (id == DOOR) return face == 0 || face == 5 ? 81 : 97;
