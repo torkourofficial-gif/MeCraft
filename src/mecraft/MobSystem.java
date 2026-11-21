@@ -56,6 +56,8 @@ final class MobSystem {
     private final Mob[] mobs = new Mob[MOB_COUNT];
     private final Arrow[] arrows = new Arrow[6];
     private final Pearl[] pearls = new Pearl[4];
+    private final ThrownItem[][] thrownItems = new ThrownItem[3][3];
+    private final int[] nextThrownItem = new int[3];
     private final Fireball[] fireballs = new Fireball[2];
     private final Appearance fireballAppearance;
     private final Group scene;
@@ -101,6 +103,13 @@ final class MobSystem {
         for (int i = 0; i < fireballs.length; i++) {
             fireballs[i] = new Fireball(fireballAppearance);
             scene.addChild(fireballs[i].root);
+        }
+        int[] projectileIcons = new int[] { 14, 12, 155 };
+        for (int kind = 0; kind < thrownItems.length; kind++) {
+            for (int i = 0; i < thrownItems[kind].length; i++) {
+                thrownItems[kind][i] = new ThrownItem(kind, projectileIcons[kind]);
+                scene.addChild(thrownItems[kind][i].root);
+            }
         }
     }
 
@@ -227,6 +236,7 @@ final class MobSystem {
         playerDamage = updateFireballs(world, playerDamage);
         playerDamage = updateArrows(world, playerDamage);
         updatePearls(world);
+        updateThrownItems(world);
         return playerDamage;
     }
 
@@ -1431,6 +1441,113 @@ final class MobSystem {
         return true;
     }
 
+    boolean shootPlayerItem(VoxelWorld world, float pitchDegrees, int kind) {
+        if (world == null || kind < 0 || kind >= thrownItems.length) return false;
+        ThrownItem item = thrownItems[kind][nextThrownItem[kind]++ % thrownItems[kind].length];
+        float yaw = world.yaw * (float)Math.PI / 180.0f;
+        float pitch = pitchDegrees * (float)Math.PI / 180.0f;
+        float horizontal = (float)Math.cos(pitch);
+        float dx = (float)Math.sin(yaw) * horizontal;
+        float dy = (float)Math.sin(pitch);
+        float dz = (float)Math.cos(yaw) * horizontal;
+        item.x = world.playerX + dx * 0.45f;
+        item.y = world.playerY + 1.45f;
+        item.z = world.playerZ + dz * 0.45f;
+        float speed = kind == 2 ? 0.30f : 0.68f;
+        item.vx = dx * speed;
+        item.vy = dy * speed + (kind == 2 ? 0.025f : 0.04f);
+        item.vz = dz * speed;
+        item.age = 0;
+        if (kind == 2) {
+            findStrongholdTarget(world, item);
+        }
+        item.active = true;
+        item.root.setTranslation(item.x, item.y, item.z);
+        item.root.setRenderingEnable(true);
+        return true;
+    }
+
+    private void findStrongholdTarget(VoxelWorld world, ThrownItem item) {
+        int count = 0;
+        float sx = 0.0f, sy = 0.0f, sz = 0.0f;
+        for (int y = 0; y < VoxelWorld.HEIGHT; y++) {
+            int layer = y * VoxelWorld.DEPTH * VoxelWorld.WIDTH;
+            for (int z = 0; z < VoxelWorld.DEPTH; z++) {
+                int row = layer + z * VoxelWorld.WIDTH;
+                for (int x = 0; x < VoxelWorld.WIDTH; x++) {
+                    if (world.blocks[row + x] != Block.END_PORTAL_FRAME) continue;
+                    float dx = x + 0.5f - item.x, dz = z + 0.5f - item.z;
+                    if (dx * dx + dz * dz > 48.0f * 48.0f) continue;
+                    sx += x + 0.5f; sy += y + 0.5f; sz += z + 0.5f; count++;
+                }
+            }
+        }
+        if (count > 0) {
+            item.targetX = sx / count; item.targetY = sy / count; item.targetZ = sz / count;
+        } else {
+            float length = (float)Math.sqrt(item.vx * item.vx + item.vz * item.vz);
+            if (length < 0.001f) length = 1.0f;
+            item.targetX = item.x + item.vx / length * 24.0f;
+            item.targetY = item.y;
+            item.targetZ = item.z + item.vz / length * 24.0f;
+        }
+    }
+
+    private void updateThrownItems(VoxelWorld world) {
+        for (int kind = 0; kind < thrownItems.length; kind++) {
+            for (int i = 0; i < thrownItems[kind].length; i++) {
+                ThrownItem item = thrownItems[kind][i];
+                if (!item.active) continue;
+                item.age++;
+                if (kind == 2) {
+                    float dx = item.targetX - item.x, dy = item.targetY - item.y;
+                    float dz = item.targetZ - item.z;
+                    float length = (float)Math.sqrt(dx * dx + dy * dy + dz * dz);
+                    if (length > 0.001f) {
+                        item.vx = dx / length * 0.30f;
+                        item.vy = dy / length * 0.30f;
+                        item.vz = dz / length * 0.30f;
+                    }
+                } else {
+                    item.vy -= 0.025f;
+                }
+                item.x += item.vx; item.y += item.vy; item.z += item.vz;
+                item.root.setTranslation(item.x, item.y, item.z);
+                int bx = floor(item.x), by = floor(item.y), bz = floor(item.z);
+                if (kind != 2) {
+                    boolean impacted = false;
+                    for (int m = 0; m < mobs.length; m++) {
+                        Mob target = mobs[m];
+                        if (target == null || !target.alive || target.dying) continue;
+                        float dx = target.x - item.x, dy = target.y + 0.5f - item.y;
+                        float dz = target.z - item.z;
+                        float radius = target.type == SPIDER ? 0.9f : 0.55f;
+                        if (dx * dx + dy * dy + dz * dz >= radius * radius) continue;
+                        target.health--;
+                        if (target.type == ENDERMAN) target.endermanAngry = true;
+                        if (target.health <= 0) { dropForDeath(target); beginDeath(target); }
+                        else { target.hurtTicks = 10; target.setHurt(true); target.fleeTicks = 35; }
+                        if (kind == 1 && random.nextInt(8) == 0)
+                            spawnFromEgg(world, 6, target.x, target.y, target.z);
+                        impacted = true;
+                        break;
+                    }
+                    if (impacted || world.isSolidAt(bx, by, bz) || by < 0 || item.age >= 40) {
+                        if (kind == 1 && random.nextInt(8) == 0)
+                            spawnFromEgg(world, 6, item.x, item.y, item.z);
+                        item.active = false;
+                    }
+                } else if (item.age >= 100) {
+                    // Ender Eyes have a 20% chance to shatter instead of dropping.
+                    if (random.nextInt(5) != 0)
+                        drops.spawn(ItemCatalog.END_PORTAL_EYE, bx, by, bz);
+                    item.active = false;
+                }
+                if (!item.active) item.root.setRenderingEnable(false);
+            }
+        }
+    }
+
     boolean shootPlayerEnderPearl(VoxelWorld world, float pitchDegrees) {
         Pearl pearl = pearls[nextPearl++ % pearls.length];
         float yaw = world.yaw * (float)Math.PI / 180.0f;
@@ -1523,13 +1640,16 @@ final class MobSystem {
     }
 
     private Mesh makePearlMesh(Appearance appearance) {
-        // Two intersecting quads keep the pearl legible while it spins in flight.
+        return makeItemProjectileMesh(appearance, 107);
+    }
+
+    private Mesh makeItemProjectileMesh(Appearance appearance, int icon) {
+        // Two intersecting quads keep small thrown items legible while in flight.
         short[] positions = new short[] {
             -8,-8,0, 8,-8,0, -8,8,0, 8,8,0,
             0,-8,-8, 0,-8,8, 0,8,-8, 0,8,8
         };
         short[] uv = new short[16];
-        int icon = 107;
         int u0 = (icon & 15) * 16, v0 = (icon >> 4) * 16;
         int u1 = u0 + 16, v1 = v0 + 16;
         for (int plane = 0; plane < 2; plane++) {
@@ -1618,6 +1738,20 @@ final class MobSystem {
 
         Pearl(Appearance appearance) {
             root.addChild(makePearlMesh(appearance));
+            root.setRenderingEnable(false);
+        }
+    }
+
+    /** Small pooled snowball, egg and Ender Eye projectiles. */
+    private final class ThrownItem {
+        final Group root = new Group();
+        final int kind;
+        boolean active;
+        int age;
+        float x, y, z, vx, vy, vz, targetX, targetY, targetZ;
+        ThrownItem(int kind, int icon) {
+            this.kind = kind;
+            root.addChild(makeItemProjectileMesh(pearlAppearance, icon));
             root.setRenderingEnable(false);
         }
     }
