@@ -399,7 +399,7 @@ final class MobSystem {
     private void dropForDeath(Mob mob) {
         int bx = floor(mob.x), by = floor(mob.y), bz = floor(mob.z);
         if (mob.type == BLAZE) {
-            if (random.nextBoolean()) drops.spawn(ItemCatalog.BLAZE_ROD, bx, by, bz);
+            if (random.nextInt(2) == 0) drops.spawn(ItemCatalog.BLAZE_ROD, bx, by, bz);
             return;
         }
         if (mob.type == ENDERMAN) {
