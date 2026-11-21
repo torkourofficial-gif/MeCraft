@@ -1157,7 +1157,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 damageTool(hotbar[world.selectedSlot],
                         ItemCatalog.durabilityCost(hotbar[world.selectedSlot]));
             renderer.syncEditedBlock(world, x, lowerY, z);
-            // was a source of frame stalls on constrained Java ME devices.
+            // The shared 24-slot particle pool keeps door debris bounded too.
+            renderer.spawnBlockDestroy(x, lowerY, z, Block.sideTile(id));
             resetMining();
             miningHitWait = 5;
             return;
@@ -1196,8 +1197,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 // Flowers are attached to the block below: breaking their support
                 // removes them too and drops the flower item in survival.
                 if (above == Block.RED_FLOWER || above == Block.YELLOW_FLOWER) {
-                    if (world.set(x, y + 1, z, Block.AIR) && world.mode == 0)
-                        renderer.spawnDroppedItem(Block.dropId(above), x, y + 1, z);
+                    if (world.set(x, y + 1, z, Block.AIR)) {
+                        if (world.mode == 0)
+                            renderer.spawnDroppedItem(Block.dropId(above), x, y + 1, z);
+                        renderer.spawnBlockDestroy(x, y + 1, z, Block.sideTile(above));
+                    }
                 } else if (above == Block.FIRE) {
                     // Fire simply vanishes when its support is removed: no drops,
                     // particles, or extra break effects.
@@ -1212,10 +1216,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             // Prioritize the edited chunk so the terrain change is visible as soon as
             // its bounded mesh build completes; unrelated chunks remain incremental.
             renderer.syncEditedBlock(world, x, y, z);
-            // End Portal Frames use a special multi-tile model; skip the
-            // generic debris atlas path for this block.
-            if (id != Block.FIRE && id != Block.END_PORTAL_FRAME)
-                // No block-break fragments; keep the mining path allocation-free.
+            // Four atlas fragments from the fixed shared pool. Use the block's
+            // top face so special blocks (End Stone, grass, logs, etc.) keep
+            // their own texture instead of a generic dirt particle.
+            if (id != Block.FIRE && id != Block.END_PORTAL_FRAME &&
+                    id != Block.END_PORTAL)
+                renderer.spawnBlockDestroy(x, y, z, Block.faceTile(id, 0));
             resetMining();
             miningHitWait = 5;
         }
