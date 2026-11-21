@@ -1628,14 +1628,25 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (selected == ItemCatalog.END_PORTAL_EYE) {
             if (world.mode == 0 && inventory[selected] <= 0) return;
             int[] target = trace(5.0f);
-            if (target != null && world.insertEndPortalEye(target[0], target[1], target[2])) {
-                if (world.mode == 0 && inventory[selected] > 0) inventory[selected]--;
+            if (target != null && world.get(target[0], target[1], target[2]) == Block.END_PORTAL_FRAME &&
+                    world.insertEndPortalEye(target[0], target[1], target[2])) {
+                if (world.mode == 0) inventory[selected]--;
                 renderer.swingHand();
                 copyInventoryToWorld();
                 renderer.sync(world);
                 world.save();
                 repaint();
+                return;
             }
+            throwSelectedItem(selected, 2);
+            return;
+        }
+        if (selected == ItemCatalog.SNOWBALL) {
+            throwSelectedItem(selected, 0);
+            return;
+        }
+        if (selected == ItemCatalog.EGG) {
+            throwSelectedItem(selected, 1);
             return;
         }
         if (selected == ItemCatalog.BOAT) {
@@ -1710,6 +1721,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             return;
         }
         placeBlock();
+    }
+
+    /** Throws a snowball, egg or Ender Eye and consumes one item in survival. */
+    private void throwSelectedItem(int item, int projectileKind) {
+        if (world == null || renderer == null ||
+                (world.mode == 0 && inventory[item] <= 0)) return;
+        if (!renderer.shootPlayerItem(world, cameraPitch, projectileKind)) return;
+        if (world.mode == 0) {
+            inventory[item]--;
+            if (inventory[item] <= 0) restoreHotbarItem(item);
+        }
+        renderer.swingHand();
+        copyInventoryToWorld();
+        world.save();
+        repaint();
     }
 
     private void useSpawnEgg(int item) {
