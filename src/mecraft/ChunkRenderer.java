@@ -830,8 +830,8 @@ final class ChunkRenderer {
                 Mesh mesh = makeMesh(builders[i], heldItemAppearance);
                 // Center the cube at the hand anchor and keep it slightly smaller
                 // than Indev's 0.4 inventory-render scale.
-                mesh.setScale(0.34f, 0.34f, 0.34f);
-                mesh.setTranslation(-0.17f, -0.17f, -0.17f);
+                mesh.setScale(0.4f, 0.4f, 0.4f);
+                mesh.setTranslation(-0.2f, -0.2f, -0.2f);
                 mesh.setRenderingEnable(false);
                 heldItemPitch.addChild(mesh);
                 meshes[at++] = mesh;
@@ -882,8 +882,8 @@ final class ChunkRenderer {
         vertices.setColors(colors);
         int[] strips = new int[] { 4,4,4,4,4,4 };
         heldCreativeBlockMesh = new Mesh(vertices, new TriangleStripArray(0, strips), heldItemAppearance);
-        heldCreativeBlockMesh.setScale(0.34f, 0.34f, 0.34f);
-        heldCreativeBlockMesh.setTranslation(-0.17f, -0.17f, -0.17f);
+        heldCreativeBlockMesh.setScale(0.4f, 0.4f, 0.4f);
+        heldCreativeBlockMesh.setTranslation(-0.2f, -0.2f, -0.2f);
         heldCreativeBlockMesh.setRenderingEnable(false);
         heldItemPitch.addChild(heldCreativeBlockMesh);
     }
