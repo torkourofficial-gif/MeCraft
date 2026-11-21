@@ -9,8 +9,8 @@ package mecraft;
  * deterministic layout so generation stays cheap and cannot cross world edges.
  */
 final class StrongholdGenerator {
-    private static final int FLOOR = Block.STONE_SLAB;
-    private static final int WALL = Block.MOSSY_COBBLESTONE;
+    private static final byte FLOOR = Block.STONE_SLAB;
+    private static final byte WALL = Block.MOSSY_COBBLESTONE;
     private static final int ROOM_HEIGHT = 5;
 
     private StrongholdGenerator() { }
