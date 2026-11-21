@@ -1158,7 +1158,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 damageTool(hotbar[world.selectedSlot],
                         ItemCatalog.durabilityCost(hotbar[world.selectedSlot]));
             renderer.syncEditedBlock(world, x, lowerY, z);
-            renderer.spawnBlockDestroy(x, lowerY, z, debrisTile);
+            // was a source of frame stalls on constrained Java ME devices.
             resetMining();
             miningHitWait = 5;
             return;
@@ -1216,7 +1216,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             // End Portal Frames use a special multi-tile model; skip the
             // generic debris atlas path for this block.
             if (id != Block.FIRE && id != Block.END_PORTAL_FRAME)
-                renderer.spawnBlockDestroy(x, y, z, Block.sideTile(id));
+                // No block-break fragments; keep the mining path allocation-free.
             resetMining();
             miningHitWait = 5;
         }
@@ -4975,8 +4975,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
         if (id < Block.COUNT && terrainTexture != null &&
             (Block.isDecorative((byte)id) || id == Block.TNT || id == (Block.CHEST & 255))) {
-            // A chest's internal block ID is not its terrain-atlas tile.
-            int tile = id == (Block.CHEST & 255) ? 25 : Block.atlasTile(id);
+            // Some blocks use a face-specific inventory texture instead of their
+            // nominal block tile. End Stone uses the same tile as its held/world top.
+            int tile = id == (Block.CHEST & 255) ? 25 :
+                    (id == (Block.END_STONE & 255) ? 175 : Block.atlasTile(id));
             g.drawRegion(terrainTexture, (tile & 15) * 16, (tile >> 4) * 16, 16, 16,
                     Sprite.TRANS_NONE, x, y, Graphics.TOP | Graphics.LEFT);
             return;
