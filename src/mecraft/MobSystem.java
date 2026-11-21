@@ -1540,7 +1540,7 @@ final class MobSystem {
                         break;
                     }
                     if (impacted || world.isSolidAt(bx, by, bz) || by < 0 || item.age >= 40) {
-                        if (kind == 1 && random.nextInt(8) == 0)
+                        if (!impacted && kind == 1 && random.nextInt(8) == 0)
                             spawnFromEgg(world, 6, item.x, item.y, item.z);
                         item.active = false;
                     }
