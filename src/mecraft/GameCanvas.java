@@ -1146,7 +1146,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             int meta = world.doorMetadata(x, y, z);
             int lowerY = (meta & 8) != 0 ? y - 1 : y;
             int drop = Block.dropId(id);
-            int debrisTile = id == Block.IRON_DOOR ? 98 : 97;
             if (!world.removeDoor(x, y, z)) {
                 miningDamage = 0.99f;
                 return;
