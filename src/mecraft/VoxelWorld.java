@@ -1252,19 +1252,15 @@ final class VoxelWorld {
     synchronized boolean setDimension(int targetDimension) {
         if (targetDimension < 0 || targetDimension >= DIMENSION_COUNT) return false;
         if (dimensionId == targetDimension) return true;
-        // Like the Nether, the End owns independent block and fluid arrays.
-        // Keep the End one-way, but never overwrite the Overworld arrays with
-        // End terrain. A fresh dimension is generated through generate(), which
-        // dispatches each chunk to InfdevTerrain.generateEnd().
-        if (dimensionId == DIM_END && targetDimension != DIM_END) return false;
+        // The End owns separate block and fluid arrays. Save the active bounded
+        // dimension before reusing its arrays to keep the peak heap bounded.
         boolean createEndInCurrentArrays = targetDimension == DIM_END &&
                 (dimensionBlocks[DIM_END] == null ||
                  dimensionWaterLevels[DIM_END] == null);
         if (createEndInCurrentArrays) {
-            // The End is a one-way destination. Reuse the active voxel arrays
-            // instead of allocating another full blocks + metadata pair while
-            // retaining the Overworld arrays. This avoids a large heap spike
-            // on small CLDC devices during dimension travel.
+            if (saveStoreName != null &&
+                    !saveDimensionStore(saveStoreName, dimensionId, blocks, waterLevels))
+                return false;
             dimensionBlocks[dimensionId] = null;
             dimensionWaterLevels[dimensionId] = null;
             dimensionId = DIM_END;
@@ -1280,6 +1276,8 @@ final class VoxelWorld {
         } else {
             dimensionBlocks[dimensionId] = blocks;
             dimensionWaterLevels[dimensionId] = waterLevels;
+            if (dimensionBlocks[targetDimension] == null && saveStoreName != null)
+                loadDimensionStore(saveStoreName, targetDimension, this);
             if (dimensionBlocks[targetDimension] == null ||
                     dimensionWaterLevels[targetDimension] == null) {
                 dimensionBlocks[targetDimension] = new byte[BLOCK_COUNT];
@@ -1323,6 +1321,11 @@ final class VoxelWorld {
                 dimensionBlocks[DIM_END] = blocks;
                 dimensionWaterLevels[DIM_END] = waterLevels;
             }
+            InfdevTerrain.ensureEndIslandExpansion(this);
+            // Add the new End towers to saved islands created before this layout.
+            InfdevTerrain.ensureEndPillars(this);
+            InfdevTerrain.ensureEndExitStructure(this);
+            InfdevTerrain.ensureEndSpawnPlatform(this);
         }
         for (int i = 0; i < PROCEDURAL_CACHE_SIZE; i++) {
             proceduralChunkX[i] = Integer.MIN_VALUE;
@@ -1508,6 +1511,83 @@ final class VoxelWorld {
     }
 
     boolean activateEndPortalAtWool(int x, int y, int z) { return false; }
+
+    boolean isEndExitPortalActive() {
+        if (dimensionId != DIM_END) return false;
+        int x0 = InfdevTerrain.endExitX() + 1;
+        int z0 = InfdevTerrain.endExitZ() + 1;
+        int y = InfdevTerrain.endExitBaseY(this);
+        for (int z = z0; z < z0 + 3; z++)
+            for (int x = x0; x < x0 + 3; x++)
+                if ((x != VoxelWorld.WIDTH / 2 || z != VoxelWorld.DEPTH / 2) &&
+                        get(x, y, z) == Block.END_PORTAL) return true;
+        return false;
+    }
+
+    boolean activateEndExitPortal() {
+        if (dimensionId != DIM_END || isEndExitPortalActive()) return false;
+        int x0 = InfdevTerrain.endExitX() + 1;
+        int z0 = InfdevTerrain.endExitZ() + 1;
+        int y = InfdevTerrain.endExitBaseY(this);
+        for (int z = z0; z < z0 + 3; z++)
+            for (int x = x0; x < x0 + 3; x++)
+                set(x, y, z, x == VoxelWorld.WIDTH / 2 && z == VoxelWorld.DEPTH / 2 ?
+                        Block.BEDROCK : Block.END_PORTAL);
+        recordBulkChangedRegion(x0, y, z0, x0 + 2, y, z0 + 2);
+        return true;
+    }
+
+    boolean deactivateEndExitPortal() {
+        if (dimensionId != DIM_END || !isEndExitPortalActive()) return false;
+        int x0 = InfdevTerrain.endExitX() + 1;
+        int z0 = InfdevTerrain.endExitZ() + 1;
+        int y = InfdevTerrain.endExitBaseY(this);
+        for (int z = z0; z < z0 + 3; z++)
+            for (int x = x0; x < x0 + 3; x++)
+                set(x, y, z, Block.BEDROCK);
+        recordBulkChangedRegion(x0, y, z0, x0 + 2, y, z0 + 2);
+        return true;
+    }
+
+    boolean endCrystalAlive(int crystal) {
+        if (crystal < 0 || crystal >= InfdevTerrain.endPillarCount()) return false;
+        // Invisible per-crystal flag in unused metadata on the End's bedrock floor.
+        return (metadataAt(crystal + 1, 0, 0) & 1) == 0;
+    }
+
+    int remainingEndCrystals() {
+        int remaining = 0;
+        for (int i = 0; i < InfdevTerrain.endPillarCount(); i++)
+            if (endCrystalAlive(i)) remaining++;
+        return remaining;
+    }
+
+    boolean destroyEndCrystal(int crystal) {
+        if (dimensionId != DIM_END || !endCrystalAlive(crystal)) return false;
+        int x = crystal + 1;
+        setMetadata(x, 0, 0, metadataAt(x, 0, 0) | 1);
+        revision++;
+        return true;
+    }
+
+    void igniteExplosionFire(float centerX, float centerZ, float radius) {
+        if (dimensionId != DIM_END) return;
+        int minX = floorBlock(centerX - radius), maxX = floorBlock(centerX + radius);
+        int minZ = floorBlock(centerZ - radius), maxZ = floorBlock(centerZ + radius);
+        int fires = 0;
+        float radiusSquared = radius * radius;
+        for (int z = minZ; z <= maxZ && fires < 7; z++) {
+            for (int x = minX; x <= maxX && fires < 7; x++) {
+                float dx = x + 0.5f - centerX, dz = z + 0.5f - centerZ;
+                if (dx * dx + dz * dz > radiusSquared || randomFloat() > 0.62f) continue;
+                int groundY = surfaceY(x, z), fireY = groundY + 1;
+                if (groundY <= 0 || fireY >= HEIGHT ||
+                        !Block.solid(get(x, groundY, z)) || get(x, fireY, z) != Block.AIR)
+                    continue;
+                if (set(x, fireY, z, Block.FIRE)) fires++;
+            }
+        }
+    }
 
     boolean touchesPortal(float px, float py, float pz) {
         int minX = floorBlock(px - 0.31f), maxX = floorBlock(px + 0.31f);
@@ -1763,27 +1843,91 @@ final class VoxelWorld {
         dimensionBlocks[dimensionId] = blocks; dimensionWaterLevels[dimensionId] = waterLevels;
         for (int dimension = 0; dimension < DIMENSION_COUNT; dimension++) {
             if (dimension == dimensionId || dimensionBlocks[dimension] == null || dimensionWaterLevels[dimension] == null) continue;
-            RecordStore rs = null;
-            try {
-                rs = RecordStore.openRecordStore(storeName + "-d" + dimension, true);
-                RecordEnumeration old = rs.enumerateRecords(null, null, false);
-                int[] ids = new int[rs.getNumRecords()]; int n = 0;
-                while (old.hasNextElement()) ids[n++] = old.nextRecordId();
-                old.destroy(); for (int i = 0; i < n; i++) rs.deleteRecord(ids[i]);
-                int total = BLOCK_COUNT * 2, pages = (total + DIMENSION_PAGE_BYTES - 1) / DIMENSION_PAGE_BYTES;
-                ByteArrayOutputStream hb = new ByteArrayOutputStream(12); DataOutputStream h = new DataOutputStream(hb);
-                h.writeInt(DIMENSION_SAVE_MAGIC_V2); h.writeByte(dimension); h.writeInt(total); h.writeShort(pages); h.flush();
-                byte[] hd = hb.toByteArray(); rs.addRecord(hd, 0, hd.length);
-                for (int page = 0; page < pages; page++) {
-                    int offset = page * DIMENSION_PAGE_BYTES, length = Math.min(DIMENSION_PAGE_BYTES, total - offset);
-                    ByteArrayOutputStream pb = new ByteArrayOutputStream(length + 8); DataOutputStream po = new DataOutputStream(pb);
-                    po.writeInt(DIMENSION_PAGE_MAGIC); po.writeShort(page); po.writeShort(length);
-                    for (int k = 0; k < length; k++) { int at = offset + k; po.writeByte(at < BLOCK_COUNT ? dimensionBlocks[dimension][at] : dimensionWaterLevels[dimension][at - BLOCK_COUNT]); }
-                    po.flush(); byte[] pd = pb.toByteArray(); rs.addRecord(pd, 0, pd.length);
-                }
-            } catch (Exception ignored) { } catch (OutOfMemoryError ignored) { }
-            finally { if (rs != null) try { rs.closeRecordStore(); } catch (RecordStoreException ignored) { } }
+            saveDimensionStore(storeName, dimension, dimensionBlocks[dimension],
+                    dimensionWaterLevels[dimension]);
         }
+    }
+
+    private static boolean saveDimensionStore(String storeName, int dimension,
+            byte[] dimensionBlocks, byte[] dimensionWaterLevels) {
+        RecordStore rs = null;
+        try {
+            rs = RecordStore.openRecordStore(storeName + "-d" + dimension, true);
+            RecordEnumeration old = rs.enumerateRecords(null, null, false);
+            int[] ids = new int[rs.getNumRecords()]; int n = 0;
+            while (old.hasNextElement()) ids[n++] = old.nextRecordId();
+            old.destroy(); for (int i = 0; i < n; i++) rs.deleteRecord(ids[i]);
+            int total = BLOCK_COUNT * 2, pages = (total + DIMENSION_PAGE_BYTES - 1) / DIMENSION_PAGE_BYTES;
+            ByteArrayOutputStream hb = new ByteArrayOutputStream(12); DataOutputStream h = new DataOutputStream(hb);
+            h.writeInt(DIMENSION_SAVE_MAGIC_V2); h.writeByte(dimension); h.writeInt(total); h.writeShort(pages); h.flush();
+            byte[] hd = hb.toByteArray(); rs.addRecord(hd, 0, hd.length);
+            for (int page = 0; page < pages; page++) {
+                int offset = page * DIMENSION_PAGE_BYTES, length = Math.min(DIMENSION_PAGE_BYTES, total - offset);
+                ByteArrayOutputStream pb = new ByteArrayOutputStream(length + 8); DataOutputStream po = new DataOutputStream(pb);
+                po.writeInt(DIMENSION_PAGE_MAGIC); po.writeShort(page); po.writeShort(length);
+                for (int k = 0; k < length; k++) { int at = offset + k; po.writeByte(at < BLOCK_COUNT ? dimensionBlocks[at] : dimensionWaterLevels[at - BLOCK_COUNT]); }
+                po.flush(); byte[] pd = pb.toByteArray(); rs.addRecord(pd, 0, pd.length);
+            }
+            return true;
+        } catch (Exception ignored) { return false; }
+        catch (OutOfMemoryError ignored) { return false; }
+        finally { if (rs != null) try { rs.closeRecordStore(); } catch (RecordStoreException ignored) { } }
+    }
+
+    private static boolean loadDimensionStore(String storeName, int dimension,
+            VoxelWorld world) {
+        RecordStore rs = null;
+        try {
+            rs = RecordStore.openRecordStore(storeName + "-d" + dimension, false);
+            if (rs.getNumRecords() < 2) return false;
+            byte[] header = null;
+            RecordEnumeration headers = rs.enumerateRecords(null, null, false);
+            try {
+                while (headers.hasNextElement()) {
+                    byte[] candidate = rs.getRecord(headers.nextRecordId());
+                    if (candidate.length >= 11 &&
+                            new DataInputStream(new ByteArrayInputStream(candidate)).readInt() == DIMENSION_SAVE_MAGIC_V2) {
+                        header = candidate;
+                        break;
+                    }
+                }
+            } finally { headers.destroy(); }
+            if (header == null) return false;
+            DataInputStream h = new DataInputStream(new ByteArrayInputStream(header));
+            if (h.readInt() != DIMENSION_SAVE_MAGIC_V2 || h.readUnsignedByte() != dimension) return false;
+            int total = h.readInt(), pages = h.readUnsignedShort();
+            if (total != BLOCK_COUNT * 2 || pages != (total + DIMENSION_PAGE_BYTES - 1) / DIMENSION_PAGE_BYTES ||
+                    rs.getNumRecords() != pages + 1) return false;
+            byte[] raw = new byte[total];
+            boolean[] loaded = new boolean[pages];
+            RecordEnumeration records = rs.enumerateRecords(null, null, false);
+            try {
+                while (records.hasNextElement()) {
+                    byte[] data = rs.getRecord(records.nextRecordId());
+                    if (data.length < 8) continue;
+                    DataInputStream page = new DataInputStream(new ByteArrayInputStream(data));
+                    if (page.readInt() != DIMENSION_PAGE_MAGIC) continue;
+                    int number = page.readUnsignedShort(), length = page.readUnsignedShort();
+                    if (number >= pages || loaded[number] ||
+                            length != Math.min(DIMENSION_PAGE_BYTES, total - number * DIMENSION_PAGE_BYTES) ||
+                            page.available() != length) continue;
+                    page.readFully(raw, number * DIMENSION_PAGE_BYTES, length);
+                    loaded[number] = true;
+                }
+            } finally { records.destroy(); }
+            for (int i = 0; i < pages; i++) if (!loaded[i]) return false;
+            byte[] db = new byte[BLOCK_COUNT], dw = new byte[BLOCK_COUNT];
+            System.arraycopy(raw, 0, db, 0, BLOCK_COUNT);
+            System.arraycopy(raw, BLOCK_COUNT, dw, 0, BLOCK_COUNT);
+            if (dimension == DIM_NETHER)
+                for (int i = 0; i < db.length; i++)
+                    if (db[i] == Block.WATER) db[i] = Block.LAVA;
+            world.dimensionBlocks[dimension] = db;
+            world.dimensionWaterLevels[dimension] = dw;
+            return true;
+        } catch (Exception ignored) { return false; }
+        catch (OutOfMemoryError ignored) { return false; }
+        finally { if (rs != null) try { rs.closeRecordStore(); } catch (RecordStoreException ignored) { } }
     }
 
     private static void loadOtherDimension(String storeName, VoxelWorld world) {

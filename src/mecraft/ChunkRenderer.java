@@ -236,7 +236,10 @@ final class ChunkRenderer {
     // Created only after the End has finished loading, keeping its M3G model out of the loading peak.
     private volatile EnderDragonSystem enderDragon;
     private boolean enderDragonLoadFailed;
+    private volatile EndCrystalSystem endCrystals;
+    private boolean endCrystalsLoadFailed;
     private int pendingEnderDragonDamage;
+    private final float[] enderDragonExplosionPosition = new float[3];
     private int visibleHeldItem = -1;
     private int handSwingTicks = 8;
     private boolean handSwinging;
@@ -619,6 +622,12 @@ final class ChunkRenderer {
 
     private void setHeldVisualVisible(int itemId, boolean visible) {
         if (itemId <= Block.AIR) return;
+        // Block meshes use HELD_BLOCK_SCALE directly. Doors use the icon mesh,
+        // and flowers are attached beneath the same icon transform, so avoid
+        // applying the larger item-icon multiplier to those block models.
+        float iconScale = itemId < Block.COUNT &&
+                (Block.isDoor((byte)itemId) || Block.isFlower((byte)itemId)) ? 1.0f : 1.5f;
+        itemSpriteIconScale.setScale(iconScale, iconScale, iconScale);
         if (itemId == (Block.END_PORTAL_FRAME & 255)) {
             if (heldEndPortalFrameMeshes != null)
                 setMeshesVisible(heldEndPortalFrameMeshes, visible);
@@ -883,7 +892,9 @@ final class ChunkRenderer {
         VertexArray colors = new VertexArray(vertexCount, 4, 1);
         colors.set(0, vertexCount, data.c);
         VertexBuffer vertices = new VertexBuffer();
-        vertices.setPositions(positions, 1.0f, null);
+        // FaceBuilder stores cube coordinates in 1/256 world units, like the
+        // dedicated held-block meshes created through makeMesh().
+        vertices.setPositions(positions, 1.0f / 256.0f, null);
         vertices.setTexCoords(0, heldCreativeBlockUVArray, 1.0f / 256.0f, null);
         vertices.setColors(colors);
         int[] strips = new int[] { 4,4,4,4,4,4 };
@@ -1259,6 +1270,25 @@ final class ChunkRenderer {
     }
 
     void updateParticles(VoxelWorld world, float yaw, float pitch) {
+        if (enderDragon != null) {
+            int bursts = enderDragon.consumeDeathExplosionBursts(enderDragonExplosionPosition);
+            boolean finalBurst = enderDragon.consumeFinalExplosion();
+            if (finalBurst) {
+                particles.spawnDragonExplosion(
+                        enderDragonExplosionPosition[0],
+                        enderDragonExplosionPosition[1],
+                        enderDragonExplosionPosition[2], true);
+            } else {
+                if (bursts > 3) bursts = 3;
+                for (int i = 0; i < bursts; i++) {
+                    float offset = i - (bursts - 1) * 0.5f;
+                    particles.spawnDragonExplosion(
+                            enderDragonExplosionPosition[0] + offset * 0.55f,
+                            enderDragonExplosionPosition[1] + (i & 1) * 0.45f,
+                            enderDragonExplosionPosition[2] - offset * 0.35f, false);
+                }
+            }
+        }
         particles.update(world, yaw, pitch);
     }
 
@@ -1319,18 +1349,34 @@ final class ChunkRenderer {
         return true;
     }
 
-    int updateMobs(VoxelWorld world) {
-        int damage = mobs.update(world);
+    int updateMobs(VoxelWorld world, float lookX, float lookY, float lookZ) {
+        int damage = mobs.update(world, lookX, lookY, lookZ);
         // Dragon damage is produced by its render-thread animation and consumed
         // here on the gameplay thread. Never touch M3G from this method.
         synchronized (this) {
             damage += pendingEnderDragonDamage;
             pendingEnderDragonDamage = 0;
         }
+        if (enderDragon != null) {
+            boolean activatePortal = enderDragon.consumePortalActivationRequest();
+            boolean deactivatePortal = enderDragon.consumePortalDeactivationRequest();
+            if (activatePortal) world.activateEndExitPortal();
+            else if (deactivatePortal) world.deactivateEndExitPortal();
+        }
         return damage;
     }
 
     void updateEnderDragonVisual(VoxelWorld world) {
+        if (endCrystals == null && !endCrystalsLoadFailed &&
+                world.dimensionId == VoxelWorld.DIM_END) {
+            try {
+                endCrystals = new EndCrystalSystem(scene);
+            } catch (Throwable unavailable) {
+                endCrystalsLoadFailed = true;
+                System.out.println("MeCraft: no se pudieron crear los cristales del End: " + unavailable);
+            }
+        }
+        if (endCrystals != null) endCrystals.update(world);
         if (enderDragon == null && !enderDragonLoadFailed &&
                 world.dimensionId == VoxelWorld.DIM_END) {
             try {
@@ -1349,6 +1395,10 @@ final class ChunkRenderer {
                 }
             }
         }
+    }
+
+    int enderDragonHealth() {
+        return enderDragon == null ? -1 : enderDragon.health();
     }
 
     boolean spawnMobFromEgg(VoxelWorld world, int eggType, float x, float y, float z) {
@@ -1409,6 +1459,22 @@ final class ChunkRenderer {
     }
 
     int hitMob(VoxelWorld world, float dirX, float dirY, float dirZ, int damage) {
+        if (endCrystals != null) {
+            int crystal = endCrystals.hit(world, dirX, dirY, dirZ);
+            if (crystal >= 0) {
+                float x = InfdevTerrain.endPillarX(crystal) + 0.5f;
+                float y = InfdevTerrain.endPillarTopY(world, crystal) + 1.75f;
+                float z = InfdevTerrain.endPillarZ(crystal) + 0.5f;
+                world.explode(x, y, z, 3.0f, droppedItems);
+                world.igniteExplosionFire(x, z, 3.0f);
+                mobs.damageFromExplosion(world, x, y, z, 3.0f);
+                particles.spawnDragonExplosion(x, y, z, false);
+                particles.spawnDragonExplosion(x + 0.25f, y + 0.25f, z - 0.25f, false);
+                particles.spawnBlockDestroy((int)x, (int)y, (int)z,
+                        Block.atlasTile(Block.OBSIDIAN));
+                return 2;
+            }
+        }
         if (enderDragon != null) {
             int result = enderDragon.hit(world, dirX, dirY, dirZ, damage);
             if (result >= 0) return result;
@@ -1418,6 +1484,14 @@ final class ChunkRenderer {
 
     boolean shootPlayerArrow(VoxelWorld world, float pitch) {
         return mobs.shootPlayerArrow(world, pitch);
+    }
+
+    boolean shootPlayerEnderPearl(VoxelWorld world, float pitch) {
+        return mobs.shootPlayerEnderPearl(world, pitch);
+    }
+
+    boolean consumeEnderPearlTeleport() {
+        return mobs.consumePearlTeleport();
     }
 
     /** Synchronize a player edit and put its chunk at the head of the build queue. */
@@ -1852,7 +1926,7 @@ final class ChunkRenderer {
         int firstChunkY = world.dimensionId == VoxelWorld.DIM_END ?
                 InfdevTerrain.END_ISLAND_MIN_Y / VoxelWorld.CHUNK_Y : 0;
         int lastChunkY = world.dimensionId == VoxelWorld.DIM_END ?
-                InfdevTerrain.END_ISLAND_MAX_Y / VoxelWorld.CHUNK_Y : VoxelWorld.CHUNKS_Y - 1;
+                InfdevTerrain.END_RENDER_MAX_Y / VoxelWorld.CHUNK_Y : VoxelWorld.CHUNKS_Y - 1;
 
         // Apply the actual camera frustum to already-resident chunks too; previously
         // the frustum only filtered new builds while old meshes kept rendering.

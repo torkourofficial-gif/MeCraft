@@ -29,11 +29,12 @@ final class MobSystem {
     private static final int GHAST = 9;
     private static final int PIG_ZOMBIE = 10;
     private static final int ENDERMAN = 11;
+    private static final int BLAZE = 12;
     private static final int MOB_COUNT = 14;
     private static final String[] MOB_TEXTURE_FILES = {
         "pig.png", "sheep.png", "zombie.png", "creeper.png", "skeleton.png",
         "cow.png", "alpha_chicken.png", "alpha_spider.png", "alpha_slime.png",
-        "alpha_ghast.png", "alpha_pigzombie.png", "enderman.png"
+        "alpha_ghast.png", "alpha_pigzombie.png", "enderman.png", "blaze.png"
     };
     private static final float DESPAWN_DISTANCE_SQUARED = 32.0f * 32.0f;
     private static final int PASSIVE_RESPAWN_INTERVAL = 80;
@@ -54,6 +55,7 @@ final class MobSystem {
 
     private final Mob[] mobs = new Mob[MOB_COUNT];
     private final Arrow[] arrows = new Arrow[6];
+    private final Pearl[] pearls = new Pearl[4];
     private final Fireball[] fireballs = new Fireball[2];
     private final Appearance fireballAppearance;
     private final Group scene;
@@ -62,7 +64,7 @@ final class MobSystem {
     private final Appearance fireAppearance;
     private Appearance spiderEyesAppearance;
     private Image fleeceImage;
-    private final Texture2D[] mobTextures = new Texture2D[12];
+    private final Texture2D[] mobTextures = new Texture2D[13];
     private final Texture2D[] fleeceTextures = new Texture2D[WoolColors.COUNT];
     private final Random random = new Random(1L);
     private int worldSeed = Integer.MIN_VALUE;
@@ -73,6 +75,9 @@ final class MobSystem {
     private int attackCooldown;
     private boolean zombiesNightActive;
     private int nextArrow;
+    private int nextPearl;
+    private boolean pendingPearlTeleport;
+    private final Appearance pearlAppearance;
 
     MobSystem(Group scene, DroppedItemSystem drops, ParticleSystem particles) throws IOException {
         this.scene = scene;
@@ -80,6 +85,7 @@ final class MobSystem {
         this.particles = particles;
         fireAppearance = skin(texture(GameAssets.image("fire.png")));
         fireballAppearance = createFireballAppearance();
+        pearlAppearance = skin(texture(GameAssets.image("items.png")));
         // Skeleton texture is needed by the fixed arrow pool; other species
         // are loaded only when that species first enters the active mob pool.
         mobTextures[SKELETON] = texture("skeleton.png");
@@ -88,6 +94,10 @@ final class MobSystem {
             arrows[i] = new Arrow(arrowAppearance);
             scene.addChild(arrows[i].root);
         }
+        for (int i = 0; i < pearls.length; i++) {
+            pearls[i] = new Pearl(pearlAppearance);
+            scene.addChild(pearls[i].root);
+        }
         for (int i = 0; i < fireballs.length; i++) {
             fireballs[i] = new Fireball(fireballAppearance);
             scene.addChild(fireballs[i].root);
@@ -95,7 +105,7 @@ final class MobSystem {
     }
 
     /** Returns damage dealt to the player on this tick. */
-    int update(VoxelWorld world) {
+    int update(VoxelWorld world, float lookX, float lookY, float lookZ) {
         if (worldSeed != world.seed || dimensionMode != world.dimensionId || economicMode != world.economicMode) reset(world);
         tick++;
         unloadDistantMobs(world);
@@ -115,22 +125,41 @@ final class MobSystem {
             float visualDx = world.playerX - mob.x;
             float visualDz = world.playerZ - mob.z;
             boolean updatePose = visualDx * visualDx + visualDz * visualDz <= 144.0f ||
-                    (tick & 1) == 0;
+                    (tick & 1) == 0 || (mob.type == ENDERMAN && mob.endermanAngry);
             if (mob.type == CHICKEN && mob.age > 0 && mob.age % 500 == 0)
                 drops.spawn(ItemCatalog.EGG, floor(mob.x), floor(mob.y), floor(mob.z));
             if (updateBurning(mob, world)) continue;
             if (mob.hurtTicks > 0 && --mob.hurtTicks == 0) mob.setHurt(false);
             mob.chasing = false;
             if (mob.attackDelay > 0) mob.attackDelay--;
-            if (mob.type == GHAST) {
+            if (mob.type == GHAST || mob.type == BLAZE) {
                 updateGhast(mob, world);
                 if (updatePose) animate(mob);
                 mob.root.setTranslation(mob.x, mob.y, mob.z);
-                mob.root.setScale(4.0f, 4.0f, 4.0f);
+                float scale = mob.type == GHAST ? 4.0f : 1.0f;
+                mob.root.setScale(scale, scale, scale);
                 mob.root.setOrientation(modelYaw(mob.yaw), 0.0f, 1.0f, 0.0f);
                 continue;
             }
-            if (isHostile(mob.type)) {
+            if (mob.type == ENDERMAN) {
+                if (!mob.endermanAngry && isPlayerLookingAtEnderman(world, mob, lookX, lookY, lookZ))
+                    mob.endermanAngry = true;
+                if (mob.endermanAngry) {
+                    float dx = world.playerX - mob.x;
+                    float dz = world.playerZ - mob.z;
+                    float distanceSquared = dx * dx + dz * dz;
+                    mob.chasing = true;
+                    mob.targetYaw = yawTo(dx, dz);
+                    if (distanceSquared < 2.5f * 2.5f &&
+                            world.playerY < mob.y + mobHeight(mob) &&
+                            world.playerY + 1.8f > mob.y && mob.attackDelay <= 0) {
+                        mob.attackDelay = 20;
+                        playerDamage = 7;
+                    }
+                } else {
+                    wander(mob, 90);
+                }
+            } else if (isHostile(mob.type)) {
                 float dx = world.playerX - mob.x;
                 float dz = world.playerZ - mob.z;
                 float distanceSquared = dx * dx + dz * dz;
@@ -197,6 +226,7 @@ final class MobSystem {
         }
         playerDamage = updateFireballs(world, playerDamage);
         playerDamage = updateArrows(world, playerDamage);
+        updatePearls(world);
         return playerDamage;
     }
 
@@ -251,6 +281,7 @@ final class MobSystem {
         if (attackCooldown > 0) return 0;
         attackCooldown = 8;
         Mob target = mobs[closest];
+        if (target.type == ENDERMAN) target.endermanAngry = true;
         if (target.type == SHEEP && !target.sheared) {
             target.setSheared(true);
             int woolCount = 1 + random.nextInt(3);
@@ -266,16 +297,21 @@ final class MobSystem {
         } else {
             target.hurtTicks = 10;
             target.setHurt(true);
-            float knockX = world.playerX - target.x;
-            float knockZ = world.playerZ - target.z;
-            float knockLength = (float)Math.sqrt(knockX * knockX + knockZ * knockZ);
-            if (knockLength > 0.0001f) {
-                target.motionX -= knockX / knockLength * 0.4f;
-                target.motionZ -= knockZ / knockLength * 0.4f;
+            if (target.type == ENDERMAN) {
+                target.fleeTicks = 0;
+                teleportEndermanAfterHit(world, target);
+            } else {
+                float knockX = world.playerX - target.x;
+                float knockZ = world.playerZ - target.z;
+                float knockLength = (float)Math.sqrt(knockX * knockX + knockZ * knockZ);
+                if (knockLength > 0.0001f) {
+                    target.motionX -= knockX / knockLength * 0.4f;
+                    target.motionZ -= knockZ / knockLength * 0.4f;
+                }
+                target.verticalVelocity = 0.4f;
+                target.fleeTicks = 35;
+                target.targetYaw = yawTo(target.x - world.playerX, target.z - world.playerZ);
             }
-            target.verticalVelocity = 0.4f;
-            target.fleeTicks = 35;
-            target.targetYaw = yawTo(target.x - world.playerX, target.z - world.playerZ);
         }
         return 1;
     }
@@ -297,12 +333,16 @@ final class MobSystem {
             } else {
                 mob.hurtTicks = 10;
                 mob.setHurt(true);
-                if (distance > 0.0001f) {
+                if (mob.type == ENDERMAN) {
+                    mob.endermanAngry = true;
+                    mob.fleeTicks = 0;
+                    teleportEndermanAfterHit(world, mob);
+                } else if (distance > 0.0001f) {
                     mob.motionX += dx / distance * impact;
                     mob.motionZ += dz / distance * impact;
                     mob.verticalVelocity += dy / distance * impact;
+                    mob.fleeTicks = 35;
                 }
-                mob.fleeTicks = 35;
             }
         }
     }
@@ -358,6 +398,14 @@ final class MobSystem {
 
     private void dropForDeath(Mob mob) {
         int bx = floor(mob.x), by = floor(mob.y), bz = floor(mob.z);
+        if (mob.type == BLAZE) {
+            if (random.nextBoolean()) drops.spawn(ItemCatalog.BLAZE_ROD, bx, by, bz);
+            return;
+        }
+        if (mob.type == ENDERMAN) {
+            drops.spawn(ItemCatalog.ENDER_PEARL, bx, by, bz);
+            return;
+        }
         if (mob.type == PIG) {
             int meat = 1 + random.nextInt(2);
             int pork = mob.fireTicks > 0 ? ItemCatalog.PORK_COOKED : ItemCatalog.PORK_RAW;
@@ -410,7 +458,12 @@ final class MobSystem {
         tick = 0;
         attackCooldown = 0;
         zombiesNightActive = false;
+        pendingPearlTeleport = false;
         for (int i = 0; i < arrows.length; i++) arrows[i].active = false;
+        for (int i = 0; i < pearls.length; i++) {
+            pearls[i].active = false;
+            pearls[i].root.setRenderingEnable(false);
+        }
         for (int i = 0; i < fireballs.length; i++) {
             fireballs[i].active = false;
             fireballs[i].root.setRenderingEnable(false);
@@ -430,6 +483,7 @@ final class MobSystem {
         if (dimensionMode == VoxelWorld.DIM_NETHER) {
             if (slot == 2 || slot == 10) return GHAST;
             if (slot == 5) return SKELETON;
+            if (slot == 9) return BLAZE;
             return PIG_ZOMBIE;
         }
         // Hard mode reuses three passive slots for extra hostile entities,
@@ -448,7 +502,7 @@ final class MobSystem {
         if (slot == 9) return CREEPER;
         if (slot == 10) return SPIDER;
         if (slot == 11) return SLIME;
-        if (slot == 12) return GHAST;
+        if (slot == 12) return ENDERMAN;
         return PIG_ZOMBIE;
     }
 
@@ -479,6 +533,7 @@ final class MobSystem {
         else type = PIG_ZOMBIE;
         Mob mob = createMob(slot, type);
         mob.eggSpawned = true;
+        mob.endermanAngry = false;
         mob.x = x; mob.y = y; mob.z = z;
         mob.yaw = random.nextInt(360);
         mob.targetYaw = mob.yaw;
@@ -492,6 +547,7 @@ final class MobSystem {
         mob.walkPhase = mob.walkAmount = 0.0f;
         mob.walkTicks = 0;
         mob.chasing = false;
+        mob.endermanAngry = false;
         mob.dying = false;
         mob.nextWander = tick + 20 + random.nextInt(100);
         mob.fireMesh.setRenderingEnable(false);
@@ -572,7 +628,8 @@ final class MobSystem {
             float dx = mob.x - world.playerX;
             float dy = mob.y - world.playerY;
             float dz = mob.z - world.playerZ;
-            if (dx * dx + dy * dy + dz * dz <= DESPAWN_DISTANCE_SQUARED) continue;
+            if ((mob.type == ENDERMAN && mob.endermanAngry) ||
+                    dx * dx + dy * dy + dz * dz <= DESPAWN_DISTANCE_SQUARED) continue;
             releaseMob(i);
         }
     }
@@ -612,6 +669,7 @@ final class MobSystem {
         mob.walkPhase = mob.walkAmount = 0.0f;
         mob.walkTicks = 0;
         mob.chasing = false;
+        mob.endermanAngry = false;
         mob.dying = false;
         mob.nextWander = tick + 20 + random.nextInt(100);
         mob.fireMesh.setRenderingEnable(false);
@@ -650,6 +708,8 @@ final class MobSystem {
                 if (mob == null || mob.dying) continue;
                 if (mob.type == CREEPER) {
                     releaseMob(i);
+                } else if (mob.type == ENDERMAN) {
+                    // Endermen stay in the Overworld after sunrise, like creepers.
                 } else if (mob.alive && mob.fireTicks == 0 && hasSkyExposure(world, mob)) {
                     mob.fireTicks = 300;
                     mob.burnDamageTicks = 20;
@@ -698,8 +758,9 @@ final class MobSystem {
             x = (int)world.playerX + (int)(Math.cos(angle * Math.PI / 180.0) * radius);
             z = (int)world.playerZ + (int)(Math.sin(angle * Math.PI / 180.0) * radius);
             attempts++;
-        } while ((!validSpawn(world, x, z) || tooClose(mob, x + 0.5f, z + 0.5f)) && attempts < 48);
-        int ground = world.surfaceY(x, z);
+        } while ((!validSpawnForMob(world, mob, x, z) || tooClose(mob, x + 0.5f, z + 0.5f)) && attempts < 48);
+        if (mob.type == BLAZE && !validSpawnForMob(world, mob, x, z)) return;
+        int ground = mob.type == BLAZE ? InfdevTerrain.NETHER_FORTRESS_FLOOR_Y : world.surfaceY(x, z);
         mob.x = x + 0.5f;
         mob.z = z + 0.5f;
         mob.y = ground + (mob.type == GHAST ? 8.0f : 1.0f);
@@ -727,6 +788,7 @@ final class MobSystem {
         mob.fleeTicks = 0;
         mob.walkTicks = 0;
         mob.chasing = false;
+        mob.endermanAngry = false;
         mob.alive = true;
         mob.root.setTranslation(mob.x, mob.y, mob.z);
         mob.root.setScale((float)mob.slimeSize, (float)mob.slimeSize, (float)mob.slimeSize);
@@ -743,6 +805,16 @@ final class MobSystem {
         byte ground = world.get(x, y, z);
         return Block.solid(ground) && ground != Block.LEAVES &&
                world.get(x, y + 1, z) == Block.AIR && world.get(x, y + 2, z) == Block.AIR;
+    }
+
+    private boolean validSpawnForMob(VoxelWorld world, Mob mob, int x, int z) {
+        if (mob.type != BLAZE) return validSpawn(world, x, z);
+        int y = InfdevTerrain.NETHER_FORTRESS_FLOOR_Y;
+        return world.dimensionId == VoxelWorld.DIM_NETHER &&
+                world.get(x, y, z) == Block.NETHER_BRICK &&
+                world.get(x, y + 1, z) == Block.AIR &&
+                world.get(x, y + 2, z) == Block.AIR &&
+                world.get(x, y + 3, z) == Block.AIR;
     }
 
     private boolean tooClose(Mob mob, float x, float z) {
@@ -771,15 +843,17 @@ final class MobSystem {
             mob.x += (float)Math.sin(mob.age * 0.025f) * 0.012f;
             mob.z += (float)Math.cos(mob.age * 0.021f) * 0.012f;
         }
-        float targetY = world.playerY + 7.0f + (float)Math.sin(mob.age * 0.045f) * 1.5f;
+        float hoverHeight = mob.type == GHAST ? 7.0f : 2.3f;
+        float targetY = world.playerY + hoverHeight + (float)Math.sin(mob.age * 0.045f) * 1.0f;
         if (targetY < 5.0f) targetY = 5.0f;
         if (targetY > VoxelWorld.HEIGHT - 5.0f) targetY = VoxelWorld.HEIGHT - 5.0f;
         mob.y += (targetY - mob.y) * 0.035f;
         mob.targetYaw = yawTo(dx, dz);
         turn(mob);
-        if (mob.attackDelay <= 0 && distance < 32.0f && distance > 0.1f) {
-            shootGhastFireball(mob, world);
-            mob.attackDelay = 100 + random.nextInt(45);
+        if (mob.attackDelay <= 0 && distance < (mob.type == GHAST ? 32.0f : 18.0f) && distance > 0.1f) {
+            if (mob.type == BLAZE) shootBlazeFireball(mob, world);
+            else shootGhastFireball(mob, world);
+            mob.attackDelay = mob.type == GHAST ? 100 + random.nextInt(45) : 45 + random.nextInt(26);
         }
     }
 
@@ -798,9 +872,39 @@ final class MobSystem {
         float speed = 0.30f;
         ball.x = ghast.x; ball.y = ghast.y + 0.5f; ball.z = ghast.z;
         ball.vx = dx / length * speed; ball.vy = dy / length * speed; ball.vz = dz / length * speed;
-        ball.life = 0; ball.reflected = false; ball.active = true;
+        ball.life = 0; ball.reflected = false; ball.blaze = false; ball.active = true;
         ball.root.setTranslation(ball.x, ball.y, ball.z);
         ball.root.setRenderingEnable(true);
+    }
+
+    private void shootBlazeFireball(Mob blaze, VoxelWorld world) {
+        Fireball ball = null;
+        for (int i = 0; i < fireballs.length; i++) {
+            if (!fireballs[i].active) { ball = fireballs[i]; break; }
+        }
+        if (ball == null) return;
+        float dx = world.playerX - blaze.x;
+        float dy = world.playerY + 1.0f - (blaze.y + 1.2f);
+        float dz = world.playerZ - blaze.z;
+        float length = (float)Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (length < 0.001f) return;
+        float speed = 0.36f;
+        ball.x = blaze.x; ball.y = blaze.y + 1.2f; ball.z = blaze.z;
+        ball.vx = dx / length * speed; ball.vy = dy / length * speed; ball.vz = dz / length * speed;
+        ball.life = 0; ball.reflected = false; ball.blaze = true; ball.active = true;
+        ball.root.setTranslation(ball.x, ball.y, ball.z);
+        ball.root.setRenderingEnable(true);
+    }
+
+    private void igniteFireballImpact(VoxelWorld world, float x, float y, float z) {
+        int bx = floor(x), by = floor(y), bz = floor(z);
+        for (int ground = by; ground >= by - 2 && ground > 0; ground--) {
+            if (!Block.solid(world.get(bx, ground, bz))) continue;
+            if (ground + 1 < VoxelWorld.HEIGHT &&
+                    world.get(bx, ground + 1, bz) == Block.AIR)
+                world.set(bx, ground + 1, bz, Block.FIRE);
+            return;
+        }
     }
 
     private void explodeFireballImpact(VoxelWorld world, float x, float y, float z) {
@@ -838,7 +942,10 @@ final class MobSystem {
             ball.root.setTranslation(ball.x, ball.y, ball.z);
             int bx = floor(ball.x), by = floor(ball.y), bz = floor(ball.z);
             if (world.isSolidAt(bx, by, bz)) {
-                if (!ball.reflected) explodeFireballImpact(world, ball.x, ball.y, ball.z);
+                if (!ball.reflected) {
+                    if (ball.blaze) igniteFireballImpact(world, ball.x, ball.y, ball.z);
+                    else explodeFireballImpact(world, ball.x, ball.y, ball.z);
+                }
                 ball.active = false; ball.root.setRenderingEnable(false); continue;
             }
             if (by < 0 || by >= VoxelWorld.HEIGHT || ball.life > 110) {
@@ -847,7 +954,8 @@ final class MobSystem {
             if (ball.reflected) {
                 for (int m = 0; m < mobs.length; m++) {
                     Mob target = mobs[m];
-                    if (target == null || !target.alive || target.type != GHAST) continue;
+                    if (target == null || !target.alive ||
+                            target.type != GHAST && target.type != BLAZE) continue;
                     float half = mobWidth(target) * 0.5f + 0.8f;
                     if (Math.abs(ball.x - target.x) <= half && Math.abs(ball.z - target.z) <= half &&
                         ball.y >= target.y - 0.8f && ball.y <= target.y + mobHeight(target) + 0.8f) {
@@ -866,6 +974,42 @@ final class MobSystem {
             }
         }
         return damage;
+    }
+
+    private boolean isPlayerLookingAtEnderman(VoxelWorld world, Mob mob,
+                                               float lookX, float lookY, float lookZ) {
+        float ox = world.playerX;
+        float oy = world.playerY + 1.62f;
+        float oz = world.playerZ;
+        float dx = mob.x - ox;
+        float dy = mob.y + 2.875f - oy;
+        float dz = mob.z - oz;
+        float distance = (float)Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (distance < 0.001f || distance > 64.0f) return false;
+        float dot = (lookX * dx + lookY * dy + lookZ * dz) / distance;
+        if (dot <= 1.0f - 0.025f / distance) return false;
+        return !blocked(world, ox, oy, oz, dx / distance, dy / distance, dz / distance, distance);
+    }
+
+    /** Teleport from a blow, then keep the Enderman locked onto the player. */
+    private void teleportEndermanAfterHit(VoxelWorld world, Mob mob) {
+        for (int attempt = 0; attempt < 20; attempt++) {
+            float angle = random.nextInt(360) * (float)Math.PI / 180.0f;
+            int radius = 4 + random.nextInt(7);
+            int bx = floor(world.playerX + (float)Math.cos(angle) * radius);
+            int bz = floor(world.playerZ + (float)Math.sin(angle) * radius);
+            if (bx < 1 || bx >= VoxelWorld.WIDTH - 1 || bz < 1 || bz >= VoxelWorld.DEPTH - 1)
+                continue;
+            if (!validSpawn(world, bx, bz)) continue;
+            int ground = world.surfaceY(bx, bz);
+            if (ground + 3 >= VoxelWorld.HEIGHT || world.isSolidAt(bx, ground + 3, bz)) continue;
+            mob.x = bx + 0.5f;
+            mob.y = ground + 1.0f;
+            mob.z = bz + 0.5f;
+            mob.motionX = mob.motionZ = mob.verticalVelocity = 0.0f;
+            mob.root.setTranslation(mob.x, mob.y, mob.z);
+            return;
+        }
     }
 
     private void wander(Mob mob, int interval) {
@@ -895,7 +1039,8 @@ final class MobSystem {
         boolean walking = mob.chasing || mob.walkTicks > 0 || mob.fleeTicks > 0;
         boolean airborne = mob.verticalVelocity != 0.0f ||
                 !Block.solid(world.get(floor(mob.x), floor(mob.y) - 1, floor(mob.z)));
-        float speed = isHostile(mob.type) ? (mob.type == CREEPER ? 0.018f : 0.026f) : 0.014f;
+        float speed = mob.type == ENDERMAN ? (mob.endermanAngry ? 0.085f : 0.014f) :
+                (isHostile(mob.type) ? (mob.type == CREEPER ? 0.018f : 0.026f) : 0.014f);
         if (world.difficulty == VoxelWorld.DIFFICULTY_HARD && isHostile(mob.type)) speed *= 1.15f;
         if (!isHostile(mob.type) && mob.fleeTicks > 0) speed *= 1.6f;
         if (!walking) speed = 0.0f;
@@ -975,6 +1120,7 @@ final class MobSystem {
         int bx = (int)x, bz = (int)z;
         int feet = (int)mob.y;
         if (world.isSolidAt(bx, feet, bz) || world.isSolidAt(bx, feet + 1, bz)) return false;
+        if (mob.type == ENDERMAN && world.isSolidAt(bx, feet + 2, bz)) return false;
         return true;
     }
 
@@ -1004,6 +1150,19 @@ final class MobSystem {
             }
             return;
         }
+        if (mob.type == BLAZE) {
+            for (int i = 0; i < mob.tentacles.length; i++) {
+                Group rod = mob.tentacles[i];
+                if (rod == null) continue;
+                float angle = (mob.age * 4.0f + i * 30.0f) * 0.017453292f;
+                float radius = i < 4 ? 0.31f : (i < 8 ? 0.25f : 0.18f);
+                float height = 1.35f + (i / 4) * 0.42f;
+                rod.setTranslation((float)Math.cos(angle) * radius, height,
+                        (float)Math.sin(angle) * radius);
+                rod.setOrientation((mob.age * 3.0f + i * 60.0f) % 360.0f, 0, 1, 0);
+            }
+            return;
+        }
         if (mob.type == SLIME) return;
         if (mob.type == CHICKEN) {
             float stride = (float)Math.cos(phase) * 80.214f * walk;
@@ -1014,7 +1173,23 @@ final class MobSystem {
             mob.arms[1].setOrientation(-flap, 0, 0, 1);
             return;
         }
-        if (mob.type == ZOMBIE || mob.type == SKELETON || mob.type == PIG_ZOMBIE || mob.type == ENDERMAN) {
+        if (mob.type == ENDERMAN) {
+            mob.head.setTranslation(0.0f, mob.endermanAngry ? 3.1875f : 2.875f, 0.0f);
+            float legSwing = (float)Math.cos(phase) * 40.107f * walk;
+            if (legSwing > 22.918f) legSwing = 22.918f;
+            if (legSwing < -22.918f) legSwing = -22.918f;
+            mob.legs[0].setOrientation(-legSwing, 1, 0, 0);
+            mob.legs[1].setOrientation(legSwing, 1, 0, 0);
+            float armSwing = (float)Math.cos(phase + Math.PI) * 28.6479f * walk;
+            if (armSwing > 22.918f) armSwing = 22.918f;
+            if (armSwing < -22.918f) armSwing = -22.918f;
+            mob.armsPitch[0].setOrientation(armSwing, 1, 0, 0);
+            mob.armsPitch[1].setOrientation(-armSwing, 1, 0, 0);
+            mob.armsRoll[0].setOrientation(0.0f, 0, 0, 1);
+            mob.armsRoll[1].setOrientation(0.0f, 0, 0, 1);
+            return;
+        }
+        if (mob.type == ZOMBIE || mob.type == SKELETON || mob.type == PIG_ZOMBIE) {
             // ModelBiped.animate() uses a 1.4 radian stride (about 80 degrees).
             // The original renderer flips model Y, so its X-axis pose rotations
             // invert when represented by these M3G groups.
@@ -1096,7 +1271,8 @@ final class MobSystem {
 
     private boolean isHostile(int type) {
         return type == ZOMBIE || type == CREEPER || type == SKELETON || type == SPIDER ||
-               type == SLIME || type == GHAST || type == PIG_ZOMBIE || type == ENDERMAN;
+               type == SLIME || type == GHAST || type == PIG_ZOMBIE || type == ENDERMAN ||
+               type == BLAZE;
     }
 
     /** Alpha entity dimensions, kept separate from the 16-pixel block scale. */
@@ -1104,6 +1280,7 @@ final class MobSystem {
         if (mob.type == ENDERMAN) return 2.9f;
         if (mob.type == SPIDER) return 0.9f;
         if (mob.type == GHAST) return 4.0f;
+        if (mob.type == BLAZE) return 2.8f;
         if (mob.type == SLIME) return 0.6f * mob.slimeSize;
         if (mob.type == CHICKEN) return 0.7f;
         if (mob.type == PIG) return 0.9f;
@@ -1115,6 +1292,7 @@ final class MobSystem {
         if (mob.type == ENDERMAN) return 0.6f;
         if (mob.type == SPIDER) return 1.4f;
         if (mob.type == GHAST) return 4.0f;
+        if (mob.type == BLAZE) return 0.6f;
         if (mob.type == SLIME) return 0.6f * mob.slimeSize;
         if (mob.type == CHICKEN) return 0.3f;
         if (mob.type == PIG || mob.type == COW || mob.type == SHEEP) return 0.9f;
@@ -1125,7 +1303,8 @@ final class MobSystem {
     private boolean hostileSlotAllowed(int slot, VoxelWorld world) {
         if (world.dimensionId == VoxelWorld.DIM_END) return slot >= 11;
         if (world.economicMode && slot == (world.nether ? 13 : 11)) return false;
-        return world.difficulty != VoxelWorld.DIFFICULTY_EASY || slot <= 9;
+        return world.difficulty != VoxelWorld.DIFFICULTY_EASY || slot <= 9 ||
+               mobTypeForSlot(slot) == ENDERMAN;
     }
 
     /** Keep one fewer passive mob in Economic mode (about a 14% reduction). */
@@ -1137,7 +1316,8 @@ final class MobSystem {
     private boolean hostileAllowed(int type, VoxelWorld world) {
         if (world.difficulty == VoxelWorld.DIFFICULTY_PEACEFUL) return false;
         if (world.dimensionId == VoxelWorld.DIM_END) return type == ENDERMAN;
-        if (world.nether) return type == GHAST || type == PIG_ZOMBIE || type == SKELETON;
+        if (world.nether) return type == GHAST || type == PIG_ZOMBIE ||
+                type == SKELETON || type == BLAZE;
         return type != GHAST && type != PIG_ZOMBIE;
     }
 
@@ -1166,6 +1346,67 @@ final class MobSystem {
         arrow.root.setRenderingEnable(true);
     }
 
+    private void updatePearls(VoxelWorld world) {
+        for (int i = 0; i < pearls.length; i++) {
+            Pearl pearl = pearls[i];
+            if (!pearl.active) continue;
+            pearl.age++;
+            boolean impact = false;
+            for (int step = 0; step < 4; step++) {
+                float nx = pearl.x + pearl.vx * 0.25f;
+                float ny = pearl.y + pearl.vy * 0.25f;
+                float nz = pearl.z + pearl.vz * 0.25f;
+                if (ny < 0.0f || ny >= VoxelWorld.HEIGHT ||
+                        nx < 0.0f || nx >= VoxelWorld.WIDTH ||
+                        nz < 0.0f || nz >= VoxelWorld.DEPTH ||
+                        world.isSolidAt(floor(nx), floor(ny), floor(nz))) {
+                    pearl.x = nx; pearl.y = ny; pearl.z = nz;
+                    impact = true;
+                    break;
+                }
+                pearl.x = nx; pearl.y = ny; pearl.z = nz;
+            }
+            if (impact) {
+                teleportPlayerToPearl(world, pearl.x, pearl.z);
+                pearl.active = false;
+                pearl.root.setRenderingEnable(false);
+                continue;
+            }
+            pearl.vy -= 0.025f;
+            pearl.root.setTranslation(pearl.x, pearl.y, pearl.z);
+            pearl.root.setOrientation((pearl.age * 18) % 360, 0.0f, 1.0f, 0.0f);
+            if (pearl.age > 240) {
+                pearl.active = false;
+                pearl.root.setRenderingEnable(false);
+            }
+        }
+    }
+
+    private boolean teleportPlayerToPearl(VoxelWorld world, float x, float z) {
+        int centerX = floor(x), centerZ = floor(z);
+        for (int radius = 0; radius <= 2; radius++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
+                    int bx = centerX + dx, bz = centerZ + dz;
+                    if (bx < 1 || bx >= VoxelWorld.WIDTH - 1 ||
+                            bz < 1 || bz >= VoxelWorld.DEPTH - 1) continue;
+                    int ground = world.surfaceY(bx, bz);
+                    if (ground < 0 || ground + 2 >= VoxelWorld.HEIGHT ||
+                            !Block.solid(world.get(bx, ground, bz)) ||
+                            world.get(bx, ground + 1, bz) != Block.AIR ||
+                            world.get(bx, ground + 2, bz) != Block.AIR) continue;
+                    world.playerX = bx + 0.5f;
+                    world.playerY = ground + 1.0f;
+                    world.playerZ = bz + 0.5f;
+                    pendingPearlTeleport = true;
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     boolean shootPlayerArrow(VoxelWorld world, float pitchDegrees) {
         Arrow arrow = arrows[nextArrow++ % arrows.length];
         float yaw = world.yaw * (float)Math.PI / 180.0f;
@@ -1190,6 +1431,33 @@ final class MobSystem {
         return true;
     }
 
+    boolean shootPlayerEnderPearl(VoxelWorld world, float pitchDegrees) {
+        Pearl pearl = pearls[nextPearl++ % pearls.length];
+        float yaw = world.yaw * (float)Math.PI / 180.0f;
+        float pitch = pitchDegrees * (float)Math.PI / 180.0f;
+        float horizontal = (float)Math.cos(pitch);
+        float dx = (float)Math.sin(yaw) * horizontal;
+        float dy = (float)Math.sin(pitch);
+        float dz = (float)Math.cos(yaw) * horizontal;
+        pearl.x = world.playerX + dx * 0.45f;
+        pearl.y = world.playerY + 1.45f;
+        pearl.z = world.playerZ + dz * 0.45f;
+        pearl.vx = dx;
+        pearl.vy = dy + 0.04f;
+        pearl.vz = dz;
+        pearl.age = 0;
+        pearl.active = true;
+        pearl.root.setTranslation(pearl.x, pearl.y, pearl.z);
+        pearl.root.setRenderingEnable(true);
+        return true;
+    }
+
+    boolean consumePearlTeleport() {
+        if (!pendingPearlTeleport) return false;
+        pendingPearlTeleport = false;
+        return true;
+    }
+
     private int updateArrows(VoxelWorld world, int damage) {
         float targetY = world.playerY + 1.0f;
         for (int i = 0; i < arrows.length; i++) {
@@ -1211,6 +1479,7 @@ final class MobSystem {
                           dz = target.z - arrow.z;
                     float radius = target.type == SPIDER ? 0.9f : 0.55f;
                     if (dx * dx + dy * dy + dz * dz >= radius * radius) continue;
+                    if (target.type == ENDERMAN) target.endermanAngry = true;
                     target.health -= 4;
                     if (target.health <= 0) {
                         dropForDeath(target);
@@ -1218,7 +1487,10 @@ final class MobSystem {
                     } else {
                         target.hurtTicks = 10;
                         target.setHurt(true);
-                        target.fleeTicks = 35;
+                        if (target.type == ENDERMAN) {
+                            target.fleeTicks = 0;
+                            teleportEndermanAfterHit(world, target);
+                        } else target.fleeTicks = 35;
                     }
                     hitMob = true;
                     break;
@@ -1248,6 +1520,38 @@ final class MobSystem {
     private Appearance createFireballAppearance() throws IOException {
         // Crop and dye the wool block directly from the terrain atlas (textures.png).
         return skin(texture(WoolColors.texture(GameAssets.terrain(), 1)));
+    }
+
+    private Mesh makePearlMesh(Appearance appearance) {
+        // Two intersecting quads keep the pearl legible while it spins in flight.
+        short[] positions = new short[] {
+            -8,-8,0, 8,-8,0, -8,8,0, 8,8,0,
+            0,-8,-8, 0,-8,8, 0,8,-8, 0,8,8
+        };
+        short[] uv = new short[16];
+        int icon = 107;
+        int u0 = (icon & 15) * 16, v0 = (icon >> 4) * 16;
+        int u1 = u0 + 16, v1 = v0 + 16;
+        for (int plane = 0; plane < 2; plane++) {
+            int at = plane * 8;
+            uv[at] = (short)u0; uv[at + 1] = (short)v1;
+            uv[at + 2] = (short)u1; uv[at + 3] = (short)v1;
+            uv[at + 4] = (short)u0; uv[at + 5] = (short)v0;
+            uv[at + 6] = (short)u1; uv[at + 7] = (short)v0;
+        }
+        VertexArray pa = new VertexArray(8, 3, 2);
+        pa.set(0, 8, positions);
+        VertexArray ta = new VertexArray(8, 2, 2);
+        ta.set(0, 8, uv);
+        VertexBuffer vb = new VertexBuffer();
+        vb.setPositions(pa, 1.0f / 64.0f, null);
+        vb.setTexCoords(0, ta, 1.0f / 256.0f, null);
+        PolygonMode polygon = new PolygonMode();
+        polygon.setCulling(PolygonMode.CULL_NONE);
+        Appearance spriteAppearance = appearance;
+        spriteAppearance.setPolygonMode(polygon);
+        int[] strips = {4,4};
+        return new Mesh(vb, new TriangleStripArray(0, strips), spriteAppearance);
     }
 
     private Mesh makeFireballSphere(Appearance appearance) {
@@ -1297,10 +1601,23 @@ final class MobSystem {
     private final class Fireball {
         final Group root = new Group();
         boolean active, reflected;
+        boolean blaze;
         int life;
         float x, y, z, vx, vy, vz;
         Fireball(Appearance appearance) {
             root.addChild(makeFireballSphere(appearance));
+            root.setRenderingEnable(false);
+        }
+    }
+
+    private final class Pearl {
+        final Group root = new Group();
+        boolean active;
+        int age;
+        float x, y, z, vx, vy, vz;
+
+        Pearl(Appearance appearance) {
+            root.addChild(makePearlMesh(appearance));
             root.setRenderingEnable(false);
         }
     }
@@ -1471,6 +1788,7 @@ final class MobSystem {
         boolean dying;
         boolean eggSpawned;
         boolean chasing;
+        boolean endermanAngry;
         boolean sheared;
         int woolColor;
         int walkTicks;
@@ -1493,6 +1811,7 @@ final class MobSystem {
             else if (type == COW) buildCow(appearance);
             else if (type == SPIDER) buildSpider(appearance, spiderEyes);
             else if (type == SLIME) buildSlime(appearance);
+            else if (type == BLAZE) buildBlaze(appearance);
             else if (type == GHAST) {
                 buildGhast(appearance);
                 pose.setTranslation(0.0f, -0.5f, 0.0f);
@@ -1656,28 +1975,39 @@ final class MobSystem {
         }
 
         private void buildEnderman(Appearance appearance) {
-            head.setTranslation(0.0f, 2.45f, 0.0f);
+            // Original 1.2.5 pivots: head/body at -14 px, arms at -12 px,
+            // and legs at -2 px. The model renderer's downward Y is flipped here.
+            head.setTranslation(0.0f, 2.875f, 0.0f);
             pose.addChild(head);
             addPart(head, 0, 0, 8, 8, 8, 8, 8, 8,
                     0.0f, 0.0f, 0.0f, 0, 0, 1, 0, appearance);
+            // ModelEnderman's headwear is the original half-pixel inflated layer.
+            addPart(head, 0, 16, 9, 9, 9, 8, 8, 8,
+                    0.0f, 0.0f, 0.0f, 0, 0, 1, 0, appearance);
             addPart(pose, 16, 16, 8, 12, 4, 8, 12, 4,
-                    0.0f, 1.35f, 0.0f, 0, 0, 1, 0, appearance);
+                    0.0f, 2.25f, 0.0f, 0, 0, 1, 0, appearance);
             for (int side = 0; side < 2; side++) {
                 float sign = side == 0 ? -1.0f : 1.0f;
                 Group arm = new Group();
-                arm.setTranslation(sign * 0.3125f, 1.35f, 0.0f);
+                float armX = side == 0 ? -0.1875f : 0.3125f;
+                arm.setTranslation(armX, 2.5f, 0.0f);
                 pose.addChild(arm);
                 Group armPitch = new Group();
+                Group armRoll = new Group();
                 arm.addChild(armPitch);
-                addPart(armPitch, 56, 0, 2, 30, 2, 2, 30, 2,
-                        0.0f, -0.9375f, 0.0f, 0, 0, 1, 0, appearance);
+                armPitch.addChild(armRoll);
+                addPart(armRoll, 56, 0, 2, 30, 2, 2, 30, 2,
+                        0.0f, -0.8125f, 0.0f, 0, 0, 1, 0, appearance,
+                        0.0f, 0.0f, 0.0f, side == 1);
                 arms[side] = arm;
                 armsPitch[side] = armPitch;
+                armsRoll[side] = armRoll;
                 Group leg = new Group();
-                leg.setTranslation(sign * 0.125f, 0.70f, 0.0f);
+                leg.setTranslation(sign * 0.125f, 1.875f, 0.0f);
                 pose.addChild(leg);
                 addPart(leg, 0, 16, 2, 30, 2, 2, 30, 2,
-                        0.0f, -0.9375f, 0.0f, 0, 0, 1, 0, appearance);
+                        0.0f, -0.9375f, 0.0f, 0, 0, 1, 0, appearance,
+                        0.0f, 0.0f, 0.0f, side == 1);
                 legs[side] = leg;
             }
         }
@@ -1828,6 +2158,23 @@ final class MobSystem {
                 addPart(tentacle, 0, 0, 2, length, 2, 2, length, 2,
                         0.0f, -length / 32.0f, 0.0f, 0, 0, 1, 0, appearance);
                 tentacles[i] = tentacle;
+            }
+        }
+
+        private void buildBlaze(Appearance appearance) {
+            addPart(pose, 0, 0, 8, 8, 8, 8, 8, 8,
+                    0.0f, 2.25f, 0.0f, 0, 0, 1, 0, appearance);
+            for (int i = 0; i < tentacles.length; i++) {
+                Group rod = new Group();
+                float angle = i * 30.0f * 0.017453292f;
+                float radius = i < 4 ? 0.31f : (i < 8 ? 0.25f : 0.18f);
+                float height = 1.35f + (i / 4) * 0.42f;
+                rod.setTranslation((float)Math.cos(angle) * radius, height,
+                        (float)Math.sin(angle) * radius);
+                pose.addChild(rod);
+                addPart(rod, 0, 16, 2, 8, 2, 2, 8, 2,
+                        0.0f, 0.0f, 0.0f, 0, 0, 1, 0, appearance);
+                tentacles[i] = rod;
             }
         }
 

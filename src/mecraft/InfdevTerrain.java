@@ -2,8 +2,22 @@ package mecraft;
 
 /** Deterministic, column-oriented terrain generation for streamed Infdev chunks. */
 final class InfdevTerrain {
-    static final int END_ISLAND_MIN_Y = 25;
-    static final int END_ISLAND_MAX_Y = 33;
+    static final int END_ISLAND_MIN_Y = 18;
+    static final int END_ISLAND_MAX_Y = 35;
+    static final int END_RENDER_MAX_Y = VoxelWorld.HEIGHT - 1;
+    private static final int[] END_PILLAR_OFFSETS = {
+        0, -9, 8, -4, 5, 8, -7, 6, -8, -2
+    };
+    private static final int[] END_PILLAR_HEIGHTS = { 23, 20, 24, 21, 23 };
+    private static final int END_EXIT_SIZE = 3;
+    private static final int END_EXIT_FOUNTAIN_SIZE = 7;
+    private static final int END_SPAWN_PLATFORM_WIDTH = 5;
+    private static final int END_SPAWN_PLATFORM_DEPTH = 2;
+    private static final int NETHER_FORTRESS_REGION = 256;
+    private static final int NETHER_FORTRESS_SIZE = 51;
+    private static final int NETHER_FORTRESS_CELLS = 10;
+    private static final int NETHER_FORTRESS_STEP = 5;
+    static final int NETHER_FORTRESS_FLOOR_Y = 11;
     static final int CHUNK_SIZE = 16;
     static final int WORLD_HEIGHT = VoxelWorld.HEIGHT;
     static final int SEA_LEVEL = VoxelWorld.SEA_LEVEL;
@@ -203,8 +217,9 @@ final class InfdevTerrain {
     }
 
     /**
-     * End island generator. Uses the same 16x16x64 chunk contract as the
-     * Overworld and Nether, while keeping every column outside the island empty.
+     * End island generator. The End is a bounded 48x48 area of void; only one
+     * irregular, tapered island is generated inside it. Keep a void margin on
+     * every edge so the island never gets clipped into the square world bounds.
      */
     static void generateEnd(int seed, int chunkX, int chunkZ, byte[] blocks,
                             int[] surfaceHeights, byte[] biomes) {
@@ -223,20 +238,400 @@ final class InfdevTerrain {
                 int wz = originZ + z;
                 int dx = wx - centerX;
                 int dz = wz - centerZ;
-                int rough = ((wx * 73428767 ^ wz * 912931 ^ seed) >>> 28) & 3;
-                int radius = 23 + rough;
-                int top = 32 + (rough & 1);
-                boolean island = dx * dx + dz * dz <= radius * radius;
+                int outlineNoise = valueNoise(seed ^ 0x45D9F3B, wx, wz, 11);
+                int detailNoise = valueNoise(seed ^ 0x27D4EB2D, wx, wz, 5);
+                int radius = 18 + (outlineNoise - 128) / 40 +
+                        (detailNoise - 128) / 112;
+                if (radius < 14) radius = 14;
+                if (radius > 22) radius = 22;
+                int distanceSquared = dx * dx + dz * dz;
+                boolean island = distanceSquared <= radius * radius;
                 int column = z * CHUNK_SIZE + x;
                 int base = column * WORLD_HEIGHT;
-                surfaceHeights[column] = island ? top : 0;
                 biomes[column] = 0;
+                int top = 0;
+                int bottom = 0;
+                if (island) {
+                    top = endSurfaceHeight(seed, wx, wz);
+
+                    int distance = (int)Math.sqrt(distanceSquared);
+                    int undersideNoise = valueNoise(seed ^ 0x9E3779B9, wx, wz, 7);
+                    int thickness = 3 + (radius - distance) / 3 + (undersideNoise - 128) / 96;
+                    if (thickness < 3) thickness = 3;
+                    if (thickness > 11) thickness = 11;
+                    bottom = top - thickness;
+                    surfaceHeights[column] = top;
+                } else {
+                    surfaceHeights[column] = 0;
+                }
                 for (int y = 0; y < WORLD_HEIGHT; y++) {
-                    blocks[base + y] = island && y <= top && y >= top - 7 ?
+                    blocks[base + y] = island && y >= bottom && y <= top ?
                             Block.END_STONE : Block.AIR;
+                }
+                for (int pillar = 0; pillar < END_PILLAR_HEIGHTS.length; pillar++) {
+                    if (!isEndPillarColumn(pillar, wx, wz)) continue;
+                    int pillarTop = endPillarTopY(seed, pillar);
+                    for (int y = top + 1; y <= pillarTop; y++) {
+                        blocks[base + y] = Block.OBSIDIAN;
+                    }
+                    break;
+                }
+                int fountainX = endExitFountainX(), fountainZ = endExitFountainZ();
+                if (wx >= fountainX && wx < fountainX + END_EXIT_FOUNTAIN_SIZE &&
+                        wz >= fountainZ && wz < fountainZ + END_EXIT_FOUNTAIN_SIZE) {
+                    int foundationY = endExitFoundationY(seed);
+                    int portalY = foundationY + 1;
+                    blocks[base + foundationY] = Block.BEDROCK;
+                    int innerX = endExitX(), innerZ = endExitZ();
+                    if (wx >= innerX && wx < innerX + END_EXIT_SIZE &&
+                            wz >= innerZ && wz < innerZ + END_EXIT_SIZE)
+                        blocks[base + portalY] = Block.BEDROCK;
+                    if (isEndExitFountainRim(wx, wz))
+                        blocks[base + portalY + 1] = Block.BEDROCK;
+                    if (isEndExitPostColumn(wx, wz)) {
+                        for (int y = portalY + 1; y <= portalY + 3; y++)
+                            blocks[base + y] = Block.BEDROCK;
+                    }
+                }
+                if (isEndSpawnPlatformColumn(wx, wz))
+                    blocks[base + endSpawnPlatformY(seed)] = Block.OBSIDIAN;
+            }
+        }
+    }
+
+    static int endPillarCount() { return END_PILLAR_HEIGHTS.length; }
+
+    static int endPillarX(int index) {
+        return VoxelWorld.WIDTH / 2 + END_PILLAR_OFFSETS[index * 2];
+    }
+
+    static int endPillarZ(int index) {
+        return VoxelWorld.DEPTH / 2 + END_PILLAR_OFFSETS[index * 2 + 1];
+    }
+
+    private static boolean isEndPillarColumn(int index, int x, int z) {
+        return x >= endPillarX(index) - 1 && x <= endPillarX(index) + 2 &&
+                z >= endPillarZ(index) - 1 && z <= endPillarZ(index) + 2;
+    }
+
+    static int endExitX() { return VoxelWorld.WIDTH / 2 - 1; }
+    static int endExitZ() { return VoxelWorld.DEPTH / 2 - 1; }
+
+    private static int endExitFountainX() { return VoxelWorld.WIDTH / 2 - END_EXIT_FOUNTAIN_SIZE / 2; }
+    private static int endExitFountainZ() { return VoxelWorld.DEPTH / 2 - END_EXIT_FOUNTAIN_SIZE / 2; }
+
+    private static boolean isEndExitFountainRim(int x, int z) {
+        int x0 = endExitFountainX(), z0 = endExitFountainZ();
+        return x == x0 || x == x0 + END_EXIT_FOUNTAIN_SIZE - 1 ||
+                z == z0 || z == z0 + END_EXIT_FOUNTAIN_SIZE - 1;
+    }
+
+    static int endSpawnPlatformX() { return VoxelWorld.WIDTH / 2 - END_SPAWN_PLATFORM_WIDTH / 2; }
+    static int endSpawnPlatformZ() { return 0; }
+
+    private static boolean isEndSpawnPlatformColumn(int x, int z) {
+        return x >= endSpawnPlatformX() && x < endSpawnPlatformX() + END_SPAWN_PLATFORM_WIDTH &&
+                z >= endSpawnPlatformZ() && z < endSpawnPlatformZ() + END_SPAWN_PLATFORM_DEPTH;
+    }
+
+    static int endSpawnPlatformY(int seed) {
+        return endExitBaseY(seed);
+    }
+
+    private static boolean isEndExitPostColumn(int x, int z) {
+        return x == VoxelWorld.WIDTH / 2 && z == VoxelWorld.DEPTH / 2;
+    }
+
+    static int endExitBaseY(int seed) {
+        return endExitFoundationY(seed) + 1;
+    }
+
+    private static int endExitFoundationY(int seed) {
+        int max = 0;
+        int x0 = endExitFountainX(), z0 = endExitFountainZ();
+        for (int z = z0; z < z0 + END_EXIT_FOUNTAIN_SIZE; z++)
+            for (int x = x0; x < x0 + END_EXIT_FOUNTAIN_SIZE; x++) {
+                int height = endSurfaceHeight(seed, x, z);
+                if (height > max) max = height;
+            }
+        return max;
+    }
+
+    static int endExitBaseY(VoxelWorld world) {
+        // The center column contains the bedrock post, so derive the portal
+        // level from the full fountain footprint instead of scanning blocks.
+        return endExitBaseY(world.seed);
+    }
+
+    static void ensureEndExitStructure(VoxelWorld world) {
+        // Keep an activated exit while rebuilding both the legacy and current
+        // fountain layouts into the complete bedrock basin.
+        int legacyX = VoxelWorld.WIDTH / 2 - 2;
+        int legacyZ = VoxelWorld.DEPTH / 2 - 2;
+        int legacyBaseY = legacyEndExitBaseY(world.seed);
+        boolean wasActive = false;
+        int portalScanMaxY = Math.min(VoxelWorld.HEIGHT - 1, END_ISLAND_MAX_Y + 8);
+        for (int y = END_ISLAND_MIN_Y; y <= portalScanMaxY; y++)
+            for (int z = legacyZ + 1; z <= legacyZ + 3; z++)
+                for (int x = legacyX + 1; x <= legacyX + 3; x++) {
+                    int at = (y * VoxelWorld.DEPTH + z) * VoxelWorld.WIDTH + x;
+                    if (world.blocks[at] == Block.END_PORTAL) {
+                        wasActive = true;
+                        world.blocks[at] = Block.AIR;
+                    }
+                }
+        for (int z = legacyZ; z < legacyZ + 5; z++) {
+            for (int x = legacyX; x < legacyX + 5; x++) {
+                int at = (legacyBaseY * VoxelWorld.DEPTH + z) * VoxelWorld.WIDTH + x;
+                if (world.blocks[at] == Block.BEDROCK) world.blocks[at] = Block.END_STONE;
+            }
+        }
+        for (int y = legacyBaseY + 1; y <= legacyBaseY + 4; y++)
+            for (int z = legacyZ; z < legacyZ + 5; z++)
+                for (int x = legacyX; x < legacyX + 5; x++) {
+                    int at = (y * VoxelWorld.DEPTH + z) * VoxelWorld.WIDTH + x;
+                    if (world.blocks[at] == Block.BEDROCK) world.blocks[at] = Block.AIR;
+                }
+
+        int x0 = endExitFountainX(), z0 = endExitFountainZ();
+        int foundationY = endExitFoundationY(world.seed);
+        int portalY = foundationY + 1;
+        int innerX = endExitX(), innerZ = endExitZ();
+        for (int z = z0; z < z0 + END_EXIT_FOUNTAIN_SIZE; z++) {
+            for (int x = x0; x < x0 + END_EXIT_FOUNTAIN_SIZE; x++) {
+                world.blocks[(foundationY * VoxelWorld.DEPTH + z) * VoxelWorld.WIDTH + x] = Block.BEDROCK;
+                if (x >= innerX && x < innerX + END_EXIT_SIZE &&
+                        z >= innerZ && z < innerZ + END_EXIT_SIZE)
+                    world.blocks[(portalY * VoxelWorld.DEPTH + z) * VoxelWorld.WIDTH + x] = Block.BEDROCK;
+                if (isEndExitFountainRim(x, z))
+                    world.blocks[((portalY + 1) * VoxelWorld.DEPTH + z) * VoxelWorld.WIDTH + x] = Block.BEDROCK;
+            }
+        }
+        int postX = VoxelWorld.WIDTH / 2, postZ = VoxelWorld.DEPTH / 2;
+        for (int y = portalY + 1; y <= portalY + 3; y++)
+            world.blocks[(y * VoxelWorld.DEPTH + postZ) * VoxelWorld.WIDTH + postX] = Block.BEDROCK;
+        if (wasActive) {
+            for (int z = z0; z < z0 + END_EXIT_SIZE; z++)
+                for (int x = x0; x < x0 + END_EXIT_SIZE; x++)
+                    world.blocks[(portalY * VoxelWorld.DEPTH + z) * VoxelWorld.WIDTH + x] =
+                            x == VoxelWorld.WIDTH / 2 && z == VoxelWorld.DEPTH / 2 ?
+                            Block.BEDROCK : Block.END_PORTAL;
+        }
+    }
+
+    private static int legacyEndExitBaseY(int seed) {
+        int max = 0, x0 = VoxelWorld.WIDTH / 2 - 2, z0 = VoxelWorld.DEPTH / 2 - 2;
+        for (int z = z0; z < z0 + 5; z++)
+            for (int x = x0; x < x0 + 5; x++) {
+                int height = endSurfaceHeight(seed, x, z);
+                if (height > max) max = height;
+            }
+        return max;
+    }
+
+    static void ensureEndSpawnPlatform(VoxelWorld world) {
+        int x0 = endSpawnPlatformX(), z0 = endSpawnPlatformZ();
+        int y = endSpawnPlatformY(world.seed);
+        for (int z = z0; z < z0 + END_SPAWN_PLATFORM_DEPTH; z++) {
+            for (int x = x0; x < x0 + END_SPAWN_PLATFORM_WIDTH; x++) {
+                for (int clearY = END_ISLAND_MIN_Y; clearY <= END_ISLAND_MAX_Y; clearY++) {
+                    int at = (clearY * VoxelWorld.DEPTH + z) * VoxelWorld.WIDTH + x;
+                    if (world.blocks[at] == Block.END_STONE) world.blocks[at] = Block.AIR;
+                }
+                world.blocks[(y * VoxelWorld.DEPTH + z) * VoxelWorld.WIDTH + x] = Block.OBSIDIAN;
+            }
+        }
+    }
+
+    static int endPillarTopY(int seed, int index) {
+        int x = endPillarX(index), z = endPillarZ(index);
+        return endSurfaceHeight(seed, x, z) + END_PILLAR_HEIGHTS[index];
+    }
+
+    static int endPillarHeight(int index) { return END_PILLAR_HEIGHTS[index]; }
+
+    static int endPillarTopY(VoxelWorld world, int index) {
+        int x = endPillarX(index), z = endPillarZ(index);
+        for (int y = VoxelWorld.HEIGHT - 1; y >= 1; y--)
+            if (world.get(x, y, z) == Block.OBSIDIAN) return y;
+        return endPillarTopY(world.seed, index);
+    }
+
+    static void ensureEndPillars(VoxelWorld world) {
+        for (int i = 0; i < endPillarCount(); i++) {
+            int centerX = endPillarX(i), centerZ = endPillarZ(i);
+            int centerSurface = findEndSurface(world, centerX, centerZ);
+            if (centerSurface == 0) continue;
+            int pillarTop = centerSurface + endPillarHeight(i);
+            if (pillarTop >= VoxelWorld.HEIGHT) pillarTop = VoxelWorld.HEIGHT - 1;
+            for (int z = centerZ - 1; z <= centerZ + 2; z++) {
+                for (int x = centerX - 1; x <= centerX + 2; x++) {
+                    if (world.get(x, pillarTop, z) == Block.OBSIDIAN) continue;
+                    int surface = findEndSurface(world, x, z);
+                    for (int y = surface + 1; surface > 0 && y <= pillarTop; y++)
+                        world.blocks[(y * VoxelWorld.DEPTH + z) * VoxelWorld.WIDTH + x] = Block.OBSIDIAN;
                 }
             }
         }
+    }
+
+    /** Sparse, seed-stable nether-brick labyrinths, aligned across chunk edges. */
+    private static void generateNetherFortresses(int seed, int chunkX, int chunkZ,
+                                                  byte[] blocks) {
+        int originX = chunkX * CHUNK_SIZE, originZ = chunkZ * CHUNK_SIZE;
+        int regionX = floorDivide(originX, NETHER_FORTRESS_REGION);
+        int regionZ = floorDivide(originZ, NETHER_FORTRESS_REGION);
+        for (int rz = regionZ - 1; rz <= regionZ + 1; rz++) {
+            for (int rx = regionX - 1; rx <= regionX + 1; rx++) {
+                int regionHash = hash(seed ^ 0x6D2B79F5, rx, 0, rz);
+                if ((regionHash & 7) != 0) continue;
+                int centerX = rx * NETHER_FORTRESS_REGION + 32 + ((regionHash >>> 8) & 191);
+                int centerZ = rz * NETHER_FORTRESS_REGION + 32 + ((regionHash >>> 17) & 191);
+                int minX = centerX - NETHER_FORTRESS_SIZE / 2;
+                int minZ = centerZ - NETHER_FORTRESS_SIZE / 2;
+                if (minX >= originX + CHUNK_SIZE || minX + NETHER_FORTRESS_SIZE <= originX ||
+                        minZ >= originZ + CHUNK_SIZE || minZ + NETHER_FORTRESS_SIZE <= originZ)
+                    continue;
+                boolean[][] east = new boolean[NETHER_FORTRESS_CELLS][NETHER_FORTRESS_CELLS];
+                boolean[][] south = new boolean[NETHER_FORTRESS_CELLS][NETHER_FORTRESS_CELLS];
+                buildFortressMaze(seed ^ regionHash, east, south);
+                for (int z = 0; z < CHUNK_SIZE; z++) {
+                    int wz = originZ + z;
+                    int localZ = wz - minZ;
+                    if (localZ < 0 || localZ >= NETHER_FORTRESS_SIZE) continue;
+                    for (int x = 0; x < CHUNK_SIZE; x++) {
+                        int wx = originX + x;
+                        int localX = wx - minX;
+                        if (localX < 0 || localX >= NETHER_FORTRESS_SIZE) continue;
+                        int base = (z * CHUNK_SIZE + x) * WORLD_HEIGHT;
+                        blocks[base + NETHER_FORTRESS_FLOOR_Y] = Block.NETHER_BRICK;
+                        blocks[base + NETHER_FORTRESS_FLOOR_Y + 5] = Block.NETHER_BRICK;
+                        for (int y = NETHER_FORTRESS_FLOOR_Y + 1;
+                                y < NETHER_FORTRESS_FLOOR_Y + 5; y++)
+                            blocks[base + y] = Block.AIR;
+                        if (fortressWall(localX, localZ, east, south)) {
+                            for (int y = NETHER_FORTRESS_FLOOR_Y + 1;
+                                    y < NETHER_FORTRESS_FLOOR_Y + 5; y++)
+                                blocks[base + y] = Block.NETHER_BRICK;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static boolean fortressWall(int x, int z, boolean[][] east, boolean[][] south) {
+        if (x == 0 || z == 0 || x == NETHER_FORTRESS_SIZE - 1 ||
+                z == NETHER_FORTRESS_SIZE - 1) {
+            // A three-block-wide southern entry connects the maze to the cavern.
+            return !(z == 0 && x >= NETHER_FORTRESS_SIZE / 2 - 1 &&
+                    x <= NETHER_FORTRESS_SIZE / 2 + 1);
+        }
+        int cellX = x / NETHER_FORTRESS_STEP;
+        int cellZ = z / NETHER_FORTRESS_STEP;
+        if (x % NETHER_FORTRESS_STEP == 0) {
+            int west = cellX - 1;
+            if (west >= 0 && west < NETHER_FORTRESS_CELLS &&
+                    cellZ >= 0 && cellZ < NETHER_FORTRESS_CELLS &&
+                    z % NETHER_FORTRESS_STEP >= 1 && z % NETHER_FORTRESS_STEP <= 3 &&
+                    east[west][cellZ]) return false;
+            return true;
+        }
+        if (z % NETHER_FORTRESS_STEP == 0) {
+            int north = cellZ - 1;
+            if (north >= 0 && north < NETHER_FORTRESS_CELLS &&
+                    cellX >= 0 && cellX < NETHER_FORTRESS_CELLS &&
+                    x % NETHER_FORTRESS_STEP >= 1 && x % NETHER_FORTRESS_STEP <= 3 &&
+                    south[cellX][north]) return false;
+            return true;
+        }
+        return false;
+    }
+
+    private static void buildFortressMaze(int seed, boolean[][] east, boolean[][] south) {
+        boolean[][] visited = new boolean[NETHER_FORTRESS_CELLS][NETHER_FORTRESS_CELLS];
+        int[] stack = new int[NETHER_FORTRESS_CELLS * NETHER_FORTRESS_CELLS];
+        int[] choices = new int[4];
+        int top = 0, step = 0;
+        stack[0] = 0;
+        visited[0][0] = true;
+        while (top >= 0) {
+            int cell = stack[top];
+            int cx = cell % NETHER_FORTRESS_CELLS;
+            int cz = cell / NETHER_FORTRESS_CELLS;
+            int count = 0;
+            if (cx > 0 && !visited[cz][cx - 1]) choices[count++] = 0;
+            if (cx + 1 < NETHER_FORTRESS_CELLS && !visited[cz][cx + 1]) choices[count++] = 1;
+            if (cz > 0 && !visited[cz - 1][cx]) choices[count++] = 2;
+            if (cz + 1 < NETHER_FORTRESS_CELLS && !visited[cz + 1][cx]) choices[count++] = 3;
+            if (count == 0) { top--; continue; }
+            int pick = (hash(seed, step++, cell, count) & 0x7fffffff) % count;
+            int direction = choices[pick];
+            int nx = cx, nz = cz;
+            if (direction == 0) nx--;
+            else if (direction == 1) { east[cz][cx] = true; nx++; }
+            else if (direction == 2) nz--;
+            else { south[cz][cx] = true; nz++; }
+            if (direction == 0) east[nz][nx] = true;
+            else if (direction == 2) south[nz][nx] = true;
+            visited[nz][nx] = true;
+            stack[++top] = nz * NETHER_FORTRESS_CELLS + nx;
+        }
+    }
+
+    private static int floorDivide(int value, int divisor) {
+        int quotient = value / divisor;
+        if (value < 0 && value % divisor != 0) quotient--;
+        return quotient;
+    }
+
+    static void ensureEndIslandExpansion(VoxelWorld world) {
+        int centerX = VoxelWorld.WIDTH / 2, centerZ = VoxelWorld.DEPTH / 2;
+        for (int z = 0; z < VoxelWorld.DEPTH; z++) {
+            for (int x = 0; x < VoxelWorld.WIDTH; x++) {
+                int dx = x - centerX, dz = z - centerZ;
+                int distanceSquared = dx * dx + dz * dz;
+                int outline = valueNoise(world.seed ^ 0x45D9F3B, x, z, 11);
+                int detail = valueNoise(world.seed ^ 0x27D4EB2D, x, z, 5);
+                int oldRadius = 17 + (outline - 128) / 40 + (detail - 128) / 112;
+                if (oldRadius < 13) oldRadius = 13;
+                if (oldRadius > 21) oldRadius = 21;
+                int newRadius = oldRadius + 1;
+                if (newRadius < 14) newRadius = 14;
+                if (newRadius > 22) newRadius = 22;
+                if (distanceSquared <= oldRadius * oldRadius ||
+                        distanceSquared > newRadius * newRadius) continue;
+                boolean occupied = false;
+                for (int y = END_ISLAND_MIN_Y; y <= END_ISLAND_MAX_Y; y++) {
+                    if (world.get(x, y, z) != Block.AIR) { occupied = true; break; }
+                }
+                if (occupied) continue;
+                int top = endSurfaceHeight(world.seed, x, z);
+                int distance = (int)Math.sqrt(distanceSquared);
+                int underside = valueNoise(world.seed ^ 0x9E3779B9, x, z, 7);
+                int thickness = 3 + (newRadius - distance) / 3 + (underside - 128) / 96;
+                if (thickness < 3) thickness = 3;
+                if (thickness > 11) thickness = 11;
+                int bottom = top - thickness;
+                for (int y = bottom; y <= top; y++)
+                    world.blocks[(y * VoxelWorld.DEPTH + z) * VoxelWorld.WIDTH + x] = Block.END_STONE;
+            }
+        }
+    }
+
+    private static int findEndSurface(VoxelWorld world, int x, int z) {
+        for (int y = VoxelWorld.HEIGHT - 1; y >= 18; y--)
+            if (world.get(x, y, z) == Block.END_STONE) return y;
+        return 0;
+    }
+
+    private static int endSurfaceHeight(int seed, int x, int z) {
+        int heightNoise = valueNoise(seed ^ 0x165667B1, x, z, 13);
+        int heightDetail = valueNoise(seed ^ 0xD3A2646C, x, z, 6);
+        int top = 32 + (heightNoise - 128) / 48 + (heightDetail - 128) / 128;
+        if (top < 29) return 29;
+        if (top > 35) return 35;
+        return top;
     }
 
     /** Economic Nether uses fewer height-noise samples while retaining lava rivers. */
@@ -295,6 +690,7 @@ final class InfdevTerrain {
                 }
             }
         }
+        generateNetherFortresses(seed, chunkX, chunkZ, blocks);
     }
 
     static int economicNetherFloorHeight(int seed, int x, int z) {

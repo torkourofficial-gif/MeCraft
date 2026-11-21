@@ -37,6 +37,7 @@ final class ParticleSystem {
     private final int[] tileX = new int[CAPACITY];
     private final int[] tileY = new int[CAPACITY];
     private final boolean[] dust = new boolean[CAPACITY];
+    private final boolean[] explosion = new boolean[CAPACITY];
 
     private final short[] positions = new short[VERTICES * 3];
     private final short[] texCoords = new short[VERTICES * 2];
@@ -106,7 +107,7 @@ final class ParticleSystem {
     }
 
     /** Four small block fragments, using the broken block's atlas tile. */
-    void spawnBlockDestroy(int bx, int by, int bz, int blockTile) {
+    synchronized void spawnBlockDestroy(int bx, int by, int bz, int blockTile) {
         for (int n = 0; n < 4; n++) {
             int i = nextSlot();
             float ox = (n & 1) == 0 ? 0.25f : 0.75f;
@@ -125,13 +126,14 @@ final class ParticleSystem {
             tileX[i] = (int)(nextRandom() * 4.0f);
             tileY[i] = (int)(nextRandom() * 4.0f);
             dust[i] = false;
+            explosion[i] = false;
             writeTileUV(i);
         }
         uvDirty = true;
     }
 
     /** Four short-lived brown puffs when a mob dies. */
-    void spawnMobDeath(float px, float py, float pz) {
+    synchronized void spawnMobDeath(float px, float py, float pz) {
         for (int n = 0; n < 4; n++) {
             int i = nextSlot();
             x[i] = px + randomRange(0.22f);
@@ -147,6 +149,42 @@ final class ParticleSystem {
             tileX[i] = (int)(nextRandom() * 12.0f);
             tileY[i] = (int)(nextRandom() * 12.0f);
             dust[i] = true;
+            explosion[i] = false;
+            writeTileUV(i);
+        }
+        uvDirty = true;
+    }
+
+    synchronized void spawnDragonExplosion(float px, float py, float pz,
+                                            boolean finalBurst) {
+        int count = finalBurst ? CAPACITY : 8;
+        int glowTile = Block.atlasTile(Block.GLOWSTONE);
+        for (int n = 0; n < count; n++) {
+            int i = nextSlot();
+            float angle = nextRandom() * 6.2831855f;
+            float vertical = finalBurst ? nextRandom() * 2.0f - 1.0f :
+                    nextRandom() * 0.5f - 0.25f;
+            float horizontal = finalBurst ?
+                    (float)Math.sqrt(1.0f - vertical * vertical) : 1.0f;
+            float speed = finalBurst ? 0.20f + nextRandom() * 0.28f :
+                    0.08f + nextRandom() * 0.14f;
+            float spread = finalBurst ? 0.30f : 0.45f;
+            x[i] = px + randomRange(spread);
+            y[i] = py + randomRange(spread);
+            z[i] = pz + randomRange(spread);
+            vx[i] = (float)Math.cos(angle) * horizontal * speed;
+            vy[i] = vertical * speed;
+            vz[i] = (float)Math.sin(angle) * horizontal * speed;
+            size[i] = finalBurst ? 0.42f + nextRandom() * 0.55f :
+                    0.09f + nextRandom() * 0.11f;
+            age[i] = 0;
+            lifetime[i] = finalBurst ? 26 + (int)(nextRandom() * 14.0f) :
+                    12 + (int)(nextRandom() * 9.0f);
+            tile[i] = glowTile;
+            tileX[i] = (int)(nextRandom() * 12.0f);
+            tileY[i] = (int)(nextRandom() * 12.0f);
+            dust[i] = false;
+            explosion[i] = true;
             writeTileUV(i);
         }
         uvDirty = true;
@@ -172,7 +210,7 @@ final class ParticleSystem {
         texCoords[at + 7] = (short)v;
     }
 
-    void update(VoxelWorld world, float yawDegrees, float pitchDegrees) {
+    synchronized void update(VoxelWorld world, float yawDegrees, float pitchDegrees) {
         boolean anyActive = false;
         for (int i = 0; i < CAPACITY; i++) {
             if (age[i] >= lifetime[i]) {
@@ -182,14 +220,15 @@ final class ParticleSystem {
 
             anyActive = true;
             age[i]++;
-            if (dust[i]) vy[i] += 0.001f;
+            if (explosion[i]) vy[i] += 0.001f;
+            else if (dust[i]) vy[i] += 0.001f;
             else vy[i] -= 0.04f;
 
             x[i] += vx[i];
             y[i] += vy[i];
             z[i] += vz[i];
 
-            if (!dust[i]) {
+            if (!dust[i] && !explosion[i]) {
                 int below = floorInt(y[i] - size[i]);
                 if (world.isSolidAt(floorInt(x[i]), below, floorInt(z[i]))) {
                     y[i] = below + 1.0f + size[i];
@@ -199,11 +238,15 @@ final class ParticleSystem {
                 }
             }
 
-            vx[i] *= dust[i] ? 0.92f : 0.98f;
-            vy[i] *= dust[i] ? 0.96f : 0.98f;
-            vz[i] *= dust[i] ? 0.92f : 0.98f;
+            vx[i] *= explosion[i] ? 0.88f : (dust[i] ? 0.92f : 0.98f);
+            vy[i] *= explosion[i] ? 0.88f : (dust[i] ? 0.96f : 0.98f);
+            vz[i] *= explosion[i] ? 0.88f : (dust[i] ? 0.92f : 0.98f);
 
-            if (dust[i]) {
+            if (explosion[i]) {
+                int alpha = 255 - age[i] * 255 / lifetime[i];
+                int green = 220 - age[i] * 130 / lifetime[i];
+                setColor(i, 255, green, 35, alpha);
+            } else if (dust[i]) {
                 int alpha = 230 - age[i] * 230 / lifetime[i];
                 setColor(i, 165, 132, 91, alpha);
             } else {

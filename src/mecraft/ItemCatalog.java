@@ -92,7 +92,10 @@ final class ItemCatalog {
     static final int SPAWN_EGG_PIG_ZOMBIE = SPAWN_EGG_GHAST + 1;
     static final int SPAWN_EGG_COUNT = 11;
     static final int END_PORTAL_EYE = SPAWN_EGG_PIG + SPAWN_EGG_COUNT;
-    static final int COUNT = END_PORTAL_EYE + 1;
+    static final int ENDER_PEARL = END_PORTAL_EYE + 1;
+    static final int BLAZE_ROD = ENDER_PEARL + 1;
+    static final int BLAZE_POWDER = BLAZE_ROD + 1;
+    static final int COUNT = BLAZE_POWDER + 1;
 
     static final int SWORD = 0;
     static final int SHOVEL = 1;
@@ -214,6 +217,9 @@ final class ItemCatalog {
     static int iconIndex(int id) {
         if (isSpawnEgg(id)) return -1;
         if (id == END_PORTAL_EYE) return 155;
+        if (id == ENDER_PEARL) return 107;
+        if (id == BLAZE_ROD) return 108;
+        if (id == BLAZE_POWDER) return 157;
         // Alpha's wooden door item icon in items.png (tile 43).
         if (id == Block.DOOR) return 43;
         if (id == Block.IRON_DOOR) return 44;
@@ -230,6 +236,9 @@ final class ItemCatalog {
 
     static String name(int id) {
         if (id == END_PORTAL_EYE) return "Ojo de Ender";
+        if (id == ENDER_PEARL) return "Perla de Ender";
+        if (id == BLAZE_ROD) return "Vara de Blaze";
+        if (id == BLAZE_POWDER) return "Polvo de Blaze";
         if (isSpawnEgg(id)) {
             String[] eggNames = new String[] { "Huevo de spawn de cerdo", "Huevo de spawn de oveja",
                 "Huevo de spawn de zombi", "Huevo de spawn de creeper", "Huevo de spawn de esqueleto",
@@ -312,7 +321,8 @@ final class ItemCatalog {
                                     block == Block.REDSTONE_ORE || block == Block.END_STONE ||
                                     block == Block.GOLD_BLOCK ||
                                     block == Block.IRON_BLOCK || block == Block.DIAMOND_BLOCK ||
-                                    block == Block.NETHERRACK || block == Block.GLOWSTONE;
+                                    block == Block.NETHERRACK || block == Block.NETHER_BRICK ||
+                                    block == Block.GLOWSTONE;
         if (kind == SHOVEL) return block == Block.GRASS || block == Block.DIRT ||
                                     block == Block.SAND || block == Block.FARMLAND || block == Block.SNOW;
         if (kind == AXE) return block == Block.LOG || block == Block.PLANKS ||

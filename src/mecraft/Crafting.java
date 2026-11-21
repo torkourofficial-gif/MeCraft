@@ -6,16 +6,18 @@ final class Crafting {
     static final int PLANKS_TO_TABLE = 1;
     static final int PLANKS_TO_STICKS = 2;
     static final int TORCHES = 3;
-    static final int BASIC_RECIPES = 4;
+    static final int BLAZE_POWDER_RECIPE = 4;
+    static final int ENDER_EYE_RECIPE = 5;
+    static final int BASIC_RECIPES = 6;
     static final int DOOR = BASIC_RECIPES;
     static final int IRON_DOOR = BASIC_RECIPES + 1;
     static final int FURNACE_RECIPE = BASIC_RECIPES + 2;
     static final int TOOL_RECIPES = BASIC_RECIPES + 3;
     private static final int TOOL_RECIPE_COUNT = ItemCatalog.TOOL_KINDS * ItemCatalog.TOOL_TIERS;
-    private static final int FOOD_AND_ITEM_RECIPES = 8;
+    private static final int FOOD_AND_ITEM_RECIPES = 12;
     private static final int ARMOR_RECIPES = 4 * 4;
     static final int RECIPE_COUNT = TOOL_RECIPES + TOOL_RECIPE_COUNT +
-                                    FOOD_AND_ITEM_RECIPES + ARMOR_RECIPES + 3;
+                                    FOOD_AND_ITEM_RECIPES + ARMOR_RECIPES;
 
     static final int[] OUTPUT = new int[RECIPE_COUNT];
     static final int[] OUTPUT_COUNT = new int[RECIPE_COUNT];
@@ -27,6 +29,10 @@ final class Crafting {
         setRecipe(PLANKS_TO_TABLE, Block.CRAFTING_TABLE, 1, "Mesa de trabajo", Block.PLANKS, 4, 0, 0);
         setRecipe(PLANKS_TO_STICKS, ItemCatalog.STICK, 4, "4 Palos", Block.PLANKS, 2, 0, 0);
         setRecipe(TORCHES, Block.TORCH, 4, "4 Antorchas", Block.COAL, 1, ItemCatalog.STICK, 1);
+        setRecipe(BLAZE_POWDER_RECIPE, ItemCatalog.BLAZE_POWDER, 2, "2 Polvos de Blaze",
+                ItemCatalog.BLAZE_ROD, 1);
+        setRecipe(ENDER_EYE_RECIPE, ItemCatalog.END_PORTAL_EYE, 1, "Ojo de Ender",
+                ItemCatalog.ENDER_PEARL, 1, ItemCatalog.BLAZE_POWDER, 1);
         setRecipe(DOOR, Block.DOOR, 3, "3 Puertas", Block.PLANKS, 6, 0, 0);
         setRecipe(IRON_DOOR, ItemCatalog.IRON_DOOR, 3, "3 Puertas de hierro",
                 ItemCatalog.IRON_INGOT, 6);

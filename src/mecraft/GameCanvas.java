@@ -188,6 +188,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private boolean lookUp, lookDown, lookLeft, lookRight;
     private VoxelWorld world;
     private ChunkRenderer renderer;
+    private String gameUpdateStage = "inicio del tick";
+    private int reportedSubsystemFailures;
+    private static final int UPDATE_FAILURE_HAND = 1;
+    private static final int UPDATE_FAILURE_LIGHTING = 2;
+    private static final int UPDATE_FAILURE_MOBS = 4;
+    private static final int UPDATE_FAILURE_DROPS = 8;
+    private static final int UPDATE_FAILURE_CAMERA = 16;
+    private static final int UPDATE_FAILURE_PARTICLES = 32;
     private boolean ridingBoat;
     private boolean ridingMinecart;
     private MusicController music;
@@ -261,12 +269,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private volatile boolean endPortalWorldReady;
     private volatile String endPortalTransitionFailure;
     private volatile Throwable endPortalTransitionProblem;
+    private volatile int endPortalTargetDimension = VoxelWorld.DIM_END;
     private float overworldPortalReturnX, overworldPortalReturnY, overworldPortalReturnZ;
     private float netherPortalReturnX, netherPortalReturnY, netherPortalReturnZ;
     private boolean hasOverworldPortalReturn, hasNetherPortalReturn;
     private final float[] dimensionReturnX = new float[VoxelWorld.DIMENSION_COUNT];
     private final float[] dimensionReturnY = new float[VoxelWorld.DIMENSION_COUNT];
     private final float[] dimensionReturnZ = new float[VoxelWorld.DIMENSION_COUNT];
+    private final float[] dimensionReturnYaw = new float[VoxelWorld.DIMENSION_COUNT];
     private final boolean[] hasDimensionReturn = new boolean[VoxelWorld.DIMENSION_COUNT];
     private static final int PORTAL_CHARGE_TICKS = 100;
     private Image waterTint;
@@ -329,13 +339,46 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     public void run() {
+        boolean loopFailureReported = false;
+        boolean musicFailureReported = false;
         while (running) {
             long start = System.currentTimeMillis();
-            if (music != null) music.update(visible ? musicModeForState() : MusicController.OFF);
-            if (visible && state == PLAYING) updateGame();
-            if (visible && state == FURNACE_INVENTORY) { updateFurnace(); repaint(); }
-            if (visible && state == GAME_OVER && gameOverTicks < 12) gameOverTicks++;
-            if (visible && (state != PLAYING || renderFrame++ % (frameSkip + 1) == 0)) repaint();
+            if (visible && state == PLAYING) {
+                try {
+                    updateGame();
+                    loopFailureReported = false;
+                } catch (Throwable problem) {
+                    if (!loopFailureReported) {
+                        String stage = gameUpdateStage;
+                        System.out.println("MeCraft: excepción en el bucle de juego (" + stage + "): " + problem);
+                        problem.printStackTrace();
+                        loopFailureReported = true;
+                    }
+                }
+            }
+            // Audio is optional and runs after gameplay so an MMAPI failure
+            // cannot skip movement, camera input, or this frame's repaint.
+            if (music != null) {
+                try {
+                    music.update(visible ? musicModeForState() : MusicController.OFF);
+                    musicFailureReported = false;
+                } catch (Throwable problem) {
+                    if (!musicFailureReported) {
+                        System.out.println("MeCraft: excepción en el audio: " + problem);
+                        problem.printStackTrace();
+                        musicFailureReported = true;
+                    }
+                    try { music.close(); } catch (Throwable ignored) { }
+                    music = null;
+                }
+            }
+            try {
+                if (visible && state == FURNACE_INVENTORY) { updateFurnace(); repaint(); }
+                if (visible && state == GAME_OVER && gameOverTicks < 12) gameOverTicks++;
+                if (visible && (state != PLAYING || renderFrame++ % (frameSkip + 1) == 0)) repaint();
+            } catch (Throwable problem) {
+                if (visible) repaint();
+            }
             long elapsed = System.currentTimeMillis() - start;
             reportFrameProfile(start, elapsed);
             long wait = 50L - elapsed;
@@ -438,6 +481,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void updateGameLocked() {
         if (endPortalTransitionPending || !visible || state != PLAYING || world == null || renderer == null) return;
+        gameUpdateStage = "procesando controles";
         if (lanGameActive) processLanPacketsLocked();
         if (sprintToggleTimer > 0) sprintToggleTimer--;
         if (pendingIronDoorTicks > 0 && --pendingIronDoorTicks == 0)
@@ -451,11 +495,24 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (lookDown) cameraPitch -= 2.5f * sensitivity;
         if (cameraPitch > 80.0f) cameraPitch = 80.0f;
         if (cameraPitch < -80.0f) cameraPitch = -80.0f;
-        renderer.updateHandAnimation();
+        try {
+            renderer.updateHandAnimation();
+            reportedSubsystemFailures &= ~UPDATE_FAILURE_HAND;
+        } catch (Throwable problem) {
+            reportGameUpdateFailure(UPDATE_FAILURE_HAND, "animación de la mano", problem);
+        }
 
+        gameUpdateStage = "avanzando el tiempo del mundo";
         world.tickTime();
-        renderer.updateDayNight(world);
+        gameUpdateStage = "actualizando iluminación";
+        try {
+            renderer.updateDayNight(world);
+            reportedSubsystemFailures &= ~UPDATE_FAILURE_LIGHTING;
+        } catch (Throwable problem) {
+            reportGameUpdateFailure(UPDATE_FAILURE_LIGHTING, "iluminación", problem);
+        }
 
+        gameUpdateStage = "actualizando fluidos";
         world.updateFluids();
         float forward = 0.0f;
         float strafe = 0.0f;
@@ -527,6 +584,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             }
         }
         if (!ridingBoat && !ridingMinecart) {
+            gameUpdateStage = "actualizando física del jugador";
             fallDamage = playerPhysics.update(world, forward, strafe, jumpHeld,
                     world.mode == 1 && flying, descendHeld, sprint);
         }
@@ -536,8 +594,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             damagePlayer(fallDamage);
         }
         if (world.touchesEndPortal(world.playerX, world.playerY, world.playerZ)) {
-            // The End is one-way: transfer immediately, without the Nether's
-            // five-second portal charge.
+            // End portals transfer immediately, without the Nether's charge.
             portalChargeTicks = 0;
             travelThroughEndPortal();
         } else if (world.touchesPortal(world.playerX, world.playerY, world.playerZ)) {
@@ -549,7 +606,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             portalChargeTicks = 0;
         }
         if (endPortalTransitionPending || state != PLAYING) return;
-        int mobDamage = renderer.updateMobs(world);
+        gameUpdateStage = "actualizando entidades del End";
+        int mobDamage = 0;
+        try {
+            ensureLookRay();
+            mobDamage = renderer.updateMobs(world, (float)lookRayX, (float)lookRayY,
+                    (float)lookRayZ);
+            reportedSubsystemFailures &= ~UPDATE_FAILURE_MOBS;
+        } catch (Throwable problem) {
+            reportGameUpdateFailure(UPDATE_FAILURE_MOBS, "entidades", problem);
+        }
+        if (renderer.consumeEnderPearlTeleport()) {
+            playerPhysics.reset();
+            copyInventoryToWorld();
+            world.save();
+        }
         if (world.mode == 0 && mobDamage > 0) damagePlayer(mobDamage);
         if (state != PLAYING) return;
         if (world.mode == 0) {
@@ -568,7 +639,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         tickAirAndHurt();
         if (state != PLAYING) return;
         int healthBeforeDrops = world.health;
-        int pickedItem = renderer.updateDroppedItems(world, inventory, playerPhysics);
+        gameUpdateStage = "actualizando objetos del mundo";
+        int pickedItem = 0;
+        try {
+            pickedItem = renderer.updateDroppedItems(world, inventory, playerPhysics);
+            reportedSubsystemFailures &= ~UPDATE_FAILURE_DROPS;
+        } catch (Throwable problem) {
+            reportGameUpdateFailure(UPDATE_FAILURE_DROPS, "objetos del mundo", problem);
+        }
         if (world.mode == 0 && world.health < healthBeforeDrops) {
             hurtTicks = 10;
             if (world.health <= 0) enterGameOver();
@@ -613,12 +691,31 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 touchMiningLastZ = world.playerZ;
             }
         }
+        gameUpdateStage = "procesando acciones y minería";
         if (keys[1]) updateMining();
-        renderer.updateFieldOfView(sprinting);
-        renderer.updateCamera(world, cameraPitch);
-        renderer.setHurtCameraRoll(hurtCameraRoll());
-        renderer.updateParticles(world, world.yaw, cameraPitch);
+        gameUpdateStage = "actualizando cámara";
+        try {
+            renderer.updateFieldOfView(sprinting);
+            renderer.updateCamera(world, cameraPitch);
+            renderer.setHurtCameraRoll(hurtCameraRoll());
+            reportedSubsystemFailures &= ~UPDATE_FAILURE_CAMERA;
+        } catch (Throwable problem) {
+            reportGameUpdateFailure(UPDATE_FAILURE_CAMERA, "cámara", problem);
+        }
+        try {
+            renderer.updateParticles(world, world.yaw, cameraPitch);
+            reportedSubsystemFailures &= ~UPDATE_FAILURE_PARTICLES;
+        } catch (Throwable problem) {
+            reportGameUpdateFailure(UPDATE_FAILURE_PARTICLES, "partículas", problem);
+        }
         if (lanGameActive) updateLanSynchronization();
+    }
+
+    private void reportGameUpdateFailure(int flag, String subsystem, Throwable problem) {
+        if ((reportedSubsystemFailures & flag) != 0) return;
+        reportedSubsystemFailures |= flag;
+        System.out.println("MeCraft: se omitió una actualización de " + subsystem + ": " + problem);
+        problem.printStackTrace();
     }
 
     /** Indev drains 300 air ticks, waits another 20 ticks, then deals a heart. */
@@ -1000,7 +1097,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             int mobHit = renderer.hitMob(world, (float)lookRayX, (float)lookRayY,
                     (float)lookRayZ, heldAttackDamage());
             if (mobHit >= 0) {
-                if (mobHit > 0) onMobHit();
+                if (mobHit > 0) onMobHit(mobHit);
                 return;
             }
             renderer.swingHand();
@@ -1023,13 +1120,23 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             damageTool(item, 1);
     }
 
+    private void onMobHit(int hitType) {
+        onMobHit();
+        if (hitType == 2) {
+            playerPhysics.addExplosionImpulse(-((float)lookRayX) * 0.38f, 0.16f,
+                    -((float)lookRayZ) * 0.38f);
+            copyInventoryToWorld();
+            world.save();
+        }
+    }
+
     private void updateMining() {
         if (world == null) return;
         ensureLookRay();
         int mobHit = renderer.hitMob(world, (float)lookRayX, (float)lookRayY,
                 (float)lookRayZ, heldAttackDamage());
         if (mobHit >= 0) {
-            if (mobHit > 0) onMobHit();
+            if (mobHit > 0) onMobHit(mobHit);
             resetMining();
             return;
         }
@@ -1564,6 +1671,20 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             }
             return;
         }
+        if (selected == ItemCatalog.ENDER_PEARL) {
+            if ((world.mode == 1 || inventory[selected] > 0) &&
+                    renderer.shootPlayerEnderPearl(world, cameraPitch)) {
+                if (world.mode == 0) {
+                    inventory[selected]--;
+                    if (inventory[selected] <= 0) restoreHotbarItem(selected);
+                }
+                renderer.swingHand();
+                copyInventoryToWorld();
+                world.save();
+                repaint();
+            }
+            return;
+        }
         if (selected == ItemCatalog.FLINT_AND_STEEL) {
             igniteBlock();
             return;
@@ -1740,16 +1861,33 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void travelThroughEndPortal() {
         if (endPortalTransitionPending || world == null || renderer == null ||
-                world.dimensionId != VoxelWorld.DIM_OVERWORLD || state != PLAYING) return;
+                state != PLAYING) return;
+        final int sourceDimension = world.dimensionId;
+        final int targetDimension;
+        if (sourceDimension == VoxelWorld.DIM_OVERWORLD)
+            targetDimension = VoxelWorld.DIM_END;
+        else if (sourceDimension == VoxelWorld.DIM_END && world.isEndExitPortalActive())
+            targetDimension = VoxelWorld.DIM_OVERWORLD;
+        else return;
+
+        if (sourceDimension == VoxelWorld.DIM_OVERWORLD) {
+            dimensionReturnX[VoxelWorld.DIM_OVERWORLD] = world.playerX;
+            dimensionReturnY[VoxelWorld.DIM_OVERWORLD] = world.playerY;
+            dimensionReturnZ[VoxelWorld.DIM_OVERWORLD] = world.playerZ;
+            dimensionReturnYaw[VoxelWorld.DIM_OVERWORLD] = world.yaw;
+            hasDimensionReturn[VoxelWorld.DIM_OVERWORLD] = true;
+        }
 
         // Generate and save voxel data on a separate thread. The Canvas paint
         // thread must never wait for full-dimension generation or RMS writes.
         endPortalTransitionPending = true;
         endPortalTransitionRunning = true;
         endPortalWorldReady = false;
+        endPortalTargetDimension = targetDimension;
         endPortalTransitionFailure = null;
         endPortalTransitionProblem = null;
-        loadingMessage = Language.text("Generando el End...");
+        loadingMessage = targetDimension == VoxelWorld.DIM_END ?
+                Language.text("Generando el End...") : Language.text("Regresando al Overworld...");
         state = LOADING;
         portalChargeTicks = 0;
         clearKeys();
@@ -1760,14 +1898,51 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         Thread generator = new Thread(new Runnable() {
             public void run() {
                 try {
-                    if (!transitionWorld.setDimension(VoxelWorld.DIM_END))
-                        throw new IOException("No se pudo cambiar a la dimensión End");
+                    if (!transitionWorld.setDimension(targetDimension))
+                        throw new IOException("No se pudo cambiar de dimensión");
 
-                    int centerX = VoxelWorld.WIDTH / 2;
-                    int centerZ = VoxelWorld.DEPTH / 2;
-                    transitionWorld.playerX = centerX + 0.5f;
-                    transitionWorld.playerZ = centerZ + 0.5f;
-                    transitionWorld.playerY = transitionWorld.surfaceY(centerX, centerZ) + 1.05f;
+                    if (targetDimension == VoxelWorld.DIM_END) {
+                        int spawnX = InfdevTerrain.endSpawnPlatformX() + 2;
+                        int spawnZ = InfdevTerrain.endSpawnPlatformZ();
+                        transitionWorld.playerX = spawnX + 0.5f;
+                        transitionWorld.playerZ = spawnZ + 0.5f;
+                        transitionWorld.playerY = InfdevTerrain.endSpawnPlatformY(transitionWorld.seed) + 1.05f;
+                    } else if (hasDimensionReturn[VoxelWorld.DIM_OVERWORLD]) {
+                        float returnYaw = dimensionReturnYaw[VoxelWorld.DIM_OVERWORLD] *
+                                (float)Math.PI / 180.0f;
+                        float returnX = dimensionReturnX[VoxelWorld.DIM_OVERWORLD] -
+                                (float)Math.sin(returnYaw) * 3.0f;
+                        float returnZ = dimensionReturnZ[VoxelWorld.DIM_OVERWORLD] -
+                                (float)Math.cos(returnYaw) * 3.0f;
+                        int groundX = (int)returnX, groundZ = (int)returnZ;
+                        if (groundX < 1) groundX = 1;
+                        if (groundX > VoxelWorld.WIDTH - 2) groundX = VoxelWorld.WIDTH - 2;
+                        if (groundZ < 1) groundZ = 1;
+                        if (groundZ > VoxelWorld.DEPTH - 2) groundZ = VoxelWorld.DEPTH - 2;
+                        transitionWorld.playerX = groundX + 0.5f;
+                        transitionWorld.playerZ = groundZ + 0.5f;
+                        transitionWorld.playerY = transitionWorld.surfaceY(groundX, groundZ) + 1.05f;
+                        if (transitionWorld.touchesEndPortal(transitionWorld.playerX,
+                                transitionWorld.playerY, transitionWorld.playerZ)) {
+                            returnX -= (float)Math.sin(returnYaw) * 2.0f;
+                            returnZ -= (float)Math.cos(returnYaw) * 2.0f;
+                            groundX = (int)returnX;
+                            groundZ = (int)returnZ;
+                            if (groundX < 1) groundX = 1;
+                            if (groundX > VoxelWorld.WIDTH - 2) groundX = VoxelWorld.WIDTH - 2;
+                            if (groundZ < 1) groundZ = 1;
+                            if (groundZ > VoxelWorld.DEPTH - 2) groundZ = VoxelWorld.DEPTH - 2;
+                            transitionWorld.playerX = groundX + 0.5f;
+                            transitionWorld.playerZ = groundZ + 0.5f;
+                            transitionWorld.playerY = transitionWorld.surfaceY(groundX, groundZ) + 1.05f;
+                        }
+                    } else {
+                        int centerX = VoxelWorld.WIDTH / 2;
+                        int centerZ = VoxelWorld.DEPTH / 2;
+                        transitionWorld.playerX = centerX + 0.5f;
+                        transitionWorld.playerZ = centerZ + 0.5f;
+                        transitionWorld.playerY = transitionWorld.surfaceY(centerX, centerZ) + 1.05f;
+                    }
                     transitionWorld.yaw = 0.0f;
                     playerPhysics.reset();
                     copyInventoryToWorld();
@@ -1775,7 +1950,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     transitionWorld.save();
                     endPortalWorldReady = true;
                 } catch (OutOfMemoryError exhausted) {
-                    endPortalTransitionFailure = "No hay memoria suficiente para cargar el End. Reduce la distancia de renderizado y vuelve a intentarlo.";
+                    endPortalTransitionFailure = targetDimension == VoxelWorld.DIM_END ?
+                            "No hay memoria suficiente para cargar el End. Reduce la distancia de renderizado y vuelve a intentarlo." :
+                            "No hay memoria suficiente para regresar al Overworld. Reduce la distancia de renderizado y vuelve a intentarlo.";
                 } catch (Throwable problem) {
                     endPortalTransitionProblem = problem;
                 } finally {
@@ -1800,7 +1977,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             return;
         }
         if (!endPortalWorldReady || world == null || renderer == null ||
-                world.dimensionId != VoxelWorld.DIM_END) return;
+                world.dimensionId != endPortalTargetDimension) return;
 
         try {
             // Only M3G scene mutations remain on the paint/render thread.
@@ -1811,7 +1988,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             endPortalTransitionPending = false;
             state = PLAYING;
         } catch (OutOfMemoryError exhausted) {
-            showError("No hay memoria suficiente para preparar el renderer del End.");
+            showError("No hay memoria suficiente para preparar el renderizado de la dimensión.");
             endPortalTransitionPending = false;
         } catch (Throwable problem) {
             showDiagnostic("actualizando el renderer del End", problem);
@@ -2696,7 +2873,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 int mobHit = renderer.hitMob(world, (float)lookRayX, (float)lookRayY,
                         (float)lookRayZ, heldAttackDamage());
                 if (mobHit >= 0) {
-                    if (mobHit > 0) onMobHit();
+                    if (mobHit > 0) onMobHit(mobHit);
                     keys[1] = true;
                     return;
                 }
@@ -4702,6 +4879,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private void drawHud(Graphics g) {
         int w = getWidth(), h = getHeight();
         int centerX = w / 2, centerY = h / 2;
+        drawEnderDragonHealth(g, w);
         g.setColor(255, 255, 255);
         g.drawLine(centerX - 4, centerY, centerX + 4, centerY);
         g.drawLine(centerX, centerY - 4, centerX, centerY + 4);
@@ -4732,6 +4910,32 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             int seconds = (PORTAL_CHARGE_TICKS - portalChargeTicks + 19) / 20;
             g.drawString(Language.text("Portal: sal para cancelar") + " " + seconds + "s",
                     centerX, 27, Graphics.TOP | Graphics.HCENTER);
+        }
+    }
+
+    private void drawEnderDragonHealth(Graphics g, int screenWidth) {
+        if (world == null || renderer == null || world.dimensionId != VoxelWorld.DIM_END)
+            return;
+        int health = renderer.enderDragonHealth();
+        if (health < 0) return;
+        if (health > 200) health = 200;
+        int width = screenWidth - 32;
+        if (width > 180) width = 180;
+        if (width < 48) width = 48;
+        int left = (screenWidth - width) / 2;
+        g.setColor(24, 13, 36);
+        g.fillRect(left - 4, 2, width + 8, 28);
+        g.setColor(159, 93, 170);
+        g.drawRect(left - 4, 2, width + 7, 27);
+        g.setColor(255, 231, 255);
+        g.drawString(Language.text("Ender Dragon"), screenWidth / 2, 3,
+                Graphics.TOP | Graphics.HCENTER);
+        g.setColor(62, 35, 67);
+        g.fillRect(left, 18, width, 8);
+        int filled = width * health / 200;
+        if (filled > 0) {
+            g.setColor(218, 52, 139);
+            g.fillRect(left, 18, filled, 8);
         }
     }
 

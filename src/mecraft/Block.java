@@ -57,6 +57,7 @@ final class Block {
     static final byte REDSTONE_TORCH_ON = (byte)findTileBlock(99);
     static final byte PUMPKIN = (byte)findTileBlock(102);
     static final byte NETHERRACK = (byte)findTileBlock(103);
+    static final byte NETHER_BRICK = (byte)findTileBlock(112);
     static final byte SOUL_SAND = (byte)findTileBlock(104);
     static final byte GLOWSTONE = (byte)findTileBlock(105);
     static final byte REDSTONE_TORCH_OFF = (byte)findTileBlock(115);
@@ -266,7 +267,7 @@ final class Block {
         if (tile == 103) return "Roca abisal";
         if (tile == 104) return "Arena de almas";
         if (tile == 105) return "Piedra luminosa";
-        if (tile == 112) return "Riel";
+        if (tile == 112) return "Ladrillos del Nether";
         if (tile == 121) return "Piedra del End";
         if (tile == 128) return "Riel";
         if (tile == 158) return "Marco del portal del End";
