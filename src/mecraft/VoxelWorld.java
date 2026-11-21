@@ -1198,6 +1198,10 @@ final class VoxelWorld {
                 }
             }
         }
+        if (dimensionId == DIM_OVERWORLD && worldType != TYPE_FLAT) {
+            setGenerationDiagnosticStage("VoxelWorld.generate: generando stronghold");
+            StrongholdGenerator.generate(seed, blocks, waterLevels, WIDTH, HEIGHT, DEPTH);
+        }
         setGenerationDiagnosticStage("VoxelWorld.generate: asignando posición X del jugador");
         int spawnCenter = worldSize == SIZE_OLD ? 120 : WIDTH / 2;
         playerX = spawnCenter + 0.5f;
