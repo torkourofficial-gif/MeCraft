@@ -474,6 +474,13 @@ final class MobSystem {
             pearls[i].active = false;
             pearls[i].root.setRenderingEnable(false);
         }
+        for (int kind = 0; kind < thrownItems.length; kind++) {
+            nextThrownItem[kind] = 0;
+            for (int i = 0; i < thrownItems[kind].length; i++) {
+                thrownItems[kind][i].active = false;
+                thrownItems[kind][i].root.setRenderingEnable(false);
+            }
+        }
         for (int i = 0; i < fireballs.length; i++) {
             fireballs[i].active = false;
             fireballs[i].root.setRenderingEnable(false);
