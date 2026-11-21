@@ -856,8 +856,8 @@ final class ChunkRenderer {
             FaceBuilder builder = builders[i];
             if (builder == null) continue;
             Mesh mesh = makeMesh(builder, heldItemAppearance);
-            mesh.setScale(0.34f, 0.34f, 0.34f);
-            mesh.setTranslation(-0.17f, -0.17f, -0.17f);
+            mesh.setScale(0.4f, 0.4f, 0.4f);
+            mesh.setTranslation(-0.2f, -0.2f, -0.2f);
             mesh.setRenderingEnable(false);
             heldItemPitch.addChild(mesh);
             heldEndPortalFrameMeshes[at++] = mesh;
