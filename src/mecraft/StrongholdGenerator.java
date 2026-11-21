@@ -113,7 +113,18 @@ final class StrongholdGenerator {
             for (int dy = 1; dy <= 3; dy++)
                 put(blocks, width, depth, height, x0, y + dy, z, Block.AIR);
 
-        int frameY = y + 2;
+        // Reproduce the stepped approach to the portal dais from the 1.2.5
+        // portal-room component.
+        for (int z = z0 + 5; z <= z0 + 7; z++)
+            for (int x = x0 + 4; x <= x0 + 6; x++)
+                put(blocks, width, depth, height, x, y + 1, z, FLOOR);
+        for (int z = z0 + 6; z <= z0 + 7; z++)
+            for (int x = x0 + 4; x <= x0 + 6; x++)
+                put(blocks, width, depth, height, x, y + 2, z, FLOOR);
+        for (int x = x0 + 4; x <= x0 + 6; x++)
+            put(blocks, width, depth, height, x, y + 3, z0 + 7, FLOOR);
+
+        int frameY = y + 3;
         int eyeCount = (int)(mix(seed ^ 0x5F3759DF) & 3L);
         if (eyeCount > 2) eyeCount = 2;
         int[] frameX = new int[12];
@@ -155,7 +166,7 @@ final class StrongholdGenerator {
         // Keep the 3x3 portal aperture empty unless all twelve eyes are present.
         for (int z = z0 + 9; z <= z0 + 11; z++)
             for (int x = x0 + 4; x <= x0 + 6; x++)
-                put(blocks, width, depth, height, x0 + x - x0, frameY, z, Block.AIR);
+                put(blocks, width, depth, height, x, frameY, z, Block.AIR);
     }
 
     private static long mix(int value) {
