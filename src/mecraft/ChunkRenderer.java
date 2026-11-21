@@ -1486,6 +1486,10 @@ final class ChunkRenderer {
         return mobs.shootPlayerArrow(world, pitch);
     }
 
+    boolean shootPlayerItem(VoxelWorld world, float pitch, int kind) {
+        return mobs.shootPlayerItem(world, pitch, kind);
+    }
+
     boolean shootPlayerEnderPearl(VoxelWorld world, float pitch) {
         return mobs.shootPlayerEnderPearl(world, pitch);
     }
