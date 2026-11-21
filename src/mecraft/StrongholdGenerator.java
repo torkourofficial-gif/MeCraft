@@ -125,8 +125,7 @@ final class StrongholdGenerator {
             put(blocks, width, depth, height, x, y + 3, z0 + 7, FLOOR);
 
         int frameY = y + 3;
-        int eyeCount = (int)(mix(seed ^ 0x5F3759DF) & 3L);
-        if (eyeCount > 2) eyeCount = 2;
+        int eyeCount = (int)(mix(seed ^ 0x5F3759DF) % 3L);
         int[] frameX = new int[12];
         int[] frameZ = new int[12];
         int[] facing = new int[12];
@@ -163,7 +162,7 @@ final class StrongholdGenerator {
             metadata[at] = (byte)(metadata[at] | 4);
         }
 
-        // Keep the 3x3 portal aperture empty unless all twelve eyes are present.
+        // This compact stronghold only places up to two eyes, so the 3x3 aperture stays inactive.
         for (int z = z0 + 9; z <= z0 + 11; z++)
             for (int x = x0 + 4; x <= x0 + 6; x++)
                 put(blocks, width, depth, height, x, frameY, z, Block.AIR);
