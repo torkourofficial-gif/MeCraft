@@ -125,7 +125,7 @@ final class StrongholdGenerator {
             put(blocks, width, depth, height, x, y + 3, z0 + 7, FLOOR);
 
         int frameY = y + 3;
-        int eyeCount = (int)(mix(seed ^ 0x5F3759DF) % 3L);
+        int eyeCount = (int)((mix(seed ^ 0x5F3759DF) & 0x7FFFFFFFFFFFFFFFL) % 3L);
         int[] frameX = new int[12];
         int[] frameZ = new int[12];
         int[] facing = new int[12];
