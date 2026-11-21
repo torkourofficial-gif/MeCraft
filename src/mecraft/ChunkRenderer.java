@@ -48,6 +48,8 @@ final class ChunkRenderer {
     private static final long MAX_CHUNK_MESH_INSTALL_MILLIS = 6L;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
     private static final float CHUNK_RADIUS = 12.0f;
+    private static final float HELD_BLOCK_SCALE = 0.4f;
+    private static final float HELD_BLOCK_OFFSET = -HELD_BLOCK_SCALE * 0.5f;
     private static final float NORMAL_FOV = 68.0f;
     private static final float SPRINT_FOV = 76.0f;
     private float cameraFov = NORMAL_FOV;
@@ -357,7 +359,7 @@ final class ChunkRenderer {
         itemSpriteIconYaw.addChild(itemSpriteIconRoll);
         itemSpriteIconRoll.addChild(itemSpriteOrigin);
         itemSpriteOrigin.addChild(itemSpriteMesh);
-        itemSpriteModelScale.setScale(0.4f, 0.4f, 0.4f);
+        itemSpriteModelScale.setScale(HELD_BLOCK_SCALE, HELD_BLOCK_SCALE, HELD_BLOCK_SCALE);
         itemSpriteOffset.setTranslation(0.0f, -0.3f, 0.0f);
         itemSpriteIconScale.setScale(1.5f, 1.5f, 1.5f);
         itemSpriteIconYaw.setOrientation(50.0f, 0.0f, 1.0f, 0.0f);
@@ -796,6 +798,12 @@ final class ChunkRenderer {
         heldItemPitch.setOrientation(0.0f, 1.0f, 0.0f, 0.0f);
     }
 
+    /** Keep every cube-based held block on the same first-person scale. */
+    private void setHeldBlockScale(Mesh mesh) {
+        mesh.setScale(HELD_BLOCK_SCALE, HELD_BLOCK_SCALE, HELD_BLOCK_SCALE);
+        mesh.setTranslation(HELD_BLOCK_OFFSET, HELD_BLOCK_OFFSET, HELD_BLOCK_OFFSET);
+    }
+
     private void buildHeldItems() {
         // The atlas palette is large; only build dedicated 3D held meshes for
         // the original gameplay blocks. Creative decorations use one shared
@@ -830,8 +838,7 @@ final class ChunkRenderer {
                 Mesh mesh = makeMesh(builders[i], heldItemAppearance);
                 // Center the cube at the hand anchor and keep it slightly smaller
                 // than Indev's 0.4 inventory-render scale.
-                mesh.setScale(0.4f, 0.4f, 0.4f);
-                mesh.setTranslation(-0.2f, -0.2f, -0.2f);
+                setHeldBlockScale(mesh);
                 mesh.setRenderingEnable(false);
                 heldItemPitch.addChild(mesh);
                 meshes[at++] = mesh;
@@ -856,8 +863,7 @@ final class ChunkRenderer {
             FaceBuilder builder = builders[i];
             if (builder == null) continue;
             Mesh mesh = makeMesh(builder, heldItemAppearance);
-            mesh.setScale(0.4f, 0.4f, 0.4f);
-            mesh.setTranslation(-0.2f, -0.2f, -0.2f);
+            setHeldBlockScale(mesh);
             mesh.setRenderingEnable(false);
             heldItemPitch.addChild(mesh);
             heldEndPortalFrameMeshes[at++] = mesh;
@@ -882,8 +888,7 @@ final class ChunkRenderer {
         vertices.setColors(colors);
         int[] strips = new int[] { 4,4,4,4,4,4 };
         heldCreativeBlockMesh = new Mesh(vertices, new TriangleStripArray(0, strips), heldItemAppearance);
-        heldCreativeBlockMesh.setScale(0.4f, 0.4f, 0.4f);
-        heldCreativeBlockMesh.setTranslation(-0.2f, -0.2f, -0.2f);
+        setHeldBlockScale(heldCreativeBlockMesh);
         heldCreativeBlockMesh.setRenderingEnable(false);
         heldItemPitch.addChild(heldCreativeBlockMesh);
     }
