@@ -821,11 +821,10 @@ final class MobSystem {
             }
             if (!found || bestDistance > 28 * 28) return;
             ground = InfdevTerrain.aetherIslandTop(world.seed, chamberCellX, chamberCellZ) + 1;
-            // The chamber is the spawn point: don't let a nearby slime suppress
-            // its Blaze, and verify that the generated glass room is present.
-            if (world.get(x, ground, z) != Block.GLASS ||
-                    world.get(x, ground + 1, z) != Block.AIR ||
-                    world.get(x, ground + 2, z) != Block.AIR) return;
+            // The deterministic chamber roll is authoritative. Do not gate
+            // spawning on world.get(): a neighboring chunk may not be loaded
+            // yet even though its chamber is part of the generated Aether.
+            // Spawn in the room, then let the Blaze roam freely afterward.
         } else {
             int attempts = 0;
             do {
@@ -942,17 +941,8 @@ final class MobSystem {
         if (targetY < 5.0f) targetY = 5.0f;
         if (targetY > VoxelWorld.HEIGHT - 5.0f) targetY = VoxelWorld.HEIGHT - 5.0f;
         mob.y += (targetY - mob.y) * 0.035f;
-        if (mob.type == BLAZE && world.dimensionId == VoxelWorld.DIM_AETHER) {
-            int cellX = (int)Math.floor(mob.x / 32.0f);
-            int cellZ = (int)Math.floor(mob.z / 32.0f);
-            float centerX = InfdevTerrain.aetherIslandCenterX(world.seed, cellX, cellZ);
-            float centerZ = InfdevTerrain.aetherIslandCenterZ(world.seed, cellX, cellZ);
-            if (mob.x < centerX - 2.25f) mob.x = centerX - 2.25f;
-            if (mob.x > centerX + 2.25f) mob.x = centerX + 2.25f;
-            if (mob.z < centerZ - 2.25f) mob.z = centerZ - 2.25f;
-            if (mob.z > centerZ + 2.25f) mob.z = centerZ + 2.25f;
-            mob.y = InfdevTerrain.aetherIslandTop(world.seed, cellX, cellZ) + 2.0f;
-        }
+        // Aether Blazes spawn inside combat chambers, but are not confined
+        // there; they use the normal flying hostile AI once they emerge.
         mob.targetYaw = yawTo(dx, dz);
         turn(mob);
         if (mob.attackDelay <= 0 && distance < (mob.type == GHAST ? 32.0f : 18.0f) && distance > 0.1f) {
