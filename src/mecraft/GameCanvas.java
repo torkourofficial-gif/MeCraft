@@ -3081,7 +3081,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     /** Java ME compatible floor conversion, including negative coordinates. */
-    private int floorBlock(float value) {
+    private int floorBlock(double value) {
         int result = (int)value;
         return value < result ? result - 1 : result;
     }
