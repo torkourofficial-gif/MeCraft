@@ -545,9 +545,17 @@ final class MobSystem {
         return spawnMobAt(world, type, x, y, z, -1);
     }
 
-    /** Dedicated Blaze summon path; prefer its normal pooled slot instead of borrowing an egg slot. */
+    /** Dedicated Blaze summon path; use the Blaze's reserved slot in each hostile dimension. */
     boolean spawnBlaze(VoxelWorld world, float x, float y, float z) {
-        return spawnMobAt(world, BLAZE, x, y, z, 13);
+        if (world == null) return false;
+        int preferredSlot = world.dimensionId == VoxelWorld.DIM_AETHER ? 13 :
+                (world.dimensionId == VoxelWorld.DIM_NETHER ? 9 : -1);
+        // Never steal another living actor's slot just because the Blaze slot is occupied.
+        if (preferredSlot >= 0) {
+            Mob preferred = mobs[preferredSlot];
+            if (preferred != null && (preferred.alive || preferred.dying)) return false;
+        }
+        return spawnMobAt(world, BLAZE, x, y, z, preferredSlot);
     }
 
     private boolean spawnMobAt(VoxelWorld world, int type, float x, float y, float z,
