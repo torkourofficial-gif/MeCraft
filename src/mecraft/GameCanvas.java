@@ -2234,9 +2234,43 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (state != PLAYING || world == null) return;
         chestX=x; chestY=y; chestZ=z; chestSelection=0;
         loadChestContents(x,y,z);
+        initializeStrongholdLoot(x, y, z);
         state=CHEST_INVENTORY;
         clearKeys();
         repaint();
+    }
+
+    private void initializeStrongholdLoot(int x, int y, int z) {
+        if (world == null || world.dimensionId != VoxelWorld.DIM_OVERWORLD ||
+                !StrongholdGenerator.isLootChest(world.seed, x, y, z,
+                        VoxelWorld.WIDTH, VoxelWorld.DEPTH)) return;
+        boolean empty = true;
+        for (int i = 0; i < 27; i++) {
+            if (chestItems[i] > 0 && chestCounts[i] > 0) { empty = false; break; }
+        }
+        if (!empty) return;
+        int random = world.seed ^ (x * 73428767) ^ (y * 912931) ^ (z * 42317861);
+        int rolls = 4 + ((random >>> 1) & 3);
+        for (int n = 0; n < rolls; n++) {
+            random = random * 1664525 + 1013904223;
+            int slot = (random & 0x7FFFFFFF) % 27;
+            while (chestItems[slot] != 0) slot = (slot + 1) % 27;
+            random = random * 1664525 + 1013904223;
+            int roll = (random >>> 1) % 100;
+            int item, amount;
+            if (roll < 24) { item = ItemCatalog.IRON_INGOT; amount = 3 + ((random >>> 8) & 4); }
+            else if (roll < 42) { item = ItemCatalog.GOLD_INGOT; amount = 2 + ((random >>> 9) & 3); }
+            else if (roll < 57) { item = ItemCatalog.DIAMOND; amount = 1 + ((random >>> 10) & 2); }
+            else if (roll < 69) { item = ItemCatalog.ENDER_PEARL; amount = 1 + ((random >>> 11) & 2); }
+            else if (roll < 78) { item = ItemCatalog.GOLDEN_APPLE; amount = 1; }
+            else if (roll < 88) { item = ItemCatalog.tool(ItemCatalog.SWORD, ItemCatalog.IRON); amount = 1; }
+            else if (roll < 95) { item = ItemCatalog.tool(ItemCatalog.PICKAXE, ItemCatalog.IRON); amount = 1; }
+            else { item = ItemCatalog.END_PORTAL_EYE; amount = 1; }
+            chestItems[slot] = item;
+            chestCounts[slot] = amount;
+        }
+        // Persist the generated contents so reopening an emptied chest never rerolls.
+        saveChestContents();
     }
 
     private String chestStoreName(int x, int y, int z) {
