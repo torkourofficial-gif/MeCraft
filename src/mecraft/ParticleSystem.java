@@ -36,6 +36,8 @@ final class ParticleSystem {
     private final int[] tile = new int[CAPACITY];
     private final int[] tileX = new int[CAPACITY];
     private final int[] tileY = new int[CAPACITY];
+    private final int[] activeSlots = new int[CAPACITY];
+    private final int[] activePosition = new int[CAPACITY];
     private final boolean[] dust = new boolean[CAPACITY];
     private final boolean[] explosion = new boolean[CAPACITY];
 
@@ -47,11 +49,13 @@ final class ParticleSystem {
     private final VertexArray colorArray;
 
     private int cursor;
+    private int activeCount;
     private int random = 0x13579BDF;
     private boolean uvDirty;
     private boolean visible;
 
     ParticleSystem(Texture2D atlas) {
+        for (int i = 0; i < CAPACITY; i++) activePosition[i] = -1;
         positionArray = new VertexArray(VERTICES, 3, 2);
 
         // Keep the initial bounds centered around the player-relative origin.
@@ -128,6 +132,7 @@ final class ParticleSystem {
             dust[i] = false;
             explosion[i] = false;
             writeTileUV(i);
+            activate(i);
         }
         uvDirty = true;
     }
@@ -151,6 +156,7 @@ final class ParticleSystem {
             dust[i] = true;
             explosion[i] = false;
             writeTileUV(i);
+            activate(i);
         }
         uvDirty = true;
     }
@@ -186,6 +192,7 @@ final class ParticleSystem {
             dust[i] = false;
             explosion[i] = true;
             writeTileUV(i);
+            activate(i);
         }
         uvDirty = true;
     }
@@ -193,7 +200,26 @@ final class ParticleSystem {
     private int nextSlot() {
         int result = cursor++;
         if (cursor >= CAPACITY) cursor = 0;
+        deactivate(result);
         return result;
+    }
+
+    private void activate(int particle) {
+        if (activePosition[particle] >= 0) return;
+        activePosition[particle] = activeCount;
+        activeSlots[activeCount++] = particle;
+    }
+
+    private void deactivate(int particle) {
+        int position = activePosition[particle];
+        if (position < 0) return;
+        int lastPosition = --activeCount;
+        int lastParticle = activeSlots[lastPosition];
+        activePosition[particle] = -1;
+        if (position != lastPosition) {
+            activeSlots[position] = lastParticle;
+            activePosition[lastParticle] = position;
+        }
     }
 
     private void writeTileUV(int particle) {
@@ -211,15 +237,23 @@ final class ParticleSystem {
     }
 
     synchronized void update(VoxelWorld world, float yawDegrees, float pitchDegrees) {
-        boolean anyActive = false;
-        for (int i = 0; i < CAPACITY; i++) {
+        if (activeCount == 0) {
+            if (visible) {
+                colorArray.set(0, VERTICES, colors);
+                visible = false;
+            }
+            return;
+        }
+
+        for (int activeIndex = activeCount - 1; activeIndex >= 0; activeIndex--) {
+            int i = activeSlots[activeIndex];
+            age[i]++;
             if (age[i] >= lifetime[i]) {
+                deactivate(i);
                 setColor(i, 0, 0, 0, 0);
                 continue;
             }
 
-            anyActive = true;
-            age[i]++;
             if (explosion[i]) vy[i] += 0.001f;
             else if (dust[i]) vy[i] += 0.001f;
             else vy[i] -= 0.04f;
@@ -254,14 +288,11 @@ final class ParticleSystem {
                 setColor(i, 153, 153, 153, alpha);
             }
 
-            if (age[i] >= lifetime[i]) setColor(i, 0, 0, 0, 0);
         }
 
-        if (!anyActive) {
-            if (visible) {
-                colorArray.set(0, VERTICES, colors);
-                visible = false;
-            }
+        if (activeCount == 0) {
+            colorArray.set(0, VERTICES, colors);
+            visible = false;
             return;
         }
 
@@ -278,11 +309,9 @@ final class ParticleSystem {
         float upY = (float)Math.cos(pitch);
         float upZ = -(float)(Math.cos(yaw) * Math.sin(pitch));
 
-        for (int i = 0; i < CAPACITY; i++) {
-            if (age[i] < lifetime[i]) {
-                writeQuad(i, rightX, rightZ, upX, upY, upZ,
-                        originX, originY, originZ);
-            }
+        for (int i = 0; i < activeCount; i++) {
+            writeQuad(activeSlots[i], rightX, rightZ, upX, upY, upZ,
+                    originX, originY, originZ);
         }
 
         positionArray.set(0, VERTICES, positions);
