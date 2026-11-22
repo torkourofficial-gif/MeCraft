@@ -228,7 +228,10 @@ final class VoxelWorld {
     }
 
     private boolean outsideWorld(int x, int z) {
-        return worldSize == SIZE_OLD && (x < 0 || x >= 240 || z < 0 || z >= 240);
+        // The Aether is always an infinite sky realm, even when its Overworld
+        // save originated from the old finite world format.
+        return dimensionId != DIM_AETHER && worldSize == SIZE_OLD &&
+                (x < 0 || x >= 240 || z < 0 || z >= 240);
     }
 
     private int floorChunk(int value) {
@@ -272,7 +275,7 @@ final class VoxelWorld {
         if (dimensionId == DIM_END) return false;
         int x0 = cx * CHUNK_XZ, z0 = cz * CHUNK_XZ;
         int x1 = x0 + CHUNK_XZ - 1, z1 = z0 + CHUNK_XZ - 1;
-        if (worldSize == SIZE_OLD &&
+        if (dimensionId != DIM_AETHER && worldSize == SIZE_OLD &&
                 (x1 < 0 || x0 >= 240 || z1 < 0 || z0 >= 240)) return false;
         return !(x0 >= 0 && x1 < WIDTH && z0 >= 0 && z1 < DEPTH);
     }
@@ -587,7 +590,7 @@ final class VoxelWorld {
      */
     byte getTorchCandidate(int x, int y, int z) {
         if (y < 0 || y >= HEIGHT || outsideWorld(x, z) ||
-                ((dimensionId == DIM_END || dimensionId == DIM_AETHER) && !inside(x, z))) return Block.AIR;
+                (dimensionId == DIM_END && !inside(x, z))) return Block.AIR;
         if (inside(x, z)) return blocks[index(x, y, z)];
         int edit = findEdit(x, y, z);
         return edit >= 0 ? editId[edit] : Block.AIR;
