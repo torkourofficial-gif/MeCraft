@@ -1878,6 +1878,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (target == null) return;
         int x = target[0], y = target[1], z = target[2];
         byte hit = world.get(x, y, z);
+        if (selected == ItemCatalog.WATER_BUCKET && world.activateAetherPortalAtGlowstone(x, y, z)) {
+            if (world.mode == 0) { inventory[selected]--; inventory[ItemCatalog.EMPTY_BUCKET]++; }
+            if (inventory[selected] <= 0) restoreHotbarItem(selected);
+            renderer.swingHand(); renderer.sync(world); copyInventoryToWorld(); world.save();
+            return;
+        }
         if (selected == ItemCatalog.EMPTY_BUCKET && Block.isFluid(hit) &&
                 world.fluidLevel(x, y, z) == 0) {
             if (world.set(x, y, z, Block.AIR)) {
@@ -2049,7 +2055,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (sourceDimension == VoxelWorld.DIM_END) return;
         int portalType = world.portalTypeAt(world.playerX, world.playerY, world.playerZ);
         int targetDimension;
-        if (portalType == 1) {
+        if (portalType == 2) {
+            targetDimension = sourceDimension == VoxelWorld.DIM_AETHER ? VoxelWorld.DIM_OVERWORLD : VoxelWorld.DIM_AETHER;
+        } else if (portalType == 1) {
             targetDimension = sourceDimension == VoxelWorld.DIM_END ?
                     VoxelWorld.DIM_OVERWORLD : VoxelWorld.DIM_END;
         } else {
@@ -2091,7 +2099,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             world.playerZ = dimensionReturnZ[targetDimension];
         } else {
             int[] destination = null;
-            if (targetDimension == VoxelWorld.DIM_END) {
+            if (targetDimension == VoxelWorld.DIM_AETHER) {
+                destination = world.createAetherPortalAtSpawn();
+            } else if (targetDimension == VoxelWorld.DIM_END) {
                 int bx = VoxelWorld.WIDTH / 2 - 2;
                 int bz = VoxelWorld.DEPTH / 2 - 2;
                 int by = world.surfaceY(VoxelWorld.WIDTH / 2, VoxelWorld.DEPTH / 2) + 1;
