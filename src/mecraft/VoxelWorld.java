@@ -1465,7 +1465,8 @@ final class VoxelWorld {
                 if (!clear) continue;
                 for (int v = 0; v <= 4; v++) for (int u = 0; u <= 3; u++) {
                     if ((u == 0 || u == 3) && (v == 0 || v == 4)) continue;
-                    if (!set(bx + u, by + v, bz, Block.GLOWSTONE)) { clear = false; break; }
+                    if (!set(bx + u, by + v, bz, Block.GLOWSTONE) &&
+                            get(bx + u, by + v, bz) != Block.GLOWSTONE) { clear = false; break; }
                 }
                 if (clear && activateAetherPortalAtGlowstone(bx + 1, by, bz))
                     return new int[] { bx, by, bz, 0 };
@@ -1482,7 +1483,8 @@ final class VoxelWorld {
         if (by > HEIGHT - 6) by = HEIGHT - 6;
         for (int v = 0; v <= 4; v++) for (int u = 0; u <= 3; u++) {
             if ((u == 0 || u == 3) && (v == 0 || v == 4)) continue;
-            if (!set(bx + u, by + v, bz, Block.GLOWSTONE)) return null;
+            if (!set(bx + u, by + v, bz, Block.GLOWSTONE) &&
+                    get(bx + u, by + v, bz) != Block.GLOWSTONE) return null;
         }
         if (!activateAetherPortalAtGlowstone(bx + 1, by, bz)) return null;
         return new int[] { bx, by, bz, 0 };
