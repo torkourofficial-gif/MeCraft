@@ -311,16 +311,16 @@ final class InfdevTerrain {
             int wx = ox + x, wz = oz + z, col = z * CHUNK_SIZE + x, base = col * WORLD_HEIGHT;
             int chosenX = 0, chosenZ = 0, chosenRadius = 0, top = 0;
             int chosenDx = 0, chosenDz = 0, best = 0x7FFFFFFF;
-            int cellX = floorDiv(wx, 64), cellZ = floorDiv(wz, 64);
-            // A 3x3 neighborhood is sufficient because island centers stay inside
-            // their 64-block cells and their maximum radius is nine blocks.
+            int cellX = floorDiv(wx, 32), cellZ = floorDiv(wz, 32);
+            // A 3x3 neighborhood covers the dense 32-block island field; broad
+            // island edges overlap to form clustered skyland masses.
             for (int cz = cellZ - 1; cz <= cellZ + 1; cz++) {
                 for (int cx = cellX - 1; cx <= cellX + 1; cx++) {
                     int hx = lattice(seed ^ 0x3C6EF372, cx, cz);
                     int hz = lattice(seed ^ 0x1BF5A9D5, cx, cz);
-                    int islandX = cx * 64 + 16 + (hx * 32 >> 8);
-                    int islandZ = cz * 64 + 16 + (hz * 32 >> 8);
-                    int radius = 5 + (lattice(seed ^ 0x5A827999, cx, cz) * 5 >> 8);
+                    int islandX = cx * 32 + 8 + (hx * 16 >> 8);
+                    int islandZ = cz * 32 + 8 + (hz * 16 >> 8);
+                    int radius = 12 + (lattice(seed ^ 0x5A827999, cx, cz) * 8 >> 8);
                     // Preserve the classic central landing island so the
                     // fixed Aether return portal always rests on real terrain.
                     if (cx == 0 && cz == 0) {
@@ -367,8 +367,8 @@ final class InfdevTerrain {
                 for (int cx = cellX - 1; cx <= cellX + 1; cx++) {
                     int treeChance = lattice(seed ^ 0x7F4A7C15, cx, cz);
                     if ((cx == 0 && cz == 0) || treeChance < 118) continue;
-                    int treeX = cx * 64 + 16 + (lattice(seed ^ 0x3C6EF372, cx, cz) * 32 >> 8);
-                    int treeZ = cz * 64 + 16 + (lattice(seed ^ 0x1BF5A9D5, cx, cz) * 32 >> 8);
+                    int treeX = cx * 32 + 8 + (lattice(seed ^ 0x3C6EF372, cx, cz) * 16 >> 8);
+                    int treeZ = cz * 32 + 8 + (lattice(seed ^ 0x1BF5A9D5, cx, cz) * 16 >> 8);
                     if (cx == 0 && cz == 0) { treeX = 24; treeZ = 24; }
                     int tx = wx - treeX, tz = wz - treeZ;
                     int td = tx * tx + tz * tz;
@@ -394,11 +394,11 @@ final class InfdevTerrain {
 
         // Snowy cloud clusters are generated in a separate pass so empty sky
         // columns do not erase them while their island terrain is initialized.
-        int minCellX = floorDiv(ox, 64) - 1, maxCellX = floorDiv(ox + CHUNK_SIZE - 1, 64) + 1;
-        int minCellZ = floorDiv(oz, 64) - 1, maxCellZ = floorDiv(oz + CHUNK_SIZE - 1, 64) + 1;
+        int minCellX = floorDiv(ox, 32) - 1, maxCellX = floorDiv(ox + CHUNK_SIZE - 1, 32) + 1;
+        int minCellZ = floorDiv(oz, 32) - 1, maxCellZ = floorDiv(oz + CHUNK_SIZE - 1, 32) + 1;
         for (int cz = minCellZ; cz <= maxCellZ; cz++) for (int cx = minCellX; cx <= maxCellX; cx++) {
-            int cloudX = cx * 64 + 8 + (lattice(seed ^ 0x243F6A88, cx, cz) * 48 >> 8);
-            int cloudZ = cz * 64 + 8 + (lattice(seed ^ 0xB7E15162, cx, cz) * 48 >> 8);
+            int cloudX = cx * 32 + 4 + (lattice(seed ^ 0x243F6A88, cx, cz) * 24 >> 8);
+            int cloudZ = cz * 32 + 4 + (lattice(seed ^ 0xB7E15162, cx, cz) * 24 >> 8);
             for (int z = 0; z < CHUNK_SIZE; z++) for (int x = 0; x < CHUNK_SIZE; x++) {
                 int wx = ox + x, wz = oz + z, dx = wx - cloudX, dz = wz - cloudZ;
                 int distance = dx * dx + dz * dz;
