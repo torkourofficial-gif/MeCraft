@@ -1460,7 +1460,7 @@ final class MobSystem {
         item.x = world.playerX + dx * 0.45f;
         item.y = world.playerY + 1.45f;
         item.z = world.playerZ + dz * 0.45f;
-        float speed = kind == 2 ? 0.30f : 0.68f;
+        float speed = kind == 2 ? 0.35f : 0.68f;
         item.vx = dx * speed;
         item.vy = dy * speed + (kind == 2 ? 0.025f : 0.04f);
         item.vz = dz * speed;
@@ -1474,30 +1474,70 @@ final class MobSystem {
         return true;
     }
 
+    /**
+     * Finds the nearest complete portal-frame cluster. A stronghold portal is
+     * underground, but the eye must stay above ground while pointing toward it.
+     */
     private void findStrongholdTarget(VoxelWorld world, ThrownItem item) {
-        int count = 0;
-        float sx = 0.0f, sy = 0.0f, sz = 0.0f;
-        for (int y = 0; y < VoxelWorld.HEIGHT; y++) {
+        float bestDistance = Float.MAX_VALUE;
+        float bestX = item.x, bestZ = item.z;
+        boolean found = false;
+        for (int y = 1; y < VoxelWorld.HEIGHT - 1; y++) {
             int layer = y * VoxelWorld.DEPTH * VoxelWorld.WIDTH;
             for (int z = 0; z < VoxelWorld.DEPTH; z++) {
                 int row = layer + z * VoxelWorld.WIDTH;
                 for (int x = 0; x < VoxelWorld.WIDTH; x++) {
                     if (world.blocks[row + x] != Block.END_PORTAL_FRAME) continue;
-                    float dx = x + 0.5f - item.x, dz = z + 0.5f - item.z;
-                    if (dx * dx + dz * dz > 48.0f * 48.0f) continue;
-                    sx += x + 0.5f; sy += y + 0.5f; sz += z + 0.5f; count++;
+
+                    // A real 12-block ring fits inside this 13x13x7 search box.
+                    int count = 0;
+                    int sumX = 0, sumZ = 0;
+                    for (int oy = -3; oy <= 3; oy++) {
+                        int cy = y + oy;
+                        if (cy < 0 || cy >= VoxelWorld.HEIGHT) continue;
+                        int candidateLayer = cy * VoxelWorld.DEPTH * VoxelWorld.WIDTH;
+                        for (int oz = -6; oz <= 6; oz++) {
+                            int cz = z + oz;
+                            if (cz < 0 || cz >= VoxelWorld.DEPTH) continue;
+                            int candidateRow = candidateLayer + cz * VoxelWorld.WIDTH;
+                            for (int ox = -6; ox <= 6; ox++) {
+                                int cx = x + ox;
+                                if (cx < 0 || cx >= VoxelWorld.WIDTH) continue;
+                                if (world.blocks[candidateRow + cx] == Block.END_PORTAL_FRAME) {
+                                    count++;
+                                    sumX += cx;
+                                    sumZ += cz;
+                                }
+                            }
+                        }
+                    }
+                    if (count < 8) continue;
+                    float centerX = (float)sumX / (float)count + 0.5f;
+                    float centerZ = (float)sumZ / (float)count + 0.5f;
+                    float dx = centerX - item.x, dz = centerZ - item.z;
+                    float distance = dx * dx + dz * dz;
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        bestX = centerX;
+                        bestZ = centerZ;
+                        found = true;
+                    }
                 }
             }
         }
-        if (count > 0) {
-            item.targetX = sx / count; item.targetY = sy / count; item.targetZ = sz / count;
-        } else {
+
+        if (!found) {
+            // No stronghold portal exists in this world: continue forward, then
+            // let the usual shatter chance decide whether the eye is recovered.
             float length = (float)Math.sqrt(item.vx * item.vx + item.vz * item.vz);
             if (length < 0.001f) length = 1.0f;
-            item.targetX = item.x + item.vx / length * 24.0f;
-            item.targetY = item.y;
-            item.targetZ = item.z + item.vz / length * 24.0f;
+            bestX = item.x + item.vx / length * 20.0f;
+            bestZ = item.z + item.vz / length * 20.0f;
         }
+        item.targetX = bestX;
+        item.targetZ = bestZ;
+        // Never aim down at the portal's underground Y coordinate.
+        item.targetY = item.y + 1.5f;
     }
 
     private void updateThrownItems(VoxelWorld world) {
@@ -1507,14 +1547,22 @@ final class MobSystem {
                 if (!item.active) continue;
                 item.age++;
                 if (kind == 2) {
-                    float dx = item.targetX - item.x, dy = item.targetY - item.y;
+                    float dx = item.targetX - item.x;
                     float dz = item.targetZ - item.z;
-                    float length = (float)Math.sqrt(dx * dx + dy * dy + dz * dz);
-                    if (length > 0.001f) {
-                        item.vx = dx / length * 0.30f;
-                        item.vy = dy / length * 0.30f;
-                        item.vz = dz / length * 0.30f;
+                    float horizontal = (float)Math.sqrt(dx * dx + dz * dz);
+                    if (horizontal > 0.45f) {
+                        // Move toward the target without overshooting it. If the
+                        // eye arrives early, it hovers there until the 5-second timer.
+                        float speed = horizontal < 0.35f ? horizontal : 0.35f;
+                        item.vx = dx / horizontal * speed;
+                        item.vz = dz / horizontal * speed;
+                    } else {
+                        item.vx = 0.0f;
+                        item.vz = 0.0f;
                     }
+                    float verticalError = item.targetY - item.y;
+                    item.vy = verticalError > 0.08f ? 0.035f :
+                            (verticalError < -0.08f ? -0.035f : 0.0f);
                 } else {
                     item.vy -= 0.025f;
                 }
@@ -1546,8 +1594,12 @@ final class MobSystem {
                     }
                 } else if (item.age >= 100) {
                     // Ender Eyes have a 20% chance to shatter instead of dropping.
-                    if (random.nextInt(5) != 0)
-                        drops.spawn(ItemCatalog.END_PORTAL_EYE, bx, by, bz);
+                    if (random.nextInt(5) != 0) {
+                        int dropX = clamp(bx, 0, VoxelWorld.WIDTH - 1);
+                        int dropY = clamp(by, 1, VoxelWorld.HEIGHT - 2);
+                        int dropZ = clamp(bz, 0, VoxelWorld.DEPTH - 1);
+                        drops.spawn(ItemCatalog.END_PORTAL_EYE, dropX, dropY, dropZ);
+                    }
                     item.active = false;
                 }
                 if (!item.active) item.root.setRenderingEnable(false);
