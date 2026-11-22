@@ -2137,7 +2137,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
         int px = (int)world.playerX, pz = (int)world.playerZ;
         int floor = world.surfaceY(px, pz);
-        if (targetDimension != VoxelWorld.DIM_AETHER &&
+        if (targetDimension != VoxelWorld.DIM_AETHER && portalType != 2 &&
                 (world.playerY < floor + 1.0f || world.playerY > VoxelWorld.HEIGHT - 2))
             world.playerY = floor + 1.05f;
         portalChargeTicks = 0;
