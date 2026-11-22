@@ -1887,24 +1887,33 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     private void useBucket(int selected) {
-        // Ordinary block interaction ignores liquids; an empty bucket must ray-hit
-        // the water/lava source itself so it can collect it.
+        // Empty buckets need to ray-hit the fluid source itself.
         int[] target = trace(5.0f, selected == ItemCatalog.EMPTY_BUCKET);
         if (target == null) return;
         int x = target[0], y = target[1], z = target[2];
         byte hit = world.get(x, y, z);
-        if (selected == ItemCatalog.WATER_BUCKET && world.activateAetherPortalAtGlowstone(x, y, z)) {
-            if (world.mode == 0) { inventory[selected]--; inventory[ItemCatalog.EMPTY_BUCKET]++; }
-            if (inventory[selected] <= 0) restoreHotbarItem(selected);
-            renderer.swingHand(); renderer.sync(world); copyInventoryToWorld(); world.save();
-            return;
-        }
-        if (selected == ItemCatalog.EMPTY_BUCKET && Block.isFluid(hit) &&
+        int resultItem = selected;
+        boolean changedBlock = false;
+        boolean fullRendererSync = false;
+
+        if (selected == ItemCatalog.WATER_BUCKET &&
+                world.activateAetherPortalAtGlowstone(x, y, z)) {
+            if (world.mode == 0) {
+                inventory[selected]--;
+                inventory[ItemCatalog.EMPTY_BUCKET]++;
+                resultItem = ItemCatalog.EMPTY_BUCKET;
+            }
+            fullRendererSync = true;
+        } else if (selected == ItemCatalog.EMPTY_BUCKET && Block.isFluid(hit) &&
                 world.fluidLevel(x, y, z) == 0) {
-            if (world.set(x, y, z, Block.AIR)) {
-                if (world.mode == 0) inventory[selected]--;
-                inventory[hit == Block.LAVA || world.nether && hit == Block.WATER ?
-                        ItemCatalog.LAVA_BUCKET : ItemCatalog.WATER_BUCKET]++;
+            if (!world.set(x, y, z, Block.AIR)) return;
+            changedBlock = true;
+            if (world.mode == 0) {
+                inventory[selected]--;
+                resultItem = hit == Block.LAVA ||
+                        (world.nether && hit == Block.WATER) ?
+                        ItemCatalog.LAVA_BUCKET : ItemCatalog.WATER_BUCKET;
+                inventory[resultItem]++;
             }
         } else if (selected != ItemCatalog.EMPTY_BUCKET) {
             x += target[3]; y += target[4]; z += target[5];
@@ -1914,16 +1923,29 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 if (world.mode == 0) {
                     inventory[selected]--;
                     inventory[ItemCatalog.EMPTY_BUCKET]++;
+                    resultItem = ItemCatalog.EMPTY_BUCKET;
                 }
-            } else if (world.set(x, y, z,
-                    selected == ItemCatalog.LAVA_BUCKET ? Block.LAVA : Block.WATER)) {
-                if (world.mode == 0) inventory[selected]--;
-                inventory[ItemCatalog.EMPTY_BUCKET]++;
+            } else {
+                if (!world.set(x, y, z,
+                        selected == ItemCatalog.LAVA_BUCKET ? Block.LAVA : Block.WATER)) return;
+                changedBlock = true;
+                if (world.mode == 0) {
+                    inventory[selected]--;
+                    inventory[ItemCatalog.EMPTY_BUCKET]++;
+                    resultItem = ItemCatalog.EMPTY_BUCKET;
+                }
             }
         } else return;
-        if (inventory[selected] <= 0) restoreHotbarItem(selected);
+
+        // A bucket is a single-use item: put its new state in the same selected
+        // hotbar slot instead of restoring the default item and hiding the result
+        // in the main inventory.
+        if (world.mode == 0 && resultItem != selected && inventory[selected] <= 0) {
+            hotbar[world.selectedSlot] = resultItem;
+        }
         renderer.swingHand();
-        renderer.syncEditedBlock(world, x, y, z);
+        if (fullRendererSync) renderer.sync(world);
+        else if (changedBlock) renderer.syncEditedBlock(world, x, y, z);
         copyInventoryToWorld();
         world.save();
     }
