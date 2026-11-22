@@ -1788,18 +1788,27 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             repaint();
             return;
         }
-        int[] target = trace(5.0f);
-        if (target == null) {
-            blazeRodUseCount = 10;
-            repaint();
-            return;
+        ensureLookRay();
+        int baseX = floorBlock(world.playerX + lookRayX * 2.5f);
+        int baseY = floorBlock(world.playerY + 0.15f);
+        int baseZ = floorBlock(world.playerZ + lookRayZ * 2.5f);
+        boolean spawned = false;
+        // Try a compact set of nearby air positions so looking at the sky or
+        // standing beside a wall does not silently cancel the test summon.
+        for (int dy = 0; dy <= 2 && !spawned; dy++) {
+            for (int radius = 0; radius <= 1 && !spawned; radius++) {
+                for (int side = -1; side <= 1 && !spawned; side++) {
+                    int x = baseX + (radius == 0 ? 0 : side);
+                    int z = baseZ + (radius == 0 ? 0 : (side == 0 ? 1 : 0));
+                    int y = baseY + dy;
+                    if (y < 1 || y + 2 >= VoxelWorld.HEIGHT ||
+                            world.get(x, y, z) != Block.AIR ||
+                            world.get(x, y + 1, z) != Block.AIR) continue;
+                    spawned = renderer.spawnBlaze(world, x + 0.5f, (float)y, z + 0.5f);
+                }
+            }
         }
-        int x = target[0] + target[3];
-        int y = target[1] + target[4];
-        int z = target[2] + target[5];
-        if (y < 1 || y + 2 >= VoxelWorld.HEIGHT ||
-                world.get(x, y, z) != Block.AIR || world.get(x, y + 1, z) != Block.AIR ||
-                !renderer.spawnMobFromEgg(world, 11, x + 0.5f, (float)y, z + 0.5f)) {
+        if (!spawned) {
             blazeRodUseCount = 10;
             repaint();
             return;
