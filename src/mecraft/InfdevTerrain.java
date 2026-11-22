@@ -321,6 +321,11 @@ final class InfdevTerrain {
                     int islandX = cx * 64 + 16 + (hx * 32 >> 8);
                     int islandZ = cz * 64 + 16 + (hz * 32 >> 8);
                     int radius = 5 + (lattice(seed ^ 0x5A827999, cx, cz) * 5 >> 8);
+                    // Preserve the classic central landing island so the
+                    // fixed Aether return portal always rests on real terrain.
+                    if (cx == 0 && cz == 0) {
+                        islandX = 24; islandZ = 24; radius = 8;
+                    }
                     int dx = wx - islandX, dz = wz - islandZ;
                     int distance = dx * dx + dz * dz;
                     int rough = valueNoise(seed ^ 0x51ED270B, wx, wz, 11);
@@ -331,7 +336,8 @@ final class InfdevTerrain {
                         best = distance;
                         chosenX = islandX; chosenZ = islandZ;
                         chosenRadius = edgeRadius; chosenDx = dx; chosenDz = dz;
-                        top = 29 + (lattice(seed ^ 0x2C1B3C6D, cx, cz) * 15 >> 8) +
+                        top = (cx == 0 && cz == 0) ? 35 :
+                                29 + (lattice(seed ^ 0x2C1B3C6D, cx, cz) * 15 >> 8) +
                                 (valueNoise(seed ^ 0x6C8E9CF5, wx, wz, 19) - 128) / 110;
                     }
                 }
@@ -360,9 +366,10 @@ final class InfdevTerrain {
             for (int cz = cellZ - 1; cz <= cellZ + 1; cz++) {
                 for (int cx = cellX - 1; cx <= cellX + 1; cx++) {
                     int treeChance = lattice(seed ^ 0x7F4A7C15, cx, cz);
-                    if (treeChance < 118) continue;
+                    if ((cx == 0 && cz == 0) || treeChance < 118) continue;
                     int treeX = cx * 64 + 16 + (lattice(seed ^ 0x3C6EF372, cx, cz) * 32 >> 8);
                     int treeZ = cz * 64 + 16 + (lattice(seed ^ 0x1BF5A9D5, cx, cz) * 32 >> 8);
+                    if (cx == 0 && cz == 0) { treeX = 24; treeZ = 24; }
                     int tx = wx - treeX, tz = wz - treeZ;
                     int td = tx * tx + tz * tz;
                     if (td > 18) continue;
