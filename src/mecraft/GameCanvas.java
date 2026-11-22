@@ -2066,10 +2066,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private void travelThroughPortal() {
         int sourceDimension = world.dimensionId;
         if (sourceDimension == VoxelWorld.DIM_END) return;
+        // A second call must never bypass the arrival lock.
+        if (aetherPortalCooldownTicks > 0 || aetherPortalMustExit) return;
+        // The Aether is its own dimension: any portal touched from inside it
+        // is an exit to the Overworld, even if old saved metadata is missing.
         int portalType = world.portalTypeAt(world.playerX, world.playerY, world.playerZ);
         int targetDimension;
-        if (portalType == 2) {
-            targetDimension = sourceDimension == VoxelWorld.DIM_AETHER ? VoxelWorld.DIM_OVERWORLD : VoxelWorld.DIM_AETHER;
+        if (sourceDimension == VoxelWorld.DIM_AETHER) {
+            targetDimension = VoxelWorld.DIM_OVERWORLD;
+        } else if (portalType == 2) {
+            targetDimension = VoxelWorld.DIM_AETHER;
         } else if (portalType == 1) {
             targetDimension = sourceDimension == VoxelWorld.DIM_END ?
                     VoxelWorld.DIM_OVERWORLD : VoxelWorld.DIM_END;
@@ -2154,10 +2160,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 (world.playerY < floor + 1.0f || world.playerY > VoxelWorld.HEIGHT - 2))
             world.playerY = floor + 1.05f;
         portalChargeTicks = 0;
-        if (portalType == 2 || sourceDimension == VoxelWorld.DIM_AETHER ||
-                targetDimension == VoxelWorld.DIM_AETHER)
+        if (sourceDimension == VoxelWorld.DIM_AETHER ||
+                targetDimension == VoxelWorld.DIM_AETHER) {
             aetherPortalCooldownTicks = PORTAL_CHARGE_TICKS;
             aetherPortalMustExit = true;
+        }
         resetMining();
         renderer.sync(world);
         renderer.updateDayNight(world);
