@@ -2491,6 +2491,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     private void updatePlayerInventoryPickupCapacity() {
+        for (int id = 0; id < playerInventoryPickupCapacity.length; id++)
+            playerInventoryPickupCapacity[id] = 0;
         int emptySlots = 0;
         for (int slot = 0; slot < PLAYER_INVENTORY_SLOTS; slot++) {
             int id = playerSlotItems[slot];
