@@ -2134,7 +2134,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
         int px = (int)world.playerX, pz = (int)world.playerZ;
         int floor = world.surfaceY(px, pz);
-        if (world.playerY < floor + 1.0f || world.playerY > VoxelWorld.HEIGHT - 2)
+        if (targetDimension != VoxelWorld.DIM_AETHER &&
+                (world.playerY < floor + 1.0f || world.playerY > VoxelWorld.HEIGHT - 2))
             world.playerY = floor + 1.05f;
         portalChargeTicks = 0;
         resetMining();
