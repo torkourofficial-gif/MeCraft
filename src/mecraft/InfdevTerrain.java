@@ -300,73 +300,108 @@ final class InfdevTerrain {
     }
 
 
-    /** Bounded sky realm with seed-stable floating islands; no mobs or structures yet. */
+    /** Infinite sky realm: deterministic island fields are generated per chunk. */
     static void generateAether(int seed, int chunkX, int chunkZ, byte[] blocks,
                                int[] surfaceHeights, byte[] biomes) {
         if (blocks == null || blocks.length < CHUNK_VOLUME || surfaceHeights == null ||
                 surfaceHeights.length < CHUNK_SIZE * CHUNK_SIZE || biomes == null ||
                 biomes.length < CHUNK_SIZE * CHUNK_SIZE) return;
-        int ox = chunkX * CHUNK_SIZE, oz = chunkZ * CHUNK_SIZE, center = VoxelWorld.WIDTH / 2;
-        final int[] ix = { center, 8, 39, 9, 39, 24, 24, 10 };
-        final int[] iz = { center, 9, 10, 39, 39, 7, 41, 25 };
-        final int[] ir = { 8, 5, 6, 5, 6, 4, 5, 4 };
-        final int[] iy = { 35, 39, 30, 32, 42, 28, 37, 25 };
+        int ox = chunkX * CHUNK_SIZE, oz = chunkZ * CHUNK_SIZE;
         for (int z = 0; z < CHUNK_SIZE; z++) for (int x = 0; x < CHUNK_SIZE; x++) {
             int wx = ox + x, wz = oz + z, col = z * CHUNK_SIZE + x, base = col * WORLD_HEIGHT;
-            int chosen = -1, radiusChosen = 0, top = 0, best = 0x7FFFFFFF;
-            for (int i = 0; i < ix.length; i++) {
-                int dx = wx - ix[i], dz = wz - iz[i];
-                int rn = valueNoise(seed ^ (0x51ED270B + i * 0x45D9F3B), wx, wz, 9);
-                int radius = ir[i] + (rn - 128) / 85;
-                if (radius < ir[i] - 1) radius = ir[i] - 1;
-                if (radius > ir[i] + 1) radius = ir[i] + 1;
-                int d = dx * dx + dz * dz;
-                if (d <= radius * radius && d < best) {
-                    best = d; chosen = i; radiusChosen = radius;
-                    top = iy[i] + (valueNoise(seed ^ 0x2C1B3C6D, wx, wz, 17) - 128) / 100;
+            int chosenX = 0, chosenZ = 0, chosenRadius = 0, top = 0;
+            int chosenDx = 0, chosenDz = 0, best = 0x7FFFFFFF;
+            int cellX = floorDiv(wx, 64), cellZ = floorDiv(wz, 64);
+            // A 3x3 neighborhood is sufficient because island centers stay inside
+            // their 64-block cells and their maximum radius is nine blocks.
+            for (int cz = cellZ - 1; cz <= cellZ + 1; cz++) {
+                for (int cx = cellX - 1; cx <= cellX + 1; cx++) {
+                    int hx = lattice(seed ^ 0x3C6EF372, cx, cz);
+                    int hz = lattice(seed ^ 0x1BF5A9D5, cx, cz);
+                    int islandX = cx * 64 + 16 + (hx * 32 >> 8);
+                    int islandZ = cz * 64 + 16 + (hz * 32 >> 8);
+                    int radius = 5 + (lattice(seed ^ 0x5A827999, cx, cz) * 5 >> 8);
+                    int dx = wx - islandX, dz = wz - islandZ;
+                    int distance = dx * dx + dz * dz;
+                    int rough = valueNoise(seed ^ 0x51ED270B, wx, wz, 11);
+                    int edgeRadius = radius + (rough - 128) / 110;
+                    if (edgeRadius < radius - 1) edgeRadius = radius - 1;
+                    if (edgeRadius > radius + 1) edgeRadius = radius + 1;
+                    if (distance <= edgeRadius * edgeRadius && distance < best) {
+                        best = distance;
+                        chosenX = islandX; chosenZ = islandZ;
+                        chosenRadius = edgeRadius; chosenDx = dx; chosenDz = dz;
+                        top = 29 + (lattice(seed ^ 0x2C1B3C6D, cx, cz) * 15 >> 8) +
+                                (valueNoise(seed ^ 0x6C8E9CF5, wx, wz, 19) - 128) / 110;
+                    }
                 }
             }
             biomes[col] = 0;
-            // Soft, blocky snow-cloud banks float above the islands. Their
-            // positions are fixed so every chunk generates the same cloud.
-            for (int cloud = 0; cloud < 5; cloud++) {
-                int cloudX = cloud == 0 ? 13 : (cloud == 1 ? 35 :
-                        (cloud == 2 ? 13 : (cloud == 3 ? 36 : 24)));
-                int cloudZ = cloud == 0 ? 15 : (cloud == 1 ? 13 :
-                        (cloud == 2 ? 36 : (cloud == 3 ? 35 : 7)));
-                int radius = cloud == 4 ? 4 : 5;
-                int ddx = wx - cloudX, ddz = wz - cloudZ;
-                int distance = ddx * ddx + ddz * ddz;
-                if (distance > radius * radius) continue;
-                int edge = radius * radius - distance;
-                int cloudBase = 48 + (cloud & 1);
-                if (edge >= 5) blocks[base + cloudBase] = Block.SNOW;
-                if (edge >= 10 && cloudBase + 1 < WORLD_HEIGHT)
-                    blocks[base + cloudBase + 1] = Block.SNOW;
-                if (edge >= 17 && cloudBase - 1 > top &&
-                        cloudBase - 1 >= 0)
-                    blocks[base + cloudBase - 1] = Block.SNOW;
-            }
-            if (chosen < 0) {
+            for (int y = 0; y < WORLD_HEIGHT; y++) blocks[base + y] = Block.AIR;
+            if (best == 0x7FFFFFFF) {
                 surfaceHeights[col] = 0;
-                for (int y = 0; y < WORLD_HEIGHT; y++) blocks[base + y] = Block.AIR;
                 continue;
             }
-            int dx = wx - ix[chosen], dz = wz - iz[chosen];
-            int distance = (int)Math.sqrt(dx * dx + dz * dz);
-            int thick = 3 + (radiusChosen - distance) / 2 +
-                    (valueNoise(seed ^ 0x6C8E9CF5, wx, wz, 7) - 128) / 100;
+            int distance = (int)Math.sqrt(chosenDx * chosenDx + chosenDz * chosenDz);
+            int thick = 4 + (chosenRadius - distance) / 2 +
+                    (valueNoise(seed ^ 0x4CF5AD43, wx, wz, 8) - 128) / 100;
             if (thick < 3) thick = 3;
-            if (thick > 9) thick = 9;
+            if (thick > 10) thick = 10;
             int bottom = top - thick;
             surfaceHeights[col] = top;
-            for (int y = 0; y < WORLD_HEIGHT; y++) {
-                if (y < bottom || y > top) blocks[base + y] = Block.AIR;
-                else if (y == top) blocks[base + y] = Block.GRASS;
+            for (int y = bottom; y <= top; y++) {
+                if (y == top) blocks[base + y] = Block.GRASS;
                 else if (y >= top - 2) blocks[base + y] = Block.DIRT;
                 else blocks[base + y] = Block.STONE;
             }
 
+            // Tall Aether trees grow near the center of selected islands.
+            // Their canopy is broad, layered and deterministic across chunk edges.
+            for (int cz = cellZ - 1; cz <= cellZ + 1; cz++) {
+                for (int cx = cellX - 1; cx <= cellX + 1; cx++) {
+                    int treeChance = lattice(seed ^ 0x7F4A7C15, cx, cz);
+                    if (treeChance < 118) continue;
+                    int treeX = cx * 64 + 16 + (lattice(seed ^ 0x3C6EF372, cx, cz) * 32 >> 8);
+                    int treeZ = cz * 64 + 16 + (lattice(seed ^ 0x1BF5A9D5, cx, cz) * 32 >> 8);
+                    int tx = wx - treeX, tz = wz - treeZ;
+                    int td = tx * tx + tz * tz;
+                    if (td > 18) continue;
+                    int treeTop = 29 + (lattice(seed ^ 0x2C1B3C6D, cx, cz) * 15 >> 8);
+                    int treeHeight = 7 + (lattice(seed ^ 0x6A09E667, cx, cz) * 3 >> 8);
+                    for (int ty = treeTop + 1; ty <= treeTop + treeHeight + 2 &&
+                            ty < WORLD_HEIGHT; ty++) {
+                        boolean trunk = tx == 0 && tz == 0 && ty <= treeTop + treeHeight;
+                        int layer = ty - (treeTop + treeHeight - 2);
+                        int radius = layer == 0 || layer == 4 ? 1 :
+                                (layer == 1 || layer == 3 ? 2 : 3);
+                        boolean foliage = layer >= 0 && layer <= 4 &&
+                                td <= radius * radius + 1;
+                        int at = base + ty;
+                        if (trunk) blocks[at] = Block.LOG;
+                        else if (foliage && blocks[at] == Block.AIR)
+                            blocks[at] = Block.LEAVES;
+                    }
+                }
+            }
+        }
+
+        // Snowy cloud clusters are generated in a separate pass so empty sky
+        // columns do not erase them while their island terrain is initialized.
+        int minCellX = floorDiv(ox, 64) - 1, maxCellX = floorDiv(ox + CHUNK_SIZE - 1, 64) + 1;
+        int minCellZ = floorDiv(oz, 64) - 1, maxCellZ = floorDiv(oz + CHUNK_SIZE - 1, 64) + 1;
+        for (int cz = minCellZ; cz <= maxCellZ; cz++) for (int cx = minCellX; cx <= maxCellX; cx++) {
+            int cloudX = cx * 64 + 8 + (lattice(seed ^ 0x243F6A88, cx, cz) * 48 >> 8);
+            int cloudZ = cz * 64 + 8 + (lattice(seed ^ 0xB7E15162, cx, cz) * 48 >> 8);
+            for (int z = 0; z < CHUNK_SIZE; z++) for (int x = 0; x < CHUNK_SIZE; x++) {
+                int wx = ox + x, wz = oz + z, dx = wx - cloudX, dz = wz - cloudZ;
+                int distance = dx * dx + dz * dz;
+                if (distance > 25) continue;
+                int col = z * CHUNK_SIZE + x, base = col * WORLD_HEIGHT;
+                int edge = 25 - distance;
+                if (edge >= 5 && blocks[base + 48] == Block.AIR) blocks[base + 48] = Block.SNOW;
+                if (edge >= 12 && blocks[base + 49] == Block.AIR) blocks[base + 49] = Block.SNOW;
+                if (edge >= 19 && blocks[base + 47] == Block.AIR) blocks[base + 47] = Block.SNOW;
+            }
         }
     }
 
