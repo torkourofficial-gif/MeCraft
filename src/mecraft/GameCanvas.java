@@ -2118,15 +2118,19 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             // as a player-built portal, then arrive inside its portal blocks.
             int[] destination = world.createAetherPortalAtSpawn();
             if (destination == null) {
-                world.setDimension(sourceDimension);
-                portalChargeTicks = 0;
-                return;
+                // A failed return-portal placement must never cancel the
+                // dimension change. Keep the player on the central Aether
+                // island; the return portal can be rebuilt on a later visit.
+                world.playerX = VoxelWorld.WIDTH * 0.5f + 0.5f;
+                world.playerZ = VoxelWorld.DEPTH * 0.5f + 0.5f;
+                world.playerY = 36.05f;
+            } else {
+                world.playerX = destination[3] == 0 ?
+                        destination[0] + 2.5f : destination[0] + 0.5f;
+                world.playerZ = destination[3] == 0 ?
+                        destination[2] + 0.5f : destination[2] + 2.5f;
+                world.playerY = destination[1] + 1.05f;
             }
-            world.playerX = destination[3] == 0 ?
-                    destination[0] + 2.5f : destination[0] + 0.5f;
-            world.playerZ = destination[3] == 0 ?
-                    destination[2] + 0.5f : destination[2] + 2.5f;
-            world.playerY = destination[1] + 1.05f;
         } else if (hasDimensionReturn[targetDimension]) {
             world.playerX = dimensionReturnX[targetDimension];
             world.playerY = dimensionReturnY[targetDimension];
