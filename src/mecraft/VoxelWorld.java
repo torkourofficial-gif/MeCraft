@@ -268,8 +268,8 @@ final class VoxelWorld {
     }
 
     private boolean needsProceduralChunk(int cx, int cz) {
-        // The End is a bounded island in the void, never an extension of Infdev terrain.
-        if (dimensionId == DIM_END || dimensionId == DIM_AETHER) return false;
+        // The End is bounded; the Aether uses its own infinite procedural island field.
+        if (dimensionId == DIM_END) return false;
         int x0 = cx * CHUNK_XZ, z0 = cz * CHUNK_XZ;
         int x1 = x0 + CHUNK_XZ - 1, z1 = z0 + CHUNK_XZ - 1;
         if (worldSize == SIZE_OLD &&
@@ -573,7 +573,7 @@ final class VoxelWorld {
 
     byte get(int x, int y, int z) {
         if (y < 0 || y >= HEIGHT || outsideWorld(x, z) ||
-                ((dimensionId == DIM_END || dimensionId == DIM_AETHER) && !inside(x, z))) return Block.AIR;
+                (dimensionId == DIM_END && !inside(x, z))) return Block.AIR;
         if (inside(x, z)) return blocks[index(x, y, z)];
         int edit = findEdit(x, y, z);
         return edit >= 0 ? editId[edit] : proceduralBlock(x, y, z);
