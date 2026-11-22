@@ -403,7 +403,7 @@ final class InfdevTerrain {
             }
         }
 
-        // The Aether's green islands are carpeted with abundant flowers.
+        // Place the glass structures after terrain and trees, preserving their shells.\n        generateAetherCombatChambers(seed, ox, oz, blocks);\n\n        // The Aether's green islands are carpeted with abundant flowers.
         // Place them in a second pass so neighboring columns and tree canopies
         // have already been generated, and keep snowy islands flower-free.
         for (int z = 0; z < CHUNK_SIZE; z++) for (int x = 0; x < CHUNK_SIZE; x++) {
@@ -446,6 +446,50 @@ final class InfdevTerrain {
                     if (blocks[base + 48] == Block.AIR) blocks[base + 48] = Block.SNOW;
                 } else if (blocks[base + 47] == Block.AIR) {
                     blocks[base + 47] = Block.SNOW;
+                }
+            }
+        }
+    }
+
+    // Aether combat chambers: one deterministic 50% roll per island cell.
+    static boolean hasAetherCombatChamber(int seed, int cellX, int cellZ) {
+        if (cellX == 0 && cellZ == 0) return false;
+        return (lattice(seed ^ 0x4F1BBCDC, cellX, cellZ) & 255) < 128;
+    }
+
+    static int aetherIslandCenterX(int seed, int cellX, int cellZ) {
+        return cellX * 32 + 8 + (lattice(seed ^ 0x3C6EF372, cellX, cellZ) * 16 >> 8);
+    }
+
+    static int aetherIslandCenterZ(int seed, int cellX, int cellZ) {
+        return cellZ * 32 + 8 + (lattice(seed ^ 0x1BF5A9D5, cellX, cellZ) * 16 >> 8);
+    }
+
+    static int aetherIslandTop(int seed, int cellX, int cellZ) {
+        return 29 + (lattice(seed ^ 0x2C1B3C6D, cellX, cellZ) * 15 >> 8) +
+                (valueNoise(seed ^ 0x6C8E9CF5, aetherIslandCenterX(seed, cellX, cellZ),
+                        aetherIslandCenterZ(seed, cellX, cellZ), 19) - 128) / 110;
+    }
+
+    private static void generateAetherCombatChambers(int seed, int ox, int oz, byte[] blocks) {
+        int minX = floorDiv(ox, 32) - 1, maxX = floorDiv(ox + CHUNK_SIZE - 1, 32) + 1;
+        int minZ = floorDiv(oz, 32) - 1, maxZ = floorDiv(oz + CHUNK_SIZE - 1, 32) + 1;
+        for (int cz = minZ; cz <= maxZ; cz++) for (int cx = minX; cx <= maxX; cx++) {
+            if (!hasAetherCombatChamber(seed, cx, cz)) continue;
+            int centerX = aetherIslandCenterX(seed, cx, cz);
+            int centerZ = aetherIslandCenterZ(seed, cx, cz);
+            int floorY = aetherIslandTop(seed, cx, cz) + 1;
+            if (floorY + 5 >= WORLD_HEIGHT) continue;
+            for (int z = centerZ - 3; z <= centerZ + 3; z++) {
+                if (z < oz || z >= oz + CHUNK_SIZE) continue;
+                for (int x = centerX - 3; x <= centerX + 3; x++) {
+                    if (x < ox || x >= ox + CHUNK_SIZE) continue;
+                    int base = ((z - oz) * CHUNK_SIZE + x - ox) * WORLD_HEIGHT;
+                    boolean edge = x == centerX - 3 || x == centerX + 3 ||
+                            z == centerZ - 3 || z == centerZ + 3;
+                    blocks[base + floorY] = Block.GLASS;
+                    for (int y = floorY + 1; y <= floorY + 4; y++)
+                        blocks[base + y] = edge || y == floorY + 4 ? Block.GLASS : Block.AIR;
                 }
             }
         }
