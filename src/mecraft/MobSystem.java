@@ -921,6 +921,17 @@ final class MobSystem {
         if (targetY < 5.0f) targetY = 5.0f;
         if (targetY > VoxelWorld.HEIGHT - 5.0f) targetY = VoxelWorld.HEIGHT - 5.0f;
         mob.y += (targetY - mob.y) * 0.035f;
+        if (mob.type == BLAZE && world.dimensionId == VoxelWorld.DIM_AETHER) {
+            int cellX = (int)Math.floor(mob.x / 32.0f);
+            int cellZ = (int)Math.floor(mob.z / 32.0f);
+            float centerX = InfdevTerrain.aetherIslandCenterX(world.seed, cellX, cellZ);
+            float centerZ = InfdevTerrain.aetherIslandCenterZ(world.seed, cellX, cellZ);
+            if (mob.x < centerX - 2.25f) mob.x = centerX - 2.25f;
+            if (mob.x > centerX + 2.25f) mob.x = centerX + 2.25f;
+            if (mob.z < centerZ - 2.25f) mob.z = centerZ - 2.25f;
+            if (mob.z > centerZ + 2.25f) mob.z = centerZ + 2.25f;
+            mob.y = InfdevTerrain.aetherIslandTop(world.seed, cellX, cellZ) + 2.0f;
+        }
         mob.targetYaw = yawTo(dx, dz);
         turn(mob);
         if (mob.attackDelay <= 0 && distance < (mob.type == GHAST ? 32.0f : 18.0f) && distance > 0.1f) {
