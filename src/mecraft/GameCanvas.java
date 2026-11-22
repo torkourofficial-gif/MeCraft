@@ -216,6 +216,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private Image guiTexture;
     private Image iconsTexture;
     private Image containerTexture;
+    private Image inventoryTexture;
+    private InventoryPlayerPreview inventoryPlayerPreview;
+    private int inventoryPreviewSkin = -1;
     private Image terrainTexture;
     private final Image[] blockIcons = new Image[Block.COUNT];
     private final Image[] itemIcons = new Image[ItemCatalog.COUNT];
@@ -2677,31 +2680,33 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     private void drawSurvivalInventory(Graphics g) {
-        int w = getWidth(), h = getHeight(), left = (w - 176) / 2, top = (h - 166) / 2;
-        // Draw the complete 176x166 player-inventory panel from container.png.
-        // Its backpack rows and hotbar are already laid out in the lower section.
-        if (containerTexture != null && containerTexture.getWidth() >= 176 &&
-                containerTexture.getHeight() >= 166) {
-            g.drawRegion(containerTexture, 0, 0, 176, 166, Sprite.TRANS_NONE,
+        int w = getWidth(), h = getHeight();
+        int left = (w - 176) / 2, top = (h - 166) / 2;
+        if (inventoryTexture != null && inventoryTexture.getWidth() >= 176 &&
+                inventoryTexture.getHeight() >= 166) {
+            g.drawRegion(inventoryTexture, 0, 0, 176, 166, Sprite.TRANS_NONE,
                     left, top, Graphics.TOP | Graphics.LEFT);
         } else {
             g.setColor(198, 198, 198); g.fillRect(left, top, 176, 166);
             g.setColor(35, 35, 35); g.drawRect(left, top, 175, 165);
         }
+
+        // inventory.png layout: preview x=25..78/y=7..78;
+        // backpack slots begin at (7,83), hotbar at (7,141), 18px pitch.
         for (int slot = 0; slot < PLAYER_INVENTORY_SLOTS; slot++) {
-            int x = left + 8 + (slot % 9) * 18;
-            int y = slot < 27 ? top + 84 + (slot / 9) * 18 : top + 142;
+            int x = left + 7 + (slot % 9) * 18;
+            int y = slot < 27 ? top + 83 + (slot / 9) * 18 : top + 141;
             int id = playerSlotItems[slot], amount = playerSlotCounts[slot];
             if (slot == playerInventorySelection) {
-                g.setColor(255, 255, 255); g.fillRect(x - 1, y - 1, 18, 18);
-                g.setColor(75, 75, 75); g.fillRect(x, y, 16, 16);
+                g.setColor(255, 255, 255);
+                g.drawRect(x, y, 17, 17);
             }
             if (id > 0 && id < ItemCatalog.COUNT && amount > 0) {
-                drawIcon(g, id, x, y, false);
+                drawIcon(g, id, x + 1, y + 1, false);
                 if (amount > 1 && !ItemCatalog.isTool(id))
                     drawOutlinedCount(g, Integer.toString(amount), x + 16, y + 16,
                             Graphics.RIGHT | Graphics.BOTTOM);
-                if (ItemCatalog.isTool(id)) drawDurability(g, id, x, y + 15);
+                if (ItemCatalog.isTool(id)) drawDurability(g, id, x + 1, y + 16);
             }
         }
         if (playerInventoryHeldItem > 0) {
@@ -2713,9 +2718,27 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 drawOutlinedCount(g, Integer.toString(playerInventoryHeldCount), x + 16, y + 16,
                         Graphics.RIGHT | Graphics.BOTTOM);
         }
-        g.setColor(35, 35, 35);
-        g.drawString("5 mover  # cerrar  * crafteo",
-                w / 2, top + 153, Graphics.TOP | Graphics.HCENTER);
+        drawInventoryPlayerPreview(g, left, top);
+    }
+
+    private void drawInventoryPlayerPreview(Graphics g, int left, int top) {
+        try {
+            if (inventoryPlayerPreview == null || inventoryPreviewSkin != skinSelection) {
+                Image skin = GameAssets.playerSkin(skinSelection);
+                inventoryPlayerPreview = new InventoryPlayerPreview(skin, 54, 72);
+                inventoryPreviewSkin = skinSelection;
+            }
+            Graphics3D graphics3D = Graphics3D.getInstance();
+            graphics3D.bindTarget(g);
+            try {
+                graphics3D.setViewport(left + 25, top + 7, 54, 72);
+                inventoryPlayerPreview.render(graphics3D);
+            } finally {
+                graphics3D.releaseTarget();
+            }
+        } catch (Throwable ignored) {
+            // Keep the inventory usable if a device lacks enough M3G resources.
+        }
     }
 
     private void openCrafting(boolean workbench) {
@@ -3758,6 +3781,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         try { guiTexture = GameAssets.image("gui.png"); } catch (IOException ignored) { guiTexture = null; }
         try { iconsTexture = GameAssets.image("icons.png"); } catch (IOException ignored) { iconsTexture = null; }
         try { containerTexture = GameAssets.image("container.png"); } catch (IOException ignored) { containerTexture = null; }
+        try { inventoryTexture = GameAssets.image("inventory.png"); } catch (IOException ignored) { inventoryTexture = null; }
         try { furnaceTexture = GameAssets.image("furnace.png"); } catch (IOException ignored) { furnaceTexture = null; }
         try {
             Image sourceDpad = GameAssets.image("dpad.png");
@@ -4337,10 +4361,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         else if (state == GAME_OVER) keyPressed(KEY_NUM5);
         else if (state == SURVIVAL_INVENTORY) {
             int left = (w - 176) / 2, top = (h - 166) / 2;
-            if (x >= left + 7 && x < left + 169 && y >= top + 83 && y < top + 161) {
-                int col = (x - (left + 8)) / 18;
+            if (x >= left + 7 && x < left + 169 && y >= top + 83 && y < top + 160) {
+                int col = (x - (left + 7)) / 18;
                 if (col < 0) col = 0; if (col > 8) col = 8;
-                int row = y < top + 139 ? (y - (top + 84)) / 18 : 3;
+                int row = y < top + 137 ? (y - (top + 83)) / 18 : 3;
                 if (row < 0) row = 0; if (row > 3) row = 3;
                 playerInventorySelection = row * 9 + col;
                 clickPlayerInventorySlot();
