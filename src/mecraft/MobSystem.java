@@ -1386,7 +1386,8 @@ final class MobSystem {
     /** Economic mode trims one mob slot without making the world feel empty. */
     private boolean hostileSlotAllowed(int slot, VoxelWorld world) {
         if (world.dimensionId == VoxelWorld.DIM_END) return slot >= 11;
-        if (world.dimensionId == VoxelWorld.DIM_AETHER && slot == 13) return true;
+        // Aether hostiles are limited to surface slimes and chamber blazes.
+        if (world.dimensionId == VoxelWorld.DIM_AETHER) return slot == 11 || slot == 13;
         if (world.economicMode && slot == (world.nether ? 13 : 11)) return false;
         return world.difficulty != VoxelWorld.DIFFICULTY_EASY || slot <= 9 ||
                mobTypeForSlot(slot) == ENDERMAN;
@@ -1402,6 +1403,7 @@ final class MobSystem {
     private boolean hostileAllowed(int type, VoxelWorld world) {
         if (world.difficulty == VoxelWorld.DIFFICULTY_PEACEFUL) return false;
         if (world.dimensionId == VoxelWorld.DIM_END) return type == ENDERMAN;
+        if (world.dimensionId == VoxelWorld.DIM_AETHER) return type == SLIME || type == BLAZE;
         if (world.nether) return type == GHAST || type == PIG_ZOMBIE ||
                 type == SKELETON || type == BLAZE;
         return type != GHAST && type != PIG_ZOMBIE;
