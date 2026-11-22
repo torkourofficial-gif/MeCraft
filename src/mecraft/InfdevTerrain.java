@@ -299,6 +299,56 @@ final class InfdevTerrain {
         }
     }
 
+
+    /** Bounded sky realm with seed-stable floating islands; no mobs or structures yet. */
+    static void generateAether(int seed, int chunkX, int chunkZ, byte[] blocks,
+                               int[] surfaceHeights, byte[] biomes) {
+        if (blocks == null || blocks.length < CHUNK_VOLUME || surfaceHeights == null ||
+                surfaceHeights.length < CHUNK_SIZE * CHUNK_SIZE || biomes == null ||
+                biomes.length < CHUNK_SIZE * CHUNK_SIZE) return;
+        int ox = chunkX * CHUNK_SIZE, oz = chunkZ * CHUNK_SIZE, center = VoxelWorld.WIDTH / 2;
+        final int[] ix = { center, 8, 39, 9, 39, 24, 24, 13 };
+        final int[] iz = { center, 9, 10, 39, 39, 7, 41, 25 };
+        final int[] ir = { 8, 5, 6, 5, 6, 4, 5, 4 };
+        final int[] iy = { 35, 39, 30, 32, 42, 28, 37, 25 };
+        for (int z = 0; z < CHUNK_SIZE; z++) for (int x = 0; x < CHUNK_SIZE; x++) {
+            int wx = ox + x, wz = oz + z, col = z * CHUNK_SIZE + x, base = col * WORLD_HEIGHT;
+            int chosen = -1, radiusChosen = 0, top = 0, best = 0x7FFFFFFF;
+            for (int i = 0; i < ix.length; i++) {
+                int dx = wx - ix[i], dz = wz - iz[i];
+                int rn = valueNoise(seed ^ (0x51ED270B + i * 0x45D9F3B), wx, wz, 9);
+                int radius = ir[i] + (rn - 128) / 85;
+                if (radius < ir[i] - 1) radius = ir[i] - 1;
+                if (radius > ir[i] + 1) radius = ir[i] + 1;
+                int d = dx * dx + dz * dz;
+                if (d <= radius * radius && d < best) {
+                    best = d; chosen = i; radiusChosen = radius;
+                    top = iy[i] + (valueNoise(seed ^ 0x2C1B3C6D, wx, wz, 17) - 128) / 100;
+                }
+            }
+            biomes[col] = 0;
+            if (chosen < 0) {
+                surfaceHeights[col] = 0;
+                for (int y = 0; y < WORLD_HEIGHT; y++) blocks[base + y] = Block.AIR;
+                continue;
+            }
+            int dx = wx - ix[chosen], dz = wz - iz[chosen];
+            int distance = (int)Math.sqrt(dx * dx + dz * dz);
+            int thick = 3 + (radiusChosen - distance) / 2 +
+                    (valueNoise(seed ^ 0x6C8E9CF5, wx, wz, 7) - 128) / 100;
+            if (thick < 3) thick = 3;
+            if (thick > 9) thick = 9;
+            int bottom = top - thick;
+            surfaceHeights[col] = top;
+            for (int y = 0; y < WORLD_HEIGHT; y++) {
+                if (y < bottom || y > top) blocks[base + y] = Block.AIR;
+                else if (y == top) blocks[base + y] = Block.GRASS;
+                else if (y >= top - 2) blocks[base + y] = Block.DIRT;
+                else blocks[base + y] = Block.STONE;
+            }
+        }
+    }
+
     static int endPillarCount() { return END_PILLAR_HEIGHTS.length; }
 
     static int endPillarX(int index) {
