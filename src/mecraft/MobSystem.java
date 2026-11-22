@@ -536,7 +536,7 @@ final class MobSystem {
 
     /** Spawn an egg-selected mob at the clicked block face, replacing its pooled slot. */
     boolean spawnFromEgg(VoxelWorld world, int eggType, float x, float y, float z) {
-        if (world == null || eggType < 0 || eggType >= 11 || y < 1.0f || y + 2.0f >= VoxelWorld.HEIGHT)
+        if (world == null || eggType < 0 || eggType >= 12 || y < 1.0f || y + 2.0f >= VoxelWorld.HEIGHT)
             return false;
         int bx = floor(x), by = floor(y), bz = floor(z);
         if (world.get(bx, by, bz) != Block.AIR || world.get(bx, by + 1, bz) != Block.AIR)
@@ -558,7 +558,8 @@ final class MobSystem {
         else if (type == 7) type = SPIDER;
         else if (type == 8) type = SLIME;
         else if (type == 9) type = GHAST;
-        else type = PIG_ZOMBIE;
+        else if (type == 10) type = PIG_ZOMBIE;
+        else type = BLAZE;
         Mob mob = createMob(slot, type);
         mob.eggSpawned = true;
         mob.endermanAngry = false;
