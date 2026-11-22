@@ -720,7 +720,7 @@ final class MobSystem {
             zombiesNightActive = false;
             return;
         }
-        boolean night = world.dimensionId == VoxelWorld.DIM_NETHER || world.dimensionId == VoxelWorld.DIM_END || world.isNight();
+        boolean night = world.dimensionId == VoxelWorld.DIM_NETHER ||\n                world.dimensionId == VoxelWorld.DIM_END || world.dimensionId == VoxelWorld.DIM_AETHER || world.isNight();
         for (int i = 0; i < mobs.length; i++) {
             if (isHostile(mobTypeForSlot(i)) && (mobs[i] == null || !mobs[i].eggSpawned) &&
                     !hostileAllowed(mobTypeForSlot(i), world) && mobs[i] != null) releaseMob(i);
@@ -777,21 +777,50 @@ final class MobSystem {
     private void spawnZombie(VoxelWorld world, Mob mob) {
         mob.alive = false;
         mob.root.setRenderingEnable(false);
-        int attempts = 0;
         int x = (int)world.playerX;
         int z = (int)world.playerZ;
-        do {
-            int radius = 9 + random.nextInt(10);
-            int angle = random.nextInt(360);
-            x = (int)world.playerX + (int)(Math.cos(angle * Math.PI / 180.0) * radius);
-            z = (int)world.playerZ + (int)(Math.sin(angle * Math.PI / 180.0) * radius);
-            attempts++;
-        } while ((!validSpawnForMob(world, mob, x, z) || tooClose(mob, x + 0.5f, z + 0.5f)) && attempts < 48);
-        if (mob.type == BLAZE && !validSpawnForMob(world, mob, x, z)) return;
-        int ground = mob.type == BLAZE ? InfdevTerrain.NETHER_FORTRESS_FLOOR_Y : world.surfaceY(x, z);
+        int ground;
+        if (mob.type == BLAZE && world.dimensionId == VoxelWorld.DIM_AETHER) {
+            int cellX = (int)Math.floor(world.playerX / 32.0f);
+            int cellZ = (int)Math.floor(world.playerZ / 32.0f);
+            int bestDistance = 0x7FFFFFFF;
+            boolean found = false;
+            for (int cz = cellZ - 2; cz <= cellZ + 2; cz++) {
+                for (int cx = cellX - 2; cx <= cellX + 2; cx++) {
+                    if (!InfdevTerrain.hasAetherCombatChamber(world.seed, cx, cz)) continue;
+                    int candidateX = InfdevTerrain.aetherIslandCenterX(world.seed, cx, cz);
+                    int candidateZ = InfdevTerrain.aetherIslandCenterZ(world.seed, cx, cz);
+                    int dx = candidateX - (int)world.playerX;
+                    int dz = candidateZ - (int)world.playerZ;
+                    int distance = dx * dx + dz * dz;
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        x = candidateX;
+                        z = candidateZ;
+                        found = true;
+                    }
+                }
+            }
+            if (!found || bestDistance > 40 * 40 || tooClose(mob, x + 0.5f, z + 0.5f)) return;
+            ground = InfdevTerrain.aetherIslandTop(world.seed,
+                    (int)Math.floor(x / 32.0f), (int)Math.floor(z / 32.0f)) + 1;
+        } else {
+            int attempts = 0;
+            do {
+                int radius = 9 + random.nextInt(10);
+                int angle = random.nextInt(360);
+                x = (int)world.playerX + (int)(Math.cos(angle * Math.PI / 180.0) * radius);
+                z = (int)world.playerZ + (int)(Math.sin(angle * Math.PI / 180.0) * radius);
+                attempts++;
+            } while ((!validSpawnForMob(world, mob, x, z) ||
+                    tooClose(mob, x + 0.5f, z + 0.5f)) && attempts < 48);
+            if (mob.type == BLAZE && !validSpawnForMob(world, mob, x, z)) return;
+            ground = mob.type == BLAZE ? InfdevTerrain.NETHER_FORTRESS_FLOOR_Y : world.surfaceY(x, z);
+        }
         mob.x = x + 0.5f;
         mob.z = z + 0.5f;
-        mob.y = ground + (mob.type == GHAST ? 8.0f : 1.0f);
+        mob.y = mob.type == BLAZE && world.dimensionId == VoxelWorld.DIM_AETHER ?
+                ground + 1.0f : ground + (mob.type == GHAST ? 8.0f : 1.0f);
         if (mob.y > VoxelWorld.HEIGHT - 6.0f) mob.y = VoxelWorld.HEIGHT - 6.0f;
         mob.yaw = random.nextInt(360);
         mob.targetYaw = mob.yaw;
@@ -840,6 +869,18 @@ final class MobSystem {
 
     private boolean validSpawnForMob(VoxelWorld world, Mob mob, int x, int z) {
         if (mob.type != BLAZE) return validSpawn(world, x, z);
+        if (world.dimensionId == VoxelWorld.DIM_AETHER) {
+            int cellX = (int)Math.floor(x / 32.0f);
+            int cellZ = (int)Math.floor(z / 32.0f);
+            if (!InfdevTerrain.hasAetherCombatChamber(world.seed, cellX, cellZ)) return false;
+            int centerX = InfdevTerrain.aetherIslandCenterX(world.seed, cellX, cellZ);
+            int centerZ = InfdevTerrain.aetherIslandCenterZ(world.seed, cellX, cellZ);
+            int floorY = InfdevTerrain.aetherIslandTop(world.seed, cellX, cellZ) + 1;
+            return x == centerX && z == centerZ &&
+                    world.get(x, floorY, z) == Block.GLASS &&
+                    world.get(x, floorY + 1, z) == Block.AIR &&
+                    world.get(x, floorY + 2, z) == Block.AIR;
+        }
         int y = InfdevTerrain.NETHER_FORTRESS_FLOOR_Y;
         return world.dimensionId == VoxelWorld.DIM_NETHER &&
                 world.get(x, y, z) == Block.NETHER_BRICK &&
@@ -1332,7 +1373,7 @@ final class MobSystem {
 
     /** Economic mode trims one mob slot without making the world feel empty. */
     private boolean hostileSlotAllowed(int slot, VoxelWorld world) {
-        if (world.dimensionId == VoxelWorld.DIM_END) return slot >= 11;
+        if (world.dimensionId == VoxelWorld.DIM_END) return slot >= 11;\n        if (world.dimensionId == VoxelWorld.DIM_AETHER && slot == 13) return true;
         if (world.economicMode && slot == (world.nether ? 13 : 11)) return false;
         return world.difficulty != VoxelWorld.DIFFICULTY_EASY || slot <= 9 ||
                mobTypeForSlot(slot) == ENDERMAN;
