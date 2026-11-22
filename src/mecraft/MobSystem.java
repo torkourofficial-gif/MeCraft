@@ -722,15 +722,7 @@ final class MobSystem {
         }
         boolean night = world.dimensionId == VoxelWorld.DIM_NETHER ||
                 world.dimensionId == VoxelWorld.DIM_END || world.dimensionId == VoxelWorld.DIM_AETHER || world.isNight();
-        // Aether chamber Blazes use their own retry loop. The ordinary hostile
-        // cycle only runs on the first activation and can otherwise spend its
-        // respawn attempts on the slime slot forever.
-        if (world.dimensionId == VoxelWorld.DIM_AETHER && tick % 40 == 0) {
-            Mob blaze = mobs[13];
-            if (blaze == null || (!blaze.alive && !blaze.dying)) {
-                spawnZombie(world, createMob(13));
-            }
-        }
+        // Aether Blazes use the same ordinary hostile spawn cycle as Slimes.
         for (int i = 0; i < mobs.length; i++) {
             if (isHostile(mobTypeForSlot(i)) && (mobs[i] == null || !mobs[i].eggSpawned) &&
                     !hostileAllowed(mobTypeForSlot(i), world) && mobs[i] != null) releaseMob(i);
@@ -738,8 +730,7 @@ final class MobSystem {
         if (!night) {
             for (int i = 0; i < mobs.length; i++) {
                 Mob mob = mobs[i];
-                if (!isHostile(mobTypeForSlot(i)) || mob != null && mob.eggSpawned ||
-                        world.dimensionId == VoxelWorld.DIM_AETHER && i == 13) continue;
+                if (!isHostile(mobTypeForSlot(i)) || mob != null && mob.eggSpawned) continue;
                 if (!hostileAllowed(mobTypeForSlot(i), world) || !hostileSlotAllowed(i, world)) {
                     if (mob != null) releaseMob(i);
                     continue;
@@ -776,7 +767,6 @@ final class MobSystem {
         for (int i = 0; i < mobs.length; i++) {
             Mob mob = mobs[i];
             if (mob != null && mob.eggSpawned || !isHostile(mobTypeForSlot(i)) ||
-                    world.dimensionId == VoxelWorld.DIM_AETHER && i == 13 ||
                     !hostileAllowed(mobTypeForSlot(i), world) || !hostileSlotAllowed(i, world)) continue;
             if (mob == null) mob = createMob(i);
             if (mob.dying) continue;
@@ -793,39 +783,7 @@ final class MobSystem {
         int x = (int)world.playerX;
         int z = (int)world.playerZ;
         int ground;
-        if (mob.type == BLAZE && world.dimensionId == VoxelWorld.DIM_AETHER) {
-            int cellX = (int)Math.floor(world.playerX / 32.0f);
-            int cellZ = (int)Math.floor(world.playerZ / 32.0f);
-            int bestDistance = 0x7FFFFFFF;
-            int chamberCellX = 0, chamberCellZ = 0;
-            boolean found = false;
-            // Search a wider neighborhood, but only spawn while the chamber is
-            // close enough to remain inside the mob activation radius.
-            for (int cz = cellZ - 3; cz <= cellZ + 3; cz++) {
-                for (int cx = cellX - 3; cx <= cellX + 3; cx++) {
-                    if (!InfdevTerrain.hasAetherCombatChamber(world.seed, cx, cz)) continue;
-                    int candidateX = InfdevTerrain.aetherIslandCenterX(world.seed, cx, cz);
-                    int candidateZ = InfdevTerrain.aetherIslandCenterZ(world.seed, cx, cz);
-                    int dx = candidateX - (int)world.playerX;
-                    int dz = candidateZ - (int)world.playerZ;
-                    int distance = dx * dx + dz * dz;
-                    if (distance < bestDistance) {
-                        bestDistance = distance;
-                        x = candidateX;
-                        z = candidateZ;
-                        chamberCellX = cx;
-                        chamberCellZ = cz;
-                        found = true;
-                    }
-                }
-            }
-            if (!found || bestDistance > 28 * 28) return;
-            ground = InfdevTerrain.aetherIslandTop(world.seed, chamberCellX, chamberCellZ) + 1;
-            // The deterministic chamber roll is authoritative. Do not gate
-            // spawning on world.get(): a neighboring chunk may not be loaded
-            // yet even though its chamber is part of the generated Aether.
-            // Spawn in the room, then let the Blaze roam freely afterward.
-        } else {
+        {else {
             int attempts = 0;
             do {
                 int radius = 9 + random.nextInt(10);
@@ -890,18 +848,7 @@ final class MobSystem {
 
     private boolean validSpawnForMob(VoxelWorld world, Mob mob, int x, int z) {
         if (mob.type != BLAZE) return validSpawn(world, x, z);
-        if (world.dimensionId == VoxelWorld.DIM_AETHER) {
-            int cellX = (int)Math.floor(x / 32.0f);
-            int cellZ = (int)Math.floor(z / 32.0f);
-            if (!InfdevTerrain.hasAetherCombatChamber(world.seed, cellX, cellZ)) return false;
-            int centerX = InfdevTerrain.aetherIslandCenterX(world.seed, cellX, cellZ);
-            int centerZ = InfdevTerrain.aetherIslandCenterZ(world.seed, cellX, cellZ);
-            int floorY = InfdevTerrain.aetherIslandTop(world.seed, cellX, cellZ) + 1;
-            return x == centerX && z == centerZ &&
-                    world.get(x, floorY, z) == Block.GLASS &&
-                    world.get(x, floorY + 1, z) == Block.AIR &&
-                    world.get(x, floorY + 2, z) == Block.AIR;
-        }
+        if (world.dimensionId == VoxelWorld.DIM_AETHER) return validSpawn(world, x, z);
         int y = InfdevTerrain.NETHER_FORTRESS_FLOOR_Y;
         return world.dimensionId == VoxelWorld.DIM_NETHER &&
                 world.get(x, y, z) == Block.NETHER_BRICK &&
@@ -1397,7 +1344,7 @@ final class MobSystem {
     /** Economic mode trims one mob slot without making the world feel empty. */
     private boolean hostileSlotAllowed(int slot, VoxelWorld world) {
         if (world.dimensionId == VoxelWorld.DIM_END) return slot >= 11;
-        // Aether hostiles are limited to surface slimes and chamber blazes.
+        // Aether hostiles are limited to surface Slimes and roaming Blazes.
         if (world.dimensionId == VoxelWorld.DIM_AETHER) return slot == 11 || slot == 13;
         if (world.economicMode && slot == (world.nether ? 13 : 11)) return false;
         return world.difficulty != VoxelWorld.DIFFICULTY_EASY || slot <= 9 ||
