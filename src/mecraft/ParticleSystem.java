@@ -2,6 +2,7 @@ package mecraft;
 
 import javax.microedition.m3g.Appearance;
 import javax.microedition.m3g.CompositingMode;
+import javax.microedition.m3g.Group;
 import javax.microedition.m3g.Material;
 import javax.microedition.m3g.Mesh;
 import javax.microedition.m3g.PolygonMode;
@@ -13,16 +14,18 @@ import javax.microedition.m3g.VertexBuffer;
 /**
  * Small, fixed particle pool.
  *
- * The system deliberately uses the original simple approach: a circular
- * particle slot, basic velocity/gravity, one ground check and one shared mesh.
- * No per-particle objects or per-frame allocations are made.
+ * Fixed particle slots share one vertex buffer. Inactive particles are removed
+ * from the draw list, and all particle meshes stay disabled while the pool is
+ * empty. No per-particle objects or per-frame allocations are made.
  */
 final class ParticleSystem {
-    private static final int CAPACITY = 24;
+    private static final int CAPACITY = 16;
     private static final int VERTICES = CAPACITY * 4;
     private static final float SCALE = 256.0f;
+    private static final int[] MESH_CAPACITIES = new int[] { 1, 4, 8, CAPACITY };
 
-    final Mesh mesh;
+    final Group root = new Group();
+    private final Mesh[] meshes = new Mesh[MESH_CAPACITIES.length];
 
     private final float[] x = new float[CAPACITY];
     private final float[] y = new float[CAPACITY];
@@ -44,15 +47,18 @@ final class ParticleSystem {
     private final short[] positions = new short[VERTICES * 3];
     private final short[] texCoords = new short[VERTICES * 2];
     private final byte[] colors = new byte[VERTICES * 4];
+    private final short[] renderTexCoords = new short[VERTICES * 2];
+    private final byte[] renderColors = new byte[VERTICES * 4];
     private final VertexArray positionArray;
     private final VertexArray texCoordArray;
     private final VertexArray colorArray;
+    private int visibleMesh = -1;
+    private boolean rootEnabled;
 
     private int cursor;
     private int activeCount;
     private int random = 0x13579BDF;
     private boolean uvDirty;
-    private boolean visible;
 
     ParticleSystem(Texture2D atlas) {
         for (int i = 0; i < CAPACITY; i++) activePosition[i] = -1;
@@ -78,17 +84,14 @@ final class ParticleSystem {
         positionArray.set(0, VERTICES, positions);
 
         texCoordArray = new VertexArray(VERTICES, 2, 2);
-        texCoordArray.set(0, VERTICES, texCoords);
+        texCoordArray.set(0, VERTICES, renderTexCoords);
         colorArray = new VertexArray(VERTICES, 4, 1);
-        colorArray.set(0, VERTICES, colors);
+        colorArray.set(0, VERTICES, renderColors);
 
         VertexBuffer buffer = new VertexBuffer();
         buffer.setPositions(positionArray, 1.0f / SCALE, null);
         buffer.setTexCoords(0, texCoordArray, 1.0f / SCALE, null);
         buffer.setColors(colorArray);
-
-        int[] strips = new int[CAPACITY];
-        for (int i = 0; i < CAPACITY; i++) strips[i] = 4;
 
         Appearance appearance = new Appearance();
         appearance.setTexture(0, atlas);
@@ -107,7 +110,16 @@ final class ParticleSystem {
         compositing.setDepthWriteEnable(false);
         appearance.setCompositingMode(compositing);
 
-        mesh = new Mesh(buffer, new TriangleStripArray(0, strips), appearance);
+        for (int tier = 0; tier < MESH_CAPACITIES.length; tier++) {
+            int stripCount = MESH_CAPACITIES[tier];
+            int[] strips = new int[stripCount];
+            for (int i = 0; i < stripCount; i++) strips[i] = 4;
+            Mesh mesh = new Mesh(buffer, new TriangleStripArray(0, strips), appearance);
+            mesh.setRenderingEnable(false);
+            meshes[tier] = mesh;
+            root.addChild(mesh);
+        }
+        root.setRenderingEnable(false);
     }
 
     /** Four small block fragments, using the broken block's atlas tile. */
@@ -208,6 +220,7 @@ final class ParticleSystem {
         if (activePosition[particle] >= 0) return;
         activePosition[particle] = activeCount;
         activeSlots[activeCount++] = particle;
+        uvDirty = true;
     }
 
     private void deactivate(int particle) {
@@ -220,6 +233,7 @@ final class ParticleSystem {
             activeSlots[position] = lastParticle;
             activePosition[lastParticle] = position;
         }
+        uvDirty = true;
     }
 
     private void writeTileUV(int particle) {
@@ -238,10 +252,7 @@ final class ParticleSystem {
 
     synchronized void update(VoxelWorld world, float yawDegrees, float pitchDegrees) {
         if (activeCount == 0) {
-            if (visible) {
-                colorArray.set(0, VERTICES, colors);
-                visible = false;
-            }
+            hideMeshes();
             return;
         }
 
@@ -250,7 +261,6 @@ final class ParticleSystem {
             age[i]++;
             if (age[i] >= lifetime[i]) {
                 deactivate(i);
-                setColor(i, 0, 0, 0, 0);
                 continue;
             }
 
@@ -291,16 +301,13 @@ final class ParticleSystem {
         }
 
         if (activeCount == 0) {
-            colorArray.set(0, VERTICES, colors);
-            visible = false;
+            hideMeshes();
             return;
         }
 
         float originX = world.playerX;
         float originY = world.playerY;
         float originZ = world.playerZ;
-        mesh.setTranslation(originX, originY, originZ);
-
         double yaw = yawDegrees * Math.PI / 180.0;
         double pitch = pitchDegrees * Math.PI / 180.0;
         float rightX = (float)Math.cos(yaw);
@@ -309,28 +316,67 @@ final class ParticleSystem {
         float upY = (float)Math.cos(pitch);
         float upZ = -(float)(Math.cos(yaw) * Math.sin(pitch));
 
-        for (int i = 0; i < activeCount; i++) {
-            writeQuad(activeSlots[i], rightX, rightZ, upX, upY, upZ,
+        int activeVertices = activeCount * 4;
+        for (int activeIndex = 0; activeIndex < activeCount; activeIndex++) {
+            int particle = activeSlots[activeIndex];
+            int uvAt = particle * 8;
+            int outputUvAt = activeIndex * 8;
+            int colorAt = particle * 16;
+            int outputColorAt = activeIndex * 16;
+            writeQuad(particle, activeIndex * 12, rightX, rightZ, upX, upY, upZ,
                     originX, originY, originZ);
+            System.arraycopy(colors, colorAt, renderColors, outputColorAt, 16);
+            if (uvDirty)
+                System.arraycopy(texCoords, uvAt, renderTexCoords, outputUvAt, 8);
         }
 
-        positionArray.set(0, VERTICES, positions);
-        colorArray.set(0, VERTICES, colors);
+        int tier = meshTierFor(activeCount);
+        int drawVertices = MESH_CAPACITIES[tier] * 4;
+        for (int i = activeVertices; i < drawVertices; i++) {
+            int alpha = i * 4 + 3;
+            renderColors[alpha] = 0;
+        }
+
+        positionArray.set(0, activeVertices, positions);
+        colorArray.set(0, drawVertices, renderColors);
         if (uvDirty) {
-            texCoordArray.set(0, VERTICES, texCoords);
+            texCoordArray.set(0, activeVertices, renderTexCoords);
             uvDirty = false;
         }
-        visible = true;
+        if (visibleMesh != tier) {
+            if (visibleMesh >= 0) meshes[visibleMesh].setRenderingEnable(false);
+            visibleMesh = tier;
+            meshes[visibleMesh].setRenderingEnable(true);
+        }
+        meshes[visibleMesh].setTranslation(originX, originY, originZ);
+        if (!rootEnabled) {
+            root.setRenderingEnable(true);
+            rootEnabled = true;
+        }
     }
 
-    private void writeQuad(int particle, float rx, float rz, float ux, float uy, float uz,
+    private int meshTierFor(int particles) {
+        for (int i = 0; i < MESH_CAPACITIES.length; i++)
+            if (particles <= MESH_CAPACITIES[i]) return i;
+        return MESH_CAPACITIES.length - 1;
+    }
+
+    private void hideMeshes() {
+        if (visibleMesh >= 0) meshes[visibleMesh].setRenderingEnable(false);
+        visibleMesh = -1;
+        if (rootEnabled) {
+            root.setRenderingEnable(false);
+            rootEnabled = false;
+        }
+    }
+
+    private void writeQuad(int particle, int p, float rx, float rz, float ux, float uy, float uz,
             float originX, float originY, float originZ) {
         float half = size[particle];
         float cx = x[particle] - originX;
         float cy = y[particle] - originY;
         float cz = z[particle] - originZ;
 
-        int p = particle * 12;
         putPosition(p, cx - rx * half - ux * half, cy - uy * half,
                 cz - rz * half - uz * half);
         putPosition(p + 3, cx + rx * half - ux * half, cy - uy * half,
