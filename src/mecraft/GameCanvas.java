@@ -2730,17 +2730,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void closeCrafting() {
         if (state == CHEST_INVENTORY) { saveChestContents(); state = PLAYING; repaint(); return; }
-        if (state == SURVIVAL_INVENTORY) {
-            int action = gameAction(keyCode);
-            if (keyCode == KEY_POUND || keyCode == KEY_NUM0) closeSurvivalInventory();
-            else if (keyCode == KEY_STAR) { closeSurvivalInventory(); openCrafting(false); }
-            else if (keyCode == KEY_NUM2 || action == UP) movePlayerInventorySelection(-9);
-            else if (keyCode == KEY_NUM8 || action == DOWN) movePlayerInventorySelection(9);
-            else if (keyCode == KEY_NUM4 || action == LEFT) movePlayerInventorySelection(-1);
-            else if (keyCode == KEY_NUM6 || action == RIGHT) movePlayerInventorySelection(1);
-            else if (keyCode == KEY_NUM5 || action == FIRE) clickPlayerInventorySlot();
-            repaint(); return;
-        }
+        if (state == SURVIVAL_INVENTORY) { closeSurvivalInventory(); return; }
         if (state == FURNACE_INVENTORY) { saveFurnaceContents(); state = PLAYING; repaint(); return; }
         if (state != INVENTORY && state != WORKBENCH) return;
         state = PLAYING;
@@ -3149,6 +3139,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             else if (action == DOWN || keyCode == KEY_NUM8) moveSelection(1);
             else if (action == FIRE || keyCode == KEY_NUM5) activateSelection();
             else if (keyCode == KEY_NUM0) backToMenu();
+            return;
+        }
+        if (state == SURVIVAL_INVENTORY) {
+            int action = gameAction(keyCode);
+            if (keyCode == KEY_POUND || keyCode == KEY_NUM0) closeSurvivalInventory();
+            else if (keyCode == KEY_STAR) { closeSurvivalInventory(); openCrafting(false); }
+            else if (keyCode == KEY_NUM2 || action == UP) movePlayerInventorySelection(-9);
+            else if (keyCode == KEY_NUM8 || action == DOWN) movePlayerInventorySelection(9);
+            else if (keyCode == KEY_NUM4 || action == LEFT) movePlayerInventorySelection(-1);
+            else if (keyCode == KEY_NUM6 || action == RIGHT) movePlayerInventorySelection(1);
+            else if (keyCode == KEY_NUM5 || action == FIRE) clickPlayerInventorySlot();
+            repaint();
             return;
         }
         if (state == FURNACE_INVENTORY) {
