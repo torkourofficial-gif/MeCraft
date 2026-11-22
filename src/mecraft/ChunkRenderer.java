@@ -2834,11 +2834,14 @@ final class ChunkRenderer {
         // The Aether reuses the normal grass block and atlas, changing only
         // its top-face vertex tint. This keeps inventory/Overworld grass intact.
         if (snapshot.dimensionId == VoxelWorld.DIM_AETHER) {
+            // Give Aether foliage dedicated material IDs so its source texture
+            // is recolored directly instead of multiplying a pastel tint over
+            // the already-dark Overworld texture.
             for (FaceBuilder grassTop = builders[0]; grassTop != null;
                     grassTop = grassTop.next)
-                tintFaceBuilder(grassTop, AlphaTint.AETHER_GRASS_TOP);
+                grassTop.tile = 254;
             for (FaceBuilder leaves = builders[34]; leaves != null; leaves = leaves.next)
-                tintFaceBuilder(leaves, AlphaTint.AETHER_LEAVES);
+                leaves.tile = 255;
         }
         int count = 0;
         for (int i = 0; i < builders.length; i++) if (builders[i] != null) count++;
@@ -3106,7 +3109,13 @@ final class ChunkRenderer {
         Appearance appearance = tileAppearances[tile];
         if (appearance != null) return appearance;
         int[] pixels = new int[16 * 16];
-        if (tile >= Block.WOOL_TINT_TILE_START) {
+        if (tile == 254 || tile == 255) {
+            int sourceTile = tile == 254 ? 0 : 34;
+            terrainImage.getRGB(pixels, 0, 16, (sourceTile & 15) * 16,
+                    (sourceTile >> 4) * 16, 16, 16);
+            AlphaTint.apply(pixels, tile == 254 ?
+                    AlphaTint.AETHER_GRASS_TOP : AlphaTint.AETHER_LEAVES);
+        } else if (tile >= Block.WOOL_TINT_TILE_START) {
             int woolTile = Block.atlasTile(Block.WOOL);
             terrainImage.getRGB(pixels, 0, 16, (woolTile & 15) * 16,
                     (woolTile >> 4) * 16, 16, 16);
