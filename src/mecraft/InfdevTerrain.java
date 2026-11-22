@@ -403,7 +403,10 @@ final class InfdevTerrain {
             }
         }
 
-        // Place the glass structures after terrain and trees, preserving their shells.\n        generateAetherCombatChambers(seed, ox, oz, blocks);\n\n        // The Aether's green islands are carpeted with abundant flowers.
+        // Place the glass structures after terrain and trees, preserving their shells.
+        generateAetherCombatChambers(seed, ox, oz, blocks);
+
+        // The Aether's green islands are carpeted with abundant flowers.
         // Place them in a second pass so neighboring columns and tree canopies
         // have already been generated, and keep snowy islands flower-free.
         for (int z = 0; z < CHUNK_SIZE; z++) for (int x = 0; x < CHUNK_SIZE; x++) {
