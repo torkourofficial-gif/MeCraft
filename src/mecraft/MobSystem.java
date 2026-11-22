@@ -831,8 +831,11 @@ final class MobSystem {
         }
         int y = world.surfaceY(x, z);
         byte ground = world.get(x, y, z);
+        byte feet = world.get(x, y + 1, z);
+        byte head = world.get(x, y + 2, z);
         return Block.solid(ground) && ground != Block.LEAVES &&
-               world.get(x, y + 1, z) == Block.AIR && world.get(x, y + 2, z) == Block.AIR;
+               (feet == Block.AIR || Block.isFlower(feet)) &&
+               (head == Block.AIR || Block.isFlower(head));
     }
 
     private boolean validSpawnForMob(VoxelWorld world, Mob mob, int x, int z) {
