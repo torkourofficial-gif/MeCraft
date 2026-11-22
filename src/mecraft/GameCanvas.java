@@ -2447,9 +2447,108 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
     }
 
+    private String playerInventoryStoreName() {
+        String base = world == null || world.saveStoreName == null ? "mecraft-save" : world.saveStoreName;
+        return "mciv" + Integer.toHexString(base.hashCode());
+    }
+
+    private boolean loadPlayerInventorySlots() {
+        String store = playerInventoryStoreName();
+        RecordStore rs = null;
+        boolean loaded = false;
+        try {
+            rs = RecordStore.openRecordStore(store, false);
+            if (rs.getNumRecords() > 0) {
+                DataInputStream in = new DataInputStream(new ByteArrayInputStream(rs.getRecord(1)));
+                if (in.readInt() == 0x4D434956) {
+                    for (int i = 0; i < PLAYER_INVENTORY_SLOTS; i++) {
+                        int id = in.readInt(), count = in.readInt();
+                        if (id < 0 || id >= ItemCatalog.COUNT || count < 0 || count > 4096 ||
+                                (id == 0 && count != 0) || (id != 0 && count == 0)) {
+                            id = 0; count = 0;
+                        }
+                        playerSlotItems[i] = id;
+                        playerSlotCounts[i] = count;
+                    }
+                    loaded = true;
+                }
+                in.close();
+            }
+        } catch (Exception ignored) { }
+        finally { if (rs != null) try { rs.closeRecordStore(); } catch (Exception ignored) { } }
+        if (loaded) reconcilePlayerInventorySlots();
+        return loaded;
+    }
+
+    private void reconcilePlayerInventorySlots() {
+        int[] represented = new int[ItemCatalog.COUNT];
+        for (int i = 0; i < PLAYER_INVENTORY_SLOTS; i++) {
+            int id = playerSlotItems[i];
+            if (id > 0 && id < ItemCatalog.COUNT) represented[id] += playerSlotCounts[i];
+        }
+        for (int id = 1; id < ItemCatalog.COUNT; id++) {
+            int desired = inventory[id];
+            if (represented[id] > desired) {
+                int remove = represented[id] - desired;
+                for (int i = PLAYER_INVENTORY_SLOTS - 1; i >= 0 && remove > 0; i--) {
+                    if (playerSlotItems[i] != id) continue;
+                    int taken = Math.min(remove, playerSlotCounts[i]);
+                    playerSlotCounts[i] -= taken;
+                    remove -= taken;
+                    if (playerSlotCounts[i] <= 0) playerSlotItems[i] = 0;
+                }
+            } else if (represented[id] < desired) {
+                int add = desired - represented[id];
+                for (int i = 0; i < PLAYER_INVENTORY_SLOTS && add > 0; i++) {
+                    if (playerSlotItems[i] != id || ItemCatalog.isTool(id)) continue;
+                    int room = ItemCatalog.maxStack(id) - playerSlotCounts[i];
+                    int moved = Math.min(room, add);
+                    playerSlotCounts[i] += moved;
+                    add -= moved;
+                }
+                for (int i = 0; i < PLAYER_INVENTORY_SLOTS && add > 0; i++) {
+                    if (playerSlotItems[i] != 0) continue;
+                    int moved = ItemCatalog.isTool(id) ? 1 : Math.min(ItemCatalog.maxStack(id), add);
+                    playerSlotItems[i] = id;
+                    playerSlotCounts[i] = moved;
+                    add -= moved;
+                }
+            }
+        }
+        for (int id = 0; id < playerInventoryOverflow.length; id++) playerInventoryOverflow[id] = 0;
+        for (int id = 1; id < ItemCatalog.COUNT; id++) {
+            int count = inventory[id];
+            for (int i = 0; i < PLAYER_INVENTORY_SLOTS; i++)
+                if (playerSlotItems[i] == id) count -= playerSlotCounts[i];
+            if (count > 0) playerInventoryOverflow[id] = count;
+        }
+        for (int i = 0; i < 9; i++) hotbar[i] = playerSlotItems[27 + i];
+    }
+
+    private void savePlayerInventorySlots() {
+        if (world == null || world.saveStoreName == null) return;
+        RecordStore rs = null;
+        try {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream(300);
+            DataOutputStream out = new DataOutputStream(bytes);
+            out.writeInt(0x4D434956);
+            for (int i = 0; i < PLAYER_INVENTORY_SLOTS; i++) {
+                out.writeInt(playerSlotItems[i]);
+                out.writeInt(playerSlotCounts[i]);
+            }
+            out.flush();
+            byte[] data = bytes.toByteArray();
+            rs = RecordStore.openRecordStore(playerInventoryStoreName(), true);
+            if (rs.getNumRecords() == 0) rs.addRecord(data, 0, data.length);
+            else rs.setRecord(1, data, 0, data.length);
+            out.close();
+        } catch (Exception ignored) { }
+        finally { if (rs != null) try { rs.closeRecordStore(); } catch (Exception ignored) { } }
+    }
+
     private void openSurvivalInventory() {
         if (state != PLAYING || world == null || world.mode != 0) return;
-        buildPlayerInventorySlots();
+        if (!loadPlayerInventorySlots()) buildPlayerInventorySlots();
         playerInventorySelection = clamp(world.selectedSlot, 0, 8) + 27;
         playerInventoryHeldItem = 0;
         playerInventoryHeldCount = 0;
@@ -2532,6 +2631,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             if (id > 0 && id < inventory.length && amount > 0) inventory[id] += amount;
         }
         for (int slot = 0; slot < 9; slot++) hotbar[slot] = playerSlotItems[27 + slot];
+        savePlayerInventorySlots();
         copyInventoryToWorld();
         state = PLAYING;
         repaint();
