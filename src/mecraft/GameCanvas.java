@@ -47,6 +47,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private static final int LAN_CONNECTED = 22;
     private static final int DEBUG_ITEMS = 23;
     private static final int FURNACE_INVENTORY = 24;
+    private static final int SURVIVAL_INVENTORY = 25;
+    private static final int PLAYER_INVENTORY_SLOTS = 36;
+    private static final int PLAYER_MAIN_SLOTS = 27;
     private static final int CONTROL_LOOK_UP = 0, CONTROL_LOOK_DOWN = 1;
     private static final int CONTROL_LOOK_LEFT = 2, CONTROL_LOOK_RIGHT = 3;
     private static final int CONTROL_FORWARD = 4, CONTROL_BACK = 5;
@@ -96,6 +99,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         Block.LEAVES, Block.COAL, Block.IRON, Block.TORCH
     };
     private final int[] inventory = new int[ItemCatalog.COUNT];
+    private final int[] playerSlotItems = new int[PLAYER_INVENTORY_SLOTS];
+    private final int[] playerSlotCounts = new int[PLAYER_INVENTORY_SLOTS];
+    private int playerInventorySelection;
+    private int playerInventoryHeldItem;
+    private int playerInventoryHeldCount;
     private volatile boolean running;
     private volatile boolean visible;
     private volatile long profileUpdateWait, profileUpdateWork, profileRenderSync;
@@ -457,7 +465,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private int musicModeForState() {
         if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH ||
-                state == CREATIVE_INVENTORY || state == CHEST_INVENTORY || state == FURNACE_INVENTORY || state == GAME_OVER) return MusicController.GAMEPLAY;
+                state == CREATIVE_INVENTORY || state == CHEST_INVENTORY || state == FURNACE_INVENTORY ||
+                state == SURVIVAL_INVENTORY || state == GAME_OVER) return MusicController.GAMEPLAY;
         if (state == MENU || state == WORLD_SELECT || state == WORLD_CREATE ||
                 state == WORLD_DELETE || state == WORLD_NAME || state == SETTINGS ||
                 state == SKIN_SELECT || state == CONTROLS || state == LAN_MENU ||
@@ -1073,7 +1082,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (world == null) return;
         for (int i = 0; i < hotbar.length; i++) {
             int id = world.hotbar[i];
-            hotbar[i] = id <= Block.AIR || id >= ItemCatalog.COUNT ?
+            hotbar[i] = id < Block.AIR || id >= ItemCatalog.COUNT ?
                     DEFAULT_HOTBAR[i] : id;
         }
     }
@@ -2436,6 +2445,152 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
     }
 
+    private void openSurvivalInventory() {
+        if (state != PLAYING || world == null || world.mode != 0) return;
+        buildPlayerInventorySlots();
+        playerInventorySelection = clamp(world.selectedSlot, 0, 8) + 27;
+        playerInventoryHeldItem = 0;
+        playerInventoryHeldCount = 0;
+        state = SURVIVAL_INVENTORY;
+        clearKeys();
+        repaint();
+    }
+
+    private void buildPlayerInventorySlots() {
+        for (int i = 0; i < PLAYER_INVENTORY_SLOTS; i++) {
+            playerSlotItems[i] = 0;
+            playerSlotCounts[i] = 0;
+        }
+        int[] remaining = new int[ItemCatalog.COUNT];
+        for (int id = 1; id < ItemCatalog.COUNT; id++) remaining[id] = inventory[id];
+        for (int slot = 0; slot < 9; slot++) {
+            int id = hotbar[slot];
+            if (id <= 0 || id >= ItemCatalog.COUNT || remaining[id] <= 0) continue;
+            boolean duplicate = false;
+            for (int before = 0; before < slot; before++)
+                if (playerSlotItems[27 + before] == id) duplicate = true;
+            if (duplicate) continue;
+            int amount = ItemCatalog.isTool(id) ? 1 : Math.min(ItemCatalog.maxStack(id), remaining[id]);
+            playerSlotItems[27 + slot] = id;
+            playerSlotCounts[27 + slot] = amount;
+            remaining[id] -= amount;
+        }
+        int slot = 0;
+        for (int id = 1; id < ItemCatalog.COUNT && slot < PLAYER_MAIN_SLOTS; id++) {
+            while (remaining[id] > 0 && slot < PLAYER_MAIN_SLOTS) {
+                int amount = ItemCatalog.isTool(id) ? 1 : Math.min(ItemCatalog.maxStack(id), remaining[id]);
+                playerSlotItems[slot] = id;
+                playerSlotCounts[slot] = amount;
+                remaining[id] -= amount;
+                slot++;
+            }
+        }
+        // Legacy saves can exceed 36 visible stacks; retain any overflow in
+        // the last pack slot instead of silently discarding it.
+        for (int id = 1; id < ItemCatalog.COUNT; id++) {
+            if (remaining[id] > 0) {
+                int target = PLAYER_MAIN_SLOTS - 1;
+                if (playerSlotItems[target] == 0) playerSlotItems[target] = id;
+                if (playerSlotItems[target] == id)
+                    playerSlotCounts[target] += remaining[id];
+            }
+        }
+    }
+
+    private void closeSurvivalInventory() {
+        if (state != SURVIVAL_INVENTORY || world == null) return;
+        for (int id = 0; id < inventory.length; id++) inventory[id] = 0;
+        for (int slot = 0; slot < PLAYER_INVENTORY_SLOTS; slot++) {
+            int id = playerSlotItems[slot], amount = playerSlotCounts[slot];
+            if (id > 0 && id < inventory.length && amount > 0) inventory[id] += amount;
+        }
+        for (int slot = 0; slot < 9; slot++) hotbar[slot] = playerSlotItems[27 + slot];
+        copyInventoryToWorld();
+        state = PLAYING;
+        repaint();
+    }
+
+    private void movePlayerInventorySelection(int delta) {
+        int row = playerInventorySelection / 9, col = playerInventorySelection % 9;
+        if (delta == -1) col = (col + 8) % 9;
+        else if (delta == 1) col = (col + 1) % 9;
+        else row = clamp(row + (delta < 0 ? -1 : 1), 0, 3);
+        playerInventorySelection = row * 9 + col;
+    }
+
+    private void clickPlayerInventorySlot() {
+        int slot = clamp(playerInventorySelection, 0, PLAYER_INVENTORY_SLOTS - 1);
+        int id = playerSlotItems[slot], amount = playerSlotCounts[slot];
+        if (playerInventoryHeldItem == 0) {
+            if (id == 0 || amount <= 0) return;
+            playerInventoryHeldItem = id;
+            playerInventoryHeldCount = amount;
+            playerSlotItems[slot] = 0;
+            playerSlotCounts[slot] = 0;
+            return;
+        }
+        if (id == playerInventoryHeldItem && !ItemCatalog.isTool(id)) {
+            int room = ItemCatalog.maxStack(id) - amount;
+            if (room > 0) {
+                int moved = Math.min(room, playerInventoryHeldCount);
+                playerSlotItems[slot] = id;
+                playerSlotCounts[slot] = amount + moved;
+                playerInventoryHeldCount -= moved;
+                if (playerInventoryHeldCount <= 0) {
+                    playerInventoryHeldItem = 0;
+                    playerInventoryHeldCount = 0;
+                }
+                return;
+            }
+        }
+        playerSlotItems[slot] = playerInventoryHeldItem;
+        playerSlotCounts[slot] = playerInventoryHeldCount;
+        playerInventoryHeldItem = id;
+        playerInventoryHeldCount = amount;
+    }
+
+    private void drawSurvivalInventory(Graphics g) {
+        int w = getWidth(), h = getHeight(), left = (w - 176) / 2, top = (h - 166) / 2;
+        if (containerTexture != null && containerTexture.getWidth() >= 176 &&
+                containerTexture.getHeight() >= 166) {
+            g.drawRegion(containerTexture, 0, 0, 176, 166, Sprite.TRANS_NONE,
+                    left, top, Graphics.TOP | Graphics.LEFT);
+        } else {
+            g.setColor(198, 198, 198); g.fillRect(left, top, 176, 166);
+            g.setColor(35, 35, 35); g.drawRect(left, top, 175, 165);
+        }
+        g.setColor(35, 35, 35);
+        g.drawString(Language.text("Inventario"), left + 8, top + 5, Graphics.TOP | Graphics.LEFT);
+        for (int slot = 0; slot < PLAYER_INVENTORY_SLOTS; slot++) {
+            int x = left + 8 + (slot % 9) * 18;
+            int y = slot < 27 ? top + 18 + (slot / 9) * 18 : top + 85;
+            int id = playerSlotItems[slot], amount = playerSlotCounts[slot];
+            if (slot == playerInventorySelection) {
+                g.setColor(255, 255, 255); g.fillRect(x - 1, y - 1, 18, 18);
+                g.setColor(75, 75, 75); g.fillRect(x, y, 16, 16);
+            }
+            if (id > 0 && id < ItemCatalog.COUNT && amount > 0) {
+                drawIcon(g, id, x, y, false);
+                if (amount > 1 && !ItemCatalog.isTool(id))
+                    drawOutlinedCount(g, Integer.toString(amount), x + 16, y + 16,
+                            Graphics.RIGHT | Graphics.BOTTOM);
+                if (ItemCatalog.isTool(id)) drawDurability(g, id, x, y + 15);
+            }
+        }
+        if (playerInventoryHeldItem > 0) {
+            int x = left + 8 + (playerInventorySelection % 9) * 18;
+            int y = playerInventorySelection < 27 ?
+                    top + 18 + (playerInventorySelection / 9) * 18 : top + 85;
+            drawIcon(g, playerInventoryHeldItem, x, y, false);
+            if (playerInventoryHeldCount > 1)
+                drawOutlinedCount(g, Integer.toString(playerInventoryHeldCount), x + 16, y + 16,
+                        Graphics.RIGHT | Graphics.BOTTOM);
+        }
+        g.setColor(35, 35, 35);
+        g.drawString("5 mover  # cerrar  * crafteo",
+                w / 2, top + 153, Graphics.TOP | Graphics.HCENTER);
+    }
+
     private void openCrafting(boolean workbench) {
         if (state != PLAYING || world == null || (world.mode == 1 && !workbench)) return;
         state = workbench ? WORKBENCH : INVENTORY;
@@ -2448,6 +2603,17 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void closeCrafting() {
         if (state == CHEST_INVENTORY) { saveChestContents(); state = PLAYING; repaint(); return; }
+        if (state == SURVIVAL_INVENTORY) {
+            int action = gameAction(keyCode);
+            if (keyCode == KEY_POUND || keyCode == KEY_NUM0) closeSurvivalInventory();
+            else if (keyCode == KEY_STAR) openCrafting(false);
+            else if (keyCode == KEY_NUM2 || action == UP) movePlayerInventorySelection(-9);
+            else if (keyCode == KEY_NUM8 || action == DOWN) movePlayerInventorySelection(9);
+            else if (keyCode == KEY_NUM4 || action == LEFT) movePlayerInventorySelection(-1);
+            else if (keyCode == KEY_NUM6 || action == RIGHT) movePlayerInventorySelection(1);
+            else if (keyCode == KEY_NUM5 || action == FIRE) clickPlayerInventorySlot();
+            repaint(); return;
+        }
         if (state == FURNACE_INVENTORY) { saveFurnaceContents(); state = PLAYING; repaint(); return; }
         if (state != INVENTORY && state != WORKBENCH) return;
         state = PLAYING;
@@ -2909,7 +3075,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
         if (isControlKey(CONTROL_INVENTORY, keyCode, KEY_POUND, 0)) {
             if (world.mode == 1) openCreativeInventory();
-            else openCrafting(false);
+            else openSurvivalInventory();
             return;
         }
         if (isControlKey(CONTROL_FORWARD, keyCode, KEY_NUM2, 0)) {
@@ -3670,7 +3836,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (state == TOUCH_SETUP) {
             drawTouchSetup(g);
         } else if (state == PLAYING || state == PAUSED || state == INVENTORY || state == WORKBENCH ||
-            state == CREATIVE_INVENTORY || state == GAME_OVER || state == CHEST_INVENTORY || state == FURNACE_INVENTORY) {
+            state == CREATIVE_INVENTORY || state == GAME_OVER || state == CHEST_INVENTORY ||
+            state == FURNACE_INVENTORY || state == SURVIVAL_INVENTORY) {
             String stage = "actualizando mallas M3G";
             try {
                 completeEndPortalTransition();
@@ -3720,6 +3887,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     drawGameOver(g);
                 }
                 if (state == INVENTORY || state == WORKBENCH) drawCrafting(g, state == WORKBENCH);
+                if (state == SURVIVAL_INVENTORY) drawSurvivalInventory(g);
                 if (state == CREATIVE_INVENTORY) drawCreativeInventory(g);
                 profileHudWork = System.currentTimeMillis() - hudStarted;
                 if (profileHudWork > profileMaxHudWork) profileMaxHudWork = profileHudWork;
@@ -4038,7 +4206,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             if (y > h / 2) keyPressed(KEY_NUM0); else keyPressed(KEY_NUM5);
         } else if (state == ERROR) keyPressed(KEY_NUM5);
         else if (state == GAME_OVER) keyPressed(KEY_NUM5);
-        else if (state == INVENTORY || state == WORKBENCH) {
+        else if (state == SURVIVAL_INVENTORY) {
+            int left = (w - 176) / 2, top = (h - 166) / 2;
+            if (x >= left + 7 && x < left + 169 && y >= top + 17 && y < top + 103) {
+                int col = (x - (left + 8)) / 18;
+                if (col < 0) col = 0; if (col > 8) col = 8;
+                int row = y < top + 73 ? (y - (top + 18)) / 18 : 3;
+                if (row < 0) row = 0; if (row > 3) row = 3;
+                playerInventorySelection = row * 9 + col;
+                clickPlayerInventorySlot();
+            } else if (y > top + 162 || x < left || x > left + 176) closeSurvivalInventory();
+            repaint();
+        } else if (state == INVENTORY || state == WORKBENCH) {
             if (y > h - 45) craftSelected();
             else if (x < w / 2) moveRecipeSelection(y < h / 2 ? -1 : 1);
             else moveInventoryPage(y < h / 2 ? -1 : 1);
