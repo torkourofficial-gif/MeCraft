@@ -143,7 +143,7 @@ final class MobSystem {
             if (mob.hurtTicks > 0 && --mob.hurtTicks == 0) mob.setHurt(false);
             mob.chasing = false;
             if (mob.attackDelay > 0) mob.attackDelay--;
-            if (mob.type == GHAST || mob.type == BLAZE) {
+            if (mob.type == GHAST || (mob.type == BLAZE && blazeShouldFly(mob, world))) {
                 updateGhast(mob, world);
                 if (updatePose) animate(mob);
                 mob.root.setTranslation(mob.x, mob.y, mob.z);
@@ -411,7 +411,7 @@ final class MobSystem {
     private void dropForDeath(Mob mob) {
         int bx = floor(mob.x), by = floor(mob.y), bz = floor(mob.z);
         if (mob.type == BLAZE) {
-            if (random.nextInt(2) == 0) drops.spawn(ItemCatalog.BLAZE_ROD, bx, by, bz);
+            drops.spawn(ItemCatalog.BLAZE_ROD, bx, by, bz);
             return;
         }
         if (mob.type == ENDERMAN) {
@@ -946,6 +946,12 @@ final class MobSystem {
             else shootGhastFireball(mob, world);
             mob.attackDelay = mob.type == GHAST ? 100 + random.nextInt(45) : 45 + random.nextInt(26);
         }
+    }
+
+    private boolean blazeShouldFly(Mob mob, VoxelWorld world) {
+        float dx = world.playerX - mob.x;
+        float dz = world.playerZ - mob.z;
+        return dx * dx + dz * dz <= 100.0f;
     }
 
     private void shootGhastFireball(Mob ghast, VoxelWorld world) {
