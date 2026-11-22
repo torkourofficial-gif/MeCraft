@@ -785,9 +785,12 @@ final class MobSystem {
             int cellX = (int)Math.floor(world.playerX / 32.0f);
             int cellZ = (int)Math.floor(world.playerZ / 32.0f);
             int bestDistance = 0x7FFFFFFF;
+            int chamberCellX = 0, chamberCellZ = 0;
             boolean found = false;
-            for (int cz = cellZ - 2; cz <= cellZ + 2; cz++) {
-                for (int cx = cellX - 2; cx <= cellX + 2; cx++) {
+            // Search a wider neighborhood, but only spawn while the chamber is
+            // close enough to remain inside the mob activation radius.
+            for (int cz = cellZ - 3; cz <= cellZ + 3; cz++) {
+                for (int cx = cellX - 3; cx <= cellX + 3; cx++) {
                     if (!InfdevTerrain.hasAetherCombatChamber(world.seed, cx, cz)) continue;
                     int candidateX = InfdevTerrain.aetherIslandCenterX(world.seed, cx, cz);
                     int candidateZ = InfdevTerrain.aetherIslandCenterZ(world.seed, cx, cz);
@@ -798,13 +801,19 @@ final class MobSystem {
                         bestDistance = distance;
                         x = candidateX;
                         z = candidateZ;
+                        chamberCellX = cx;
+                        chamberCellZ = cz;
                         found = true;
                     }
                 }
             }
-            if (!found || bestDistance > 40 * 40 || tooClose(mob, x + 0.5f, z + 0.5f)) return;
-            ground = InfdevTerrain.aetherIslandTop(world.seed,
-                    (int)Math.floor(x / 32.0f), (int)Math.floor(z / 32.0f)) + 1;
+            if (!found || bestDistance > 28 * 28) return;
+            ground = InfdevTerrain.aetherIslandTop(world.seed, chamberCellX, chamberCellZ) + 1;
+            // The chamber is the spawn point: don't let a nearby slime suppress
+            // its Blaze, and verify that the generated glass room is present.
+            if (world.get(x, ground, z) != Block.GLASS ||
+                    world.get(x, ground + 1, z) != Block.AIR ||
+                    world.get(x, ground + 2, z) != Block.AIR) return;
         } else {
             int attempts = 0;
             do {
