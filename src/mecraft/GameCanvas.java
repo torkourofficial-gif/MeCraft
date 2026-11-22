@@ -2728,6 +2728,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 inventoryPlayerPreview = new InventoryPlayerPreview(skin, 54, 72);
                 inventoryPreviewSkin = skinSelection;
             }
+            int selectedColumn = playerInventorySelection % 9;
+            int selectedRow = playerInventorySelection < 27 ?
+                    playerInventorySelection / 9 : 3;
+            float lookYaw = -22.0f + (selectedColumn - 4) * 5.0f;
+            float lookPitch = (selectedRow - 1) * 4.0f;
+            inventoryPlayerPreview.lookAt(lookYaw, lookPitch);
             Graphics3D graphics3D = Graphics3D.getInstance();
             graphics3D.bindTarget(g);
             try {
