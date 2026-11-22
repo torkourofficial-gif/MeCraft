@@ -242,6 +242,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private final int[] chestCounts = new int[27];
     private int chestX, chestY, chestZ, chestSelection;
     private String chestStoreName;
+    private boolean chestContentsStored;
     private int creativeSelection;
     private int miningX = -1, miningY = -1, miningZ = -1;
     private int miningFaceX, miningFaceY, miningFaceZ;
@@ -2147,6 +2148,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             out.writeInt(furnaceBurnTicks);out.writeInt(furnaceCookTicks);out.flush();byte[] data=bytes.toByteArray();
             rs=RecordStore.openRecordStore(furnaceStoreName,true);
             if(rs.getNumRecords()==0)rs.addRecord(data,0,data.length);else rs.setRecord(1,data,0,data.length);
+            chestContentsStored=true;
             out.close();
         }catch(Exception ignored){}finally{if(rs!=null)try{rs.closeRecordStore();}catch(Exception ignored){}}
     }
@@ -2248,7 +2250,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         for (int i = 0; i < 27; i++) {
             if (chestItems[i] > 0 && chestCounts[i] > 0) { empty = false; break; }
         }
-        if (!empty) return;
+        if (chestContentsStored || !empty) return;
         int random = world.seed ^ (x * 73428767) ^ (y * 912931) ^ (z * 42317861);
         int rolls = 4 + ((random >>> 1) & 3);
         for (int n = 0; n < rolls; n++) {
@@ -2280,6 +2282,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void loadChestContents(int x, int y, int z) {
         chestStoreName=chestStoreName(x,y,z);
+        chestContentsStored=false;
         for(int i=0;i<27;i++){chestItems[i]=0;chestCounts[i]=0;}
         RecordStore rs=null;
         try {
@@ -2288,6 +2291,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 byte[] data=rs.getRecord(1);
                 DataInputStream in=new DataInputStream(new ByteArrayInputStream(data));
                 if(in.readInt()==0x4D434843){
+                    chestContentsStored=true;
                     for(int i=0;i<27;i++){chestItems[i]=in.readInt();chestCounts[i]=in.readInt();
                         if(chestItems[i]<0||chestItems[i]>=ItemCatalog.COUNT||chestCounts[i]<0||chestCounts[i]>64){chestItems[i]=0;chestCounts[i]=0;}}
                 }
@@ -2317,6 +2321,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if(chestStoreName==null)return;
         try{RecordStore.deleteRecordStore(chestStoreName);}catch(Exception ignored){}
         chestStoreName=null;
+        chestContentsStored=false;
     }
 
     private void transferChestSlot() {
