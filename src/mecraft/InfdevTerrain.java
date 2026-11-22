@@ -327,26 +327,6 @@ final class InfdevTerrain {
                 }
             }
             biomes[col] = 0;
-            if (chosen < 0) {
-                surfaceHeights[col] = 0;
-                for (int y = 0; y < WORLD_HEIGHT; y++) blocks[base + y] = Block.AIR;
-                continue;
-            }
-            int dx = wx - ix[chosen], dz = wz - iz[chosen];
-            int distance = (int)Math.sqrt(dx * dx + dz * dz);
-            int thick = 3 + (radiusChosen - distance) / 2 +
-                    (valueNoise(seed ^ 0x6C8E9CF5, wx, wz, 7) - 128) / 100;
-            if (thick < 3) thick = 3;
-            if (thick > 9) thick = 9;
-            int bottom = top - thick;
-            surfaceHeights[col] = top;
-            for (int y = 0; y < WORLD_HEIGHT; y++) {
-                if (y < bottom || y > top) blocks[base + y] = Block.AIR;
-                else if (y == top) blocks[base + y] = Block.GRASS;
-                else if (y >= top - 2) blocks[base + y] = Block.DIRT;
-                else blocks[base + y] = Block.STONE;
-            }
-
             // Soft, blocky snow-cloud banks float above the islands. Their
             // positions are fixed so every chunk generates the same cloud.
             for (int cloud = 0; cloud < 5; cloud++) {
@@ -367,6 +347,26 @@ final class InfdevTerrain {
                         cloudBase - 1 >= 0)
                     blocks[base + cloudBase - 1] = Block.SNOW;
             }
+            if (chosen < 0) {
+                surfaceHeights[col] = 0;
+                for (int y = 0; y < WORLD_HEIGHT; y++) blocks[base + y] = Block.AIR;
+                continue;
+            }
+            int dx = wx - ix[chosen], dz = wz - iz[chosen];
+            int distance = (int)Math.sqrt(dx * dx + dz * dz);
+            int thick = 3 + (radiusChosen - distance) / 2 +
+                    (valueNoise(seed ^ 0x6C8E9CF5, wx, wz, 7) - 128) / 100;
+            if (thick < 3) thick = 3;
+            if (thick > 9) thick = 9;
+            int bottom = top - thick;
+            surfaceHeights[col] = top;
+            for (int y = 0; y < WORLD_HEIGHT; y++) {
+                if (y < bottom || y > top) blocks[base + y] = Block.AIR;
+                else if (y == top) blocks[base + y] = Block.GRASS;
+                else if (y >= top - 2) blocks[base + y] = Block.DIRT;
+                else blocks[base + y] = Block.STONE;
+            }
+
         }
     }
 
