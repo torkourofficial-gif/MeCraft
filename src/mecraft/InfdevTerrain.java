@@ -307,7 +307,7 @@ final class InfdevTerrain {
                 surfaceHeights.length < CHUNK_SIZE * CHUNK_SIZE || biomes == null ||
                 biomes.length < CHUNK_SIZE * CHUNK_SIZE) return;
         int ox = chunkX * CHUNK_SIZE, oz = chunkZ * CHUNK_SIZE, center = VoxelWorld.WIDTH / 2;
-        final int[] ix = { center, 8, 39, 9, 39, 24, 24, 13 };
+        final int[] ix = { center, 8, 39, 9, 39, 24, 24, 10 };
         final int[] iz = { center, 9, 10, 39, 39, 7, 41, 25 };
         final int[] ir = { 8, 5, 6, 5, 6, 4, 5, 4 };
         final int[] iy = { 35, 39, 30, 32, 42, 28, 37, 25 };
