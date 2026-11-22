@@ -2112,13 +2112,17 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             return;
         }
 
-        if (hasDimensionReturn[targetDimension]) {
+        if (hasDimensionReturn[targetDimension] &&
+                targetDimension != VoxelWorld.DIM_AETHER) {
             world.playerX = dimensionReturnX[targetDimension];
             world.playerY = dimensionReturnY[targetDimension];
             world.playerZ = dimensionReturnZ[targetDimension];
         } else {
             int[] destination = null;
             if (targetDimension == VoxelWorld.DIM_AETHER) {
+                // Always rebuild/use the central Aether landing portal. A
+                // stale return coordinate from an earlier broken arrival must
+                // never send the player into empty space or outside the islands.
                 destination = world.createAetherPortalAtSpawn();
             } else if (targetDimension == VoxelWorld.DIM_END) {
                 int bx = VoxelWorld.WIDTH / 2 - 2;
