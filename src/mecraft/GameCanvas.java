@@ -2312,6 +2312,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             out.flush(); byte[] data=bytes.toByteArray();
             rs=RecordStore.openRecordStore(chestStoreName,true);
             if(rs.getNumRecords()==0)rs.addRecord(data,0,data.length);else rs.setRecord(1,data,0,data.length);
+            chestContentsStored=true;
             out.close();
         } catch(Exception ignored) { }
         finally {if(rs!=null)try{rs.closeRecordStore();}catch(Exception ignored){}}
