@@ -506,7 +506,7 @@ final class MobSystem {
             if (slot == 10) return SPIDER;
             if (slot == 11) return SLIME;
             if (slot == 12) return ENDERMAN;
-            return ZOMBIE;
+            return BLAZE;
         }
         if (dimensionMode == VoxelWorld.DIM_NETHER) {
             if (slot == 2 || slot == 10) return GHAST;
