@@ -11,49 +11,9 @@ import javax.microedition.rms.RecordStoreException;
 final class GameSettings {
     private static final String STORE = "mecraft-settings";
     private static final int MAGIC = 0x4D435354; // MCST
-    private static final int VERSION = 5;
+    private static final int VERSION = 6;
 
     private GameSettings() { }
-
-    static int loadFrameSkip() {
-        RecordStore store = null;
-        try {
-            store = RecordStore.openRecordStore(STORE, false);
-            if (store.getNumRecords() == 0) return 0;
-            DataInputStream in = new DataInputStream(
-                    new ByteArrayInputStream(store.getRecord(1)));
-            if (in.readInt() != MAGIC) return 0;
-            int value = in.readUnsignedByte();
-            return value > 2 ? 0 : value;
-        } catch (Exception unavailable) {
-            return 0;
-        } finally {
-            if (store != null) try { store.closeRecordStore(); }
-            catch (RecordStoreException ignored) { }
-        }
-    }
-
-    static void saveFrameSkip(int value) {
-        if (value < 0) value = 0;
-        if (value > 2) value = 2;
-        RecordStore store = null;
-        try {
-            ByteArrayOutputStream bytes = new ByteArrayOutputStream(5);
-            DataOutputStream out = new DataOutputStream(bytes);
-            out.writeInt(MAGIC);
-            out.writeByte(value);
-            out.flush();
-            byte[] data = bytes.toByteArray();
-            store = RecordStore.openRecordStore(STORE, true);
-            if (store.getNumRecords() == 0) store.addRecord(data, 0, data.length);
-            else store.setRecord(1, data, 0, data.length);
-        } catch (Exception ignored) {
-            // Keep the current session usable when the device's RMS is full.
-        } finally {
-            if (store != null) try { store.closeRecordStore(); }
-            catch (RecordStoreException ignored) { }
-        }
-    }
 
     static void load(int[] values, int[] controlCodes, boolean[] customControls) {
         RecordStore store = null;
@@ -65,7 +25,8 @@ final class GameSettings {
             if (in.readInt() != MAGIC) return;
             int versionOrFrameSkip = in.readUnsignedByte();
             if (data.length == 5) {
-                values[0] = versionOrFrameSkip > 2 ? 0 : versionOrFrameSkip;
+                // Old standalone frameskip preference: use the new default.
+                values[0] = 20;
                 return;
             }
             if (versionOrFrameSkip < 1 || versionOrFrameSkip > VERSION) return;
@@ -77,6 +38,9 @@ final class GameSettings {
                 int value = in.readInt();
                 if (i < values.length) values[i] = value;
             }
+            // Prior settings stored a frameskip mode in slot zero. The new
+            // setting stores an FPS limit, so migrate old installs to 20 FPS.
+            if (versionOrFrameSkip < VERSION && values.length > 0) values[0] = 20;
             if (versionOrFrameSkip < 2 || in.available() < 1) return;
             int count = in.readUnsignedByte();
             for (int i = 0; i < count; i++) {
