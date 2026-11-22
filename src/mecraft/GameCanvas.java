@@ -2112,18 +2112,25 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             return;
         }
 
-        if (hasDimensionReturn[targetDimension]) {
+        if (targetDimension == VoxelWorld.DIM_AETHER) {
+            // Ensure the Aether has a real, upright return portal on its
+            // central island. Reuse the same Glowstone-frame activation path
+            // as a player-built portal, then arrive inside its portal blocks.
+            int[] destination = world.createAetherPortalAtSpawn();
+            if (destination == null) {
+                world.setDimension(sourceDimension);
+                portalChargeTicks = 0;
+                return;
+            }
+            world.playerX = destination[3] == 0 ?
+                    destination[0] + 2.5f : destination[0] + 0.5f;
+            world.playerZ = destination[3] == 0 ?
+                    destination[2] + 0.5f : destination[2] + 2.5f;
+            world.playerY = destination[1] + 1.05f;
+        } else if (hasDimensionReturn[targetDimension]) {
             world.playerX = dimensionReturnX[targetDimension];
             world.playerY = dimensionReturnY[targetDimension];
             world.playerZ = dimensionReturnZ[targetDimension];
-        } else if (targetDimension == VoxelWorld.DIM_AETHER) {
-            // Like the Nether's first generated arrival, use the dimension's
-            // normal spawn instead of constructing a second portal system.
-            // generate() uses the center island at Y=35, so the player stands
-            // one block above its surface.
-            world.playerX = VoxelWorld.WIDTH * 0.5f;
-            world.playerY = 36.0f;
-            world.playerZ = VoxelWorld.DEPTH * 0.5f;
         } else {
             int[] destination = null;
             if (targetDimension == VoxelWorld.DIM_END) {
