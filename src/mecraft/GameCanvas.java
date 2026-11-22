@@ -101,6 +101,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private final int[] inventory = new int[ItemCatalog.COUNT];
     private final int[] playerSlotItems = new int[PLAYER_INVENTORY_SLOTS];
     private final int[] playerSlotCounts = new int[PLAYER_INVENTORY_SLOTS];
+    private final int[] playerInventoryOverflow = new int[ItemCatalog.COUNT];
     private int playerInventorySelection;
     private int playerInventoryHeldItem;
     private int playerInventoryHeldCount;
@@ -1088,6 +1089,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     private void saveIfNeeded() {
+        if (state == SURVIVAL_INVENTORY) closeSurvivalInventory();
         if (state == CHEST_INVENTORY) saveChestContents();
         if (state == FURNACE_INVENTORY) saveFurnaceContents();
         if (world != null && state != MENU && state != ERROR) {
@@ -2461,6 +2463,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             playerSlotItems[i] = 0;
             playerSlotCounts[i] = 0;
         }
+        for (int id = 0; id < playerInventoryOverflow.length; id++) playerInventoryOverflow[id] = 0;
         int[] remaining = new int[ItemCatalog.COUNT];
         for (int id = 1; id < ItemCatalog.COUNT; id++) remaining[id] = inventory[id];
         for (int slot = 0; slot < 9; slot++) {
@@ -2485,21 +2488,45 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 slot++;
             }
         }
-        // Legacy saves can exceed 36 visible stacks; retain any overflow in
-        // the last pack slot instead of silently discarding it.
-        for (int id = 1; id < ItemCatalog.COUNT; id++) {
-            if (remaining[id] > 0) {
-                int target = PLAYER_MAIN_SLOTS - 1;
-                if (playerSlotItems[target] == 0) playerSlotItems[target] = id;
-                if (playerSlotItems[target] == id)
-                    playerSlotCounts[target] += remaining[id];
-            }
-        }
+        // Preserve item types that do not fit in the 36 visible slots.
+        // They remain in the legacy inventory count until the player frees space.
+        for (int id = 1; id < ItemCatalog.COUNT; id++)
+            playerInventoryOverflow[id] = remaining[id];
     }
 
     private void closeSurvivalInventory() {
         if (state != SURVIVAL_INVENTORY || world == null) return;
-        for (int id = 0; id < inventory.length; id++) inventory[id] = 0;
+        // Never lose a stack that is still attached to the cursor when closing.
+        if (playerInventoryHeldItem > 0) {
+            int target = playerInventorySelection;
+            if (playerSlotItems[target] != 0) {
+                target = -1;
+                for (int i = 0; i < PLAYER_INVENTORY_SLOTS; i++)
+                    if (playerSlotItems[i] == 0) { target = i; break; }
+                if (target < 0) {
+                    for (int i = 0; i < PLAYER_INVENTORY_SLOTS; i++) {
+                        if (playerSlotItems[i] == playerInventoryHeldItem &&
+                                !ItemCatalog.isTool(playerInventoryHeldItem) &&
+                                playerSlotCounts[i] + playerInventoryHeldCount <= ItemCatalog.maxStack(playerInventoryHeldItem)) {
+                            target = i; break;
+                        }
+                    }
+                }
+            }
+            if (target >= 0) {
+                if (playerSlotItems[target] == playerInventoryHeldItem)
+                    playerSlotCounts[target] += playerInventoryHeldCount;
+                else {
+                    playerSlotItems[target] = playerInventoryHeldItem;
+                    playerSlotCounts[target] = playerInventoryHeldCount;
+                }
+            } else {
+                playerInventoryOverflow[playerInventoryHeldItem] += playerInventoryHeldCount;
+            }
+            playerInventoryHeldItem = 0;
+            playerInventoryHeldCount = 0;
+        }
+        for (int id = 0; id < inventory.length; id++) inventory[id] = playerInventoryOverflow[id];
         for (int slot = 0; slot < PLAYER_INVENTORY_SLOTS; slot++) {
             int id = playerSlotItems[slot], amount = playerSlotCounts[slot];
             if (id > 0 && id < inventory.length && amount > 0) inventory[id] += amount;
@@ -2606,7 +2633,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (state == SURVIVAL_INVENTORY) {
             int action = gameAction(keyCode);
             if (keyCode == KEY_POUND || keyCode == KEY_NUM0) closeSurvivalInventory();
-            else if (keyCode == KEY_STAR) openCrafting(false);
+            else if (keyCode == KEY_STAR) { closeSurvivalInventory(); openCrafting(false); }
             else if (keyCode == KEY_NUM2 || action == UP) movePlayerInventorySelection(-9);
             else if (keyCode == KEY_NUM8 || action == DOWN) movePlayerInventorySelection(9);
             else if (keyCode == KEY_NUM4 || action == LEFT) movePlayerInventorySelection(-1);
