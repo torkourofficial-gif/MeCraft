@@ -460,6 +460,14 @@ final class InfdevTerrain {
         return (lattice(seed ^ 0x4F1BBCDC, cellX, cellZ) & 255) < 128;
     }
 
+    static boolean isAetherLootChest(int seed, int x, int y, int z) {
+        int cellX = floorDiv(x, 32), cellZ = floorDiv(z, 32);
+        if (!hasAetherCombatChamber(seed, cellX, cellZ)) return false;
+        return x == aetherIslandCenterX(seed, cellX, cellZ) &&
+                z == aetherIslandCenterZ(seed, cellX, cellZ) &&
+                y == aetherIslandTop(seed, cellX, cellZ) + 2;
+    }
+
     static int aetherIslandCenterX(int seed, int cellX, int cellZ) {
         return cellX * 32 + 8 + (lattice(seed ^ 0x3C6EF372, cellX, cellZ) * 16 >> 8);
     }
@@ -493,6 +501,9 @@ final class InfdevTerrain {
                     blocks[base + floorY] = Block.GLASS;
                     for (int y = floorY + 1; y <= floorY + 4; y++)
                         blocks[base + y] = edge || y == floorY + 4 ? Block.GLASS : Block.AIR;
+                    // A single loot chest sits in the center of each glass chamber.
+                    if (x == centerX && z == centerZ && floorY + 1 < WORLD_HEIGHT)
+                        blocks[base + floorY + 1] = Block.CHEST;
                 }
             }
         }
