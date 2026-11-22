@@ -2687,7 +2687,8 @@ final class ChunkRenderer {
                         portals.add(localX, localY, localZ,
                                 snapshot.portalAxisAt(localX, localY, localZ), portalFrameSize,
                                 id == Block.END_PORTAL ? 1 :
-                                ((snapshot.metadata(localX, localY, localZ) & 2) != 0 ? 1 : 0),
+                                (((snapshot.metadata(localX, localY, localZ) & 4) == 0 &&
+                                  (snapshot.metadata(localX, localY, localZ) & 2) != 0) ? 1 : 0),
                                 id == Block.END_PORTAL,
                                 (snapshot.metadata(localX, localY, localZ) & 4) != 0);
                     } else if (id == Block.END_PORTAL_FRAME) {
