@@ -720,7 +720,8 @@ final class MobSystem {
             zombiesNightActive = false;
             return;
         }
-        boolean night = world.dimensionId == VoxelWorld.DIM_NETHER ||\n                world.dimensionId == VoxelWorld.DIM_END || world.dimensionId == VoxelWorld.DIM_AETHER || world.isNight();
+        boolean night = world.dimensionId == VoxelWorld.DIM_NETHER ||
+                world.dimensionId == VoxelWorld.DIM_END || world.dimensionId == VoxelWorld.DIM_AETHER || world.isNight();
         for (int i = 0; i < mobs.length; i++) {
             if (isHostile(mobTypeForSlot(i)) && (mobs[i] == null || !mobs[i].eggSpawned) &&
                     !hostileAllowed(mobTypeForSlot(i), world) && mobs[i] != null) releaseMob(i);
@@ -1373,7 +1374,8 @@ final class MobSystem {
 
     /** Economic mode trims one mob slot without making the world feel empty. */
     private boolean hostileSlotAllowed(int slot, VoxelWorld world) {
-        if (world.dimensionId == VoxelWorld.DIM_END) return slot >= 11;\n        if (world.dimensionId == VoxelWorld.DIM_AETHER && slot == 13) return true;
+        if (world.dimensionId == VoxelWorld.DIM_END) return slot >= 11;
+        if (world.dimensionId == VoxelWorld.DIM_AETHER && slot == 13) return true;
         if (world.economicMode && slot == (world.nether ? 13 : 11)) return false;
         return world.difficulty != VoxelWorld.DIFFICULTY_EASY || slot <= 9 ||
                mobTypeForSlot(slot) == ENDERMAN;
