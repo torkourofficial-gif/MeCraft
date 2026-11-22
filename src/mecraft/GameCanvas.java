@@ -2677,20 +2677,20 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     private void drawSurvivalInventory(Graphics g) {
-        int w = getWidth(), h = getHeight(), left = (w - 176) / 2, top = (h - 166) / 2;
+        int w = getWidth(), h = getHeight(), left = (w - 176) / 2, top = (h - 100) / 2;
+        // container.png is the chest GUI atlas: the player inventory starts at
+        // UV (0,66), not (0,0). Crop only its title, 3 backpack rows and hotbar.
         if (containerTexture != null && containerTexture.getWidth() >= 176 &&
                 containerTexture.getHeight() >= 166) {
-            g.drawRegion(containerTexture, 0, 0, 176, 166, Sprite.TRANS_NONE,
+            g.drawRegion(containerTexture, 0, 66, 176, 100, Sprite.TRANS_NONE,
                     left, top, Graphics.TOP | Graphics.LEFT);
         } else {
-            g.setColor(198, 198, 198); g.fillRect(left, top, 176, 166);
-            g.setColor(35, 35, 35); g.drawRect(left, top, 175, 165);
+            g.setColor(198, 198, 198); g.fillRect(left, top, 176, 100);
+            g.setColor(35, 35, 35); g.drawRect(left, top, 175, 99);
         }
-        g.setColor(35, 35, 35);
-        g.drawString(Language.text("Inventario"), left + 8, top + 5, Graphics.TOP | Graphics.LEFT);
         for (int slot = 0; slot < PLAYER_INVENTORY_SLOTS; slot++) {
             int x = left + 8 + (slot % 9) * 18;
-            int y = slot < 27 ? top + 18 + (slot / 9) * 18 : top + 85;
+            int y = slot < 27 ? top + 18 + (slot / 9) * 18 : top + 76;
             int id = playerSlotItems[slot], amount = playerSlotCounts[slot];
             if (slot == playerInventorySelection) {
                 g.setColor(255, 255, 255); g.fillRect(x - 1, y - 1, 18, 18);
@@ -2707,7 +2707,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (playerInventoryHeldItem > 0) {
             int x = left + 8 + (playerInventorySelection % 9) * 18;
             int y = playerInventorySelection < 27 ?
-                    top + 18 + (playerInventorySelection / 9) * 18 : top + 85;
+                    top + 18 + (playerInventorySelection / 9) * 18 : top + 76;
             drawIcon(g, playerInventoryHeldItem, x, y, false);
             if (playerInventoryHeldCount > 1)
                 drawOutlinedCount(g, Integer.toString(playerInventoryHeldCount), x + 16, y + 16,
@@ -2715,7 +2715,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
         g.setColor(35, 35, 35);
         g.drawString("5 mover  # cerrar  * crafteo",
-                w / 2, top + 153, Graphics.TOP | Graphics.HCENTER);
+                w / 2, top + 101, Graphics.TOP | Graphics.HCENTER);
     }
 
     private void openCrafting(boolean workbench) {
@@ -4336,15 +4336,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         } else if (state == ERROR) keyPressed(KEY_NUM5);
         else if (state == GAME_OVER) keyPressed(KEY_NUM5);
         else if (state == SURVIVAL_INVENTORY) {
-            int left = (w - 176) / 2, top = (h - 166) / 2;
-            if (x >= left + 7 && x < left + 169 && y >= top + 17 && y < top + 103) {
+            int left = (w - 176) / 2, top = (h - 100) / 2;
+            if (x >= left + 7 && x < left + 169 && y >= top + 17 && y < top + 96) {
                 int col = (x - (left + 8)) / 18;
                 if (col < 0) col = 0; if (col > 8) col = 8;
                 int row = y < top + 73 ? (y - (top + 18)) / 18 : 3;
                 if (row < 0) row = 0; if (row > 3) row = 3;
                 playerInventorySelection = row * 9 + col;
                 clickPlayerInventorySlot();
-            } else if (y > top + 162 || x < left || x > left + 176) closeSurvivalInventory();
+                        } else if (y > top + 100 || y < top || x < left || x > left + 176) closeSurvivalInventory();
             repaint();
         } else if (state == INVENTORY || state == WORKBENCH) {
             if (y > h - 45) craftSelected();
