@@ -1781,41 +1781,38 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     /** Temporary test: using the Blaze Rod eleven times spawns one Blaze. */
     private void useBlazeRod() {
         if (world == null || renderer == null) return;
-        if (world.mode == 0 && inventory[ItemCatalog.BLAZE_ROD] <= 0) return;
         blazeRodUseCount++;
         renderer.swingHand();
         if (blazeRodUseCount < 11) {
             repaint();
             return;
         }
-        ensureLookRay();
-        // Aim from the player's eyes and include the camera's vertical pitch.
-        double targetX = world.playerX + lookRayX * 2.5;
-        double targetY = world.playerY + PLAYER_EYE_HEIGHT + lookRayY * 2.5 - 1.0;
-        double targetZ = world.playerZ + lookRayZ * 2.5;
-        int baseX = floorBlock(targetX);
-        int baseY = floorBlock(targetY);
-        int baseZ = floorBlock(targetZ);
+
+        // Summon beside the player rather than relying on the crosshair to
+        // point at a valid two-block opening in every dimension.
+        int baseX = floorBlock(world.playerX);
+        int baseY = floorBlock(world.playerY);
+        int baseZ = floorBlock(world.playerZ);
         boolean spawned = false;
-        // Search complete square rings around the aimed point, at nearby
-        // heights. This avoids the old asymmetric search and repeated checks.
-        for (int dy = -2; dy <= 2 && !spawned; dy++) {
-            for (int radius = 0; radius <= 2 && !spawned; radius++) {
-                for (int dx = -radius; dx <= radius && !spawned; dx++) {
-                    for (int dz = -radius; dz <= radius && !spawned; dz++) {
-                        if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
+        for (int radius = 1; radius <= 3 && !spawned; radius++) {
+            for (int dx = -radius; dx <= radius && !spawned; dx++) {
+                for (int dz = -radius; dz <= radius && !spawned; dz++) {
+                    if (Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
+                    for (int dy = -1; dy <= 1 && !spawned; dy++) {
                         int x = baseX + dx;
                         int y = baseY + dy;
                         int z = baseZ + dz;
-                        if (y < 1 || y + 2 >= VoxelWorld.HEIGHT ||
+                        if (y < 1 || y + 3 >= VoxelWorld.HEIGHT ||
                                 world.get(x, y, z) != Block.AIR ||
-                                world.get(x, y + 1, z) != Block.AIR) continue;
+                                world.get(x, y + 1, z) != Block.AIR ||
+                                world.get(x, y + 2, z) != Block.AIR) continue;
                         spawned = renderer.spawnBlaze(world, x + 0.5f, (float)y, z + 0.5f);
                     }
                 }
             }
         }
         if (!spawned) {
+            // Keep the counter at ten so the next use retries immediately.
             blazeRodUseCount = 10;
             repaint();
             return;
