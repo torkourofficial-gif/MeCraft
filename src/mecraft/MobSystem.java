@@ -501,11 +501,9 @@ final class MobSystem {
         if (dimensionMode == VoxelWorld.DIM_END) return ENDERMAN;
         if (dimensionMode == VoxelWorld.DIM_AETHER) {
             // The Aether's passive fauna is limited to pigs and sheep.
-            // Ten of the fourteen pooled slots are reserved for these animals.
+            // Leave one slot for Slimes and reserve three for the more common Blazes.
             if (slot < 10) return (slot & 1) == 0 ? PIG : SHEEP;
-            if (slot == 10) return SPIDER;
             if (slot == 11) return SLIME;
-            if (slot == 12) return ENDERMAN;
             return BLAZE;
         }
         if (dimensionMode == VoxelWorld.DIM_NETHER) {
@@ -895,7 +893,12 @@ final class MobSystem {
 
     private boolean validSpawnForMob(VoxelWorld world, Mob mob, int x, int z) {
         if (mob.type != BLAZE) return validSpawn(world, x, z);
-        if (world.dimensionId == VoxelWorld.DIM_AETHER) return validSpawn(world, x, z);
+        if (world.dimensionId == VoxelWorld.DIM_AETHER) {
+            int ground = world.surfaceY(x, z);
+            byte groundBlock = world.get(x, ground, z);
+            return Block.solid(groundBlock) && ground + 1 < VoxelWorld.HEIGHT &&
+                    world.get(x, ground + 1, z) == Block.AIR;
+        }
         int y = InfdevTerrain.NETHER_FORTRESS_FLOOR_Y;
         return world.dimensionId == VoxelWorld.DIM_NETHER &&
                 world.get(x, y, z) == Block.NETHER_BRICK &&
@@ -1385,8 +1388,8 @@ final class MobSystem {
     /** Economic mode trims one mob slot without making the world feel empty. */
     private boolean hostileSlotAllowed(int slot, VoxelWorld world) {
         if (world.dimensionId == VoxelWorld.DIM_END) return slot >= 11;
-        // Aether hostiles are limited to surface Slimes and roaming Blazes.
-        if (world.dimensionId == VoxelWorld.DIM_AETHER) return slot == 11 || slot == 13;
+        // Aether reserves one hostile slot for Slimes and three for Blazes.
+        if (world.dimensionId == VoxelWorld.DIM_AETHER) return slot >= 11;
         if (world.economicMode && slot == (world.nether ? 13 : 11)) return false;
         return world.difficulty != VoxelWorld.DIFFICULTY_EASY || slot <= 9 ||
                mobTypeForSlot(slot) == ENDERMAN;
