@@ -548,10 +548,23 @@ final class MobSystem {
     /** Dedicated Blaze summon path; use the Blaze's reserved slot in each hostile dimension. */
     boolean spawnBlaze(VoxelWorld world, float x, float y, float z) {
         if (world == null) return false;
-        // Prefer each dimension's normal Blaze slot, but fall back to another
-        // genuinely free pool slot if that one is already occupied.
         int preferredSlot = world.dimensionId == VoxelWorld.DIM_NETHER ? 9 : 13;
-        return spawnMobAt(world, BLAZE, x, y, z, preferredSlot);
+        if (spawnMobAt(world, BLAZE, x, y, z, preferredSlot)) return true;
+
+        // Manual summons must not silently fail just because every pooled
+        // actor slot is occupied. Reuse a passive slot as the final fallback.
+        int passiveLimit = world.dimensionId == VoxelWorld.DIM_AETHER ? 10 :
+                (world.dimensionId == VoxelWorld.DIM_OVERWORLD ? 7 : 0);
+        for (int i = 0; i < passiveLimit; i++) {
+            Mob mob = mobs[i];
+            if (mob == null || !mob.alive || !isHostile(mob.type)) {
+                releaseMob(i);
+                Mob blaze = createMob(i, BLAZE);
+                initializeSummonedMob(blaze, x, y, z);
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean spawnMobAt(VoxelWorld world, int type, float x, float y, float z,
@@ -578,6 +591,11 @@ final class MobSystem {
         if (slot < 0) return false;
         releaseMob(slot);
         Mob mob = createMob(slot, type);
+        initializeSummonedMob(mob, x, y, z);
+        return true;
+    }
+
+    private void initializeSummonedMob(Mob mob, float x, float y, float z) {
         mob.eggSpawned = true;
         mob.endermanAngry = false;
         mob.x = x; mob.y = y; mob.z = z;
@@ -606,7 +624,6 @@ final class MobSystem {
         mob.root.setOrientation(modelYaw(mob.yaw), 0.0f, 1.0f, 0.0f);
         mob.alive = true;
         mob.root.setRenderingEnable(true);
-        return true;
     }
 
     private Mob createMob(int slot) {
