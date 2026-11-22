@@ -1466,10 +1466,13 @@ final class VoxelWorld {
                     if (!Block.replaceable(id)) { clear = false; break; }
                 }
                 if (!clear) continue;
-                for (int v = 0; v <= 4; v++) for (int u = 0; u <= 3; u++) {
+                for (int v = 0; v <= 4 && clear; v++) for (int u = 0; u <= 3; u++) {
+                    boolean edge = v == 0 || v == 4 || u == 0 || u == 3;
                     if ((u == 0 || u == 3) && (v == 0 || v == 4)) continue;
-                    if (!set(bx + u, by + v, bz, Block.GLOWSTONE) &&
-                            get(bx + u, by + v, bz) != Block.GLOWSTONE) { clear = false; break; }
+                    byte desired = edge ? Block.GLOWSTONE : Block.AIR;
+                    if (get(bx + u, by + v, bz) != desired &&
+                            !set(bx + u, by + v, bz, desired) &&
+                            get(bx + u, by + v, bz) != desired) { clear = false; break; }
                 }
                 if (clear && activateAetherPortalAtGlowstone(bx + 1, by, bz))
                     return new int[] { bx, by, bz, 0 };
@@ -1506,9 +1509,12 @@ final class VoxelWorld {
 
         int by = floorY + 1;
         for (int v = 0; v <= 4; v++) for (int u = 0; u <= 3; u++) {
+            boolean edge = v == 0 || v == 4 || u == 0 || u == 3;
             if ((u == 0 || u == 3) && (v == 0 || v == 4)) continue;
-            if (!set(bx + u, by + v, bz, Block.GLOWSTONE) &&
-                    get(bx + u, by + v, bz) != Block.GLOWSTONE) return null;
+            byte desired = edge ? Block.GLOWSTONE : Block.AIR;
+            if (get(bx + u, by + v, bz) != desired &&
+                    !set(bx + u, by + v, bz, desired) &&
+                    get(bx + u, by + v, bz) != desired) return null;
         }
         if (!activateAetherPortalAtGlowstone(bx + 1, by, bz)) return null;
         return new int[] { bx, by, bz, 0 };
