@@ -4,6 +4,7 @@ package mecraft;
 final class AlphaTint {
     static final int GRASS_TOP = 0xFF7FB238;
     static final int AETHER_GRASS_TOP = 0xFFB4E58A;
+    static final int AETHER_LEAVES = 0xFF79C9B7;
     static final int LEAVES = 0xFF48B518;
 
     private AlphaTint() { }
