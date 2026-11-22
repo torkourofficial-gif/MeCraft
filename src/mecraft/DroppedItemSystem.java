@@ -229,7 +229,7 @@ final class DroppedItemSystem {
 
     /** Returns one collected block ID, or -1 when nothing was collected. */
     int update(VoxelWorld world, int[] inventory, int[] pickupCapacity,
-            PlayerPhysics physics) {
+            PlayerPhysics physics, boolean creative) {
         updateTick++;
         if (activeCount == 0) {
             mesh.setRenderingEnable(false);
@@ -316,13 +316,19 @@ final class DroppedItemSystem {
             float dy = y[i] - (world.playerY + 0.9f);
             float dz = z[i] - world.playerZ;
             boolean inPickupRange = dx * dx + dy * dy + dz * dz <= PICKUP_RADIUS_SQUARED;
-            if (pickupDelay[i] == 0 && picked < 0 && id > 0 &&
-                    id < pickupCapacity.length && inventory[id] < pickupCapacity[id] && inPickupRange) {
-                inventory[id]++;
+            boolean canCollect = creative || (id > 0 && id < pickupCapacity.length &&
+                    inventory[id] < pickupCapacity[id]);
+            if (pickupDelay[i] == 0 && id > 0 && id < ItemCatalog.COUNT &&
+                    inPickupRange && (creative || (picked < 0 && canCollect))) {
+                // Creative players collect the entity visually, but never write
+                // it into the survival inventory or hotbar.
+                if (!creative) {
+                    inventory[id]++;
+                    picked = id;
+                }
                 itemId[i] = 0;
                 tntFuse[i] = 0;
                 activeCount--;
-                picked = id;
                 writeItem(i);
             } else {
                 writeItem(i);
