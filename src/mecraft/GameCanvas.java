@@ -225,6 +225,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private final Image[] itemIcons = new Image[ItemCatalog.COUNT];
     private final Image[] mutedItemIcons = new Image[ItemCatalog.COUNT];
     private int randomSeed = 0x4D454352;
+    private int blazeRodUseCount;
     private String errorMessage;
     private volatile String loadingMessage = "Preparando...";
     private boolean diagnosticError;
@@ -1656,6 +1657,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             return;
         }
         int selected = hotbar[world.selectedSlot];
+        if (selected == ItemCatalog.BLAZE_ROD) {
+            useBlazeRod();
+            return;
+        }
         if (ItemCatalog.isSpawnEgg(selected)) {
             useSpawnEgg(selected);
             return;
@@ -1770,6 +1775,36 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         renderer.swingHand();
         copyInventoryToWorld();
         world.save();
+        repaint();
+    }
+
+    /** Temporary test: using the Blaze Rod eleven times spawns one Blaze. */
+    private void useBlazeRod() {
+        if (world == null || renderer == null) return;
+        if (world.mode == 0 && inventory[ItemCatalog.BLAZE_ROD] <= 0) return;
+        blazeRodUseCount++;
+        renderer.swingHand();
+        if (blazeRodUseCount < 11) {
+            repaint();
+            return;
+        }
+        int[] target = trace(5.0f);
+        if (target == null) {
+            blazeRodUseCount = 10;
+            repaint();
+            return;
+        }
+        int x = target[0] + target[3];
+        int y = target[1] + target[4];
+        int z = target[2] + target[5];
+        if (y < 1 || y + 2 >= VoxelWorld.HEIGHT ||
+                world.get(x, y, z) != Block.AIR || world.get(x, y + 1, z) != Block.AIR ||
+                !renderer.spawnMobFromEgg(world, 11, x + 0.5f, (float)y, z + 0.5f)) {
+            blazeRodUseCount = 10;
+            repaint();
+            return;
+        }
+        blazeRodUseCount = 0;
         repaint();
     }
 
