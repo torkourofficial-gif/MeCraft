@@ -197,6 +197,7 @@ final class ChunkRenderer {
     private BoatEntity boat;
     private MinecartEntity minecart;
     private final Texture2D[] portalFrames = new Texture2D[8];
+    private final Texture2D[] aetherPortalFrames = new Texture2D[8];
     private final Texture2D[] endPortalFrames = new Texture2D[8];
     private final Texture2D[] crackFrames = new Texture2D[10];
     private final Appearance crackAppearance;
@@ -205,6 +206,7 @@ final class ChunkRenderer {
     private final short[] crackPositionData = new short[] { 0,0,0, 0,1,0, 1,0,0, 1,1,0 };
     private final short[] crackUVData = new short[] { 0,16, 0,0, 16,16, 16,0 };
     private final Appearance portalAppearance;
+    private final Appearance aetherPortalAppearance;
     private final Appearance endPortalAppearance;
     private final Texture2D worldFireTexture;
     private final Appearance worldFireAppearance;
@@ -307,6 +309,7 @@ final class ChunkRenderer {
         crackMesh.setRenderingEnable(false);
         scene.addChild(crackMesh);
         portalAppearance = createPortalAppearance(portalFrames[0]);
+        aetherPortalAppearance = createPortalAppearance(aetherPortalFrames[0]);
         endPortalAppearance = createPortalAppearance(endPortalFrames[0]);
         Image fireImage = GameAssets.image("fire.png");
         worldFireTexture = new Texture2D(new Image2D(Image2D.RGBA, fireImage));
@@ -714,6 +717,7 @@ final class ChunkRenderer {
             portalAnimationTick = 0;
             portalAnimationFrame = (portalAnimationFrame + 1) & 7;
             portalAppearance.setTexture(0, portalFrames[portalAnimationFrame]);
+            aetherPortalAppearance.setTexture(0, aetherPortalFrames[portalAnimationFrame]);
         }
         // One End animation frame every 8 game ticks (about 400 ms).
         if (++endPortalAnimationTick >= 8) {
@@ -1408,6 +1412,13 @@ final class ChunkRenderer {
 
     /** Applies Indev's 24000-tick celestial curve; torch light is baked into voxel face colors. */
     void updateDayNight(VoxelWorld world) {
+        if (world.dimensionId == VoxelWorld.DIM_AETHER) {
+            currentDaylight = 0.96f;
+            currentSkyColor = 0xFFB9E4F4;
+            if (appliedSunlightIntensity != 0.96f) { sunlight.setIntensity(0.96f); appliedSunlightIntensity = 0.96f; }
+            updateTorchLights(world);
+            return;
+        }
         if (world.dimensionId == VoxelWorld.DIM_END) {
             currentDaylight = 0.58f;
             currentSkyColor = 0xFF10051D;
@@ -2677,7 +2688,8 @@ final class ChunkRenderer {
                                 snapshot.portalAxisAt(localX, localY, localZ), portalFrameSize,
                                 id == Block.END_PORTAL ? 1 :
                                 ((snapshot.metadata(localX, localY, localZ) & 2) != 0 ? 1 : 0),
-                                id == Block.END_PORTAL);
+                                id == Block.END_PORTAL,
+                                (snapshot.metadata(localX, localY, localZ) & 4) != 0);
                     } else if (id == Block.END_PORTAL_FRAME) {
                         addEndPortalFrameGeometry(builders, builderTails, localX, localY, localZ,
                                 snapshot.metadata(localX, localY, localZ));
@@ -3000,7 +3012,7 @@ final class ChunkRenderer {
         int[] strips = new int[vertexCount / 4];
         for (int i = 0; i < strips.length; i++) strips[i] = 4;
         return new Mesh(vertices, new TriangleStripArray(0, strips),
-                data.endPortal ? endPortalAppearance : portalAppearance);
+                data.endPortal ? endPortalAppearance : (data.aetherPortal ? aetherPortalAppearance : portalAppearance));
     }
 
     private void makeEndPortalFrames() {
@@ -3043,6 +3055,22 @@ final class ChunkRenderer {
             texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
             texture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
             portalFrames[frame] = texture;
+            int[] bluePixels = new int[pixels.length];
+            for (int i = 0; i < pixels.length; i++) {
+                int c = pixels[i], alpha = c >>> 24;
+                if (alpha == 0) { bluePixels[i] = 0; continue; }
+                int light = (((c >> 16) & 255) + ((c >> 8) & 255) + (c & 255)) / 3;
+                int red = 28 + light / 6, green = 105 + light / 2, blue = 165 + light / 3;
+                if (red > 255) red = 255;
+                if (green > 255) green = 255;
+                if (blue > 255) blue = 255;
+                bluePixels[i] = (alpha << 24) | (red << 16) | (green << 8) | blue;
+            }
+            Image blueImage = Image.createRGBImage(bluePixels, portalFrameSize, portalFrameSize, true);
+            Texture2D blueTexture = new Texture2D(new Image2D(Image2D.RGBA, blueImage));
+            blueTexture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
+            blueTexture.setWrapping(Texture2D.WRAP_CLAMP, Texture2D.WRAP_CLAMP);
+            aetherPortalFrames[frame] = blueTexture;
         }
     }
 
@@ -3367,11 +3395,14 @@ final class ChunkRenderer {
         short[] uv = new short[32];
         int vertexCount;
         boolean endPortal;
+        boolean aetherPortal;
 
-        void reset() { vertexCount = 0; endPortal = false; }
+        void reset() { vertexCount = 0; endPortal = false; aetherPortal = false; }
 
-        void add(int x, int y, int z, int axis, int frameSize, int portalType, boolean isEndPortal) {
+        void add(int x, int y, int z, int axis, int frameSize, int portalType,
+                 boolean isEndPortal, boolean isAetherPortal) {
             if (isEndPortal) endPortal = true;
+            if (isAetherPortal) aetherPortal = true;
             ensure(vertexCount + 4);
             int x0 = x * 256, x1 = x0 + 256;
             int y0 = y * 256, y1 = y0 + 256;
