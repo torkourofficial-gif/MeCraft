@@ -2116,6 +2116,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             world.playerX = dimensionReturnX[targetDimension];
             world.playerY = dimensionReturnY[targetDimension];
             world.playerZ = dimensionReturnZ[targetDimension];
+        } else if (targetDimension == VoxelWorld.DIM_AETHER) {
+            // Like the Nether's first generated arrival, use the dimension's
+            // normal spawn instead of constructing a second portal system.
+            // generate() uses the center island at Y=35, so the player stands
+            // one block above its surface.
+            world.playerX = VoxelWorld.WIDTH * 0.5f;
+            world.playerY = 36.0f;
+            world.playerZ = VoxelWorld.DEPTH * 0.5f;
         } else {
             int[] destination = null;
             if (targetDimension == VoxelWorld.DIM_END) {
