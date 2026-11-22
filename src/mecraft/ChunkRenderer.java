@@ -3139,7 +3139,10 @@ final class ChunkRenderer {
         Texture2D texture = new Texture2D(new Image2D(Image2D.RGBA, tileImage));
         texture.setFiltering(Texture2D.FILTER_NEAREST, Texture2D.FILTER_NEAREST);
         texture.setWrapping(Texture2D.WRAP_REPEAT, Texture2D.WRAP_REPEAT);
-        appearance = createBlockAppearance(texture, tile == Block.atlasTile(Block.WATER));
+        // Glass uses real alpha blending instead of an opaque atlas pass.
+        // Keep it partially transparent while retaining the original texture.
+        appearance = createBlockAppearance(texture,
+                tile == Block.atlasTile(Block.WATER) || tile == Block.atlasTile(Block.GLASS));
         if (tile == 234 && appearance.getMaterial() != null)
             appearance.getMaterial().setColor(Material.EMISSIVE, 0xFFFF6A18);
         tileAppearances[tile] = appearance;
@@ -3692,7 +3695,9 @@ final class ChunkRenderer {
             int ti = vertexCount * 2;
             uv[ti] = (short)u; uv[ti + 1] = (short)v;
             int ci = vertexCount * 4;
-            c[ci] = (byte)shade; c[ci + 1] = (byte)shade; c[ci + 2] = (byte)shade; c[ci + 3] = (byte)(tile == Block.atlasTile(Block.WATER) ? 160 : 255);
+            c[ci] = (byte)shade; c[ci + 1] = (byte)shade; c[ci + 2] = (byte)shade;
+            c[ci + 3] = (byte)(tile == Block.atlasTile(Block.WATER) ? 160 :
+                    (tile == Block.atlasTile(Block.GLASS) ? 128 : 255));
             vertexCount++;
         }
 
