@@ -2719,6 +2719,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                         Graphics.RIGHT | Graphics.BOTTOM);
         }
         drawInventoryPlayerPreview(g, left, top);
+        // Controls hint sits just below the inventory panel.
+        g.setColor(35, 35, 35);
+        g.drawString("5 mover  # cerrar  * crafteo",
+                w / 2, top + 168, Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawInventoryPlayerPreview(Graphics g, int left, int top) {
