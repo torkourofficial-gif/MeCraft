@@ -38,6 +38,11 @@ final class InventoryPlayerPreview {
             camera.setPerspective(42.0f, (float)width / (float)height, 0.1f, 16.0f);
     }
 
+    void lookAt(float yaw, float pitch) {
+        player.update(0.0f, -1.0f, 0.0f, yaw, 0.0f, 0.0f,
+                pitch, 1.0f, false, false, true);
+    }
+
     void render(Graphics3D graphics) {
         graphics.render(world);
     }
