@@ -1395,7 +1395,9 @@ final class VoxelWorld {
             int pz = frame[3] == 0 ? frame[2] : frame[2] + u;
             if (!set(px, frame[1] + v, pz, Block.PORTAL) &&
                     get(px, frame[1] + v, pz) != Block.PORTAL) return false;
-            setMetadata(px, frame[1] + v, pz, 4);
+            // Bit 2 marks the Aether portal; bit 1 keeps lower portal
+            // segments detectable when the player's feet are above them.
+            setMetadata(px, frame[1] + v, pz, 6);
         }
         int minX = frame[3] == 0 ? frame[0] + 1 : frame[0];
         int maxX = frame[3] == 0 ? frame[0] + 2 : frame[0];
@@ -1508,8 +1510,12 @@ final class VoxelWorld {
                 for (int x = minX; x <= maxX; x++)
                     if (get(x, y, z) == Block.PORTAL) {
                         int metadata = metadataAt(x, y, z);
+                        // Portals inside the Aether are always its return portal.
+                        // Do this before the lower-segment test: Aether portals
+                        // must not be mistaken for ordinary Nether portals.
+                        if (dimensionId == DIM_AETHER || (metadata & 4) != 0 ||
+                                isAetherPortalBlock(x, y, z)) return 2;
                         if (y < floorBlock(py) && (metadata & 2) == 0) continue;
-                        if ((metadata & 4) != 0 || isAetherPortalBlock(x, y, z)) return 2;
                         if (ordinaryType < 0) ordinaryType = metadata & 1;
                     }
         return ordinaryType < 0 ? 0 : ordinaryType;
@@ -1726,7 +1732,8 @@ final class VoxelWorld {
             for (int z = minZ; z <= maxZ; z++)
                 for (int x = minX; x <= maxX; x++)
                     if (get(x, y, z) == Block.PORTAL &&
-                            (y >= floorBlock(py) || (metadataAt(x, y, z) & 2) != 0)) return true;
+                            (dimensionId == DIM_AETHER || y >= floorBlock(py) ||
+                             (metadataAt(x, y, z) & 2) != 0)) return true;
         return false;
     }
 
