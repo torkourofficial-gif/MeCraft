@@ -536,30 +536,41 @@ final class MobSystem {
 
     /** Spawn an egg-selected mob at the clicked block face, replacing its pooled slot. */
     boolean spawnFromEgg(VoxelWorld world, int eggType, float x, float y, float z) {
-        if (world == null || eggType < 0 || eggType >= 12 || y < 1.0f || y + 2.0f >= VoxelWorld.HEIGHT)
-            return false;
+        if (eggType < 0 || eggType >= 11) return false;
+        int type = eggType == 0 ? PIG : eggType == 1 ? SHEEP :
+                eggType == 2 ? ZOMBIE : eggType == 3 ? CREEPER :
+                eggType == 4 ? SKELETON : eggType == 5 ? COW :
+                eggType == 6 ? CHICKEN : eggType == 7 ? SPIDER :
+                eggType == 8 ? SLIME : eggType == 9 ? GHAST : PIG_ZOMBIE;
+        return spawnMobAt(world, type, x, y, z, -1);
+    }
+
+    /** Dedicated Blaze summon path; prefer its normal pooled slot instead of borrowing an egg slot. */
+    boolean spawnBlaze(VoxelWorld world, float x, float y, float z) {
+        return spawnMobAt(world, BLAZE, x, y, z, 13);
+    }
+
+    private boolean spawnMobAt(VoxelWorld world, int type, float x, float y, float z,
+            int preferredSlot) {
+        if (world == null || y < 1.0f || y + 2.0f >= VoxelWorld.HEIGHT) return false;
         int bx = floor(x), by = floor(y), bz = floor(z);
         if (world.get(bx, by, bz) != Block.AIR || world.get(bx, by + 1, bz) != Block.AIR)
             return false;
         int slot = -1;
-        for (int i = 0; i < mobs.length; i++) {
-            if (mobs[i] == null || (!mobs[i].alive && !mobs[i].dying)) { slot = i; break; }
+        if (preferredSlot >= 0 && preferredSlot < mobs.length) {
+            Mob preferred = mobs[preferredSlot];
+            if (preferred == null || (!preferred.alive && !preferred.dying)) slot = preferredSlot;
+        }
+        if (slot < 0) {
+            for (int i = 0; i < mobs.length; i++) {
+                if (mobs[i] == null || (!mobs[i].alive && !mobs[i].dying)) {
+                    slot = i;
+                    break;
+                }
+            }
         }
         if (slot < 0) return false;
         releaseMob(slot);
-        int type = eggType;
-        if (type == 0) type = PIG;
-        else if (type == 1) type = SHEEP;
-        else if (type == 2) type = ZOMBIE;
-        else if (type == 3) type = CREEPER;
-        else if (type == 4) type = SKELETON;
-        else if (type == 5) type = COW;
-        else if (type == 6) type = CHICKEN;
-        else if (type == 7) type = SPIDER;
-        else if (type == 8) type = SLIME;
-        else if (type == 9) type = GHAST;
-        else if (type == 10) type = PIG_ZOMBIE;
-        else type = BLAZE;
         Mob mob = createMob(slot, type);
         mob.eggSpawned = true;
         mob.endermanAngry = false;
@@ -568,7 +579,7 @@ final class MobSystem {
         mob.targetYaw = mob.yaw;
         mob.age = 0;
         mob.health = mob.type == SLIME ? 1 : (mob.type == ENDERMAN ? 40 : (isHostile(mob.type) ? 20 : 10));
-        mob.slimeSize = mob.type == SLIME ? 1 : 1;
+        mob.slimeSize = 1;
         mob.deathTicks = mob.fireTicks = mob.burnDamageTicks = 0;
         mob.attackDelay = mob.fuseTicks = mob.fleeTicks = mob.hurtTicks = 0;
         mob.doorBreakTicks = 0; mob.doorBreakY = -1;
@@ -2385,11 +2396,13 @@ final class MobSystem {
         private void buildBlaze(Appearance appearance) {
             addPart(pose, 0, 0, 8, 8, 8, 8, 8, 8,
                     0.0f, 2.25f, 0.0f, 0, 0, 1, 0, appearance);
-            for (int i = 0; i < tentacles.length; i++) {
+            // Four orbiting rods keep the characteristic silhouette while
+            // avoiding a dozen extra M3G meshes on memory-constrained phones.
+            for (int i = 0; i < 4; i++) {
                 Group rod = new Group();
-                float angle = i * 30.0f * 0.017453292f;
-                float radius = i < 4 ? 0.31f : (i < 8 ? 0.25f : 0.18f);
-                float height = 1.35f + (i / 4) * 0.42f;
+                float angle = i * 90.0f * 0.017453292f;
+                float radius = 0.34f;
+                float height = 1.35f + (i & 1) * 0.48f;
                 rod.setTranslation((float)Math.cos(angle) * radius, height,
                         (float)Math.sin(angle) * radius);
                 pose.addChild(rod);
