@@ -1479,10 +1479,28 @@ final class VoxelWorld {
 
     int[] createAetherPortalAtSpawn() {
         if (dimensionId != DIM_AETHER) return null;
-        int bx = WIDTH / 2 - 2, bz = DEPTH / 2 - 2;
-        int by = surfaceY(WIDTH / 2, DEPTH / 2) + 1;
-        if (by < 1) by = 1;
-        if (by > HEIGHT - 6) by = HEIGHT - 6;
+        int centerX = WIDTH / 2, centerZ = DEPTH / 2;
+        int bx = centerX - 2, bz = centerZ - 2;
+        int floorY = surfaceY(centerX, centerZ);
+        if (floorY < 2) floorY = 2;
+        if (floorY > HEIGHT - 7) floorY = HEIGHT - 7;
+
+        // The portal must stand on a dependable landing pad, not merely use
+        // the height of one island column. Flatten and reinforce the complete
+        // 7x7 arrival area at one shared floor level.
+        for (int z = centerZ - 3; z <= centerZ + 3; z++) {
+            for (int x = centerX - 3; x <= centerX + 3; x++) {
+                if (!set(x, floorY, z, Block.STONE) &&
+                        get(x, floorY, z) != Block.STONE) return null;
+                for (int y = floorY + 1; y <= floorY + 5; y++) {
+                    if (get(x, y, z) != Block.AIR &&
+                            !set(x, y, z, Block.AIR) && get(x, y, z) != Block.AIR)
+                        return null;
+                }
+            }
+        }
+
+        int by = floorY + 1;
         for (int v = 0; v <= 4; v++) for (int u = 0; u <= 3; u++) {
             if ((u == 0 || u == 3) && (v == 0 || v == 4)) continue;
             if (!set(bx + u, by + v, bz, Block.GLOWSTONE) &&
@@ -1730,10 +1748,17 @@ final class VoxelWorld {
         int minZ = floorBlock(pz - 0.31f), maxZ = floorBlock(pz + 0.31f);
         for (int y = minY; y <= maxY; y++)
             for (int z = minZ; z <= maxZ; z++)
-                for (int x = minX; x <= maxX; x++)
-                    if (get(x, y, z) == Block.PORTAL &&
-                            (dimensionId == DIM_AETHER || y >= floorBlock(py) ||
-                             (metadataAt(x, y, z) & 2) != 0)) return true;
+                for (int x = minX; x <= maxX; x++) {
+                    if (get(x, y, z) != Block.PORTAL) continue;
+                    int metadata = metadataAt(x, y, z);
+                    // Aether portal detection is independent of which vertical
+                    // segment overlaps the player's feet, and survives lost
+                    // metadata by checking the surrounding Glowstone frame.
+                    if (dimensionId == DIM_AETHER || (metadata & 2) != 0 ||
+                            (metadata & 4) != 0 || isAetherPortalBlock(x, y, z))
+                        return true;
+                    if (y >= floorBlock(py)) return true;
+                }
         return false;
     }
 
