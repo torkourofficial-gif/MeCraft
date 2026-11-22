@@ -2405,7 +2405,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private String chestStoreName(int x, int y, int z) {
         String base = world == null || world.saveStoreName == null ? "mecraft-save" : world.saveStoreName;
-        return "mcch" + Integer.toHexString((base + ":" + world.nether + ":" + x + ":" + y + ":" + z).hashCode());
+        return "mcch" + Integer.toHexString((base + ":" + world.dimensionId + ":" + world.nether + ":" + x + ":" + y + ":" + z).hashCode());
     }
 
     private void loadChestContents(int x, int y, int z) {
