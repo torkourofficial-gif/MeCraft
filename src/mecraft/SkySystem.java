@@ -133,6 +133,13 @@ final class SkySystem {
         int topR = (int)(8.0f + 40.0f * day);
         int topG = (int)(13.0f + 94.0f * day);
         int topB = (int)(35.0f + 167.0f * day);
+        // The Aether keeps a bright pastel-blue sky instead of inheriting
+        // the Overworld's dark upper-atmosphere gradient.
+        if (skyColor == 0xFFBDEBFF) {
+            topR = 158;
+            topG = 223;
+            topB = 248;
+        }
         for (int y = 0; y < GRADIENT_HEIGHT; y++) {
             float t = y / (float)(GRADIENT_HEIGHT - 1);
             float blend = t * t * (3.0f - 2.0f * t);
