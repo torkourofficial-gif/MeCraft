@@ -2837,9 +2837,8 @@ final class ChunkRenderer {
             for (FaceBuilder grassTop = builders[0]; grassTop != null;
                     grassTop = grassTop.next)
                 tintFaceBuilder(grassTop, AlphaTint.AETHER_GRASS_TOP);
-            for (int tile = 52; tile <= 53; tile++)
-                for (FaceBuilder leaves = builders[tile]; leaves != null; leaves = leaves.next)
-                    tintFaceBuilder(leaves, AlphaTint.AETHER_LEAVES);
+            for (FaceBuilder leaves = builders[34]; leaves != null; leaves = leaves.next)
+                tintFaceBuilder(leaves, AlphaTint.AETHER_LEAVES);
         }
         int count = 0;
         for (int i = 0; i < builders.length; i++) if (builders[i] != null) count++;
