@@ -2107,6 +2107,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 int by = world.surfaceY(VoxelWorld.WIDTH / 2, VoxelWorld.DEPTH / 2) + 1;
                 destination = world.createPortalAt(bx, by, bz, axis);
                 if (destination != null) world.setPortalTypeAtFrame(destination, 1);
+            } else if (portalType == 2) {
+                destination = world.findAetherPortalNear((int)tx, (int)tz);
+                if (destination == null) destination = world.createAetherPortalNear((int)tx, (int)tz);
             } else {
                 destination = world.findPortalNear((int)tx, (int)tz);
                 if (destination == null) {
