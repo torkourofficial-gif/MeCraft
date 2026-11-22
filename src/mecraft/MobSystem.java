@@ -783,7 +783,7 @@ final class MobSystem {
         int x = (int)world.playerX;
         int z = (int)world.playerZ;
         int ground;
-        {else {
+        {
             int attempts = 0;
             do {
                 int radius = 9 + random.nextInt(10);
@@ -794,7 +794,8 @@ final class MobSystem {
             } while ((!validSpawnForMob(world, mob, x, z) ||
                     tooClose(mob, x + 0.5f, z + 0.5f)) && attempts < 48);
             if (mob.type == BLAZE && !validSpawnForMob(world, mob, x, z)) return;
-            ground = mob.type == BLAZE ? InfdevTerrain.NETHER_FORTRESS_FLOOR_Y : world.surfaceY(x, z);
+            ground = mob.type == BLAZE && world.dimensionId == VoxelWorld.DIM_NETHER ?
+                    InfdevTerrain.NETHER_FORTRESS_FLOOR_Y : world.surfaceY(x, z);
         }
         mob.x = x + 0.5f;
         mob.z = z + 0.5f;
@@ -888,8 +889,7 @@ final class MobSystem {
         if (targetY < 5.0f) targetY = 5.0f;
         if (targetY > VoxelWorld.HEIGHT - 5.0f) targetY = VoxelWorld.HEIGHT - 5.0f;
         mob.y += (targetY - mob.y) * 0.035f;
-        // Aether Blazes spawn inside combat chambers, but are not confined
-        // there; they use the normal flying hostile AI once they emerge.
+        // Blazes use their normal flying hostile AI in every dimension.
         mob.targetYaw = yawTo(dx, dz);
         turn(mob);
         if (mob.attackDelay <= 0 && distance < (mob.type == GHAST ? 32.0f : 18.0f) && distance > 0.1f) {
