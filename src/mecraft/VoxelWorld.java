@@ -1429,6 +1429,51 @@ final class VoxelWorld {
         return null;
     }
 
+
+    int[] findAetherPortalNear(int x, int z) {
+        for (int radius = 0; radius <= 8; radius++) {
+            for (int dz = -radius; dz <= radius; dz++) for (int dx = -radius; dx <= radius; dx++) {
+                if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
+                for (int y = 1; y < HEIGHT - 1; y++) {
+                    int px = x + dx, pz = z + dz;
+                    if (get(px, y, pz) != Block.GLOWSTONE) continue;
+                    int[] frame = findAetherPortalFrame(px, y, pz);
+                    if (frame != null) return frame;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Creates a linked Glowstone portal on nearby safe ground when a saved link is unavailable. */
+    int[] createAetherPortalNear(int x, int z) {
+        for (int radius = 0; radius <= 4; radius++) {
+            for (int dz = -radius; dz <= radius; dz++) for (int dx = -radius; dx <= radius; dx++) {
+                if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
+                int bx = x + dx, bz = z + dz;
+                if (bx < 2 || bz < 2 || bx > WIDTH - 6 || bz > DEPTH - 6) continue;
+                int by = surfaceY(bx + 1, bz) + 1;
+                if (by <= 0 || by > HEIGHT - 6) continue;
+                boolean clear = true;
+                for (int v = 0; v <= 4 && clear; v++) for (int u = 0; u <= 3; u++) {
+                    int px = bx + u, py = by + v;
+                    byte id = get(px, py, bz);
+                    boolean corner = (u == 0 || u == 3) && (v == 0 || v == 4);
+                    if (corner) continue;
+                    if (!Block.replaceable(id)) { clear = false; break; }
+                }
+                if (!clear) continue;
+                for (int v = 0; v <= 4; v++) for (int u = 0; u <= 3; u++) {
+                    if ((u == 0 || u == 3) && (v == 0 || v == 4)) continue;
+                    if (!set(bx + u, by + v, bz, Block.GLOWSTONE)) { clear = false; break; }
+                }
+                if (clear && activateAetherPortalAtGlowstone(bx + 1, by, bz))
+                    return new int[] { bx, by, bz, 0 };
+            }
+        }
+        return null;
+    }
+
     int[] createAetherPortalAtSpawn() {
         if (dimensionId != DIM_AETHER) return null;
         int bx = WIDTH / 2 - 2, bz = DEPTH / 2 - 2;
