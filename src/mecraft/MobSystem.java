@@ -1203,15 +1203,10 @@ final class MobSystem {
             return;
         }
         if (mob.type == BLAZE) {
-            for (int i = 0; i < mob.tentacles.length; i++) {
-                Group rod = mob.tentacles[i];
-                if (rod == null) continue;
-                float angle = (mob.age * 4.0f + i * 30.0f) * 0.017453292f;
-                float radius = i < 4 ? 0.31f : (i < 8 ? 0.25f : 0.18f);
-                float height = 1.35f + (i / 4) * 0.42f;
-                rod.setTranslation((float)Math.cos(angle) * radius, height,
-                        (float)Math.sin(angle) * radius);
-                rod.setOrientation((mob.age * 3.0f + i * 60.0f) % 360.0f, 0, 1, 0);
+            Group rods = mob.tentacles[0];
+            if (rods != null) {
+                rods.setTranslation(0.0f, 0.0f, 0.0f);
+                rods.setOrientation((mob.age * 3.0f) % 360.0f, 0, 1, 0);
             }
             return;
         }
@@ -2396,20 +2391,11 @@ final class MobSystem {
         private void buildBlaze(Appearance appearance) {
             addPart(pose, 0, 0, 8, 8, 8, 8, 8, 8,
                     0.0f, 2.25f, 0.0f, 0, 0, 1, 0, appearance);
-            // Four orbiting rods keep the characteristic silhouette while
-            // avoiding a dozen extra M3G meshes on memory-constrained phones.
-            for (int i = 0; i < 4; i++) {
-                Group rod = new Group();
-                float angle = i * 90.0f * 0.017453292f;
-                float radius = 0.34f;
-                float height = 1.35f + (i & 1) * 0.48f;
-                rod.setTranslation((float)Math.cos(angle) * radius, height,
-                        (float)Math.sin(angle) * radius);
-                pose.addChild(rod);
-                addPart(rod, 0, 16, 2, 8, 2, 2, 8, 2,
-                        0.0f, 0.0f, 0.0f, 0, 0, 1, 0, appearance);
-                tentacles[i] = rod;
-            }
+            // The twelve rods share one combined mesh and one animated node.
+            Group rods = new Group();
+            rods.addChild(makeBlazeRodsMesh(appearance));
+            pose.addChild(rods);
+            tentacles[0] = rods;
         }
 
         private void addPart(Group parent, int u, int v, float width, float height, float depth,
@@ -2457,6 +2443,71 @@ final class MobSystem {
             part.addChild(box);
             parent.addChild(part);
         }
+    }
+
+    private Mesh makeBlazeRodsMesh(Appearance appearance) {
+        final int rodCount = 12;
+        final int verticesPerRod = 36;
+        final int vertexCount = rodCount * verticesPerRod;
+        short[] positions = new short[vertexCount * 3];
+        short[] texCoords = new short[vertexCount * 2];
+        int[] strips = new int[rodCount * 12];
+        float[][][] faces = new float[][][] {
+            {{1,-4,1},{1,-4,-1},{1,4,-1},{1,4,1}},
+            {{-1,-4,-1},{-1,-4,1},{-1,4,1},{-1,4,-1}},
+            {{1,-4,1},{-1,-4,1},{-1,-4,-1},{1,-4,-1}},
+            {{1,4,-1},{-1,4,-1},{-1,4,1},{1,4,1}},
+            {{1,-4,-1},{-1,-4,-1},{-1,4,-1},{1,4,-1}},
+            {{-1,-4,1},{1,-4,1},{1,4,1},{-1,4,1}}
+        };
+        int[][] rects = new int[][] {
+            {4,18,6,26}, {0,18,2,26}, {4,16,6,18},
+            {2,16,4,18}, {2,18,4,26}, {6,18,8,26}
+        };
+        int[] triangleCorners = {0,1,2,0,2,3};
+        int at = 0;
+        int stripAt = 0;
+        for (int rod = 0; rod < rodCount; rod++) {
+            int tier = rod / 4;
+            float angle = (rod % 4) * 1.570796327f + (tier * 0.18f);
+            float radius = 0.38f - tier * 0.07f;
+            float centerX = (float)Math.cos(angle) * radius;
+            float centerZ = (float)Math.sin(angle) * radius;
+            float centerY = 1.22f + tier * 0.43f;
+            float cos = (float)Math.cos(angle);
+            float sin = (float)Math.sin(angle);
+            for (int face = 0; face < 6; face++) {
+                int[] rect = rects[face];
+                for (int q = 0; q < 6; q++) {
+                    int corner = triangleCorners[q];
+                    float[] point = faces[face][corner];
+                    float px = point[0] / 16.0f;
+                    float py = point[1] / 16.0f;
+                    float pz = point[2] / 16.0f;
+                    float x = centerX + px * cos + pz * sin;
+                    float z = centerZ - px * sin + pz * cos;
+                    positions[at * 3] = (short)(x * 1024.0f);
+                    positions[at * 3 + 1] = (short)((centerY + py) * 1024.0f);
+                    positions[at * 3 + 2] = (short)(z * 1024.0f);
+                    int uCoord = (corner == 0 || corner == 3)
+                            ? rect[2] * 16 - 2 : rect[0] * 16 + 2;
+                    int vCoord = corner < 2 ? rect[3] * 32 - 3 : rect[1] * 32 + 3;
+                    texCoords[at * 2] = (short)uCoord;
+                    texCoords[at * 2 + 1] = (short)vCoord;
+                    at++;
+                }
+                strips[stripAt++] = 3;
+                strips[stripAt++] = 3;
+            }
+        }
+        VertexArray pa = new VertexArray(vertexCount, 3, 2);
+        pa.set(0, vertexCount, positions);
+        VertexArray ta = new VertexArray(vertexCount, 2, 2);
+        ta.set(0, vertexCount, texCoords);
+        VertexBuffer vb = new VertexBuffer();
+        vb.setPositions(pa, 1.0f / 1024.0f, null);
+        vb.setTexCoords(0, ta, 1.0f / 1024.0f, null);
+        return new Mesh(vb, new TriangleStripArray(0, strips), appearance);
     }
 
     private Mesh makeBox(int u, int v, float width, float height, float depth,
