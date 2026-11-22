@@ -3696,8 +3696,9 @@ final class ChunkRenderer {
             uv[ti] = (short)u; uv[ti + 1] = (short)v;
             int ci = vertexCount * 4;
             c[ci] = (byte)shade; c[ci + 1] = (byte)shade; c[ci + 2] = (byte)shade;
-            c[ci + 3] = (byte)(tile == Block.atlasTile(Block.WATER) ? 160 :
-                    (tile == Block.atlasTile(Block.GLASS) ? 128 : 255));
+            // Keep vertex alpha opaque: the glass texture itself contains the
+            // alpha mask, so only its designated transparent pixels show through.
+            c[ci + 3] = (byte)(tile == Block.atlasTile(Block.WATER) ? 160 : 255);
             vertexCount++;
         }
 
