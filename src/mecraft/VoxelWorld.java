@@ -1395,9 +1395,10 @@ final class VoxelWorld {
             int pz = frame[3] == 0 ? frame[2] : frame[2] + u;
             if (!set(px, frame[1] + v, pz, Block.PORTAL) &&
                     get(px, frame[1] + v, pz) != Block.PORTAL) return false;
-            // Bit 2 marks the Aether portal; bit 1 keeps lower portal
-            // segments detectable when the player's feet are above them.
-            setMetadata(px, frame[1] + v, pz, 6);
+            // Bit 4 identifies the Aether portal. Bit 2 is reserved by
+            // PortalBuilder for horizontal portal surfaces, so keep it clear:
+            // Aether portals use the same upright plane as Nether portals.
+            setMetadata(px, frame[1] + v, pz, 4);
         }
         int minX = frame[3] == 0 ? frame[0] + 1 : frame[0];
         int maxX = frame[3] == 0 ? frame[0] + 2 : frame[0];
