@@ -1778,18 +1778,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         repaint();
     }
 
-    /** Temporary test: using the Blaze Rod eleven times spawns one Blaze. */
+    /** Using the Blaze Rod once attempts to spawn one Blaze nearby. */
     private void useBlazeRod() {
         if (world == null || renderer == null) return;
-        blazeRodUseCount++;
-        renderer.swingHand();
-        if (blazeRodUseCount < 11) {
-            repaint();
-            return;
-        }
 
-        // Summon beside the player rather than relying on the crosshair to
-        // point at a valid two-block opening in every dimension.
         int baseX = floorBlock(world.playerX);
         int baseY = floorBlock(world.playerY);
         int baseZ = floorBlock(world.playerZ);
@@ -1811,13 +1803,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 }
             }
         }
-        if (!spawned) {
-            // Keep the counter at ten so the next use retries immediately.
-            blazeRodUseCount = 10;
-            repaint();
-            return;
-        }
-        blazeRodUseCount = 0;
+        renderer.swingHand();
         repaint();
     }
 
