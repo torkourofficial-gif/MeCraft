@@ -573,7 +573,7 @@ final class VoxelWorld {
 
     byte get(int x, int y, int z) {
         if (y < 0 || y >= HEIGHT || outsideWorld(x, z) ||
-                (dimensionId == DIM_END && !inside(x, z))) return Block.AIR;
+                ((dimensionId == DIM_END || dimensionId == DIM_AETHER) && !inside(x, z))) return Block.AIR;
         if (inside(x, z)) return blocks[index(x, y, z)];
         int edit = findEdit(x, y, z);
         return edit >= 0 ? editId[edit] : proceduralBlock(x, y, z);
@@ -587,7 +587,7 @@ final class VoxelWorld {
      */
     byte getTorchCandidate(int x, int y, int z) {
         if (y < 0 || y >= HEIGHT || outsideWorld(x, z) ||
-                (dimensionId == DIM_END && !inside(x, z))) return Block.AIR;
+                ((dimensionId == DIM_END || dimensionId == DIM_AETHER) && !inside(x, z))) return Block.AIR;
         if (inside(x, z)) return blocks[index(x, y, z)];
         int edit = findEdit(x, y, z);
         return edit >= 0 ? editId[edit] : Block.AIR;
