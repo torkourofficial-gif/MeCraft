@@ -1506,10 +1506,22 @@ final class VoxelWorld {
                     if (get(x, y, z) == Block.PORTAL) {
                         int metadata = metadataAt(x, y, z);
                         if (y < floorBlock(py) && (metadata & 2) == 0) continue;
-                        if ((metadata & 4) != 0) return 2;
+                        if ((metadata & 4) != 0 || isAetherPortalBlock(x, y, z)) return 2;
                         return metadata & 1;
                     }
         return 0;
+    }
+
+    /** Detects Aether portals from their Glowstone frame even if saved metadata was lost. */
+    private boolean isAetherPortalBlock(int x, int y, int z) {
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dz = -1; dz <= 1; dz++)
+                for (int dx = -1; dx <= 1; dx++) {
+                    int gx = x + dx, gy = y + dy, gz = z + dz;
+                    if (get(gx, gy, gz) == Block.GLOWSTONE &&
+                            findAetherPortalFrame(gx, gy, gz) != null) return true;
+                }
+        return false;
     }
 
     void setPortalTypeAtFrame(int[] frame, int type) {
