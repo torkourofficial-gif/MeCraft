@@ -569,7 +569,7 @@ final class MobSystem {
         }
         for (int i = 0; i < mobs.length; i++) {
             Mob mob = mobs[i];
-            if (i == preferredSlot || mob == null || !mob.alive || !mob.eggSpawned) {
+            if (mob == null || !mob.alive || !mob.eggSpawned) {
                 releaseMob(i);
                 initializeSummonedMob(createMob(i, BLAZE), x, y, z);
                 return true;
