@@ -311,6 +311,8 @@ final class InfdevTerrain {
             int wx = ox + x, wz = oz + z, col = z * CHUNK_SIZE + x, base = col * WORLD_HEIGHT;
             int chosenX = 0, chosenZ = 0, chosenRadius = 0, top = 0;
             int chosenDx = 0, chosenDz = 0, best = 0x7FFFFFFF;
+            int chosenCellX = 0, chosenCellZ = 0;
+            boolean snowyIsland = false;
             int cellX = floorDiv(wx, 32), cellZ = floorDiv(wz, 32);
             // A 3x3 neighborhood covers the dense 32-block island field; broad
             // island edges overlap to form clustered skyland masses.
@@ -336,6 +338,11 @@ final class InfdevTerrain {
                         best = distance;
                         chosenX = islandX; chosenZ = islandZ;
                         chosenRadius = edgeRadius; chosenDx = dx; chosenDz = dz;
+                        chosenCellX = cx; chosenCellZ = cz;
+                        // A few islands have a permanent snowy biome; keep the
+                        // central arrival island green so the return portal stays familiar.
+                        snowyIsland = !(cx == 0 && cz == 0) &&
+                                (lattice(seed ^ 0x13579BDF, cx, cz) & 7) == 0;
                         top = (cx == 0 && cz == 0) ? 35 :
                                 29 + (lattice(seed ^ 0x2C1B3C6D, cx, cz) * 15 >> 8) +
                                 (valueNoise(seed ^ 0x6C8E9CF5, wx, wz, 19) - 128) / 110;
@@ -356,7 +363,7 @@ final class InfdevTerrain {
             int bottom = top - thick;
             surfaceHeights[col] = top;
             for (int y = bottom; y <= top; y++) {
-                if (y == top) blocks[base + y] = Block.GRASS;
+                if (y == top) blocks[base + y] = snowyIsland ? Block.SNOW : Block.GRASS;
                 else if (y >= top - 2) blocks[base + y] = Block.DIRT;
                 else blocks[base + y] = Block.STONE;
             }
@@ -366,14 +373,18 @@ final class InfdevTerrain {
             for (int cz = cellZ - 1; cz <= cellZ + 1; cz++) {
                 for (int cx = cellX - 1; cx <= cellX + 1; cx++) {
                     int treeChance = lattice(seed ^ 0x7F4A7C15, cx, cz);
-                    if ((cx == 0 && cz == 0) || treeChance < 118) continue;
+                    boolean treeIslandSnowy = (cx != 0 || cz != 0) &&
+                            (lattice(seed ^ 0x13579BDF, cx, cz) & 7) == 0;
+                    // Raise tree coverage from roughly half of islands to about three quarters.
+                    if ((cx == 0 && cz == 0) || treeChance < 64 || treeIslandSnowy) continue;
                     int treeX = cx * 32 + 8 + (lattice(seed ^ 0x3C6EF372, cx, cz) * 16 >> 8);
                     int treeZ = cz * 32 + 8 + (lattice(seed ^ 0x1BF5A9D5, cx, cz) * 16 >> 8);
                     if (cx == 0 && cz == 0) { treeX = 24; treeZ = 24; }
                     int tx = wx - treeX, tz = wz - treeZ;
                     int td = tx * tx + tz * tz;
                     if (td > 18) continue;
-                    int treeTop = 29 + (lattice(seed ^ 0x2C1B3C6D, cx, cz) * 15 >> 8);
+                    int treeTop = 29 + (lattice(seed ^ 0x2C1B3C6D, cx, cz) * 15 >> 8) +
+                            (valueNoise(seed ^ 0x6C8E9CF5, treeX, treeZ, 19) - 128) / 110;
                     int treeHeight = 7 + (lattice(seed ^ 0x6A09E667, cx, cz) * 3 >> 8);
                     for (int ty = treeTop + 1; ty <= treeTop + treeHeight + 2 &&
                             ty < WORLD_HEIGHT; ty++) {
@@ -399,15 +410,26 @@ final class InfdevTerrain {
         for (int cz = minCellZ; cz <= maxCellZ; cz++) for (int cx = minCellX; cx <= maxCellX; cx++) {
             int cloudX = cx * 32 + 4 + (lattice(seed ^ 0x243F6A88, cx, cz) * 24 >> 8);
             int cloudZ = cz * 32 + 4 + (lattice(seed ^ 0xB7E15162, cx, cz) * 24 >> 8);
+            // Broad, connected snow-block cloud platforms: their flat upper
+            // surfaces are solid, so the player can land on and walk across them.
+            int cloudRadius = 6 + (lattice(seed ^ 0x3BD39E10, cx, cz) * 3 >> 8);
+            int cloudRadiusSquared = cloudRadius * cloudRadius;
             for (int z = 0; z < CHUNK_SIZE; z++) for (int x = 0; x < CHUNK_SIZE; x++) {
                 int wx = ox + x, wz = oz + z, dx = wx - cloudX, dz = wz - cloudZ;
                 int distance = dx * dx + dz * dz;
-                if (distance > 25) continue;
+                if (distance > cloudRadiusSquared) continue;
                 int col = z * CHUNK_SIZE + x, base = col * WORLD_HEIGHT;
-                int edge = 25 - distance;
-                if (edge >= 5 && blocks[base + 48] == Block.AIR) blocks[base + 48] = Block.SNOW;
-                if (edge >= 12 && blocks[base + 49] == Block.AIR) blocks[base + 49] = Block.SNOW;
-                if (edge >= 19 && blocks[base + 47] == Block.AIR) blocks[base + 47] = Block.SNOW;
+                int edge = cloudRadiusSquared - distance;
+                // The center is a two-block-thick deck; the irregular outer
+                // fringe steps down to create a soft cloud silhouette.
+                if (edge >= cloudRadius) {
+                    if (blocks[base + 49] == Block.AIR) blocks[base + 49] = Block.SNOW;
+                    if (blocks[base + 48] == Block.AIR) blocks[base + 48] = Block.SNOW;
+                } else if (edge >= 2) {
+                    if (blocks[base + 48] == Block.AIR) blocks[base + 48] = Block.SNOW;
+                } else if (blocks[base + 47] == Block.AIR) {
+                    blocks[base + 47] = Block.SNOW;
+                }
             }
         }
     }
