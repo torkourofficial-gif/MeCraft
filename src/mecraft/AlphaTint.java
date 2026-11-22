@@ -3,6 +3,7 @@ package mecraft;
 /** Shared Alpha-era grass and foliage colors for world and item rendering. */
 final class AlphaTint {
     static final int GRASS_TOP = 0xFF7FB238;
+    static final int AETHER_GRASS_TOP = 0xFFB4E58A;
     static final int LEAVES = 0xFF48B518;
 
     private AlphaTint() { }
