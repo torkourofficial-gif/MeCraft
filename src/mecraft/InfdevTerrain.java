@@ -346,6 +346,27 @@ final class InfdevTerrain {
                 else if (y >= top - 2) blocks[base + y] = Block.DIRT;
                 else blocks[base + y] = Block.STONE;
             }
+
+            // Soft, blocky snow-cloud banks float above the islands. Their
+            // positions are fixed so every chunk generates the same cloud.
+            for (int cloud = 0; cloud < 5; cloud++) {
+                int cloudX = cloud == 0 ? 13 : (cloud == 1 ? 35 :
+                        (cloud == 2 ? 13 : (cloud == 3 ? 36 : 24)));
+                int cloudZ = cloud == 0 ? 15 : (cloud == 1 ? 13 :
+                        (cloud == 2 ? 36 : (cloud == 3 ? 35 : 7)));
+                int radius = cloud == 4 ? 4 : 5;
+                int ddx = wx - cloudX, ddz = wz - cloudZ;
+                int distance = ddx * ddx + ddz * ddz;
+                if (distance > radius * radius) continue;
+                int edge = radius * radius - distance;
+                int cloudBase = 48 + (cloud & 1);
+                if (edge >= 5) blocks[base + cloudBase] = Block.SNOW;
+                if (edge >= 10 && cloudBase + 1 < WORLD_HEIGHT)
+                    blocks[base + cloudBase + 1] = Block.SNOW;
+                if (edge >= 17 && cloudBase - 1 > top &&
+                        cloudBase - 1 >= 0)
+                    blocks[base + cloudBase - 1] = Block.SNOW;
+            }
         }
     }
 
