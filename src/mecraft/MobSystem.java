@@ -548,21 +548,19 @@ final class MobSystem {
     /** Dedicated Blaze summon path; use the Blaze's reserved slot in each hostile dimension. */
     boolean spawnBlaze(VoxelWorld world, float x, float y, float z) {
         if (world == null) return false;
-        int preferredSlot = world.dimensionId == VoxelWorld.DIM_AETHER ? 13 :
-                (world.dimensionId == VoxelWorld.DIM_NETHER ? 9 : -1);
-        // Never steal another living actor's slot just because the Blaze slot is occupied.
-        if (preferredSlot >= 0) {
-            Mob preferred = mobs[preferredSlot];
-            if (preferred != null && (preferred.alive || preferred.dying)) return false;
-        }
+        // Prefer each dimension's normal Blaze slot, but fall back to another
+        // genuinely free pool slot if that one is already occupied.
+        int preferredSlot = world.dimensionId == VoxelWorld.DIM_NETHER ? 9 : 13;
         return spawnMobAt(world, BLAZE, x, y, z, preferredSlot);
     }
 
     private boolean spawnMobAt(VoxelWorld world, int type, float x, float y, float z,
             int preferredSlot) {
-        if (world == null || y < 1.0f || y + 2.0f >= VoxelWorld.HEIGHT) return false;
+        float mobHeight = type == BLAZE ? 2.8f : 1.8f;
+        if (world == null || y < 1.0f || y + mobHeight >= VoxelWorld.HEIGHT) return false;
         int bx = floor(x), by = floor(y), bz = floor(z);
-        if (world.get(bx, by, bz) != Block.AIR || world.get(bx, by + 1, bz) != Block.AIR)
+        if (world.get(bx, by, bz) != Block.AIR || world.get(bx, by + 1, bz) != Block.AIR ||
+                (type == BLAZE && world.get(bx, by + 2, bz) != Block.AIR))
             return false;
         int slot = -1;
         if (preferredSlot >= 0 && preferredSlot < mobs.length) {
@@ -736,7 +734,8 @@ final class MobSystem {
     private void updateHostileCycle(VoxelWorld world) {
         if (world.difficulty == VoxelWorld.DIFFICULTY_PEACEFUL) {
             for (int i = 0; i < mobs.length; i++)
-                if (mobs[i] != null && isHostile(mobs[i].type)) releaseMob(i);
+                if (mobs[i] != null && isHostile(mobs[i].type) && !mobs[i].eggSpawned)
+                    releaseMob(i);
             zombiesNightActive = false;
             return;
         }
