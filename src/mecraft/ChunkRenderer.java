@@ -1305,8 +1305,8 @@ final class ChunkRenderer {
     }
 
     int updateDroppedItems(VoxelWorld world, int[] inventory, int[] pickupCapacity,
-            PlayerPhysics physics) {
-        int picked = droppedItems.update(world, inventory, pickupCapacity, physics);
+            PlayerPhysics physics, boolean creative) {
+        int picked = droppedItems.update(world, inventory, pickupCapacity, physics, creative);
         if (droppedItems.consumeExplosion()) {
             mobs.damageFromExplosion(world, droppedItems.explosionX(),
                     droppedItems.explosionY(), droppedItems.explosionZ(), 4.0f);
