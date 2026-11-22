@@ -722,6 +722,15 @@ final class MobSystem {
         }
         boolean night = world.dimensionId == VoxelWorld.DIM_NETHER ||
                 world.dimensionId == VoxelWorld.DIM_END || world.dimensionId == VoxelWorld.DIM_AETHER || world.isNight();
+        // Aether chamber Blazes use their own retry loop. The ordinary hostile
+        // cycle only runs on the first activation and can otherwise spend its
+        // respawn attempts on the slime slot forever.
+        if (world.dimensionId == VoxelWorld.DIM_AETHER && tick % 40 == 0) {
+            Mob blaze = mobs[13];
+            if (blaze == null || (!blaze.alive && !blaze.dying)) {
+                spawnZombie(world, createMob(13));
+            }
+        }
         for (int i = 0; i < mobs.length; i++) {
             if (isHostile(mobTypeForSlot(i)) && (mobs[i] == null || !mobs[i].eggSpawned) &&
                     !hostileAllowed(mobTypeForSlot(i), world) && mobs[i] != null) releaseMob(i);
@@ -729,7 +738,8 @@ final class MobSystem {
         if (!night) {
             for (int i = 0; i < mobs.length; i++) {
                 Mob mob = mobs[i];
-                if (!isHostile(mobTypeForSlot(i)) || mob != null && mob.eggSpawned) continue;
+                if (!isHostile(mobTypeForSlot(i)) || mob != null && mob.eggSpawned ||
+                        world.dimensionId == VoxelWorld.DIM_AETHER && i == 13) continue;
                 if (!hostileAllowed(mobTypeForSlot(i), world) || !hostileSlotAllowed(i, world)) {
                     if (mob != null) releaseMob(i);
                     continue;
@@ -765,7 +775,9 @@ final class MobSystem {
         zombiesNightActive = true;
         for (int i = 0; i < mobs.length; i++) {
             Mob mob = mobs[i];
-            if (mob != null && mob.eggSpawned || !isHostile(mobTypeForSlot(i)) || !hostileAllowed(mobTypeForSlot(i), world) || !hostileSlotAllowed(i, world)) continue;
+            if (mob != null && mob.eggSpawned || !isHostile(mobTypeForSlot(i)) ||
+                    world.dimensionId == VoxelWorld.DIM_AETHER && i == 13 ||
+                    !hostileAllowed(mobTypeForSlot(i), world) || !hostileSlotAllowed(i, world)) continue;
             if (mob == null) mob = createMob(i);
             if (mob.dying) continue;
             if (mob.alive) {
