@@ -278,6 +278,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private int playerLavaBurnTicks;
     private int playerLavaDamageTicks = 20;
     private int portalChargeTicks;
+    // Prevent an arrival portal from immediately sending the player back.
+    private int aetherPortalCooldownTicks;
     private volatile boolean endPortalTransitionPending;
     private volatile boolean endPortalTransitionRunning;
     private volatile boolean endPortalWorldReady;
@@ -608,7 +610,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             if (world.difficulty == VoxelWorld.DIFFICULTY_EASY) fallDamage++;
             damagePlayer(fallDamage);
         }
-        if (world.touchesEndPortal(world.playerX, world.playerY, world.playerZ)) {
+        if (aetherPortalCooldownTicks > 0) {
+            aetherPortalCooldownTicks--;
+            portalChargeTicks = 0;
+        } else if (world.touchesEndPortal(world.playerX, world.playerY, world.playerZ)) {
             // End portals transfer immediately, without the Nether's charge.
             portalChargeTicks = 0;
             travelThroughEndPortal();
@@ -659,7 +664,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         try {
             updatePlayerInventoryPickupCapacity();
             pickedItem = renderer.updateDroppedItems(world, inventory,
-                    playerInventoryPickupCapacity, playerPhysics);
+                    playerInventoryPickupCapacity, playerPhysics, world.mode == 1);
             reportedSubsystemFailures &= ~UPDATE_FAILURE_DROPS;
         } catch (Throwable problem) {
             reportGameUpdateFailure(UPDATE_FAILURE_DROPS, "objetos del mundo", problem);
@@ -2141,6 +2146,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 (world.playerY < floor + 1.0f || world.playerY > VoxelWorld.HEIGHT - 2))
             world.playerY = floor + 1.05f;
         portalChargeTicks = 0;
+        if (portalType == 2 || sourceDimension == VoxelWorld.DIM_AETHER ||
+                targetDimension == VoxelWorld.DIM_AETHER)
+            aetherPortalCooldownTicks = PORTAL_CHARGE_TICKS;
         resetMining();
         renderer.sync(world);
         renderer.updateDayNight(world);
