@@ -384,6 +384,9 @@ final class Block {
         if (neighbor == AIR || neighbor == END_PORTAL || neighbor == END_PORTAL_FRAME || isFlower(neighbor) || isDoor(neighbor) || neighbor == RAIL) return true;
         if (isFluid(neighbor)) return current != neighbor;
         if (neighbor == LEAVES) return current != LEAVES;
+        // Glass keeps the opaque block face behind it visible, but adjacent
+        // glass cubes do not generate hidden internal faces.
+        if (neighbor == GLASS) return current != GLASS;
         return false;
     }
 
