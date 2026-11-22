@@ -403,6 +403,23 @@ final class InfdevTerrain {
             }
         }
 
+        // The Aether's green islands are carpeted with abundant flowers.
+        // Place them in a second pass so neighboring columns and tree canopies
+        // have already been generated, and keep snowy islands flower-free.
+        for (int z = 0; z < CHUNK_SIZE; z++) for (int x = 0; x < CHUNK_SIZE; x++) {
+            int col = z * CHUNK_SIZE + x;
+            int topY = surfaceHeights[col];
+            if (topY <= 0 || topY + 1 >= WORLD_HEIGHT) continue;
+            int wx = ox + x, wz = oz + z;
+            int topAt = col * WORLD_HEIGHT + topY;
+            int flowerAt = topAt + 1;
+            if (blocks[topAt] != Block.GRASS || blocks[flowerAt] != Block.AIR) continue;
+            int flowerHash = hash(seed ^ 0x6D2B79F5, wx, topY, wz);
+            // Roughly three quarters of eligible grass columns receive a flower.
+            if ((flowerHash & 3) == 0) continue;
+            blocks[flowerAt] = (flowerHash & 4) == 0 ? Block.YELLOW_FLOWER : Block.RED_FLOWER;
+        }
+
         // Snowy cloud clusters are generated in a separate pass so empty sky
         // columns do not erase them while their island terrain is initialized.
         int minCellX = floorDiv(ox, 32) - 1, maxCellX = floorDiv(ox + CHUNK_SIZE - 1, 32) + 1;
