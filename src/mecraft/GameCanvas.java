@@ -280,6 +280,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private int portalChargeTicks;
     // Prevent an arrival portal from immediately sending the player back.
     private int aetherPortalCooldownTicks;
+    private boolean aetherPortalMustExit;
     private volatile boolean endPortalTransitionPending;
     private volatile boolean endPortalTransitionRunning;
     private volatile boolean endPortalWorldReady;
@@ -610,14 +611,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             if (world.difficulty == VoxelWorld.DIFFICULTY_EASY) fallDamage++;
             damagePlayer(fallDamage);
         }
+        boolean touchingRegularPortal = world.touchesPortal(world.playerX, world.playerY, world.playerZ);
         if (aetherPortalCooldownTicks > 0) {
             aetherPortalCooldownTicks--;
             portalChargeTicks = 0;
+            if (!touchingRegularPortal) aetherPortalMustExit = false;
+        } else if (aetherPortalMustExit) {
+            // Do not re-arm while the player is still standing inside the
+            // destination portal; require leaving it after the arrival delay.
+            portalChargeTicks = 0;
+            if (!touchingRegularPortal) aetherPortalMustExit = false;
         } else if (world.touchesEndPortal(world.playerX, world.playerY, world.playerZ)) {
             // End portals transfer immediately, without the Nether's charge.
             portalChargeTicks = 0;
             travelThroughEndPortal();
-        } else if (world.touchesPortal(world.playerX, world.playerY, world.playerZ)) {
+        } else if (touchingRegularPortal) {
             if (++portalChargeTicks >= PORTAL_CHARGE_TICKS) {
                 portalChargeTicks = 0;
                 travelThroughPortal();
@@ -2149,6 +2157,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (portalType == 2 || sourceDimension == VoxelWorld.DIM_AETHER ||
                 targetDimension == VoxelWorld.DIM_AETHER)
             aetherPortalCooldownTicks = PORTAL_CHARGE_TICKS;
+            aetherPortalMustExit = true;
         resetMining();
         renderer.sync(world);
         renderer.updateDayNight(world);
