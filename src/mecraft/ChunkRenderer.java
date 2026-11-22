@@ -40,12 +40,12 @@ final class ChunkRenderer {
     private static final int MAX_CHUNK_TORCHES = 128;
     // A material is split into bounded linked segments; no builder grows without limit.
     private static final int MAX_FACE_BUILDER_VERTICES = 2048;
-    private static final int MAX_CHUNK_MESHES_PER_SYNC = 1;
-    private static final int MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 512;
+    private static final int MAX_CHUNK_MESHES_PER_SYNC = 2;
+    private static final int MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 1024;
     // Even the edited sector is copied in ordinary frame-sized slices.
-    private static final int MAX_URGENT_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 512;
-    private static final int MAX_CHUNK_LIGHT_SCAN_CELLS_PER_SYNC = 512;
-    private static final long MAX_CHUNK_MESH_INSTALL_MILLIS = 6L;
+    private static final int MAX_URGENT_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 1024;
+    private static final int MAX_CHUNK_LIGHT_SCAN_CELLS_PER_SYNC = 1024;
+    private static final long MAX_CHUNK_MESH_INSTALL_MILLIS = 8L;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
     private static final float CHUNK_RADIUS = 12.0f;
     private static final float HELD_BLOCK_SCALE = 0.4f;
@@ -2012,6 +2012,10 @@ final class ChunkRenderer {
                             bestDistance = -1.0f;
                         } else if (bestDistance >= 0.0f) {
                             float distance = dx * dx + dz * dz + dy * dy * 2.0f;
+                            // Among visible candidates, finish terrain in front of the
+                            // camera before spending time on chunks behind the player.
+                            float depth = dx * forwardX + dy * forwardY + dz * forwardZ;
+                            if (depth < 0.0f) distance += CHUNK_AREA * 4.0f;
                             if (distance < bestDistance) {
                                 bestDistance = distance;
                                 best = i;
@@ -2352,7 +2356,7 @@ final class ChunkRenderer {
                         public void run() { runChunkBuildWorker(); }
                     });
                     try {
-                        worker.setPriority(Thread.MIN_PRIORITY);
+                        worker.setPriority(Thread.NORM_PRIORITY);
                     } catch (RuntimeException ignored) {
                     }
                     chunkBuildThread = worker;
