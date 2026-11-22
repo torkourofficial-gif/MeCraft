@@ -831,14 +831,15 @@ final class MobSystem {
         int z = (int)world.playerZ;
         int ground;
         int attempts = 0;
+        int maxAttempts = mob.type == BLAZE ? 192 : 48;
         do {
-            int radius = 9 + random.nextInt(10);
+            int radius = 9 + random.nextInt(mob.type == BLAZE ? 24 : 10);
             int angle = random.nextInt(360);
             x = (int)world.playerX + (int)(Math.cos(angle * Math.PI / 180.0) * radius);
             z = (int)world.playerZ + (int)(Math.sin(angle * Math.PI / 180.0) * radius);
             attempts++;
         } while ((!validSpawnForMob(world, mob, x, z) ||
-                tooClose(mob, x + 0.5f, z + 0.5f)) && attempts < 48);
+                tooClose(mob, x + 0.5f, z + 0.5f)) && attempts < maxAttempts);
         if (mob.type == BLAZE && !validSpawnForMob(world, mob, x, z)) return;
         ground = mob.type == BLAZE && world.dimensionId == VoxelWorld.DIM_NETHER ?
                 InfdevTerrain.NETHER_FORTRESS_FLOOR_Y : world.surfaceY(x, z);
