@@ -1414,7 +1414,7 @@ final class ChunkRenderer {
     void updateDayNight(VoxelWorld world) {
         if (world.dimensionId == VoxelWorld.DIM_AETHER) {
             currentDaylight = 0.96f;
-            currentSkyColor = 0xFFB9E4F4;
+            currentSkyColor = 0xFFBDEBFF;
             if (appliedSunlightIntensity != 0.96f) { sunlight.setIntensity(0.96f); appliedSunlightIntensity = 0.96f; }
             updateTorchLights(world);
             return;
@@ -2831,6 +2831,13 @@ final class ChunkRenderer {
             }
         }
 
+        // The Aether reuses the normal grass block and atlas, changing only
+        // its top-face vertex tint. This keeps inventory/Overworld grass intact.
+        if (snapshot.dimensionId == VoxelWorld.DIM_AETHER) {
+            for (FaceBuilder grassTop = builders[0]; grassTop != null;
+                    grassTop = grassTop.next)
+                tintFaceBuilder(grassTop, AlphaTint.AETHER_GRASS_TOP);
+        }
         int count = 0;
         for (int i = 0; i < builders.length; i++) if (builders[i] != null) count++;
         int flowerCount = flowers == null ? 0 : 1;
