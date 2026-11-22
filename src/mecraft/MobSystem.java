@@ -547,20 +547,31 @@ final class MobSystem {
 
     /** Dedicated Blaze summon path; use the Blaze's reserved slot in each hostile dimension. */
     boolean spawnBlaze(VoxelWorld world, float x, float y, float z) {
-        if (world == null) return false;
+        if (world == null || y < 1.0f || y + 2.8f >= VoxelWorld.HEIGHT) return false;
+        int bx = floor(x), by = floor(y), bz = floor(z);
+        if (world.get(bx, by, bz) != Block.AIR || world.get(bx, by + 1, bz) != Block.AIR ||
+                world.get(bx, by + 2, bz) != Block.AIR) return false;
+
         int preferredSlot = world.dimensionId == VoxelWorld.DIM_NETHER ? 9 : 13;
         if (spawnMobAt(world, BLAZE, x, y, z, preferredSlot)) return true;
 
-        // Manual summons must not silently fail just because every pooled
-        // actor slot is occupied. Reuse a passive slot as the final fallback.
+        // If the bounded pool is full, replace a naturally spawned actor.
+        // Never overwrite another manually summoned mob.
         int passiveLimit = world.dimensionId == VoxelWorld.DIM_AETHER ? 10 :
                 (world.dimensionId == VoxelWorld.DIM_OVERWORLD ? 7 : 0);
         for (int i = 0; i < passiveLimit; i++) {
             Mob mob = mobs[i];
-            if (mob == null || !mob.alive || !isHostile(mob.type)) {
+            if (mob == null || !mob.alive || !mob.eggSpawned) {
                 releaseMob(i);
-                Mob blaze = createMob(i, BLAZE);
-                initializeSummonedMob(blaze, x, y, z);
+                initializeSummonedMob(createMob(i, BLAZE), x, y, z);
+                return true;
+            }
+        }
+        for (int i = 0; i < mobs.length; i++) {
+            Mob mob = mobs[i];
+            if (i == preferredSlot || mob == null || !mob.alive || !mob.eggSpawned) {
+                releaseMob(i);
+                initializeSummonedMob(createMob(i, BLAZE), x, y, z);
                 return true;
             }
         }
