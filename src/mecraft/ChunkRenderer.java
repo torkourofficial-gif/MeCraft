@@ -1410,6 +1410,10 @@ final class ChunkRenderer {
         return mobs.spawnFromEgg(world, eggType, x, y, z);
     }
 
+    boolean spawnBlaze(VoxelWorld world, float x, float y, float z) {
+        return mobs.spawnBlaze(world, x, y, z);
+    }
+
     /** Applies Indev's 24000-tick celestial curve; torch light is baked into voxel face colors. */
     void updateDayNight(VoxelWorld world) {
         if (world.dimensionId == VoxelWorld.DIM_AETHER) {
