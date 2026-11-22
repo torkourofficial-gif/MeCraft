@@ -2334,6 +2334,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         chestX=x; chestY=y; chestZ=z; chestSelection=0;
         loadChestContents(x,y,z);
         initializeStrongholdLoot(x, y, z);
+        initializeAetherLoot(x, y, z);
         state=CHEST_INVENTORY;
         clearKeys();
         repaint();
@@ -2369,6 +2370,36 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             chestCounts[slot] = amount;
         }
         // Persist the generated contents so reopening an emptied chest never rerolls.
+        saveChestContents();
+    }
+
+    private void initializeAetherLoot(int x, int y, int z) {
+        if (world == null || world.dimensionId != VoxelWorld.DIM_AETHER ||
+                !InfdevTerrain.isAetherLootChest(world.seed, x, y, z)) return;
+        boolean empty = true;
+        for (int i = 0; i < 27; i++) {
+            if (chestItems[i] > 0 && chestCounts[i] > 0) { empty = false; break; }
+        }
+        if (chestContentsStored || !empty) return;
+        int random = world.seed ^ (x * 73428767) ^ (y * 912931) ^ (z * 42317861);
+        int rolls = 3 + ((random >>> 2) & 3);
+        for (int n = 0; n < rolls; n++) {
+            random = random * 1664525 + 1013904223;
+            int slot = (random & 0x7FFFFFFF) % 27;
+            while (chestItems[slot] != 0) slot = (slot + 1) % 27;
+            random = random * 1664525 + 1013904223;
+            int roll = (random >>> 1) % 100;
+            int item, amount;
+            if (roll < 25) { item = ItemCatalog.GOLD_INGOT; amount = 2 + ((random >>> 8) & 3); }
+            else if (roll < 45) { item = ItemCatalog.IRON_INGOT; amount = 3 + ((random >>> 9) & 3); }
+            else if (roll < 60) { item = ItemCatalog.DIAMOND; amount = 1 + ((random >>> 10) & 1); }
+            else if (roll < 73) { item = ItemCatalog.GOLDEN_APPLE; amount = 1; }
+            else if (roll < 85) { item = ItemCatalog.ENDER_PEARL; amount = 1 + ((random >>> 11) & 2); }
+            else if (roll < 94) { item = ItemCatalog.BLAZE_ROD; amount = 1 + ((random >>> 12) & 2); }
+            else { item = ItemCatalog.tool(ItemCatalog.PICKAXE, ItemCatalog.IRON); amount = 1; }
+            chestItems[slot] = item;
+            chestCounts[slot] = amount;
+        }
         saveChestContents();
     }
 
