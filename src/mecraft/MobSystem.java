@@ -118,7 +118,9 @@ final class MobSystem {
         if (worldSeed != world.seed || dimensionMode != world.dimensionId || economicMode != world.economicMode) reset(world);
         tick++;
         unloadDistantMobs(world);
-        if (world.dimensionId == VoxelWorld.DIM_OVERWORLD && tick % PASSIVE_RESPAWN_INTERVAL == 0) respawnPassiveMob(world);
+        if ((world.dimensionId == VoxelWorld.DIM_OVERWORLD ||
+                world.dimensionId == VoxelWorld.DIM_AETHER) &&
+                tick % PASSIVE_RESPAWN_INTERVAL == 0) respawnPassiveMob(world);
         updateHostileCycle(world);
         if (attackCooldown > 0) attackCooldown--;
         int playerDamage = 0;
@@ -497,6 +499,15 @@ final class MobSystem {
         // Nether spawns are restricted to Nether creatures plus skeletons.
         // Reuse the fixed actor slots instead of allocating a larger entity array.
         if (dimensionMode == VoxelWorld.DIM_END) return ENDERMAN;
+        if (dimensionMode == VoxelWorld.DIM_AETHER) {
+            // The Aether's passive fauna is limited to pigs and sheep.
+            // Ten of the fourteen pooled slots are reserved for these animals.
+            if (slot < 10) return (slot & 1) == 0 ? PIG : SHEEP;
+            if (slot == 10) return SPIDER;
+            if (slot == 11) return SLIME;
+            if (slot == 12) return ENDERMAN;
+            return ZOMBIE;
+        }
         if (dimensionMode == VoxelWorld.DIM_NETHER) {
             if (slot == 2 || slot == 10) return GHAST;
             if (slot == 5) return SKELETON;
@@ -1327,6 +1338,7 @@ final class MobSystem {
     /** Keep one fewer passive mob in Economic mode (about a 14% reduction). */
     private boolean passiveSlotAllowed(int slot, VoxelWorld world) {
         if (world.dimensionId == VoxelWorld.DIM_END) return false;
+        if (world.dimensionId == VoxelWorld.DIM_AETHER) return slot < 10;
         return !world.economicMode || slot != 6 || isHostile(mobTypeForSlot(slot));
     }
 
