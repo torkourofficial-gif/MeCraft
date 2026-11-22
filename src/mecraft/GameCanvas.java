@@ -100,6 +100,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     };
     private final int[] inventory = new int[ItemCatalog.COUNT];
     private final int[] playerSlotItems = new int[PLAYER_INVENTORY_SLOTS];
+    private final int[] playerInventoryPickupCapacity = new int[ItemCatalog.COUNT];
     private final int[] playerSlotCounts = new int[PLAYER_INVENTORY_SLOTS];
     private final int[] playerInventoryOverflow = new int[ItemCatalog.COUNT];
     private int playerInventorySelection;
@@ -656,7 +657,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         gameUpdateStage = "actualizando objetos del mundo";
         int pickedItem = 0;
         try {
-            pickedItem = renderer.updateDroppedItems(world, inventory, playerPhysics);
+            updatePlayerInventoryPickupCapacity();
+            pickedItem = renderer.updateDroppedItems(world, inventory,
+                    playerInventoryPickupCapacity, playerPhysics);
             reportedSubsystemFailures &= ~UPDATE_FAILURE_DROPS;
         } catch (Throwable problem) {
             reportGameUpdateFailure(UPDATE_FAILURE_DROPS, "objetos del mundo", problem);
@@ -666,7 +669,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             if (world.health <= 0) enterGameOver();
         }
         if (state != PLAYING) return;
-        if (pickedItem > Block.AIR) ensureHotbarItem(pickedItem);
+        if (pickedItem > Block.AIR) {
+            reconcilePlayerInventorySlots();
+            ensureHotbarItem(pickedItem);
+            savePlayerInventorySlots();
+        }
         if (touchActionPending && !touchMiningStarted &&
                 System.currentTimeMillis() - touchActionStart >= TOUCH_MINE_DELAY) {
             boolean movementInput = touchMoveUp || touchMoveDown || touchMoveLeft || touchMoveRight ||
@@ -2481,6 +2488,23 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         finally { if (rs != null) try { rs.closeRecordStore(); } catch (Exception ignored) { } }
         if (loaded) reconcilePlayerInventorySlots();
         return loaded;
+    }
+
+    private void updatePlayerInventoryPickupCapacity() {
+        int emptySlots = 0;
+        for (int slot = 0; slot < PLAYER_INVENTORY_SLOTS; slot++) {
+            int id = playerSlotItems[slot];
+            int count = playerSlotCounts[slot];
+            if (id <= 0 || id >= ItemCatalog.COUNT || count <= 0) {
+                emptySlots++;
+            } else {
+                int max = ItemCatalog.maxStack(id);
+                int room = max - count;
+                if (room > 0) playerInventoryPickupCapacity[id] += room;
+            }
+        }
+        for (int id = 1; id < ItemCatalog.COUNT; id++)
+            playerInventoryPickupCapacity[id] += emptySlots * ItemCatalog.maxStack(id);
     }
 
     private void reconcilePlayerInventorySlots() {
