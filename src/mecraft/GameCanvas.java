@@ -1887,7 +1887,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     private void useBucket(int selected) {
-        int[] target = trace(5.0f);
+        // Ordinary block interaction ignores liquids; an empty bucket must ray-hit
+        // the water/lava source itself so it can collect it.
+        int[] target = trace(5.0f, selected == ItemCatalog.EMPTY_BUCKET);
         if (target == null) return;
         int x = target[0], y = target[1], z = target[2];
         byte hit = world.get(x, y, z);
@@ -2910,6 +2912,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     /** Short ray march; returns hit voxel and the previous empty voxel offset. */
     private int[] trace(float reach) {
+        return trace(reach, false);
+    }
+
+    /** Ray trace variant used by empty buckets, which must be able to hit liquid voxels. */
+    private int[] trace(float reach, boolean includeFluids) {
         ensureLookRay();
         float ox = world.playerX;
         float oy = world.playerY + PLAYER_EYE_HEIGHT;
@@ -2938,7 +2945,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
         while (true) {
             byte id = world.get(bx, by, bz);
-            if (id != Block.AIR && !Block.isFluid(id)) {
+            if (id != Block.AIR && (includeFluids || !Block.isFluid(id))) {
                 int[] hit = traceResult;
                 hit[0] = bx; hit[1] = by; hit[2] = bz;
                 hit[3] = oldX - bx; hit[4] = oldY - by; hit[5] = oldZ - bz;
