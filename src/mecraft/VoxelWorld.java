@@ -1500,6 +1500,9 @@ final class VoxelWorld {
         int minX = floorBlock(px - 0.31f), maxX = floorBlock(px + 0.31f);
         int minY = floorBlock(py) - 1, maxY = floorBlock(py + 1.8f);
         int minZ = floorBlock(pz - 0.31f), maxZ = floorBlock(pz + 0.31f);
+        int ordinaryType = -1;
+        // An Aether portal must win even if another portal block also overlaps
+        // the player's collision box. Do not return the first portal encountered.
         for (int y = minY; y <= maxY; y++)
             for (int z = minZ; z <= maxZ; z++)
                 for (int x = minX; x <= maxX; x++)
@@ -1507,9 +1510,9 @@ final class VoxelWorld {
                         int metadata = metadataAt(x, y, z);
                         if (y < floorBlock(py) && (metadata & 2) == 0) continue;
                         if ((metadata & 4) != 0 || isAetherPortalBlock(x, y, z)) return 2;
-                        return metadata & 1;
+                        if (ordinaryType < 0) ordinaryType = metadata & 1;
                     }
-        return 0;
+        return ordinaryType < 0 ? 0 : ordinaryType;
     }
 
     /** Detects Aether portals from their Glowstone frame even if saved metadata was lost. */
