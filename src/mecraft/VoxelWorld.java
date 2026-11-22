@@ -1481,7 +1481,10 @@ final class VoxelWorld {
         if (dimensionId != DIM_AETHER) return null;
         int centerX = WIDTH / 2, centerZ = DEPTH / 2;
         int bx = centerX - 2, bz = centerZ - 2;
-        int floorY = surfaceY(centerX, centerZ);
+        // Keep the arrival pad at the Aether's designed central-island level.
+        // Do not derive the spawn height from the player's old coordinates or
+        // from a possibly damaged/empty column in a legacy Aether save.
+        int floorY = 35;
         if (floorY < 2) floorY = 2;
         if (floorY > HEIGHT - 7) floorY = HEIGHT - 7;
 
