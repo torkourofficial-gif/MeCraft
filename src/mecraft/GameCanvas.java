@@ -1789,22 +1789,29 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             return;
         }
         ensureLookRay();
-        int baseX = floorBlock(world.playerX + lookRayX * 2.5f);
-        int baseY = floorBlock(world.playerY + 0.15f);
-        int baseZ = floorBlock(world.playerZ + lookRayZ * 2.5f);
+        // Aim from the player's eyes and include the camera's vertical pitch.
+        double targetX = world.playerX + lookRayX * 2.5;
+        double targetY = world.playerY + PLAYER_EYE_HEIGHT + lookRayY * 2.5 - 1.0;
+        double targetZ = world.playerZ + lookRayZ * 2.5;
+        int baseX = floorBlock(targetX);
+        int baseY = floorBlock(targetY);
+        int baseZ = floorBlock(targetZ);
         boolean spawned = false;
-        // Try a compact set of nearby air positions so looking at the sky or
-        // standing beside a wall does not silently cancel the test summon.
-        for (int dy = 0; dy <= 2 && !spawned; dy++) {
-            for (int radius = 0; radius <= 1 && !spawned; radius++) {
-                for (int side = -1; side <= 1 && !spawned; side++) {
-                    int x = baseX + (radius == 0 ? 0 : side);
-                    int z = baseZ + (radius == 0 ? 0 : (side == 0 ? 1 : 0));
-                    int y = baseY + dy;
-                    if (y < 1 || y + 2 >= VoxelWorld.HEIGHT ||
-                            world.get(x, y, z) != Block.AIR ||
-                            world.get(x, y + 1, z) != Block.AIR) continue;
-                    spawned = renderer.spawnBlaze(world, x + 0.5f, (float)y, z + 0.5f);
+        // Search complete square rings around the aimed point, at nearby
+        // heights. This avoids the old asymmetric search and repeated checks.
+        for (int dy = -2; dy <= 2 && !spawned; dy++) {
+            for (int radius = 0; radius <= 2 && !spawned; radius++) {
+                for (int dx = -radius; dx <= radius && !spawned; dx++) {
+                    for (int dz = -radius; dz <= radius && !spawned; dz++) {
+                        if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
+                        int x = baseX + dx;
+                        int y = baseY + dy;
+                        int z = baseZ + dz;
+                        if (y < 1 || y + 2 >= VoxelWorld.HEIGHT ||
+                                world.get(x, y, z) != Block.AIR ||
+                                world.get(x, y + 1, z) != Block.AIR) continue;
+                        spawned = renderer.spawnBlaze(world, x + 0.5f, (float)y, z + 0.5f);
+                    }
                 }
             }
         }
