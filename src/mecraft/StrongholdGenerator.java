@@ -45,6 +45,20 @@ final class StrongholdGenerator {
         room(blocks, width, depth, height, minX + 17, minZ + 0, minX + 25, minZ + 5, y);
 
         portalRoom(blocks, metadata, width, depth, height, minX + 31, minZ + 16, y, seed);
+
+        // Treasure chests in side chambers, away from the portal room/corridors.
+        put(blocks, width, depth, height, minX + 7, y + 1, minZ + 18, Block.CHEST);
+        put(blocks, width, depth, height, minX + 25, y + 1, minZ + 24, Block.CHEST);
+        put(blocks, width, depth, height, minX + 21, y + 1, minZ + 2, Block.CHEST);
+    }
+
+    static boolean isLootChest(int seed, int x, int y, int z, int width, int depth) {
+        int minX = (width - 43) / 2;
+        int minZ = (depth - 43) / 2;
+        return y == 13 &&
+                ((x == minX + 7 && z == minZ + 18) ||
+                 (x == minX + 25 && z == minZ + 24) ||
+                 (x == minX + 21 && z == minZ + 2));
     }
 
     private static int index(int x, int y, int z, int width, int depth) {
@@ -59,13 +73,18 @@ final class StrongholdGenerator {
 
     private static void room(byte[] blocks, int width, int depth, int height,
                              int x0, int z0, int x1, int z1, int y) {
+        room(blocks, width, depth, height, x0, z0, x1, z1, y, ROOM_HEIGHT);
+    }
+
+    private static void room(byte[] blocks, int width, int depth, int height,
+                             int x0, int z0, int x1, int z1, int y, int roomHeight) {
         if (x0 < 1 || z0 < 1 || x1 >= width - 1 || z1 >= depth - 1) return;
         for (int z = z0; z <= z1; z++) {
             for (int x = x0; x <= x1; x++) {
                 put(blocks, width, depth, height, x, y, z, FLOOR);
-                put(blocks, width, depth, height, x, y + ROOM_HEIGHT, z, FLOOR);
+                put(blocks, width, depth, height, x, y + roomHeight, z, FLOOR);
                 boolean edge = x == x0 || x == x1 || z == z0 || z == z1;
-                for (int dy = 1; dy < ROOM_HEIGHT; dy++)
+                for (int dy = 1; dy < roomHeight; dy++)
                     put(blocks, width, depth, height, x, y + dy, z, edge ? WALL : Block.AIR);
             }
         }
@@ -106,7 +125,8 @@ final class StrongholdGenerator {
     private static void portalRoom(byte[] blocks, byte[] metadata,
                                    int width, int depth, int height,
                                    int x0, int z0, int y, int seed) {
-        room(blocks, width, depth, height, x0, z0, x0 + 10, z0 + 15, y);
+        // Leave five clear blocks above the portal ring instead of crowding it.
+        room(blocks, width, depth, height, x0, z0, x0 + 10, z0 + 15, y, 8);
 
         // Classic 1.2.5 portal-room opening on the west wall.
         for (int z = z0 + 8; z <= z0 + 11; z++)
