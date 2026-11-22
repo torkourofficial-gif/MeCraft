@@ -71,7 +71,7 @@ final class VoxelWorld {
     private static final int INFDEV_EDITS_PER_PAGE = 128;
     static final int DAY_LENGTH = 24000;
     static final int DIMENSION_COUNT = 4;
-    static final int DIM_OVERWORLD = 0, DIM_NETHER = 1, DIM_END = 2, DIM_RESERVED = 3;
+    static final int DIM_OVERWORLD = 0, DIM_NETHER = 1, DIM_END = 2, DIM_AETHER = 3, DIM_RESERVED = DIM_AETHER;
     private static final int DIMENSION_SAVE_MAGIC_V2 = 0x4D43444E;
     byte[] blocks = new byte[BLOCK_COUNT];
     private byte[] waterLevels = new byte[BLOCK_COUNT];
@@ -269,7 +269,7 @@ final class VoxelWorld {
 
     private boolean needsProceduralChunk(int cx, int cz) {
         // The End is a bounded island in the void, never an extension of Infdev terrain.
-        if (dimensionId == DIM_END) return false;
+        if (dimensionId == DIM_END || dimensionId == DIM_AETHER) return false;
         int x0 = cx * CHUNK_XZ, z0 = cz * CHUNK_XZ;
         int x1 = x0 + CHUNK_XZ - 1, z1 = z0 + CHUNK_XZ - 1;
         if (worldSize == SIZE_OLD &&
@@ -1208,13 +1208,13 @@ final class VoxelWorld {
         setGenerationDiagnosticStage("VoxelWorld.generate: asignando posición Z del jugador");
         playerZ = spawnCenter + 0.5f;
         setGenerationDiagnosticStage("VoxelWorld.generate: calculando altura inicial del jugador");
-        int spawnHeight = dimensionId == DIM_END ? 33 : (nether ? (economicMode ?
+        int spawnHeight = dimensionId == DIM_END ? 33 : (dimensionId == DIM_AETHER ? 35 : (nether ? (economicMode ?
                 InfdevTerrain.economicNetherFloorHeight(seed, spawnCenter, spawnCenter) :
                 InfdevTerrain.netherFloorHeight(seed, spawnCenter, spawnCenter)) :
                 (worldType == TYPE_FLAT ? 4 :
                  (economicMode ?
                   InfdevTerrain.economicSurfaceHeight(seed, spawnCenter, spawnCenter) :
-                  InfdevTerrain.surfaceHeight(seed, spawnCenter, spawnCenter))));
+                  InfdevTerrain.surfaceHeight(seed, spawnCenter, spawnCenter)))));
         playerY = spawnHeight + 1.0f;
         setGenerationDiagnosticStage("VoxelWorld.generate: asignando yaw inicial");
         yaw = 0f;
@@ -1231,6 +1231,9 @@ final class VoxelWorld {
         if (dimension == DIM_END) {
             setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generateEnd; cx=" + cx + ", cz=" + cz);
             InfdevTerrain.generateEnd(seed, cx, cz, target, heights, biomes);
+        } else if (dimension == DIM_AETHER) {
+            setGenerationDiagnosticStage("VoxelWorld.generateChunk: InfdevTerrain.generateAether; cx=" + cx + ", cz=" + cz);
+            InfdevTerrain.generateAether(seed, cx, cz, target, heights, biomes);
         } else if (dimension != DIM_NETHER && worldType == TYPE_FLAT) {
             for (int z = 0; z < CHUNK_XZ; z++) for (int x = 0; x < CHUNK_XZ; x++) {
                 int base = (z * CHUNK_XZ + x) * HEIGHT;
@@ -1258,25 +1261,25 @@ final class VoxelWorld {
         if (dimensionId == targetDimension) return true;
         // The End owns separate block and fluid arrays. Save the active bounded
         // dimension before reusing its arrays to keep the peak heap bounded.
-        boolean createEndInCurrentArrays = targetDimension == DIM_END &&
-                (dimensionBlocks[DIM_END] == null ||
-                 dimensionWaterLevels[DIM_END] == null);
+        boolean createEndInCurrentArrays = (targetDimension == DIM_END || targetDimension == DIM_AETHER) &&
+                (dimensionBlocks[targetDimension] == null ||
+                 dimensionWaterLevels[targetDimension] == null);
         if (createEndInCurrentArrays) {
             if (saveStoreName != null &&
                     !saveDimensionStore(saveStoreName, dimensionId, blocks, waterLevels))
                 return false;
             dimensionBlocks[dimensionId] = null;
             dimensionWaterLevels[dimensionId] = null;
-            dimensionId = DIM_END;
+            dimensionId = targetDimension;
             nether = false;
-            dimensionBlocks[DIM_END] = blocks;
-            dimensionWaterLevels[DIM_END] = waterLevels;
+            dimensionBlocks[targetDimension] = blocks;
+            dimensionWaterLevels[targetDimension] = waterLevels;
             // waterLevels also stores block metadata, so clear it before the
             // freshly generated End replaces the old dimension's contents.
             for (int i = 0; i < waterLevels.length; i++) waterLevels[i] = 0;
             generate();
-            dimensionBlocks[DIM_END] = blocks;
-            dimensionWaterLevels[DIM_END] = waterLevels;
+            dimensionBlocks[targetDimension] = blocks;
+            dimensionWaterLevels[targetDimension] = waterLevels;
         } else {
             dimensionBlocks[dimensionId] = blocks;
             dimensionWaterLevels[dimensionId] = waterLevels;
@@ -1381,6 +1384,65 @@ final class VoxelWorld {
         return true;
     }
 
+
+    /** Activates a 4x5 Glowstone frame when a water bucket is used on it. */
+    boolean activateAetherPortalAtGlowstone(int x, int y, int z) {
+        if (get(x, y, z) != Block.GLOWSTONE) return false;
+        int[] frame = findAetherPortalFrame(x, y, z);
+        if (frame == null) return false;
+        for (int v = 1; v <= 3; v++) for (int u = 1; u <= 2; u++) {
+            int px = frame[3] == 0 ? frame[0] + u : frame[0];
+            int pz = frame[3] == 0 ? frame[2] : frame[2] + u;
+            if (!set(px, frame[1] + v, pz, Block.PORTAL) &&
+                    get(px, frame[1] + v, pz) != Block.PORTAL) return false;
+            setMetadata(px, frame[1] + v, pz, 4);
+        }
+        int minX = frame[3] == 0 ? frame[0] + 1 : frame[0];
+        int maxX = frame[3] == 0 ? frame[0] + 2 : frame[0];
+        int minZ = frame[3] == 0 ? frame[2] : frame[2] + 1;
+        int maxZ = frame[3] == 0 ? frame[2] : frame[2] + 2;
+        revision++;
+        recordBulkChangedRegion(minX, frame[1] + 1, minZ, maxX, frame[1] + 3, maxZ);
+        return true;
+    }
+
+    private int[] findAetherPortalFrame(int x, int y, int z) {
+        for (int axis = 0; axis < 2; axis++) {
+            int first = axis == 0 ? x - 3 : z - 3, last = axis == 0 ? x : z;
+            for (int u0 = first; u0 <= last; u0++) for (int y0 = y - 4; y0 <= y; y0++) {
+                int bx = axis == 0 ? u0 : x, bz = axis == 0 ? z : u0;
+                if (y0 <= 0 || y0 + 4 >= HEIGHT) continue;
+                boolean valid = true;
+                for (int v = 0; v <= 4 && valid; v++) for (int u = 0; u <= 3; u++) {
+                    int px = axis == 0 ? bx + u : bx, pz = axis == 0 ? bz : bz + u;
+                    byte id = get(px, y0 + v, pz);
+                    boolean edge = v == 0 || v == 4 || u == 0 || u == 3;
+                    if (edge) {
+                        boolean corner = (u == 0 || u == 3) && (v == 0 || v == 4);
+                        if ((!corner && id != Block.GLOWSTONE) ||
+                                (corner && id != Block.GLOWSTONE && !Block.replaceable(id))) { valid = false; break; }
+                    } else if (id != Block.AIR && id != Block.PORTAL) { valid = false; break; }
+                }
+                if (valid) return new int[] { bx, y0, bz, axis };
+            }
+        }
+        return null;
+    }
+
+    int[] createAetherPortalAtSpawn() {
+        if (dimensionId != DIM_AETHER) return null;
+        int bx = WIDTH / 2 - 2, bz = DEPTH / 2 - 2;
+        int by = surfaceY(WIDTH / 2, DEPTH / 2) + 1;
+        if (by < 1) by = 1;
+        if (by > HEIGHT - 6) by = HEIGHT - 6;
+        for (int v = 0; v <= 4; v++) for (int u = 0; u <= 3; u++) {
+            if ((u == 0 || u == 3) && (v == 0 || v == 4)) continue;
+            if (!set(bx + u, by + v, bz, Block.GLOWSTONE)) return null;
+        }
+        if (!activateAetherPortalAtGlowstone(bx + 1, by, bz)) return null;
+        return new int[] { bx, by, bz, 0 };
+    }
+
     int portalAxisAt(int x, int y, int z) {
         if (get(x - 1, y, z) == Block.PORTAL || get(x + 1, y, z) == Block.PORTAL) return 0;
         if (get(x, y, z - 1) == Block.PORTAL || get(x, y, z + 1) == Block.PORTAL) return 1;
@@ -1397,6 +1459,7 @@ final class VoxelWorld {
                     if (get(x, y, z) == Block.PORTAL) {
                         int metadata = metadataAt(x, y, z);
                         if (y < floorBlock(py) && (metadata & 2) == 0) continue;
+                        if ((metadata & 4) != 0) return 2;
                         return metadata & 1;
                     }
         return 0;
