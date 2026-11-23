@@ -2666,21 +2666,21 @@ final class ChunkRenderer {
         if ((meta & Block.STAIR_TOP) == 0) {
             // Normal stair: full lower half, plus the raised half on its facing side.
             addPartialBox(builders,tails,id,x,y,z,0,0,0,16,8,16,light,false,true,true,true,true,true);
-            addPartialFace(builders,tails,id,x,y,z,0,8,0,16,8,16,0,light,
-                    facing == 1 ? 0 : (facing == 3 ? 8 : 0),
-                    facing == 0 ? 8 : (facing == 2 ? 0 : 0),
-                    facing == 1 || facing == 3 ? 8 : 16,
-                    facing == 0 || facing == 2 ? 8 : 16);
+            int openX0 = facing == 3 ? 8 : 0;
+            int openX1 = facing == 1 ? 8 : 16;
+            int openZ0 = facing == 0 ? 8 : 0;
+            int openZ1 = facing == 2 ? 8 : 16;
+            addPartialFace(builders,tails,id,x,y,z,openX0,8,openZ0,openX1,8,openZ1,0,light,0,0,0,0);
             addPartialBox(builders,tails,id,x,y,z,minX,8,minZ,maxX,16,maxZ,
                     light,true,false,true,true,true,true);
         } else {
             // Upside-down stair: full upper half, with the lower step at the facing side.
             addPartialBox(builders,tails,id,x,y,z,0,8,0,16,16,16,light,true,false,true,true,true,true);
-            int openMinX = facing == 1 ? 0 : (facing == 3 ? 8 : 0);
-            int openMaxX = facing == 1 || facing == 3 ? (facing == 1 ? 8 : 16) : 16;
-            int openMinZ = facing == 0 ? 8 : (facing == 2 ? 0 : 0);
-            int openMaxZ = facing == 0 || facing == 2 ? (facing == 0 ? 16 : 8) : 16;
-            addPartialFace(builders,tails,id,x,y,z,openMinX,8,openMinZ,openMaxX,8,openMaxZ,5,light,0,0,0,0);
+            int openX0 = facing == 3 ? 8 : 0;
+            int openX1 = facing == 1 ? 8 : 16;
+            int openZ0 = facing == 0 ? 8 : 0;
+            int openZ1 = facing == 2 ? 8 : 16;
+            addPartialFace(builders,tails,id,x,y,z,openX0,8,openZ0,openX1,8,openZ1,5,light,0,0,0,0);
             addPartialBox(builders,tails,id,x,y,z,minX,0,minZ,maxX,8,maxZ,
                     light,false,true,true,true,true,true);
         }
