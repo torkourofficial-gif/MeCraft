@@ -2730,8 +2730,9 @@ final class ChunkRenderer {
             int face,int light) {
         int tile = Block.bedFaceTile(meta, face);
         if (tile < 0) return;
-        addPartialFaceTile(builders,tails,x,y,z,x0,y0,z0,x1,y1,z1,
-                face,light,tile,Block.bedFaceFlip(meta,face));
+        addPartialBedFaceTile(builders,tails,x,y,z,x0,y0,z0,x1,y1,z1,
+                face,light,tile,Block.bedFaceFlip(meta,face),
+                face == 0 ? (Block.bedFacing(meta) & 3) : -1);
     }
 
     private void addPartialFace(FaceBuilder[] builders, FaceBuilder[] tails, byte id,
@@ -2739,6 +2740,25 @@ final class ChunkRenderer {
             int face,int light,int unused0,int unused1,int unused2,int unused3) {
         addPartialFaceTile(builders,tails,x,y,z,x0,y0,z0,x1,y1,z1,
                 face,light,Block.faceTile(id,face),false);
+    }
+
+    private void addPartialBedFaceTile(FaceBuilder[] builders, FaceBuilder[] tails,
+            int x,int y,int z,int x0,int y0,int z0,int x1,int y1,int z1,
+            int face,int light,int tile,boolean flipU,int topFacing) {
+        FaceBuilder builder = tails[tile];
+        if (builder == null) {
+            builder = acquireFaceBuilder(tile);
+            builders[tile] = builder;
+            tails[tile] = builder;
+        } else if (builder.vertexCount + 4 > MAX_FACE_BUILDER_VERTICES) {
+            FaceBuilder next = acquireFaceBuilder(tile);
+            builder.next = next;
+            tails[tile] = next;
+            builder = next;
+        }
+        int px0=x*16+x0, py0=y*16+y0, pz0=z*16+z0;
+        int px1=x*16+x1, py1=y*16+y1, pz1=z*16+z1;
+        builder.addSubQuad(px0,py0,pz0,px1,py1,pz1,face,light,flipU,topFacing);
     }
 
     private void addPartialFaceTile(FaceBuilder[] builders, FaceBuilder[] tails,
@@ -3853,6 +3873,10 @@ final class ChunkRenderer {
         }
 
         void addSubQuad(int x0,int y0,int z0,int x1,int y1,int z1,int face,int lightLevel,boolean flipU) {
+            addSubQuad(x0,y0,z0,x1,y1,z1,face,lightLevel,flipU,-1);
+        }
+
+        void addSubQuad(int x0,int y0,int z0,int x1,int y1,int z1,int face,int lightLevel,boolean flipU,int bedTopFacing) {
             int firstVertex = vertexCount;
             ensure(vertexCount + 4);
             int u0=(tile & 15)*16+1, v0=(tile >> 4)*16+1, u1=u0+14, v1=v0+14;
@@ -3863,6 +3887,22 @@ final class ChunkRenderer {
             else if(face==3){vertexSub(x0,y0,z0,u0,v1,shade);vertexSub(x0,y1,z0,u0,v0,shade);vertexSub(x1,y0,z0,u1,v1,shade);vertexSub(x1,y1,z0,u1,v0,shade);}
             else if(face==4){vertexSub(x0,y0,z1,u1,v1,shade);vertexSub(x1,y0,z1,u0,v1,shade);vertexSub(x0,y1,z1,u1,v0,shade);vertexSub(x1,y1,z1,u0,v0,shade);}
             else {vertexSub(x0,y0,z0,u0,v0,shade);vertexSub(x1,y0,z0,u1,v0,shade);vertexSub(x0,y0,z1,u0,v1,shade);vertexSub(x1,y0,z1,u1,v1,shade);}
+            if (bedTopFacing >= 0 && face == 0) {
+                // Exact top-face UV corner permutation from Beta 1.8.1
+                // RenderBlocks.renderBlockBed(), in this builder's vertex order:
+                // (x0,z0), (x0,z1), (x1,z0), (x1,z1).
+                int[][] map = {
+                    {u0,v0, u1,v0, u0,v1, u1,v1},
+                    {u1,v0, u0,v1, u0,v0, u1,v1},
+                    {u1,v1, u0,v1, u1,v0, u0,v0},
+                    {u0,v1, u0,v0, u1,v1, u1,v0}
+                };
+                int[] m=map[bedTopFacing & 3];
+                for(int k=0;k<4;k++) {
+                    uv[(firstVertex+k)*2]=(short)m[k*2];
+                    uv[(firstVertex+k)*2+1]=(short)m[k*2+1];
+                }
+            }
             if (flipU) {
                 int uvMin = u0 + u1;
                 for (int i = firstVertex; i < firstVertex + 4; i++) {
