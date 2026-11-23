@@ -2647,6 +2647,77 @@ final class ChunkRenderer {
         }
     }
 
+
+    private void addPartialBlockGeometry(FaceBuilder[] builders, FaceBuilder[] tails,
+            int x, int y, int z, byte id, int meta, int light) {
+        if (Block.isSlab(id)) {
+            addPartialBox(builders, tails, id, x, y, z,
+                    toSixteenths(Block.boxMinX(id,meta,0)), toSixteenths(Block.boxMinY(id,meta,0)),
+                    toSixteenths(Block.boxMinZ(id,meta,0)), toSixteenths(Block.boxMaxX(id,meta,0)),
+                    toSixteenths(Block.boxMaxY(id,meta,0)), toSixteenths(Block.boxMaxZ(id,meta,0)),
+                    light, true, true, true, true, true, true);
+            return;
+        }
+        int facing = meta & 3;
+        int minX = toSixteenths(Block.boxMinX(id,meta,1));
+        int maxX = toSixteenths(Block.boxMaxX(id,meta,1));
+        int minZ = toSixteenths(Block.boxMinZ(id,meta,1));
+        int maxZ = toSixteenths(Block.boxMaxZ(id,meta,1));
+        if ((meta & Block.STAIR_TOP) == 0) {
+            // Normal stair: full lower half, plus the raised half on its facing side.
+            addPartialBox(builders,tails,id,x,y,z,0,0,0,16,8,16,light,false,true,true,true,true,true);
+            addPartialFace(builders,tails,id,x,y,z,0,8,0,16,8,16,0,light,
+                    facing == 1 ? 0 : (facing == 3 ? 8 : 0),
+                    facing == 0 ? 8 : (facing == 2 ? 0 : 0),
+                    facing == 1 || facing == 3 ? 8 : 16,
+                    facing == 0 || facing == 2 ? 8 : 16);
+            addPartialBox(builders,tails,id,x,y,z,minX,8,minZ,maxX,16,maxZ,
+                    light,true,false,true,true,true,true);
+        } else {
+            // Upside-down stair: full upper half, with the lower step at the facing side.
+            addPartialBox(builders,tails,id,x,y,z,0,8,0,16,16,16,light,true,false,true,true,true,true);
+            int openMinX = facing == 1 ? 0 : (facing == 3 ? 8 : 0);
+            int openMaxX = facing == 1 || facing == 3 ? (facing == 1 ? 8 : 16) : 16;
+            int openMinZ = facing == 0 ? 8 : (facing == 2 ? 0 : 0);
+            int openMaxZ = facing == 0 || facing == 2 ? (facing == 0 ? 16 : 8) : 16;
+            addPartialFace(builders,tails,id,x,y,z,openMinX,8,openMinZ,openMaxX,8,openMaxZ,5,light,0,0,0,0);
+            addPartialBox(builders,tails,id,x,y,z,minX,0,minZ,maxX,8,maxZ,
+                    light,false,true,true,true,true,true);
+        }
+    }
+
+    private int toSixteenths(float value) { return (int)(value * 16.0f + 0.5f); }
+
+    private void addPartialBox(FaceBuilder[] builders, FaceBuilder[] tails, byte id,
+            int x,int y,int z,int x0,int y0,int z0,int x1,int y1,int z1,int light,
+            boolean top,boolean bottom,boolean west,boolean east,boolean north,boolean south) {
+        if (top) addPartialFace(builders,tails,id,x,y,z,x0,y0,z0,x1,y1,z1,0,light,0,0,0,0);
+        if (west) addPartialFace(builders,tails,id,x,y,z,x0,y0,z0,x1,y1,z1,1,light,0,0,0,0);
+        if (east) addPartialFace(builders,tails,id,x,y,z,x0,y0,z0,x1,y1,z1,2,light,0,0,0,0);
+        if (north) addPartialFace(builders,tails,id,x,y,z,x0,y0,z0,x1,y1,z1,3,light,0,0,0,0);
+        if (south) addPartialFace(builders,tails,id,x,y,z,x0,y0,z0,x1,y1,z1,4,light,0,0,0,0);
+        if (bottom) addPartialFace(builders,tails,id,x,y,z,x0,y0,z0,x1,y1,z1,5,light,0,0,0,0);
+    }
+
+    private void addPartialFace(FaceBuilder[] builders, FaceBuilder[] tails, byte id,
+            int x,int y,int z,int x0,int y0,int z0,int x1,int y1,int z1,
+            int face,int light,int unused0,int unused1,int unused2,int unused3) {
+        int tile = Block.faceTile(id, face);
+        FaceBuilder builder = tails[tile];
+        if (builder == null) {
+            builder = acquireFaceBuilder(tile);
+            builders[tile] = builder;
+            tails[tile] = builder;
+        } else if (builder.vertexCount + 4 > MAX_FACE_BUILDER_VERTICES) {
+            FaceBuilder next = acquireFaceBuilder(tile);
+            builder.next = next;
+            tails[tile] = next;
+            builder = next;
+        }
+        builder.addSubQuad(x * 16 + x0, y * 16 + y0, z * 16 + z0,
+                x * 16 + x1, y * 16 + y1, z * 16 + z1, face);
+    }
+
     private Chunk buildChunk(ChunkBuildSnapshot snapshot, int cx, int cy, int cz, int sector) {
         FaceBuilder[] builders = chunkFaceBuilders;
         FaceBuilder[] builderTails = chunkFaceBuilderTails;
@@ -2727,6 +2798,20 @@ final class ChunkRenderer {
             return empty;
         }
 
+        // Partial blocks bypass greedy cube meshing and emit their exact 1/16 geometry.
+        for (int ly = 0; ly < VoxelWorld.CHUNK_Y; ly++) {
+            for (int lz = sectorZ; lz < sectorZ + SECTOR_SIZE_Z; lz++) {
+                for (int lx = sectorX; lx < sectorX + SECTOR_SIZE_X; lx++) {
+                    int vi = (ly * VoxelWorld.CHUNK_XZ + lz) * VoxelWorld.CHUNK_XZ + lx;
+                    byte partialId = chunkVoxelScratch[vi];
+                    if (!Block.isPartial(partialId)) continue;
+                    int meta = snapshot.metadata(lx, ly, lz);
+                    addPartialBlockGeometry(builders, builderTails, lx, ly, lz,
+                            partialId, meta, chunkLightScratch[vi] & 255);
+                }
+            }
+        }
+
         // Mine64-style greedy meshing: combine adjacent visible faces on each
         // chunk plane when their atlas tile matches. Tile textures repeat, so
         // the merged rectangles preserve the original per-block texture scale.
@@ -2753,7 +2838,7 @@ final class ChunkRenderer {
                                 VoxelWorld.CHUNK_XZ + (x - x0);
                         byte id = chunkVoxelScratch[voxelIndex];
                         int key = 0;
-                        if (id != Block.AIR && id != Block.RAIL && id != Block.END_PORTAL_FRAME && !Block.isFlower(id) && !Block.isDoor(id) &&
+                        if (id != Block.AIR && !Block.isPartial(id) && id != Block.RAIL && id != Block.END_PORTAL_FRAME && !Block.isFlower(id) && !Block.isDoor(id) &&
                             !(face == 5 && y == 0)) {
                             int nx = x, ny = y, nz = z;
                             if (face == 0) ny++;
