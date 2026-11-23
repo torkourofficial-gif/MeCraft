@@ -1787,10 +1787,10 @@ final class MobSystem {
     private Mesh makeItemProjectileMesh(Appearance appearance, int icon, int halfSize) {
         // Two intersecting textured quads keep the sprite visible from every angle.
         short[] positions = new short[] {
-            -halfSize,-halfSize,0, halfSize,-halfSize,0,
-            -halfSize,halfSize,0, halfSize,halfSize,0,
-            0,-halfSize,-halfSize, 0,-halfSize,halfSize,
-            0,halfSize,-halfSize, 0,halfSize,halfSize
+            (short)-halfSize,(short)-halfSize,0, (short)halfSize,(short)-halfSize,0,
+            (short)-halfSize,(short)halfSize,0, (short)halfSize,(short)halfSize,0,
+            0,(short)-halfSize,(short)-halfSize, 0,(short)-halfSize,(short)halfSize,
+            0,(short)halfSize,(short)-halfSize, 0,(short)halfSize,(short)halfSize
         };
         short[] uv = new short[16];
         int u0 = (icon & 15) * 16, v0 = (icon >> 4) * 16;
