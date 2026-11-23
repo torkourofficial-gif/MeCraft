@@ -1783,7 +1783,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if(Block.isBedHead(meta)){
             x-=facing==1?-1:(facing==3?1:0);
             z-=facing==0?1:(facing==2?-1:0);
+            meta &= ~Block.BED_HEAD;
         }
+        int headX=x+(facing==1?-1:(facing==3?1:0));
+        int headZ=z+(facing==0?1:(facing==2?-1:0));
+        int headMeta=world.metadataAt(headX,y,headZ);
+        if(world.get(x,y,z)!=Block.WOOL || !Block.isBedMeta(meta) ||
+           Block.isBedHead(meta) || world.get(headX,y,headZ)!=Block.WOOL ||
+           !Block.isBedMeta(headMeta) || !Block.isBedHead(headMeta) ||
+           Block.bedFacing(headMeta)!=facing) return;
         sleepingInBed=true; sleepTicks=0;
         sleepBedX=x; sleepBedY=y; sleepBedZ=z; sleepBedFacing=facing;
         world.playerX=x+0.5f; world.playerY=y-0.9f; world.playerZ=z+0.5f;
