@@ -3893,7 +3893,7 @@ final class ChunkRenderer {
                 // (x0,z0), (x0,z1), (x1,z0), (x1,z1).
                 int[][] map = {
                     {u0,v0, u1,v0, u0,v1, u1,v1},
-                    {u1,v0, u0,v1, u0,v0, u1,v1},
+                    {u1,v0, u1,v1, u0,v0, u0,v1},
                     {u1,v1, u0,v1, u1,v0, u0,v0},
                     {u0,v1, u0,v0, u1,v1, u1,v0}
                 };
