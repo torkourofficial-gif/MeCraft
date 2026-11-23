@@ -581,8 +581,15 @@ final class Block {
             {1,0,3,2,5,4}, {1,0,5,4,2,3},
             {1,0,2,3,4,5}, {1,0,4,5,3,2}
         };
+        final int[] headInvisibleFace = new int[] {3,4,2,5};
+        final int[] footInvisibleFaceRemap = new int[] {2,3,0,1};
         int direction = bedFacing(meta) & 3;
+        int invisibleSide = headInvisibleFace[direction];
+        if (!isBedHead(meta)) invisibleSide = headInvisibleFace[footInvisibleFaceRemap[direction]];
+        // BlockBed hides the two end faces that meet at the middle of the bed.
+        if (sideIndex == invisibleSide) return -1;
         int side = bedDirection[direction][sideIndex];
+        // Exact BlockBed.getBlockTextureFromSideAndMetadata mapping, base tile 134.
         if (isBedHead(meta)) {
             if (side == 3) return 149;
             return side != 5 && side != 4 ? 134 : 150;
