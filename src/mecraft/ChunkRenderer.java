@@ -2714,8 +2714,15 @@ final class ChunkRenderer {
             tails[tile] = next;
             builder = next;
         }
-        builder.addSubQuad(x * 16 + x0, y * 16 + y0, z * 16 + z0,
-                x * 16 + x1, y * 16 + y1, z * 16 + z1, face, light);
+        int px0 = x * 16 + x0, py0 = y * 16 + y0, pz0 = z * 16 + z0;
+        int px1 = x * 16 + x1, py1 = y * 16 + y1, pz1 = z * 16 + z1;
+        // Move only the outer side planes by 1/256 block so they win against
+        // the coplanar face of a neighboring full cube without visible seams.
+        if (face == 1 && x0 == 0) px0--;
+        else if (face == 2 && x1 == 16) px1++;
+        else if (face == 3 && z0 == 0) pz0--;
+        else if (face == 4 && z1 == 16) pz1++;
+        builder.addSubQuad(px0, py0, pz0, px1, py1, pz1, face, light);
     }
 
     private Chunk buildChunk(ChunkBuildSnapshot snapshot, int cx, int cy, int cz, int sector) {
