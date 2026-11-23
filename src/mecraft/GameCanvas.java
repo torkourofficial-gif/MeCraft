@@ -1376,13 +1376,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             int heldItem = hotbar[world.selectedSlot];
             boolean canHarvest = Block.canHarvest(id, heldItem);
             int dropId = world.dropItemId(x, y, z);
+            int dropCount = Block.isSlab(id) &&
+                    (world.metadataAt(x, y, z) & 3) == Block.SLAB_DOUBLE ? 2 : 1;
             if (!world.set(x, y, z, Block.AIR)) {
                 miningDamage = 0.99f;
                 return;
             }
             if (world.mode == 0 && Block.dropsItem(id) && canHarvest) {
-                renderer.spawnDroppedItem(dropId, x, y, z);
-                if (Block.isSlab(id) && (world.metadataAt(x, y, z) & 3) == Block.SLAB_DOUBLE)
+                for (int drop = 0; drop < dropCount; drop++)
                     renderer.spawnDroppedItem(dropId, x, y, z);
             }
             renderer.swingHand();
