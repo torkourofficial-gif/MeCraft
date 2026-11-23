@@ -2651,8 +2651,16 @@ final class ChunkRenderer {
     private void addPartialBlockGeometry(FaceBuilder[] builders, FaceBuilder[] tails,
             int x, int y, int z, byte id, int meta, int light) {
         if (id == Block.WOOL && Block.isBedMeta(meta)) {
-            // Original BlockBed bounds: full footprint and 9/16 block height.
-            addPartialBox(builders, tails, id, x, y, z, 0, 0, 0, 16, 9, 16,
+            // Beta bed model: wool mattress above four short wooden corner legs.
+            addPartialBox(builders, tails, id, x, y, z, 0, 3, 0, 16, 9, 16,
+                    light, true, true, true, true, true, true);
+            addPartialBox(builders, tails, Block.PLANKS, x, y, z, 0, 0, 0, 3, 3, 3,
+                    light, true, true, true, true, true, true);
+            addPartialBox(builders, tails, Block.PLANKS, x, y, z, 13, 0, 0, 16, 3, 3,
+                    light, true, true, true, true, true, true);
+            addPartialBox(builders, tails, Block.PLANKS, x, y, z, 0, 0, 13, 3, 3, 16,
+                    light, true, true, true, true, true, true);
+            addPartialBox(builders, tails, Block.PLANKS, x, y, z, 13, 0, 13, 16, 3, 16,
                     light, true, true, true, true, true, true);
             return;
         }
