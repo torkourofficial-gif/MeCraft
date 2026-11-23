@@ -1822,7 +1822,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if(world.get(fx,y,fz)==Block.WOOL&&Block.isBedMeta(world.metadataAt(fx,y,fz)))world.set(fx,y,fz,Block.AIR);
         if(world.get(hx,y,hz)==Block.WOOL&&Block.isBedMeta(world.metadataAt(hx,y,hz)))world.set(hx,y,hz,Block.AIR);
         if(world.mode==0)renderer.spawnDroppedItem(ItemCatalog.BED,fx,y,fz);
-        renderer.spawnBlockDestroy(x,y,z,134);
+        renderer.spawnBlockDestroy(x,y,z,Block.sideTile(Block.WOOL));
         renderer.syncEditedBlock(world,fx,y,fz); renderer.syncEditedBlock(world,hx,y,hz);
         renderer.swingHand();
     }
