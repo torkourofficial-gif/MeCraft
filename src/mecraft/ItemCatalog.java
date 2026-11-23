@@ -95,7 +95,8 @@ final class ItemCatalog {
     static final int ENDER_PEARL = END_PORTAL_EYE + 1;
     static final int BLAZE_ROD = ENDER_PEARL + 1;
     static final int BLAZE_POWDER = BLAZE_ROD + 1;
-    static final int COUNT = BLAZE_POWDER + 1;
+    static final int BED = BLAZE_POWDER + 1;
+    static final int COUNT = BED + 1;
 
     static final int SWORD = 0;
     static final int SHOVEL = 1;
@@ -195,7 +196,7 @@ final class ItemCatalog {
                 (id >= LEATHER_HELMET && id <= GOLD_BOOTS) || id == MINECART ||
                 id == CHEST_MINECART || id == FURNACE_MINECART || id == BOAT ||
                 id == EMPTY_BUCKET || id == WATER_BUCKET || id == LAVA_BUCKET ||
-                id == MILK_BUCKET || id == MUSHROOM_STEW) return 1;
+                id == MILK_BUCKET || id == MUSHROOM_STEW || id == BED) return 1;
         return 64;
     }
 
@@ -220,6 +221,7 @@ final class ItemCatalog {
         if (id == ENDER_PEARL) return 107;
         if (id == BLAZE_ROD) return 108;
         if (id == BLAZE_POWDER) return 157;
+        if (id == BED) return 134;
         // Alpha's wooden door item icon in items.png (tile 43).
         if (id == Block.DOOR) return 43;
         if (id == Block.IRON_DOOR) return 44;
@@ -239,6 +241,7 @@ final class ItemCatalog {
         if (id == ENDER_PEARL) return "Perla de Ender";
         if (id == BLAZE_ROD) return "Vara de Blaze";
         if (id == BLAZE_POWDER) return "Polvo de Blaze";
+        if (id == BED) return "Cama";
         if (isSpawnEgg(id)) {
             String[] eggNames = new String[] { "Huevo de spawn de cerdo", "Huevo de spawn de oveja",
                 "Huevo de spawn de zombi", "Huevo de spawn de creeper", "Huevo de spawn de esqueleto",
