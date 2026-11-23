@@ -570,40 +570,27 @@ final class Block {
         return sideTile(id);
     }
 
-    /** Beta 1.8.1 BlockBed texture selection (terrain.png tiles 134-152). */
+    /** Bed atlas mapping: head/front=134/149, foot/back=135/152, sides=150/151. */
     static boolean bedFaceFlip(int meta, int face) {
-        int direction = bedFacing(meta) & 3;
-        int flipSide = direction == 0 ? 5 : (direction == 1 ? 3 :
-                (direction == 3 ? 2 : 4));
-        final int[] sideOrder = new int[] { 1, 4, 5, 2, 3, 0 };
-        return sideOrder[face] == flipSide;
+        // The two side strips are authored in opposite horizontal directions.
+        return face == 1 || face == 2;
     }
 
     static int bedFaceTile(int meta, int face) {
-        // Renderer face order is top, -X, +X, -Z, +Z, bottom;
-        // BlockBed's original side order is bottom, top, north, south, west, east.
-        final int[] sideOrder = new int[] { 1, 4, 5, 2, 3, 0 };
-        int sideIndex = sideOrder[face];
-        if (sideIndex == 0) return atlasTile(PLANKS);
-        final int[][] bedDirection = new int[][] {
-            {1,0,3,2,5,4}, {1,0,5,4,2,3},
-            {1,0,2,3,4,5}, {1,0,4,5,3,2}
-        };
-        final int[] headInvisibleFace = new int[] {3,4,2,5};
-        final int[] footInvisibleFaceRemap = new int[] {2,3,0,1};
-        int direction = bedFacing(meta) & 3;
-        int invisibleSide = headInvisibleFace[direction];
-        if (!isBedHead(meta)) invisibleSide = headInvisibleFace[footInvisibleFaceRemap[direction]];
-        // BlockBed hides the two end faces that meet at the middle of the bed.
-        if (sideIndex == invisibleSide) return -1;
-        int side = bedDirection[direction][sideIndex];
-        // Exact BlockBed.getBlockTextureFromSideAndMetadata mapping, base tile 134.
-        if (isBedHead(meta)) {
-            if (side == 3) return 149;
-            return side != 5 && side != 4 ? 134 : 150;
-        }
-        if (side == 2) return 152;
-        return side != 5 && side != 4 ? 135 : 151;
+        boolean head = isBedHead(meta);
+        // Renderer face order: top, west, east, north, south, bottom.
+        if (face == 0) return head ? 134 : 135;
+        if (face == 5) return atlasTile(PLANKS);
+        int facing = bedFacing(meta) & 3;
+        // The head-facing end uses tile 149; the opposite foot end uses 152.
+        // Both long sides use their dedicated left/right tiles.
+        int frontFace = facing == 0 ? 4 : (facing == 1 ? 1 :
+                (facing == 2 ? 3 : 2));
+        int backFace = facing == 0 ? 3 : (facing == 1 ? 2 :
+                (facing == 2 ? 4 : 1));
+        if (face == frontFace) return head ? 149 : 152;
+        if (face == backFace) return head ? 152 : 149;
+        return face == 1 || face == 3 ? 150 : 151;
     }
 
     static int renderTile(byte id, int face, int woolColor) {
