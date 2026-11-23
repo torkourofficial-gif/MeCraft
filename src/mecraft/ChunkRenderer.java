@@ -2653,15 +2653,16 @@ final class ChunkRenderer {
         if (id == Block.WOOL && Block.isBedMeta(meta)) {
             // Beta 1.8.1 mattress uses the six original head/foot terrain tiles.
             addPartialBedBox(builders, tails, x, y, z, meta, 0, 3, 0, 16, 9, 16,
-                    light, true, false, true, true, true, true);
+                    light, true, true, true, true, true, true);
+            // Close the underside of every leg; the mattress bottom closes their tops.
             addPartialBox(builders, tails, Block.PLANKS, x, y, z, 0, 0, 0, 3, 3, 3,
-                    light, false, false, true, true, true, true);
+                    light, false, true, true, true, true, true);
             addPartialBox(builders, tails, Block.PLANKS, x, y, z, 13, 0, 0, 16, 3, 3,
-                    light, false, false, true, true, true, true);
+                    light, false, true, true, true, true, true);
             addPartialBox(builders, tails, Block.PLANKS, x, y, z, 0, 0, 13, 3, 3, 16,
-                    light, false, false, true, true, true, true);
+                    light, false, true, true, true, true, true);
             addPartialBox(builders, tails, Block.PLANKS, x, y, z, 13, 0, 13, 16, 3, 16,
-                    light, false, false, true, true, true, true);
+                    light, false, true, true, true, true, true);
             return;
         }
         if (Block.isSlab(id)) {
