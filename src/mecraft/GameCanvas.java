@@ -211,6 +211,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private static final int UPDATE_FAILURE_PARTICLES = 32;
     private boolean ridingBoat;
     private boolean ridingMinecart;
+    private boolean sleepingInBed;
+    private int sleepTicks, sleepBedX, sleepBedY, sleepBedZ, sleepBedFacing;
     private MusicController music;
     private SkinGallery skinGallery;
     private Image title;
@@ -579,6 +581,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             reportGameUpdateFailure(UPDATE_FAILURE_LIGHTING, "iluminación", problem);
         }
 
+        if (sleepingInBed) {
+            if (jumpHeld) leaveBed(false);
+            else if (++sleepTicks >= 100) {
+                leaveBed(true);
+                try { renderer.updateDayNight(world); } catch (Throwable ignored) { }
+            }
+            return;
+        }
         gameUpdateStage = "actualizando fluidos";
         world.updateFluids();
         float forward = 0.0f;
@@ -1374,6 +1384,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         else miningDamage += Block.breakStrength(id, grounded, submerged, hotbar[world.selectedSlot]);
         if (miningDamage >= 1.0f) {
             int heldItem = hotbar[world.selectedSlot];
+            int blockMeta = world.metadataAt(x, y, z);
+            if (id == Block.WOOL && Block.isBedMeta(blockMeta)) {
+                breakBed(x, y, z, blockMeta);
+                resetMining(); miningHitWait = 5; return;
+            }
             boolean canHarvest = Block.canHarvest(id, heldItem);
             int dropId = world.dropItemId(x, y, z);
             int dropCount = Block.isSlab(id) &&
@@ -1469,6 +1484,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (world == null) return;
         int[] target = trace(5.0f);
         byte targetBlock = target == null ? Block.AIR : world.get(target[0], target[1], target[2]);
+        if (targetBlock == Block.WOOL && Block.isBedMeta(world.metadataAt(target[0], target[1], target[2]))) {
+            int bedMeta = world.metadataAt(target[0], target[1], target[2]);
+            if (world.isNight()) enterBed(target[0], target[1], target[2], bedMeta);
+            return;
+        }
         if (targetBlock == Block.CRAFTING_TABLE) {
             openCrafting(true);
             return;
@@ -1509,6 +1529,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             return;
         }
         int selectedItem = hotbar[world.selectedSlot];
+        if (selectedItem == ItemCatalog.BED) { placeBed(target); return; }
         boolean coloredWool = ItemCatalog.isColoredWool(selectedItem);
         // A click on the open half of a matching slab completes its double form.
         if (target != null && Block.isSlab((byte)selectedItem) &&
@@ -1727,6 +1748,73 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         boolean reverseHinge = nearDoor && !farDoor || farWalls > nearWalls;
         if (reverseHinge) orientation = (orientation - 1) & 3 | 4;
         return orientation;
+    }
+
+    /** Places a two-block bed with Beta 1.8.1 foot/head orientation metadata. */
+    private void placeBed(int[] target) {
+        if (world == null || target == null || target[4] != 1) return;
+        int x=target[0], y=target[1]+1, z=target[2];
+        int facing=((int)Math.floor(world.yaw*4.0f/360.0f+0.5f))&3;
+        int dx=facing==1?-1:(facing==3?1:0), dz=facing==0?1:(facing==2?-1:0);
+        int hx=x+dx, hz=z+dz;
+        if(y<=0||y>=VoxelWorld.HEIGHT||!Block.solid(world.get(x,y-1,z))||
+           !Block.solid(world.get(hx,y-1,hz))||!Block.replaceable(world.get(x,y,z))||
+           !Block.replaceable(world.get(hx,y,hz))) return;
+        if(world.mode==0&&inventory[ItemCatalog.BED]<=0)return;
+        if(x+1.0f>world.playerX-PLAYER_RADIUS&&x<world.playerX+PLAYER_RADIUS&&
+           z+1.0f>world.playerZ-PLAYER_RADIUS&&z<world.playerZ+PLAYER_RADIUS&&
+           y+9.0f/16.0f>world.playerY&&y<world.playerY+PLAYER_HEIGHT)return;
+        if(hx+1.0f>world.playerX-PLAYER_RADIUS&&hx<world.playerX+PLAYER_RADIUS&&
+           hz+1.0f>world.playerZ-PLAYER_RADIUS&&hz<world.playerZ+PLAYER_RADIUS&&
+           y+9.0f/16.0f>world.playerY&&y<world.playerY+PLAYER_HEIGHT)return;
+        int meta=Block.BED_MARKER|(facing<<Block.BED_FACING_SHIFT);
+        if(!world.setBlockState(x,y,z,Block.WOOL,meta))return;
+        if(!world.setBlockState(hx,y,hz,Block.WOOL,meta|Block.BED_HEAD)){
+            world.set(x,y,z,Block.AIR); return;
+        }
+        if(world.mode==0)inventory[ItemCatalog.BED]--;
+        renderer.syncEditedBlock(world,x,y,z); renderer.syncEditedBlock(world,hx,y,hz);
+        renderer.swingHand(); copyInventoryToWorld();
+    }
+
+    private void enterBed(int x,int y,int z,int meta) {
+        if(!world.isNight()||sleepingInBed)return;
+        int facing=Block.bedFacing(meta);
+        if(Block.isBedHead(meta)){
+            x-=facing==1?-1:(facing==3?1:0);
+            z-=facing==0?1:(facing==2?-1:0);
+        }
+        sleepingInBed=true; sleepTicks=0;
+        sleepBedX=x; sleepBedY=y; sleepBedZ=z; sleepBedFacing=facing;
+        world.playerX=x+0.5f; world.playerY=y+9.0f/16.0f; world.playerZ=z+0.5f;
+        playerPhysics.reset(); cancelMining();
+    }
+
+    /** Jump exits immediately; 100 gameplay ticks (five seconds at 20 Hz) skip to dawn. */
+    private void leaveBed(boolean wokeAtDawn) {
+        if(!sleepingInBed)return;
+        int sx=sleepBedFacing==0?-1:(sleepBedFacing==2?1:0);
+        int sz=sleepBedFacing==1?-1:(sleepBedFacing==3?1:0);
+        world.playerX=sleepBedX+0.5f+sx*0.8f;
+        world.playerY=sleepBedY+9.0f/16.0f;
+        world.playerZ=sleepBedZ+0.5f+sz*0.8f;
+        sleepingInBed=false; sleepTicks=0;
+        if(wokeAtDawn)world.dayTime=0;
+        playerPhysics.reset();
+    }
+
+    private void breakBed(int x,int y,int z,int meta) {
+        int facing=Block.bedFacing(meta); boolean head=Block.isBedHead(meta);
+        int fx=x-(head?(facing==1?-1:(facing==3?1:0)):0);
+        int fz=z-(head?(facing==0?1:(facing==2?-1:0)):0);
+        int hx=fx+(facing==1?-1:(facing==3?1:0));
+        int hz=fz+(facing==0?1:(facing==2?-1:0));
+        if(world.get(fx,y,fz)==Block.WOOL&&Block.isBedMeta(world.metadataAt(fx,y,fz)))world.set(fx,y,fz,Block.AIR);
+        if(world.get(hx,y,hz)==Block.WOOL&&Block.isBedMeta(world.metadataAt(hx,y,hz)))world.set(hx,y,hz,Block.AIR);
+        if(world.mode==0)renderer.spawnDroppedItem(ItemCatalog.BED,fx,y,fz);
+        renderer.spawnBlockDestroy(x,y,z,134);
+        renderer.syncEditedBlock(world,fx,y,fz); renderer.syncEditedBlock(world,hx,y,hz);
+        renderer.swingHand();
     }
 
     /** Key 3 uses raw pork when selected; other items retain their place action. */
@@ -3126,7 +3214,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         while (true) {
             byte id = world.get(bx, by, bz);
             if (id != Block.AIR && (includeFluids || !Block.isFluid(id))) {
-                if (Block.isPartial(id)) {
+                if (Block.isPartial(id, world.metadataAt(bx, by, bz))) {
                     float hitDistance = Block.rayHitDistance(id, world.metadataAt(bx, by, bz),
                             ox, oy, oz, dirX, dirY, dirZ, bx, by, bz);
                     if (hitDistance < 0.0f || hitDistance > reach) {
