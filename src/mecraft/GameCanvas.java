@@ -1510,20 +1510,25 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
         int selectedItem = hotbar[world.selectedSlot];
         boolean coloredWool = ItemCatalog.isColoredWool(selectedItem);
-        // A second matching half-slab completes a full cube in the same cell.
-        if (target != null && Block.isSlab((byte)selectedItem) &&
-                targetBlock == (byte)selectedItem &&
-                (world.metadataAt(target[0], target[1], target[2]) & 3) != Block.SLAB_DOUBLE) {
-            if (world.mode == 0 && inventory[selectedItem] <= 0) return;
-            if (world.setBlockState(target[0], target[1], target[2], (byte)selectedItem, Block.SLAB_DOUBLE)) {
-                renderer.syncEditedBlock(world, target[0], target[1], target[2]);
-                renderer.swingHand();
-                if (world.mode == 0) {
-                    inventory[selectedItem]--;
-                    if (inventory[selectedItem] == 0) restoreHotbarItem(selectedItem);
+        // A side-click into the opposite half joins a matching slab into a double slab.
+        if (target != null && target[4] == 0 && Block.isSlab((byte)selectedItem) &&
+                targetBlock == (byte)selectedItem) {
+            int existingMeta = world.metadataAt(target[0], target[1], target[2]) & 3;
+            boolean clickedTopHalf = traceHitY > target[1] + 0.5f;
+            boolean existingTopHalf = existingMeta == Block.SLAB_TOP;
+            if (existingMeta != Block.SLAB_DOUBLE && clickedTopHalf != existingTopHalf) {
+                if (world.mode == 0 && inventory[selectedItem] <= 0) return;
+                if (world.setBlockState(target[0], target[1], target[2],
+                        (byte)selectedItem, Block.SLAB_DOUBLE)) {
+                    renderer.syncEditedBlock(world, target[0], target[1], target[2]);
+                    renderer.swingHand();
+                    if (world.mode == 0) {
+                        inventory[selectedItem]--;
+                        if (inventory[selectedItem] == 0) restoreHotbarItem(selectedItem);
+                    }
                 }
+                return;
             }
-            return;
         }
         if (target == null || target[3] == Integer.MIN_VALUE) {
             // Rails can be laid directly beneath the player, as in Alpha:
