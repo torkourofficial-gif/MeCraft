@@ -589,16 +589,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 leaveBed(true);
                 try { renderer.updateDayNight(world); } catch (Throwable ignored) { }
             }
-            if (sleepingInBed) {
-                // Keep the world clock, lighting, particles and camera alive while
-                // the player rests; only movement/combat input is suppressed.
-                renderer.updateCamera(world, cameraPitch);
-                renderer.updateParticles(world, world.yaw, cameraPitch);
-                return;
-            }
         } else if (wakeFadeTicks > 0) {
             wakeFadeTicks--;
         }
+        // Sleeping suppresses player controls, not the simulation: fluids,
+        // mobs, drops, particles and the world clock keep advancing.
+        boolean sleepingThisTick = sleepingInBed;
         gameUpdateStage = "actualizando fluidos";
         world.updateFluids();
         float forward = 0.0f;
@@ -607,7 +603,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (keys[8]) forward -= 1.0f;
         if (keys[6]) strafe += 1.0f;
         if (keys[4]) strafe -= 1.0f;
-        boolean canKeepSprinting = keys[2] && !keys[8] &&
+        if (sleepingThisTick) { forward = 0.0f; strafe = 0.0f; }
+        boolean canKeepSprinting = !sleepingThisTick && keys[2] && !keys[8] &&
                 !(world.mode == 1 && flying) && !playerPhysics.isInWater(world);
         if (sprinting && !canKeepSprinting) sprinting = false;
         boolean sprint = sprinting;
@@ -670,7 +667,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 activeBoat.update(world, 0.0f, 0.0f, false);
             }
         }
-        if (!ridingBoat && !ridingMinecart) {
+        if (!ridingBoat && !ridingMinecart && !sleepingThisTick) {
             gameUpdateStage = "actualizando física del jugador";
             fallDamage = playerPhysics.update(world, forward, strafe, jumpHeld,
                     world.mode == 1 && flying, descendHeld, sprint);
@@ -795,7 +792,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             }
         }
         gameUpdateStage = "procesando acciones y minería";
-        if (keys[1]) updateMining();
+        if (!sleepingThisTick && keys[1]) updateMining();
         gameUpdateStage = "actualizando cámara";
         try {
             renderer.updateFieldOfView(sprinting);
