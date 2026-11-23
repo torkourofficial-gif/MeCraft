@@ -570,19 +570,7 @@ final class Block {
         return sideTile(id);
     }
 
-    /** Beta 1.8.1 bed atlas mapping, using ModelBed.bedDirection. */
-    static boolean bedFaceFlip(int meta, int face) {
-        int facing = bedFacing(meta) & 3;
-        // Beta RenderBlocks face order is bottom, top, east, west, north, south.
-        // This renderer uses top, west, east, north, south, bottom.
-        int betaFace = face == 0 ? 1 : (face == 1 ? 3 : (face == 2 ? 2 :
-                (face == 3 ? 4 : (face == 4 ? 5 : 0))));
-        int direction = BED_DIRECTION[facing][betaFace];
-        int flipFace = facing == 0 ? 5 : (facing == 1 ? 3 :
-                (facing == 2 ? 4 : 2));
-        return betaFace == flipFace;
-    }
-
+    /** Exact texture selection from Beta 1.8.1 BlockBed.getBlockTextureFromSideAndMetadata. */
     private static final int[][] BED_DIRECTION = {
         {1, 0, 3, 2, 5, 4},
         {1, 0, 5, 4, 2, 3},
@@ -590,24 +578,28 @@ final class Block {
         {1, 0, 4, 5, 3, 2}
     };
 
-    static int bedFaceTile(int meta, int face) {
-        boolean head = isBedHead(meta);
-        // Renderer face order: top, west, east, north, south, bottom.
-        if (face == 0) return head ? 134 : 135;
-        if (face == 5) return atlasTile(PLANKS);
-
+    static boolean bedFaceFlip(int meta, int face) {
         int facing = bedFacing(meta) & 3;
         int betaFace = face == 1 ? 3 : (face == 2 ? 2 : (face == 3 ? 4 : 5));
-        int direction = BED_DIRECTION[facing][betaFace];
+        int flipFace = facing == 0 ? 5 : (facing == 1 ? 3 :
+                (facing == 2 ? 4 : 2));
+        return betaFace == flipFace;
+    }
 
-        // Each long side is split across the two bed halves: the head uses
-        // tile 150 and the foot uses 151. End caps use 149 (head) / 152 (foot).
-        if (head) {
-            if (direction == 3) return 149;
-            return direction == 4 || direction == 5 ? 150 : 134;
+    static int bedFaceTile(int meta, int face) {
+        if (face == 5) return atlasTile(PLANKS); // BlockBed side 0
+        int facing = bedFacing(meta) & 3;
+        int betaFace = face == 0 ? 1 : (face == 1 ? 3 :
+                (face == 2 ? 2 : (face == 3 ? 4 : 5)));
+        int direction = BED_DIRECTION[facing][betaFace];
+        boolean foot = !isBedHead(meta);
+        // Literal port of BlockBed's atlas-offset conditions (base tile 134).
+        if (foot) {
+            if (direction == 2) return 152;       // base + 2 + 16
+            return direction != 5 && direction != 4 ? 135 : 151;
         }
-        if (direction == 2) return 152;
-        return direction == 4 || direction == 5 ? 151 : 135;
+        if (direction == 3) return 149;           // base - 1 + 16
+        return direction != 5 && direction != 4 ? 134 : 150;
     }
 
     static int renderTile(byte id, int face, int woolColor) {
