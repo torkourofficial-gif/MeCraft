@@ -1387,6 +1387,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             int blockMeta = world.metadataAt(x, y, z);
             if (id == Block.WOOL && Block.isBedMeta(blockMeta)) {
                 breakBed(x, y, z, blockMeta);
+                if (world.mode == 0)
+                    damageTool(heldItem, ItemCatalog.durabilityCost(heldItem));
                 resetMining(); miningHitWait = 5; return;
             }
             boolean canHarvest = Block.canHarvest(id, heldItem);
