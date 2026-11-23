@@ -2650,6 +2650,12 @@ final class ChunkRenderer {
 
     private void addPartialBlockGeometry(FaceBuilder[] builders, FaceBuilder[] tails,
             int x, int y, int z, byte id, int meta, int light) {
+        if (id == Block.WOOL && Block.isBedMeta(meta)) {
+            // Original BlockBed bounds: full footprint and 9/16 block height.
+            addPartialBox(builders, tails, id, x, y, z, 0, 0, 0, 16, 9, 16,
+                    light, true, true, true, true, true, true);
+            return;
+        }
         if (Block.isSlab(id)) {
             addPartialBox(builders, tails, id, x, y, z,
                     toSixteenths(Block.boxMinX(id,meta,0)), toSixteenths(Block.boxMinY(id,meta,0)),
@@ -2811,8 +2817,8 @@ final class ChunkRenderer {
                 for (int lx = sectorX; lx < sectorX + SECTOR_SIZE_X; lx++) {
                     int vi = (ly * VoxelWorld.CHUNK_XZ + lz) * VoxelWorld.CHUNK_XZ + lx;
                     byte partialId = chunkVoxelScratch[vi];
-                    if (!Block.isPartial(partialId)) continue;
                     int meta = snapshot.metadata(lx, ly, lz);
+                    if (!Block.isPartial(partialId, meta)) continue;
                     addPartialBlockGeometry(builders, builderTails, lx, ly, lz,
                             partialId, meta, chunkLightScratch[vi] & 255);
                 }
@@ -2845,7 +2851,7 @@ final class ChunkRenderer {
                                 VoxelWorld.CHUNK_XZ + (x - x0);
                         byte id = chunkVoxelScratch[voxelIndex];
                         int key = 0;
-                        if (id != Block.AIR && !Block.isPartial(id) && id != Block.RAIL && id != Block.END_PORTAL_FRAME && !Block.isFlower(id) && !Block.isDoor(id) &&
+                        if (id != Block.AIR && !Block.isPartial(id, snapshot.metadata(x - x0, y - y0, z - z0)) && id != Block.RAIL && id != Block.END_PORTAL_FRAME && !Block.isFlower(id) && !Block.isDoor(id) &&
                             !(face == 5 && y == 0)) {
                             int nx = x, ny = y, nz = z;
                             if (face == 0) ny++;
