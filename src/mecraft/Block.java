@@ -592,7 +592,7 @@ final class Block {
         int betaFace = face == 0 ? 1 : (face == 1 ? 3 :
                 (face == 2 ? 2 : (face == 3 ? 4 : 5)));
         int direction = BED_DIRECTION[facing][betaFace];
-        boolean foot = !isBedHead(meta);
+        boolean foot = isBedHead(meta); // The head half uses Beta's foot-texture branch in this metadata layout.
         // Literal port of BlockBed's atlas-offset conditions (base tile 134).
         if (foot) {
             if (direction == 2) return 152;       // base + 2 + 16
