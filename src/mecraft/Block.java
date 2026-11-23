@@ -464,6 +464,8 @@ final class Block {
     }
 
     static boolean faceVisible(byte current, byte neighbor) {
+        // Keep the uncovered part of a full cube visible beside a half block.
+        if (isPartial(neighbor)) return true;
         if (neighbor == AIR || neighbor == END_PORTAL || neighbor == END_PORTAL_FRAME || isFlower(neighbor) || isDoor(neighbor) || neighbor == RAIL) return true;
         if (isFluid(neighbor)) return current != neighbor;
         if (neighbor == LEAVES) return current != LEAVES;
