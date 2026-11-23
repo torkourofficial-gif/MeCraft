@@ -1774,7 +1774,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if(!world.setBlockState(hx,y,hz,Block.WOOL,meta|Block.BED_HEAD)){
             world.set(x,y,z,Block.AIR); return;
         }
-        if(world.mode==0)inventory[ItemCatalog.BED]--;
+        if(world.mode==0){
+            inventory[ItemCatalog.BED]--;
+            if(inventory[ItemCatalog.BED]==0)restoreHotbarItem(ItemCatalog.BED);
+        }
         renderer.syncEditedBlock(world,x,y,z); renderer.syncEditedBlock(world,hx,y,hz);
         renderer.swingHand(); copyInventoryToWorld();
     }
