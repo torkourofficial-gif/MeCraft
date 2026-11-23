@@ -587,19 +587,15 @@ final class Block {
     }
 
     static int bedFaceTile(int meta, int face) {
-        if (face == 5) return atlasTile(PLANKS); // BlockBed side 0
+        if (face == 5) return atlasTile(PLANKS); // underside
+        // All four vertical faces (both long sides and both ends) use tile 134.
+        // Keep the original front/top texture selection unchanged.
+        if (face != 0) return 134;
         int facing = bedFacing(meta) & 3;
-        int betaFace = face == 0 ? 1 : (face == 1 ? 3 :
-                (face == 2 ? 2 : (face == 3 ? 4 : 5)));
-        int direction = BED_DIRECTION[facing][betaFace];
-        boolean foot = isBedHead(meta); // The head half uses Beta's foot-texture branch in this metadata layout.
-        // Literal port of BlockBed's atlas-offset conditions (base tile 134).
-        if (foot) {
-            if (direction == 2) return 152;       // head/foot end cap
-            return direction != 5 && direction != 4 ? 135 : 134;
-        }
-        if (direction == 3) return 149;           // opposite end cap
-        return 134;                               // every long lateral face uses tile 134
+        int direction = BED_DIRECTION[facing][1];
+        boolean foot = isBedHead(meta);
+        if (foot) return direction != 5 && direction != 4 ? 135 : 134;
+        return 134;
     }
 
     static int renderTile(byte id, int face, int woolColor) {
