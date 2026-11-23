@@ -571,6 +571,14 @@ final class Block {
     }
 
     /** Beta 1.8.1 BlockBed texture selection (terrain.png tiles 134-152). */
+    static boolean bedFaceFlip(int meta, int face) {
+        int direction = bedFacing(meta) & 3;
+        int flipSide = direction == 0 ? 5 : (direction == 1 ? 3 :
+                (direction == 3 ? 2 : 4));
+        final int[] sideOrder = new int[] { 1, 4, 5, 2, 3, 0 };
+        return sideOrder[face] == flipSide;
+    }
+
     static int bedFaceTile(int meta, int face) {
         // Renderer face order is top, -X, +X, -Z, +Z, bottom;
         // BlockBed's original side order is bottom, top, north, south, west, east.
