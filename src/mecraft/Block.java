@@ -327,6 +327,16 @@ final class Block {
         return box == 0 ? ((meta & STAIR_TOP) != 0 ? 1.0f : 0.5f) :
                           ((meta & STAIR_TOP) != 0 ? 0.5f : 1.0f);
     }
+    static boolean intersectsPlayer(byte id, int meta, int bx, int by, int bz,
+            float px, float py, float pz, float radius, float height) {
+        for (int i=0; i<collisionBoxCount(id,meta); i++) {
+            if (bx + boxMaxX(id,meta,i) > px-radius && bx + boxMinX(id,meta,i) < px+radius &&
+                bz + boxMaxZ(id,meta,i) > pz-radius && bz + boxMinZ(id,meta,i) < pz+radius &&
+                by + boxMaxY(id,meta,i) > py && by + boxMinY(id,meta,i) < py+height) return true;
+        }
+        return false;
+    }
+
     static float rayHitDistance(byte id, int meta, float ox, float oy, float oz,
             float dx, float dy, float dz, int bx, int by, int bz) {
         float best = Float.MAX_VALUE;
