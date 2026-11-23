@@ -572,13 +572,17 @@ final class Block {
 
     /** Beta 1.8.1 BlockBed texture selection (terrain.png tiles 134-152). */
     static int bedFaceTile(int meta, int face) {
-        if (face == 5) return atlasTile(PLANKS);
+        // Renderer face order is top, -X, +X, -Z, +Z, bottom;
+        // BlockBed's original side order is bottom, top, north, south, west, east.
+        final int[] sideOrder = new int[] { 1, 4, 5, 2, 3, 0 };
+        int sideIndex = sideOrder[face];
+        if (sideIndex == 0) return atlasTile(PLANKS);
         final int[][] bedDirection = new int[][] {
             {1,0,3,2,5,4}, {1,0,5,4,2,3},
             {1,0,2,3,4,5}, {1,0,4,5,3,2}
         };
         int direction = bedFacing(meta) & 3;
-        int side = bedDirection[direction][face];
+        int side = bedDirection[direction][sideIndex];
         if (isBedHead(meta)) {
             if (side == 3) return 149;
             return side != 5 && side != 4 ? 134 : 150;
