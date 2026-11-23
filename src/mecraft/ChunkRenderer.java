@@ -2727,8 +2727,10 @@ final class ChunkRenderer {
     private void addPartialBedFace(FaceBuilder[] builders, FaceBuilder[] tails,
             int x,int y,int z,int meta,int x0,int y0,int z0,int x1,int y1,int z1,
             int face,int light) {
+        int tile = Block.bedFaceTile(meta, face);
+        if (tile < 0) return;
         addPartialFaceTile(builders,tails,x,y,z,x0,y0,z0,x1,y1,z1,
-                face,light,Block.bedFaceTile(meta,face));
+                face,light,tile);
     }
 
     private void addPartialFace(FaceBuilder[] builders, FaceBuilder[] tails, byte id,
