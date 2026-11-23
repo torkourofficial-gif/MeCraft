@@ -2651,8 +2651,8 @@ final class ChunkRenderer {
     private void addPartialBlockGeometry(FaceBuilder[] builders, FaceBuilder[] tails,
             int x, int y, int z, byte id, int meta, int light) {
         if (id == Block.WOOL && Block.isBedMeta(meta)) {
-            // Beta bed model: wool mattress above four short wooden corner legs.
-            addPartialBox(builders, tails, id, x, y, z, 0, 3, 0, 16, 9, 16,
+            // Beta 1.8.1 mattress uses the six original head/foot terrain tiles.
+            addPartialBedBox(builders, tails, x, y, z, meta, 0, 3, 0, 16, 9, 16,
                     light, true, false, true, true, true, true);
             addPartialBox(builders, tails, Block.PLANKS, x, y, z, 0, 0, 0, 3, 3, 3,
                     light, false, false, true, true, true, true);
@@ -2713,10 +2713,34 @@ final class ChunkRenderer {
         if (bottom) addPartialFace(builders,tails,id,x,y,z,x0,y0,z0,x1,y1,z1,5,light,0,0,0,0);
     }
 
+    private void addPartialBedBox(FaceBuilder[] builders, FaceBuilder[] tails,
+            int x,int y,int z,int meta,int x0,int y0,int z0,int x1,int y1,int z1,int light,
+            boolean top,boolean bottom,boolean west,boolean east,boolean north,boolean south) {
+        if (top) addPartialBedFace(builders,tails,x,y,z,meta,x0,y0,z0,x1,y1,z1,0,light);
+        if (west) addPartialBedFace(builders,tails,x,y,z,meta,x0,y0,z0,x1,y1,z1,1,light);
+        if (east) addPartialBedFace(builders,tails,x,y,z,meta,x0,y0,z0,x1,y1,z1,2,light);
+        if (north) addPartialBedFace(builders,tails,x,y,z,meta,x0,y0,z0,x1,y1,z1,3,light);
+        if (south) addPartialBedFace(builders,tails,x,y,z,meta,x0,y0,z0,x1,y1,z1,4,light);
+        if (bottom) addPartialBedFace(builders,tails,x,y,z,meta,x0,y0,z0,x1,y1,z1,5,light);
+    }
+
+    private void addPartialBedFace(FaceBuilder[] builders, FaceBuilder[] tails,
+            int x,int y,int z,int meta,int x0,int y0,int z0,int x1,int y1,int z1,
+            int face,int light) {
+        addPartialFaceTile(builders,tails,x,y,z,x0,y0,z0,x1,y1,z1,
+                face,light,Block.bedFaceTile(meta,face));
+    }
+
     private void addPartialFace(FaceBuilder[] builders, FaceBuilder[] tails, byte id,
             int x,int y,int z,int x0,int y0,int z0,int x1,int y1,int z1,
             int face,int light,int unused0,int unused1,int unused2,int unused3) {
-        int tile = Block.faceTile(id, face);
+        addPartialFaceTile(builders,tails,x,y,z,x0,y0,z0,x1,y1,z1,
+                face,light,Block.faceTile(id,face));
+    }
+
+    private void addPartialFaceTile(FaceBuilder[] builders, FaceBuilder[] tails,
+            int x,int y,int z,int x0,int y0,int z0,int x1,int y1,int z1,
+            int face,int light,int tile) {
         FaceBuilder builder = tails[tile];
         if (builder == null) {
             builder = acquireFaceBuilder(tile);
