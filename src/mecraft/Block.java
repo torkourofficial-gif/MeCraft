@@ -23,6 +23,10 @@ final class Block {
     static final byte WOOL = 18;
     static final byte TNT = 19;
     static final int WOOL_TINT_TILE_START = 240;
+    // Reuse formerly unnamed palette slots so saved item IDs remain stable.
+    static final byte WOOD_SLAB = 27, WOOD_STAIRS = 28, STONE_STAIRS = 29;
+    static final int SLAB_BOTTOM = 0, SLAB_TOP = 1, SLAB_DOUBLE = 2;
+    static final int STAIR_TOP = 4;
 
     static final int LEGACY_COUNT = 14;
     static final int DECORATIVE_START = 20;
@@ -167,6 +171,9 @@ final class Block {
             }
             if (!duplicate) temporary[count++] = id;
         }
+        temporary[count++] = WOOD_SLAB;
+        temporary[count++] = WOOD_STAIRS;
+        temporary[count++] = STONE_STAIRS;
         // The chest is a real placeable block even if its tile is unnamed.
         int chest = findTileBlock(85);
         if (chest > 0 && chest < COUNT) {
@@ -205,6 +212,9 @@ final class Block {
         int[] basic = new int[] { 0,0,2,1,18,205,20,52,17,34,33,4,59,16,2,12,13,80,64,8 };
         System.arraycopy(basic, 0, result, 0, basic.length);
         for (int i = 0; i < EXTRA_TILES.length; i++) result[DECORATIVE_START + i] = EXTRA_TILES[i];
+        result[WOOD_SLAB] = 4;
+        result[WOOD_STAIRS] = 4;
+        result[STONE_STAIRS] = 16;
         result[COUNT - 1] = 256; // Internal special block: no terrain-atlas tile.
         return result;
     }
@@ -221,6 +231,9 @@ final class Block {
             String name = alphaBlockName(EXTRA_TILES[i]);
             result[DECORATIVE_START + i] = name == null ? "Bloque sin nombre" : name;
         }
+        result[WOOD_SLAB] = "Losa de madera";
+        result[WOOD_STAIRS] = "Escaleras de madera";
+        result[STONE_STAIRS] = "Escaleras de piedra";
         result[COUNT - 1] = "Portal del End";
         return result;
     }
@@ -280,6 +293,64 @@ final class Block {
     private Block() { }
 
     static boolean isDoor(byte id) { return id == DOOR || id == IRON_DOOR; }
+
+    static boolean isSlab(byte id) { return id == STONE_SLAB || id == WOOD_SLAB; }
+    static boolean isStairs(byte id) { return id == WOOD_STAIRS || id == STONE_STAIRS; }
+    static boolean isPartial(byte id) { return isSlab(id) || isStairs(id); }
+
+    static int collisionBoxCount(byte id, int meta) { return isStairs(id) ? 2 : 1; }
+    static float boxMinX(byte id, int meta, int box) {
+        if (!isStairs(id) || box == 0) return 0.0f;
+        return (meta & 3) == 1 ? 0.5f : 0.0f;
+    }
+    static float boxMaxX(byte id, int meta, int box) {
+        if (!isStairs(id) || box == 0) return 1.0f;
+        return (meta & 3) == 3 ? 0.5f : 1.0f;
+    }
+    static float boxMinZ(byte id, int meta, int box) {
+        if (!isStairs(id) || box == 0) return 0.0f;
+        return (meta & 3) == 2 ? 0.5f : 0.0f;
+    }
+    static float boxMaxZ(byte id, int meta, int box) {
+        if (!isStairs(id) || box == 0) return 1.0f;
+        return (meta & 3) == 0 ? 0.5f : 1.0f;
+    }
+    static float boxMinY(byte id, int meta, int box) {
+        if (isSlab(id)) return (meta & 3) == SLAB_TOP ? 0.5f : 0.0f;
+        if (!isStairs(id)) return 0.0f;
+        return box == 0 ? ((meta & STAIR_TOP) != 0 ? 0.5f : 0.0f) :
+                          ((meta & STAIR_TOP) != 0 ? 0.0f : 0.5f);
+    }
+    static float boxMaxY(byte id, int meta, int box) {
+        if (isSlab(id)) return (meta & 3) == SLAB_BOTTOM ? 0.5f : 1.0f;
+        if (!isStairs(id)) return 1.0f;
+        return box == 0 ? ((meta & STAIR_TOP) != 0 ? 1.0f : 0.5f) :
+                          ((meta & STAIR_TOP) != 0 ? 0.5f : 1.0f);
+    }
+    static float rayHitDistance(byte id, int meta, float ox, float oy, float oz,
+            float dx, float dy, float dz, int bx, int by, int bz) {
+        float best = Float.MAX_VALUE;
+        for (int i = 0; i < collisionBoxCount(id, meta); i++) {
+            float[] lo = new float[] { bx + boxMinX(id,meta,i), by + boxMinY(id,meta,i), bz + boxMinZ(id,meta,i) };
+            float[] hi = new float[] { bx + boxMaxX(id,meta,i), by + boxMaxY(id,meta,i), bz + boxMaxZ(id,meta,i) };
+            float[] o = new float[] {ox,oy,oz}, d = new float[] {dx,dy,dz};
+            float near = 0.0f, far = Float.MAX_VALUE;
+            for (int axis=0; axis<3; axis++) {
+                if (Math.abs(d[axis]) < 0.000001f) {
+                    if (o[axis] < lo[axis] || o[axis] > hi[axis]) { near = Float.MAX_VALUE; break; }
+                } else {
+                    float a=(lo[axis]-o[axis])/d[axis], c=(hi[axis]-o[axis])/d[axis];
+                    if (a>c) { float q=a; a=c; c=q; }
+                    if (a>near) near=a;
+                    if (c<far) far=c;
+                    if (far<near) { near=Float.MAX_VALUE; break; }
+                }
+            }
+            if (near != Float.MAX_VALUE && far >= 0.0f && near < best) best = near;
+        }
+        return best == Float.MAX_VALUE ? -1.0f : best;
+    }
+
 
     static boolean solid(byte id) {
         return id != AIR && !isFluid(id) && !isDoor(id) && id != RAIL && !isFlower(id) && id != TORCH;
@@ -361,6 +432,8 @@ final class Block {
         if (isFlower(id) || id == TNT || id == RAIL) return 0;
         if (isFluid(id)) return 1000;
         if (id == LEAVES) return 2;
+        if (id == WOOD_SLAB || id == WOOD_STAIRS) return 20;
+        if (id == STONE_SLAB || id == STONE_STAIRS) return 20;
         if (id == SNOW || id == CACTUS) return 5;
         if (id == DIRT || id == SAND) return 5;
         if (id == GRASS) return 6;
@@ -391,6 +464,9 @@ final class Block {
     }
 
     static int topTile(byte id) {
+        if (id == WOOD_SLAB || id == WOOD_STAIRS) return 4;
+        if (id == STONE_SLAB) return 6;
+        if (id == STONE_STAIRS) return 1;
         if (id == END_PORTAL_FRAME) return 158;
         // Alpha 1.2.6 BlockChest: blockIndexInTexture=26, top/bottom use 26-1.
         if (id == CHEST) return 25;
@@ -405,6 +481,9 @@ final class Block {
     }
 
     static int sideTile(byte id) {
+        if (id == WOOD_SLAB || id == WOOD_STAIRS) return 4;
+        if (id == STONE_SLAB) return 6;
+        if (id == STONE_STAIRS) return 16;
         if (id == END_PORTAL_FRAME) return 159;
         // Alpha 1.2.6 BlockChest: ordinary sides use tile 26; the front is 27.
         if (id == CHEST) return 26;
