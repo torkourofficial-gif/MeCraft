@@ -27,6 +27,12 @@ final class Block {
     static final byte WOOD_SLAB = 27, WOOD_STAIRS = 28, STONE_STAIRS = 29;
     static final int SLAB_BOTTOM = 0, SLAB_TOP = 1, SLAB_DOUBLE = 2;
     static final int STAIR_TOP = 4;
+    // Beta 1.8.1 bed halves reuse wool metadata; block/item IDs stay compatible.
+    static final int BED_MARKER = 0x40, BED_HEAD = 0x80;
+    static final int BED_FACING_SHIFT = 4, BED_FACING_MASK = 0x30;
+    static boolean isBedMeta(int meta) { return (meta & BED_MARKER) != 0; }
+    static boolean isBedHead(int meta) { return (meta & BED_HEAD) != 0; }
+    static int bedFacing(int meta) { return (meta & BED_FACING_MASK) >> BED_FACING_SHIFT; }
 
     static final int LEGACY_COUNT = 14;
     static final int DECORATIVE_START = 20;
@@ -297,6 +303,7 @@ final class Block {
     static boolean isSlab(byte id) { return id == STONE_SLAB || id == WOOD_SLAB; }
     static boolean isStairs(byte id) { return id == WOOD_STAIRS || id == STONE_STAIRS; }
     static boolean isPartial(byte id) { return isSlab(id) || isStairs(id); }
+    static boolean isPartial(byte id, int meta) { return isPartial(id) || (id == WOOL && isBedMeta(meta)); }
 
     static int collisionBoxCount(byte id, int meta) { return isStairs(id) ? 2 : 1; }
     static float boxMinX(byte id, int meta, int box) {
@@ -316,12 +323,14 @@ final class Block {
         return (meta & 3) == 0 ? 0.5f : 1.0f;
     }
     static float boxMinY(byte id, int meta, int box) {
+        if (id == WOOL && isBedMeta(meta)) return 0.0f;
         if (isSlab(id)) return (meta & 3) == SLAB_TOP ? 0.5f : 0.0f;
         if (!isStairs(id)) return 0.0f;
         return box == 0 ? ((meta & STAIR_TOP) != 0 ? 0.5f : 0.0f) :
                           ((meta & STAIR_TOP) != 0 ? 0.0f : 0.5f);
     }
     static float boxMaxY(byte id, int meta, int box) {
+        if (id == WOOL && isBedMeta(meta)) return 9.0f / 16.0f;
         if (isSlab(id)) return (meta & 3) == SLAB_BOTTOM ? 0.5f : 1.0f;
         if (!isStairs(id)) return 1.0f;
         return box == 0 ? ((meta & STAIR_TOP) != 0 ? 1.0f : 0.5f) :
