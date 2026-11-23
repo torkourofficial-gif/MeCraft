@@ -268,6 +268,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private int pendingIronDoorX = Integer.MIN_VALUE, pendingIronDoorY, pendingIronDoorZ;
     private int pendingIronDoorTicks;
     private final int[] traceResult = new int[6];
+    private float traceHitY;
     private float lookRayYaw, lookRayPitch;
     private boolean lookRayValid;
     private double lookRaySinYaw, lookRayCosYaw, lookRaySinPitch, lookRayCosPitch;
@@ -1379,8 +1380,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 miningDamage = 0.99f;
                 return;
             }
-            if (world.mode == 0 && Block.dropsItem(id) && canHarvest)
+            if (world.mode == 0 && Block.dropsItem(id) && canHarvest) {
                 renderer.spawnDroppedItem(dropId, x, y, z);
+                if (Block.isSlab(id) && (world.metadataAt(x, y, z) & 3) == Block.SLAB_DOUBLE)
+                    renderer.spawnDroppedItem(dropId, x, y, z);
+            }
             renderer.swingHand();
             if (y + 1 < VoxelWorld.HEIGHT) {
                 byte above = world.get(x, y + 1, z);
@@ -1505,6 +1509,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
         int selectedItem = hotbar[world.selectedSlot];
         boolean coloredWool = ItemCatalog.isColoredWool(selectedItem);
+        // A second matching half-slab completes a full cube in the same cell.
+        if (target != null && Block.isSlab((byte)selectedItem) &&
+                targetBlock == (byte)selectedItem &&
+                (world.metadataAt(target[0], target[1], target[2]) & 3) != Block.SLAB_DOUBLE) {
+            if (world.mode == 0 && inventory[selectedItem] <= 0) return;
+            if (world.setBlockState(target[0], target[1], target[2], (byte)selectedItem, Block.SLAB_DOUBLE)) {
+                renderer.syncEditedBlock(world, target[0], target[1], target[2]);
+                renderer.swingHand();
+                if (world.mode == 0) {
+                    inventory[selectedItem]--;
+                    if (inventory[selectedItem] == 0) restoreHotbarItem(selectedItem);
+                }
+            }
+            return;
+        }
         if (target == null || target[3] == Integer.MIN_VALUE) {
             // Rails can be laid directly beneath the player, as in Alpha:
             // use the block underfoot as the support when the ray misses.
@@ -1561,14 +1580,24 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (block == Block.RAIL && !Block.solid(world.get(x, y - 1, z))) return;
         if (!canPlaceAlphaPlant((byte)block, x, y, z)) return;
         float px = world.playerX, py = world.playerY, pz = world.playerZ;
-        if (block != Block.RAIL &&
-            x + 1.0f > px - PLAYER_RADIUS && x < px + PLAYER_RADIUS &&
-            z + 1.0f > pz - PLAYER_RADIUS && z < pz + PLAYER_RADIUS &&
-            y + 1.0f > py && y < py + PLAYER_HEIGHT) return;
+        if (block != Block.RAIL) {
+            if (Block.isPartial((byte)block)) {
+                int placementMeta = placementMetadata((byte)block, target, x, y, z);
+                if (Block.intersectsPlayer((byte)block, placementMeta, x, y, z,
+                        px, py, pz, PLAYER_RADIUS, PLAYER_HEIGHT)) return;
+            } else if (x + 1.0f > px - PLAYER_RADIUS && x < px + PLAYER_RADIUS &&
+                    z + 1.0f > pz - PLAYER_RADIUS && z < pz + PLAYER_RADIUS &&
+                    y + 1.0f > py && y < py + PLAYER_HEIGHT) return;
+        }
         if (world.mode == 0 && inventory[selectedItem] <= 0) return;
         if (!Block.replaceable(world.get(x, y, z))) return;
+        int placementMeta = Block.isPartial((byte)block) ?
+                placementMetadata((byte)block, target, x, y, z) : 0;
         boolean placed = coloredWool ? world.setWool(x, y, z,
-                ItemCatalog.woolColor(selectedItem)) : world.set(x, y, z, (byte)block);
+                ItemCatalog.woolColor(selectedItem)) :
+                (Block.isPartial((byte)block) ?
+                    world.setBlockState(x, y, z, (byte)block, placementMeta) :
+                    world.set(x, y, z, (byte)block));
         if (!placed) return;
         if (block == Block.END_PORTAL_FRAME) {
             int facing = (floorBlock(world.yaw * 4.0f / 360.0f + 0.5f) + 2) & 3;
@@ -1592,6 +1621,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
     }
 
+
+    private int placementMetadata(byte block, int[] target, int x, int y, int z) {
+        boolean upsideDown = target[4] == -1 ||
+                (target[4] == 0 && traceHitY > target[1] + 0.5f);
+        if (Block.isSlab(block)) return upsideDown ? Block.SLAB_TOP : Block.SLAB_BOTTOM;
+        int facing = (2 - floorBlock((world.yaw + 45.0f) / 90.0f)) & 3;
+        return facing | (upsideDown ? Block.STAIR_TOP : 0);
+    }
 
     private boolean railExistsNear(int x, int y, int z) {
         return world.get(x, y, z) == Block.RAIL ||
@@ -3061,6 +3098,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         // Start at the same 0.35-block near offset as the old ray marcher, then
         // visit each voxel crossed by the ray exactly once (Amanatides-Woo DDA).
         float start = 0.35f;
+        float enteredAt = start;
         int bx = floorBlock(ox + dirX * start);
         int by = floorBlock(oy + dirY * start);
         int bz = floorBlock(oz + dirZ * start);
@@ -3080,10 +3118,25 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         while (true) {
             byte id = world.get(bx, by, bz);
             if (id != Block.AIR && (includeFluids || !Block.isFluid(id))) {
-                int[] hit = traceResult;
-                hit[0] = bx; hit[1] = by; hit[2] = bz;
-                hit[3] = oldX - bx; hit[4] = oldY - by; hit[5] = oldZ - bz;
-                return hit;
+                if (Block.isPartial(id)) {
+                    float hitDistance = Block.rayHitDistance(id, world.metadataAt(bx, by, bz),
+                            ox, oy, oz, dirX, dirY, dirZ, bx, by, bz);
+                    if (hitDistance < 0.0f || hitDistance > reach) {
+                        // The ray crossed the voxel's empty portion; keep walking.
+                    } else {
+                        traceHitY = oy + dirY * hitDistance;
+                        int[] hit = traceResult;
+                        hit[0] = bx; hit[1] = by; hit[2] = bz;
+                        hit[3] = oldX - bx; hit[4] = oldY - by; hit[5] = oldZ - bz;
+                        return hit;
+                    }
+                } else {
+                    traceHitY = oy + dirY * enteredAt;
+                    int[] hit = traceResult;
+                    hit[0] = bx; hit[1] = by; hit[2] = bz;
+                    hit[3] = oldX - bx; hit[4] = oldY - by; hit[5] = oldZ - bz;
+                    return hit;
+                }
             }
             oldX = bx; oldY = by; oldZ = bz;
             float next = Math.min(maxX, Math.min(maxY, maxZ));
@@ -3092,6 +3145,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             if (maxX <= next + 0.00001f) { bx += stepX; maxX += deltaX; }
             if (maxY <= next + 0.00001f) { by += stepY; maxY += deltaY; }
             if (maxZ <= next + 0.00001f) { bz += stepZ; maxZ += deltaZ; }
+            enteredAt = next;
         }
     }
 
