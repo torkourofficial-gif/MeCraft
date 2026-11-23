@@ -12,7 +12,11 @@ final class Crafting {
     static final int DOOR = BASIC_RECIPES;
     static final int IRON_DOOR = BASIC_RECIPES + 1;
     static final int FURNACE_RECIPE = BASIC_RECIPES + 2;
-    static final int TOOL_RECIPES = BASIC_RECIPES + 3;
+    static final int WOOD_SLAB_RECIPE = BASIC_RECIPES + 3;
+    static final int STONE_SLAB_RECIPE = BASIC_RECIPES + 4;
+    static final int WOOD_STAIRS_RECIPE = BASIC_RECIPES + 5;
+    static final int STONE_STAIRS_RECIPE = BASIC_RECIPES + 6;
+    static final int TOOL_RECIPES = BASIC_RECIPES + 7;
     private static final int TOOL_RECIPE_COUNT = ItemCatalog.TOOL_KINDS * ItemCatalog.TOOL_TIERS;
     private static final int FOOD_AND_ITEM_RECIPES = 12;
     private static final int ARMOR_RECIPES = 4 * 4;
@@ -37,6 +41,10 @@ final class Crafting {
         setRecipe(IRON_DOOR, ItemCatalog.IRON_DOOR, 3, "3 Puertas de hierro",
                 ItemCatalog.IRON_INGOT, 6);
         setRecipe(FURNACE_RECIPE, Block.FURNACE, 1, "Horno", Block.COBBLESTONE, 8);
+        setRecipe(WOOD_SLAB_RECIPE, Block.WOOD_SLAB, 6, "6 Losas de madera", Block.PLANKS, 3);
+        setRecipe(STONE_SLAB_RECIPE, Block.STONE_SLAB, 6, "6 Losas de piedra", Block.STONE, 3);
+        setRecipe(WOOD_STAIRS_RECIPE, Block.WOOD_STAIRS, 4, "4 Escaleras de madera", Block.PLANKS, 6);
+        setRecipe(STONE_STAIRS_RECIPE, Block.STONE_STAIRS, 4, "4 Escaleras de piedra", Block.COBBLESTONE, 6);
         for (int tier = 0; tier < ItemCatalog.TOOL_TIERS; tier++) {
             int material = ItemCatalog.materialItem(tier);
             for (int kind = 0; kind < ItemCatalog.TOOL_KINDS; kind++) {
