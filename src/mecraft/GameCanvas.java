@@ -213,6 +213,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private boolean ridingMinecart;
     private boolean sleepingInBed;
     private int sleepTicks, sleepBedX, sleepBedY, sleepBedZ, sleepBedFacing;
+    private int wakeFadeTicks;
+    private float sleepSavedYaw, sleepSavedPitch;
     private MusicController music;
     private SkinGallery skinGallery;
     private Image title;
@@ -587,7 +589,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 leaveBed(true);
                 try { renderer.updateDayNight(world); } catch (Throwable ignored) { }
             }
-            return;
+            if (sleepingInBed) {
+                // Keep the world clock, lighting, particles and camera alive while
+                // the player rests; only movement/combat input is suppressed.
+                renderer.updateCamera(world, cameraPitch);
+                renderer.updateParticles(world, world.yaw, cameraPitch);
+                return;
+            }
+        } else if (wakeFadeTicks > 0) {
+            wakeFadeTicks--;
         }
         gameUpdateStage = "actualizando fluidos";
         world.updateFluids();
@@ -1800,9 +1810,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
            Block.isBedHead(footMeta) || Block.bedFacing(footMeta)!=facing ||
            world.get(headX,y,headZ)!=Block.WOOL || !Block.isBedMeta(headMeta) ||
            !Block.isBedHead(headMeta) || Block.bedFacing(headMeta)!=facing) return;
-        sleepingInBed=true; sleepTicks=0;
+        sleepingInBed=true; sleepTicks=0; wakeFadeTicks=0;
+        sleepSavedYaw=world.yaw; sleepSavedPitch=cameraPitch;
         sleepBedX=x; sleepBedY=y; sleepBedZ=z; sleepBedFacing=facing;
-        world.playerX=x+0.5f; world.playerY=y+9.0f/16.0f; world.playerZ=z+0.5f;
+        int dx=facing==1?-1:(facing==3?1:0);
+        int dz=facing==0?1:(facing==2?-1:0);
+        // Lay the camera just above the mattress, near the pillow, instead of
+        // leaving it at the normal standing eye height.
+        world.playerX=x+0.5f+dx*0.62f;
+        world.playerY=y-1.0f;
+        world.playerZ=z+0.5f+dz*0.62f;
+        world.yaw=facing*90.0f;
+        cameraPitch=8.0f;
         playerPhysics.reset(); cancelMining();
     }
 
@@ -1831,6 +1850,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             world.playerZ=sleepBedZ+0.5f+sz*0.8f;
         }
         sleepingInBed=false; sleepTicks=0;
+        cameraPitch=sleepSavedPitch;
+        world.yaw=sleepSavedYaw;
+        wakeFadeTicks=10;
         if(wokeAtDawn)world.dayTime=0;
         playerPhysics.reset();
     }
@@ -4443,6 +4465,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     if (cameraUnderwater()) drawTint(g, waterTint);
                     if (hurtTicks > 0) drawTint(g, hurtTint);
                     drawHud(g);
+                    if (sleepingInBed || wakeFadeTicks > 0) drawSleepOverlay(g);
                     if (touchEnabled && state == PLAYING) drawTouchControls(g);
                 }
                 if (state == PAUSED) drawPause(g);
@@ -4477,6 +4500,20 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         else if (state == DEBUG_ITEMS) drawDebugItems(g);
         else drawMenu(g);
         if (touchEnabled && isTouchBackState(state)) drawTouchBackButton(g);
+    }
+
+    /** Black eyelids close over the view during sleep, then reopen after dawn. */
+    private void drawSleepOverlay(Graphics g) {
+        int height=getHeight(), width=getWidth();
+        int closeTicks=10;
+        int closed;
+        if (sleepingInBed) closed=sleepTicks>=closeTicks?height/2:
+                (height/2)*sleepTicks/closeTicks;
+        else closed=(height/2)*wakeFadeTicks/10;
+        if (closed<=0) return;
+        g.setColor(0x000000);
+        g.fillRect(0,0,width,closed);
+        g.fillRect(0,height-closed,width,closed);
     }
 
     private boolean isTouchBackState(int currentState) {
