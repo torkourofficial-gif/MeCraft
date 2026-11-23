@@ -3914,12 +3914,12 @@ final class ChunkRenderer {
         /**
          * UV projection copied from Beta 1.8.1 RenderBlocks.renderBlockBed and
          * its six face helpers. Coordinates are in 1/256 atlas pixels; unlike
-         * ordinary cube faces, the bed deliberately uses the full 15.99px span.
+         * ordinary cube faces, the bed uses the full 16px tile span. Beta's
+         * 15.99 edge epsilon is below this renderer's integer-pixel UV precision.
          */
         void addBetaBedQuad(int x0,int y0,int z0,int x1,int y1,int z1,
                 int face,int lightLevel,boolean flipU,int bedFacing) {
             ensure(vertexCount + 4);
-            int first = vertexCount;
             int u0=(tile & 15)*16, u1=u0+16;
             int v0=(tile >> 4)*16, v1=v0+16;
             int vTop=v0+7, vBottom=v1;
