@@ -3920,8 +3920,8 @@ final class ChunkRenderer {
                 int face,int lightLevel,boolean flipU,int bedFacing) {
             ensure(vertexCount + 4);
             int first = vertexCount;
-            int u0=(tile & 15)*16, u1=u0+15;
-            int v0=(tile >> 4)*16, v1=v0+15;
+            int u0=(tile & 15)*16, u1=u0+16;
+            int v0=(tile >> 4)*16, v1=v0+16;
             int vTop=v0+7, vBottom=v1;
             int shade=litShade(face,lightLevel);
             if(face==0) {
@@ -3940,8 +3940,8 @@ final class ChunkRenderer {
             } else if(face==1) {
                 // x-min: RenderBlocks.renderNorthFace vertex order remapped to this builder.
                 int a=flipU?u1:u0, b=flipU?u0:u1;
-                vertexSub(x0,y0,z0,a,vBottom,shade);
-                vertexSub(x0,y0,z1,b,vBottom,shade);
+                vertexSub(x0,y0,z0,b,vBottom,shade);
+                vertexSub(x0,y0,z1,a,vBottom,shade);
                 vertexSub(x0,y1,z0,a,vTop,shade);
                 vertexSub(x0,y1,z1,b,vTop,shade);
             } else if(face==2) {
@@ -3954,15 +3954,15 @@ final class ChunkRenderer {
             } else if(face==3) {
                 // z-min: RenderBlocks.renderEastFace.
                 int a=flipU?u1:u0, b=flipU?u0:u1;
-                vertexSub(x0,y0,z0,b,vBottom,shade);
+                vertexSub(x0,y0,z0,a,vBottom,shade);
                 vertexSub(x0,y1,z0,b,vTop,shade);
-                vertexSub(x1,y0,z0,a,vBottom,shade);
+                vertexSub(x1,y0,z0,b,vBottom,shade);
                 vertexSub(x1,y1,z0,a,vTop,shade);
             } else if(face==4) {
                 // z-max: RenderBlocks.renderWestFace.
                 int a=flipU?u1:u0, b=flipU?u0:u1;
-                vertexSub(x0,y0,z1,a,vBottom,shade);
-                vertexSub(x1,y0,z1,b,vBottom,shade);
+                vertexSub(x0,y0,z1,b,vBottom,shade);
+                vertexSub(x1,y0,z1,a,vBottom,shade);
                 vertexSub(x0,y1,z1,a,vTop,shade);
                 vertexSub(x1,y1,z1,b,vTop,shade);
             } else {
