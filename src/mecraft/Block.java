@@ -570,6 +570,23 @@ final class Block {
         return sideTile(id);
     }
 
+    /** Beta 1.8.1 BlockBed texture selection (terrain.png tiles 134-152). */
+    static int bedFaceTile(int meta, int face) {
+        if (face == 5) return atlasTile(PLANKS);
+        final int[][] bedDirection = new int[][] {
+            {1,0,3,2,5,4}, {1,0,5,4,2,3},
+            {1,0,2,3,4,5}, {1,0,4,5,3,2}
+        };
+        int direction = bedFacing(meta) & 3;
+        int side = bedDirection[direction][face];
+        if (isBedHead(meta)) {
+            if (side == 3) return 149;
+            return side != 5 && side != 4 ? 134 : 150;
+        }
+        if (side == 2) return 152;
+        return side != 5 && side != 4 ? 135 : 151;
+    }
+
     static int renderTile(byte id, int face, int woolColor) {
         if (id == END_PORTAL_FRAME) return face == 0 ? 158 : (face == 5 ? 175 : 159);
         return id == WOOL && woolColor > 0 ? WOOL_TINT_TILE_START + woolColor : faceTile(id, face);
