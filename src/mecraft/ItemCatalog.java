@@ -300,10 +300,12 @@ final class ItemCatalog {
                                   block != Block.COAL && block != Block.IRON &&
                                   block != Block.GOLD_ORE && block != Block.DIAMOND_ORE &&
                                   block != Block.REDSTONE_ORE &&
+                                  block != Block.STONE_SLAB && block != Block.STONE_STAIRS &&
                                   block != Block.BEDROCK;
         if (block == Block.BEDROCK) return false;
         if (block == Block.STONE || block == Block.COBBLESTONE || block == Block.COAL ||
-            block == Block.GOLD_ORE || block == Block.DIAMOND_ORE || block == Block.REDSTONE_ORE) {
+            block == Block.GOLD_ORE || block == Block.DIAMOND_ORE || block == Block.REDSTONE_ORE ||
+            block == Block.STONE_SLAB || block == Block.STONE_STAIRS) {
             return kind(id) == PICKAXE;
         }
         if (block == Block.IRON) {
@@ -316,6 +318,7 @@ final class ItemCatalog {
         if (!isTool(id)) return false;
         int kind = kind(id);
         if (kind == PICKAXE) return block == Block.STONE || block == Block.COBBLESTONE ||
+                                    block == Block.STONE_SLAB || block == Block.STONE_STAIRS ||
                                     block == Block.COAL || block == Block.IRON ||
                                     block == Block.GOLD_ORE || block == Block.DIAMOND_ORE ||
                                     block == Block.REDSTONE_ORE || block == Block.END_STONE ||
@@ -326,6 +329,7 @@ final class ItemCatalog {
         if (kind == SHOVEL) return block == Block.GRASS || block == Block.DIRT ||
                                     block == Block.SAND || block == Block.FARMLAND || block == Block.SNOW;
         if (kind == AXE) return block == Block.LOG || block == Block.PLANKS ||
+                                  block == Block.WOOD_SLAB || block == Block.WOOD_STAIRS ||
                                   block == Block.CRAFTING_TABLE || Block.isDoor(block) || block == Block.CACTUS;
         return kind == SWORD;
     }
