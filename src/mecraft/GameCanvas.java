@@ -1806,11 +1806,27 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     /** Jump exits immediately; 100 gameplay ticks (five seconds at 20 Hz) skip to dawn. */
     private void leaveBed(boolean wokeAtDawn) {
         if(!sleepingInBed)return;
+        int fx=sleepBedFacing==1?-1:(sleepBedFacing==3?1:0);
+        int fz=sleepBedFacing==0?1:(sleepBedFacing==2?-1:0);
         int sx=sleepBedFacing==0?-1:(sleepBedFacing==2?1:0);
         int sz=sleepBedFacing==1?-1:(sleepBedFacing==3?1:0);
-        world.playerX=sleepBedX+0.5f+sx*0.8f;
-        world.playerY=sleepBedY+9.0f/16.0f;
-        world.playerZ=sleepBedZ+0.5f+sz*0.8f;
+        int[] exitX={sleepBedX+sx,sleepBedX-sx,sleepBedX-fx,sleepBedX+fx};
+        int[] exitZ={sleepBedZ+sz,sleepBedZ-sz,sleepBedZ-fz,sleepBedZ+fz};
+        boolean foundExit=false;
+        for(int i=0;i<4;i++){
+            int ex=exitX[i], ez=exitZ[i];
+            if(Block.solid(world.get(ex,sleepBedY-1,ez)) &&
+               !Block.solid(world.get(ex,sleepBedY,ez)) &&
+               !Block.solid(world.get(ex,sleepBedY+1,ez))){
+                world.playerX=ex+0.5f; world.playerY=sleepBedY; world.playerZ=ez+0.5f;
+                foundExit=true; break;
+            }
+        }
+        if(!foundExit){
+            world.playerX=sleepBedX+0.5f+sx*0.8f;
+            world.playerY=sleepBedY;
+            world.playerZ=sleepBedZ+0.5f+sz*0.8f;
+        }
         sleepingInBed=false; sleepTicks=0;
         if(wokeAtDawn)world.dayTime=0;
         playerPhysics.reset();
