@@ -2653,15 +2653,15 @@ final class ChunkRenderer {
         if (id == Block.WOOL && Block.isBedMeta(meta)) {
             // Beta bed model: wool mattress above four short wooden corner legs.
             addPartialBox(builders, tails, id, x, y, z, 0, 3, 0, 16, 9, 16,
-                    light, true, true, true, true, true, true);
+                    light, true, false, true, true, true, true);
             addPartialBox(builders, tails, Block.PLANKS, x, y, z, 0, 0, 0, 3, 3, 3,
-                    light, true, true, true, true, true, true);
+                    light, false, true, true, true, true, true);
             addPartialBox(builders, tails, Block.PLANKS, x, y, z, 13, 0, 0, 16, 3, 3,
-                    light, true, true, true, true, true, true);
+                    light, false, true, true, true, true, true);
             addPartialBox(builders, tails, Block.PLANKS, x, y, z, 0, 0, 13, 3, 3, 16,
-                    light, true, true, true, true, true, true);
+                    light, false, true, true, true, true, true);
             addPartialBox(builders, tails, Block.PLANKS, x, y, z, 13, 0, 13, 16, 3, 16,
-                    light, true, true, true, true, true, true);
+                    light, false, true, true, true, true, true);
             return;
         }
         if (Block.isSlab(id)) {
@@ -2882,7 +2882,7 @@ final class ChunkRenderer {
                             else if (face == 5 && y > y0)
                                 neighbor = chunkVoxelScratch[voxelIndex - CHUNK_AREA];
                             else neighbor = snapshot.block(nx - x0, ny - y0, nz - z0);
-                            if (Block.faceVisible(id, neighbor)) {
+                            if (Block.faceVisible(id, neighbor, snapshot.metadata(nx - x0, ny - y0, nz - z0))) {
                                 int metadata = snapshot.metadata(x - x0, y - y0, z - z0);
                                 int tile = renderWorldTile(snapshot.dimensionId, id, face, metadata);
                                 int light = chunkLightScratch[voxelIndex] & 255;
