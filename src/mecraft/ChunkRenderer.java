@@ -3798,7 +3798,7 @@ final class ChunkRenderer {
         }
 
         void addSubQuad(int x0,int y0,int z0,int x1,int y1,int z1,int face) {
-            addSubQuad(x0,y0,z0,x1,y1,z1,face,14);
+            addSubQuad(x0,y0,z0,x1,y1,z1,face,0);
         }
 
         void addSubQuad(int x0,int y0,int z0,int x1,int y1,int z1,int face,int lightLevel) {
