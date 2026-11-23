@@ -221,7 +221,7 @@ final class ItemCatalog {
         if (id == ENDER_PEARL) return 107;
         if (id == BLAZE_ROD) return 108;
         if (id == BLAZE_POWDER) return 157;
-        if (id == BED) return 46;
+        if (id == BED) return 45;
         // Alpha's wooden door item icon in items.png (tile 43).
         if (id == Block.DOOR) return 43;
         if (id == Block.IRON_DOOR) return 44;
