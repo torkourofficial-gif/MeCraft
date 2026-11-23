@@ -2730,19 +2730,25 @@ final class ChunkRenderer {
         int tile = Block.bedFaceTile(meta, face);
         if (tile < 0) return;
         addPartialFaceTile(builders,tails,x,y,z,x0,y0,z0,x1,y1,z1,
-                face,light,tile);
+                face,light,tile,Block.bedFaceFlip(meta,face));
     }
 
     private void addPartialFace(FaceBuilder[] builders, FaceBuilder[] tails, byte id,
             int x,int y,int z,int x0,int y0,int z0,int x1,int y1,int z1,
             int face,int light,int unused0,int unused1,int unused2,int unused3) {
         addPartialFaceTile(builders,tails,x,y,z,x0,y0,z0,x1,y1,z1,
-                face,light,Block.faceTile(id,face));
+                face,light,Block.faceTile(id,face),false);
     }
 
     private void addPartialFaceTile(FaceBuilder[] builders, FaceBuilder[] tails,
             int x,int y,int z,int x0,int y0,int z0,int x1,int y1,int z1,
             int face,int light,int tile) {
+        addPartialFaceTile(builders,tails,x,y,z,x0,y0,z0,x1,y1,z1,face,light,tile,false);
+    }
+
+    private void addPartialFaceTile(FaceBuilder[] builders, FaceBuilder[] tails,
+            int x,int y,int z,int x0,int y0,int z0,int x1,int y1,int z1,
+            int face,int light,int tile,boolean flipU) {
         FaceBuilder builder = tails[tile];
         if (builder == null) {
             builder = acquireFaceBuilder(tile);
@@ -2762,7 +2768,7 @@ final class ChunkRenderer {
         else if (face == 2 && x1 == 16) px1++;
         else if (face == 3 && z0 == 0) pz0--;
         else if (face == 4 && z1 == 16) pz1++;
-        builder.addSubQuad(px0, py0, pz0, px1, py1, pz1, face, light);
+        builder.addSubQuad(px0, py0, pz0, px1, py1, pz1, face, light, flipU);
     }
 
     private Chunk buildChunk(ChunkBuildSnapshot snapshot, int cx, int cy, int cz, int sector) {
@@ -3842,6 +3848,11 @@ final class ChunkRenderer {
         }
 
         void addSubQuad(int x0,int y0,int z0,int x1,int y1,int z1,int face,int lightLevel) {
+            addSubQuad(x0,y0,z0,x1,y1,z1,face,lightLevel,false);
+        }
+
+        void addSubQuad(int x0,int y0,int z0,int x1,int y1,int z1,int face,int lightLevel,boolean flipU) {
+            int firstVertex = vertexCount;
             ensure(vertexCount + 4);
             int u0=(tile & 15)*16+1, v0=(tile >> 4)*16+1, u1=u0+14, v1=v0+14;
             int shade=litShade(face, lightLevel);
@@ -3851,6 +3862,13 @@ final class ChunkRenderer {
             else if(face==3){vertexSub(x0,y0,z0,u0,v1,shade);vertexSub(x0,y1,z0,u0,v0,shade);vertexSub(x1,y0,z0,u1,v1,shade);vertexSub(x1,y1,z0,u1,v0,shade);}
             else if(face==4){vertexSub(x0,y0,z1,u1,v1,shade);vertexSub(x1,y0,z1,u0,v1,shade);vertexSub(x0,y1,z1,u1,v0,shade);vertexSub(x1,y1,z1,u0,v0,shade);}
             else {vertexSub(x0,y0,z0,u0,v0,shade);vertexSub(x1,y0,z0,u1,v0,shade);vertexSub(x0,y0,z1,u0,v1,shade);vertexSub(x1,y0,z1,u1,v1,shade);}
+            if (flipU) {
+                int uvMin = u0 + u1;
+                for (int i = firstVertex; i < firstVertex + 4; i++) {
+                    int ti = i * 2;
+                    uv[ti] = (short)(uvMin - uv[ti]);
+                }
+            }
             faceCount++;
         }
 
