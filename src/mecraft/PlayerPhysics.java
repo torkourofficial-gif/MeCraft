@@ -232,7 +232,7 @@ final class PlayerPhysics {
                         float doorMaxZ = bz + (state == 0 ? 3.0f / 16.0f : 1.0f);
                         if (x + RADIUS <= doorMinX || x - RADIUS >= doorMaxX ||
                             z + RADIUS <= doorMinZ || z - RADIUS >= doorMaxZ) continue;
-                    } else if (Block.isPartial(block)) {
+                    } else if (Block.isPartial(block, world.metadataAt(bx, by, bz))) {
                         int meta = world.metadataAt(bx, by, bz);
                         for (int box = 0; box < Block.collisionBoxCount(block, meta); box++) {
                             float boxMinX = bx + Block.boxMinX(block, meta, box);
@@ -293,7 +293,7 @@ final class PlayerPhysics {
                         }
                         continue;
                     }
-                    if (Block.isPartial(block)) {
+                    if (Block.isPartial(block, world.metadataAt(bx, by, bz))) {
                         int meta = world.metadataAt(bx, by, bz);
                         for (int box = 0; box < Block.collisionBoxCount(block, meta); box++) {
                             float boxMinX = bx + Block.boxMinX(block, meta, box);
@@ -355,7 +355,7 @@ final class PlayerPhysics {
                         }
                         continue;
                     }
-                    if (Block.isPartial(block)) {
+                    if (Block.isPartial(block, world.metadataAt(bx, by, bz))) {
                         int meta = world.metadataAt(bx, by, bz);
                         for (int box = 0; box < Block.collisionBoxCount(block, meta); box++) {
                             float boxMinX = bx + Block.boxMinX(block, meta, box);
