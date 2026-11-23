@@ -1794,7 +1794,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
            Block.bedFacing(headMeta)!=facing) return;
         sleepingInBed=true; sleepTicks=0;
         sleepBedX=x; sleepBedY=y; sleepBedZ=z; sleepBedFacing=facing;
-        world.playerX=x+0.5f; world.playerY=y-0.9f; world.playerZ=z+0.5f;
+        world.playerX=x+0.5f; world.playerY=y+9.0f/16.0f; world.playerZ=z+0.5f;
         playerPhysics.reset(); cancelMining();
     }
 
