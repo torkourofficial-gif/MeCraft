@@ -1757,9 +1757,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         int facing=((int)Math.floor(world.yaw*4.0f/360.0f+0.5f))&3;
         int dx=facing==1?-1:(facing==3?1:0), dz=facing==0?1:(facing==2?-1:0);
         int hx=x+dx, hz=z+dz;
-        if(y<=0||y>=VoxelWorld.HEIGHT||!Block.solid(world.get(x,y-1,z))||
-           !Block.solid(world.get(hx,y-1,hz))||!Block.replaceable(world.get(x,y,z))||
-           !Block.replaceable(world.get(hx,y,hz))) return;
+        byte supportFoot=world.get(x,y-1,z), supportHead=world.get(hx,y-1,hz);
+        if(y<=0||y>=VoxelWorld.HEIGHT||!Block.solid(supportFoot)||!Block.solid(supportHead)||
+           Block.isPartial(supportFoot,world.metadataAt(x,y-1,z))||
+           Block.isPartial(supportHead,world.metadataAt(hx,y-1,hz))||
+           world.get(x,y,z)!=Block.AIR||world.get(hx,y,hz)!=Block.AIR) return;
         if(world.mode==0&&inventory[ItemCatalog.BED]<=0)return;
         if(x+1.0f>world.playerX-PLAYER_RADIUS&&x<world.playerX+PLAYER_RADIUS&&
            z+1.0f>world.playerZ-PLAYER_RADIUS&&z<world.playerZ+PLAYER_RADIUS&&
