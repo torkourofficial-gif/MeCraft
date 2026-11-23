@@ -1039,7 +1039,7 @@ final class VoxelWorld {
         boolean previousSuppress = suppressLanJournal;
         suppressLanJournal = true;
         try {
-            if (id == Block.WOOL) return setWool(x, y, z, metadata & 15);
+            if (id == Block.WOOL && !Block.isBedMeta(metadata)) return setWool(x, y, z, metadata & 15);
             int oldMeta = metadataAt(x, y, z);
             boolean changed = setBlock(x, y, z, id, Block.isFluid(id) ? metadata : 0);
             if (!Block.isFluid(id) && oldMeta != metadata) {
