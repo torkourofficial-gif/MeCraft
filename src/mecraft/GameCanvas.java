@@ -5984,6 +5984,23 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void drawIcon(Graphics g, int id, int x, int y, boolean muted) {
         if (id <= Block.AIR || id >= ItemCatalog.COUNT) return;
+        if (terrainTexture != null && (id == Block.WOOD_SLAB || id == Block.STONE_SLAB ||
+                id == Block.WOOD_STAIRS || id == Block.STONE_STAIRS)) {
+            int tile = Block.atlasTile(id);
+            int tx = (tile & 15) * 16, ty = (tile >> 4) * 16;
+            if (id == Block.WOOD_SLAB || id == Block.STONE_SLAB) {
+                // A slab occupies exactly half the inventory icon's height.
+                g.drawRegion(terrainTexture, tx, ty + 4, 16, 8, Sprite.TRANS_NONE,
+                        x, y + 4, Graphics.TOP | Graphics.LEFT);
+            } else {
+                // Side profile: full lower half plus the raised rear half.
+                g.drawRegion(terrainTexture, tx, ty + 8, 16, 8, Sprite.TRANS_NONE,
+                        x, y + 8, Graphics.TOP | Graphics.LEFT);
+                g.drawRegion(terrainTexture, tx + 8, ty, 8, 8, Sprite.TRANS_NONE,
+                        x + 8, y, Graphics.TOP | Graphics.LEFT);
+            }
+            return;
+        }
         if (id == (Block.FURNACE & 255) && terrainTexture != null) {
             // The furnace recipe/inventory icon uses the front-facing terrain tile,
             // not the side tile used by its other block faces.
