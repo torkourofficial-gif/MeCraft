@@ -595,11 +595,11 @@ final class Block {
         boolean foot = isBedHead(meta); // The head half uses Beta's foot-texture branch in this metadata layout.
         // Literal port of BlockBed's atlas-offset conditions (base tile 134).
         if (foot) {
-            if (direction == 2) return 152;       // base + 2 + 16
-            return direction != 5 && direction != 4 ? 135 : 151;
+            if (direction == 2) return 152;       // head/foot end cap
+            return direction != 5 && direction != 4 ? 135 : 134;
         }
-        if (direction == 3) return 149;           // base - 1 + 16
-        return direction != 5 && direction != 4 ? 134 : 150;
+        if (direction == 3) return 149;           // opposite end cap
+        return 134;                               // every long lateral face uses tile 134
     }
 
     static int renderTile(byte id, int face, int woolColor) {
