@@ -487,6 +487,11 @@ final class Block {
         return 10;
     }
 
+    static boolean faceVisible(byte current, byte neighbor, int neighborMeta) {
+        if (isPartial(neighbor, neighborMeta)) return true;
+        return faceVisible(current, neighbor);
+    }
+
     static boolean faceVisible(byte current, byte neighbor) {
         // Keep the uncovered part of a full cube visible beside a half block.
         if (isPartial(neighbor)) return true;
