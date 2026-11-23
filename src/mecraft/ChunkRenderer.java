@@ -2707,6 +2707,11 @@ final class ChunkRenderer {
         if (bottom) addPartialFace(builders,tails,id,x,y,z,x0,y0,z0,x1,y1,z1,5,light,0,0,0,0);
     }
 
+    /**
+     * Beta 1.8.1 bed block model: side walls run from y=0 to 9/16,
+     * while the underside quad is inset to y=3/16 (RenderBlocks offset).
+     * The atlas side tiles already draw the feet; no extra leg geometry.
+     */
     private void addPartialBedBox(FaceBuilder[] builders, FaceBuilder[] tails,
             int x,int y,int z,int meta,int x0,int y0,int z0,int x1,int y1,int z1,int light,
             boolean top,boolean bottom,boolean west,boolean east,boolean north,boolean south) {
@@ -2715,7 +2720,7 @@ final class ChunkRenderer {
         if (east) addPartialBedFace(builders,tails,x,y,z,meta,x0,y0,z0,x1,y1,z1,2,light);
         if (north) addPartialBedFace(builders,tails,x,y,z,meta,x0,y0,z0,x1,y1,z1,3,light);
         if (south) addPartialBedFace(builders,tails,x,y,z,meta,x0,y0,z0,x1,y1,z1,4,light);
-        if (bottom) addPartialBedFace(builders,tails,x,y,z,meta,x0,y0,z0,x1,y1,z1,5,light);
+        if (bottom) addPartialBedFace(builders,tails,x,y,z,meta,x0,3,z0,x1,3,z1,5,light);
     }
 
     private void addPartialBedFace(FaceBuilder[] builders, FaceBuilder[] tails,
@@ -2751,7 +2756,7 @@ final class ChunkRenderer {
         }
         int px0=x*16+x0, py0=y*16+y0, pz0=z*16+z0;
         int px1=x*16+x1, py1=y*16+y1, pz1=z*16+z1;
-        builder.addSubQuad(px0,py0,pz0,px1,py1,pz1,face,light,flipU,topFacing);
+        builder.addBetaBedQuad(px0,py0,pz0,px1,py1,pz1,face,light,flipU,topFacing);
     }
 
     private void addPartialFaceTile(FaceBuilder[] builders, FaceBuilder[] tails,
@@ -3902,6 +3907,70 @@ final class ChunkRenderer {
                     int ti = i * 2;
                     uv[ti] = (short)(uvMin - uv[ti]);
                 }
+            }
+            faceCount++;
+        }
+
+        /**
+         * UV projection copied from Beta 1.8.1 RenderBlocks.renderBlockBed and
+         * its six face helpers. Coordinates are in 1/256 atlas pixels; unlike
+         * ordinary cube faces, the bed deliberately uses the full 15.99px span.
+         */
+        void addBetaBedQuad(int x0,int y0,int z0,int x1,int y1,int z1,
+                int face,int lightLevel,boolean flipU,int bedFacing) {
+            ensure(vertexCount + 4);
+            int first = vertexCount;
+            int u0=(tile & 15)*16, u1=u0+15;
+            int v0=(tile >> 4)*16, v1=v0+15;
+            int vTop=v0+7, vBottom=v1;
+            int shade=litShade(face,lightLevel);
+            if(face==0) {
+                // Beta's bed top face rotates its UV corners for directions 0..3.
+                int[][] map = {
+                    {u0,v0, u1,v0, u0,v1, u1,v1},
+                    {u1,v0, u1,v1, u0,v0, u0,v1},
+                    {u1,v1, u0,v1, u1,v0, u0,v0},
+                    {u0,v1, u0,v0, u1,v1, u1,v0}
+                };
+                int[] m=map[bedFacing & 3];
+                vertexSub(x0,y1,z0,m[0],m[1],shade);
+                vertexSub(x0,y1,z1,m[2],m[3],shade);
+                vertexSub(x1,y1,z0,m[4],m[5],shade);
+                vertexSub(x1,y1,z1,m[6],m[7],shade);
+            } else if(face==1) {
+                // x-min: RenderBlocks.renderNorthFace vertex order remapped to this builder.
+                int a=flipU?u1:u0, b=flipU?u0:u1;
+                vertexSub(x0,y0,z0,a,vBottom,shade);
+                vertexSub(x0,y0,z1,b,vBottom,shade);
+                vertexSub(x0,y1,z0,a,vTop,shade);
+                vertexSub(x0,y1,z1,b,vTop,shade);
+            } else if(face==2) {
+                // x-max: RenderBlocks.renderSouthFace.
+                int a=flipU?u1:u0, b=flipU?u0:u1;
+                vertexSub(x1,y0,z0,b,vBottom,shade);
+                vertexSub(x1,y1,z0,b,vTop,shade);
+                vertexSub(x1,y0,z1,a,vBottom,shade);
+                vertexSub(x1,y1,z1,a,vTop,shade);
+            } else if(face==3) {
+                // z-min: RenderBlocks.renderEastFace.
+                int a=flipU?u1:u0, b=flipU?u0:u1;
+                vertexSub(x0,y0,z0,b,vBottom,shade);
+                vertexSub(x0,y1,z0,b,vTop,shade);
+                vertexSub(x1,y0,z0,a,vBottom,shade);
+                vertexSub(x1,y1,z0,a,vTop,shade);
+            } else if(face==4) {
+                // z-max: RenderBlocks.renderWestFace.
+                int a=flipU?u1:u0, b=flipU?u0:u1;
+                vertexSub(x0,y0,z1,a,vBottom,shade);
+                vertexSub(x1,y0,z1,b,vBottom,shade);
+                vertexSub(x0,y1,z1,a,vTop,shade);
+                vertexSub(x1,y1,z1,b,vTop,shade);
+            } else {
+                // Beta bed underside is a separate quad at y=3/16.
+                vertexSub(x0,y0,z0,u0,v0,shade);
+                vertexSub(x1,y0,z0,u1,v0,shade);
+                vertexSub(x0,y0,z1,u0,v1,shade);
+                vertexSub(x1,y0,z1,u1,v1,shade);
             }
             faceCount++;
         }
