@@ -570,27 +570,44 @@ final class Block {
         return sideTile(id);
     }
 
-    /** Bed atlas mapping: head/front=134/149, foot/back=135/152, sides=150/151. */
+    /** Beta 1.8.1 bed atlas mapping, using ModelBed.bedDirection. */
     static boolean bedFaceFlip(int meta, int face) {
-        // The two side strips are authored in opposite horizontal directions.
-        return face == 1 || face == 2;
+        int facing = bedFacing(meta) & 3;
+        // Beta RenderBlocks face order is bottom, top, east, west, north, south.
+        // This renderer uses top, west, east, north, south, bottom.
+        int betaFace = face == 0 ? 1 : (face == 1 ? 3 : (face == 2 ? 2 :
+                (face == 3 ? 4 : (face == 4 ? 5 : 0))));
+        int direction = BED_DIRECTION[facing][betaFace];
+        int flipFace = facing == 0 ? 5 : (facing == 1 ? 3 :
+                (facing == 2 ? 4 : 2));
+        return betaFace == flipFace;
     }
+
+    private static final int[][] BED_DIRECTION = {
+        {1, 0, 3, 2, 5, 4},
+        {1, 0, 5, 4, 2, 3},
+        {1, 0, 2, 3, 4, 5},
+        {1, 0, 4, 5, 3, 2}
+    };
 
     static int bedFaceTile(int meta, int face) {
         boolean head = isBedHead(meta);
         // Renderer face order: top, west, east, north, south, bottom.
         if (face == 0) return head ? 134 : 135;
         if (face == 5) return atlasTile(PLANKS);
+
         int facing = bedFacing(meta) & 3;
-        // The head-facing end uses tile 149; the opposite foot end uses 152.
-        // Both long sides use their dedicated left/right tiles.
-        int frontFace = facing == 0 ? 4 : (facing == 1 ? 1 :
-                (facing == 2 ? 3 : 2));
-        int backFace = facing == 0 ? 3 : (facing == 1 ? 2 :
-                (facing == 2 ? 4 : 1));
-        if (face == frontFace) return head ? 149 : 152;
-        if (face == backFace) return head ? 152 : 149;
-        return face == 1 || face == 3 ? 150 : 151;
+        int betaFace = face == 1 ? 3 : (face == 2 ? 2 : (face == 3 ? 4 : 5));
+        int direction = BED_DIRECTION[facing][betaFace];
+
+        // Each long side is split across the two bed halves: the head uses
+        // tile 150 and the foot uses 151. End caps use 149 (head) / 152 (foot).
+        if (head) {
+            if (direction == 3) return 149;
+            return direction == 4 || direction == 5 ? 150 : 134;
+        }
+        if (direction == 2) return 152;
+        return direction == 4 || direction == 5 ? 151 : 135;
     }
 
     static int renderTile(byte id, int face, int woolColor) {
