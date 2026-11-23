@@ -341,26 +341,41 @@ final class Block {
             float dx, float dy, float dz, int bx, int by, int bz) {
         float best = Float.MAX_VALUE;
         for (int i = 0; i < collisionBoxCount(id, meta); i++) {
-            float[] lo = new float[] { bx + boxMinX(id,meta,i), by + boxMinY(id,meta,i), bz + boxMinZ(id,meta,i) };
-            float[] hi = new float[] { bx + boxMaxX(id,meta,i), by + boxMaxY(id,meta,i), bz + boxMaxZ(id,meta,i) };
-            float[] o = new float[] {ox,oy,oz}, d = new float[] {dx,dy,dz};
-            float near = 0.0f, far = Float.MAX_VALUE;
-            for (int axis=0; axis<3; axis++) {
-                if (Math.abs(d[axis]) < 0.000001f) {
-                    if (o[axis] < lo[axis] || o[axis] > hi[axis]) { near = Float.MAX_VALUE; break; }
-                } else {
-                    float a=(lo[axis]-o[axis])/d[axis], c=(hi[axis]-o[axis])/d[axis];
-                    if (a>c) { float q=a; a=c; c=q; }
-                    if (a>near) near=a;
-                    if (c<far) far=c;
-                    if (far<near) { near=Float.MAX_VALUE; break; }
-                }
+            float minX = bx + boxMinX(id,meta,i), maxX = bx + boxMaxX(id,meta,i);
+            float minY = by + boxMinY(id,meta,i), maxY = by + boxMaxY(id,meta,i);
+            float minZ = bz + boxMinZ(id,meta,i), maxZ = bz + boxMaxZ(id,meta,i);
+            float near = 0.0f, far = Float.MAX_VALUE, a, b;
+            if (Math.abs(dx) < 0.000001f) {
+                if (ox < minX || ox > maxX) continue;
+            } else {
+                a = (minX - ox) / dx; b = (maxX - ox) / dx;
+                if (a > b) { float swap = a; a = b; b = swap; }
+                if (a > near) near = a;
+                if (b < far) far = b;
+                if (far < near) continue;
             }
-            if (near != Float.MAX_VALUE && far >= 0.0f && near < best) best = near;
+            if (Math.abs(dy) < 0.000001f) {
+                if (oy < minY || oy > maxY) continue;
+            } else {
+                a = (minY - oy) / dy; b = (maxY - oy) / dy;
+                if (a > b) { float swap = a; a = b; b = swap; }
+                if (a > near) near = a;
+                if (b < far) far = b;
+                if (far < near) continue;
+            }
+            if (Math.abs(dz) < 0.000001f) {
+                if (oz < minZ || oz > maxZ) continue;
+            } else {
+                a = (minZ - oz) / dz; b = (maxZ - oz) / dz;
+                if (a > b) { float swap = a; a = b; b = swap; }
+                if (a > near) near = a;
+                if (b < far) far = b;
+                if (far < near) continue;
+            }
+            if (far >= 0.0f && near < best) best = near;
         }
         return best == Float.MAX_VALUE ? -1.0f : best;
     }
-
 
     static boolean solid(byte id) {
         return id != AIR && !isFluid(id) && !isDoor(id) && id != RAIL && !isFlower(id) && id != TORCH;
