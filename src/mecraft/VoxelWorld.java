@@ -717,6 +717,23 @@ final class VoxelWorld {
         return setBlock(x, y, z, id, 0);
     }
 
+    /** Sets a block together with its compact orientation/half metadata. */
+    boolean setBlockState(int x, int y, int z, byte id, int metadata) {
+        if (y <= 0 || y >= HEIGHT || outsideWorld(x, z) || id < 0 || id >= Block.COUNT)
+            return false;
+        byte old = get(x, y, z);
+        int nextMeta = metadata & 255;
+        boolean changed = old != id;
+        if (changed && !setBlock(x, y, z, id, 0)) return false;
+        if (metadataAt(x, y, z) != nextMeta) {
+            setMetadata(x, y, z, nextMeta);
+            revision++;
+            changedX = x; changedY = y; changedZ = z;
+            changed = true;
+        }
+        return changed;
+    }
+
     int woolColor(int x, int y, int z) {
         if (get(x, y, z) != Block.WOOL) return 0;
         return metadataAt(x, y, z) & 15;
