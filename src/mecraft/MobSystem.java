@@ -86,8 +86,8 @@ final class MobSystem {
         this.drops = drops;
         this.particles = particles;
         fireAppearance = skin(texture(GameAssets.image("fire.png")));
-        fireballAppearance = createFireballAppearance();
         pearlAppearance = skin(texture(GameAssets.image("items.png")));
+        fireballAppearance = pearlAppearance;
         // Skeleton texture is needed by the fixed arrow pool; other species
         // are loaded only when that species first enters the active mob pool.
         mobTextures[SKELETON] = texture("skeleton.png");
@@ -1773,8 +1773,7 @@ final class MobSystem {
     }
 
     private Appearance createFireballAppearance() throws IOException {
-        // Crop and dye the wool block directly from the terrain atlas (textures.png).
-        return skin(texture(WoolColors.texture(GameAssets.terrain(), 1)));
+        return skin(texture(GameAssets.image("items.png")));
     }
 
     private Mesh makePearlMesh(Appearance appearance) {
@@ -1782,10 +1781,16 @@ final class MobSystem {
     }
 
     private Mesh makeItemProjectileMesh(Appearance appearance, int icon) {
-        // Two intersecting quads keep small thrown items legible while in flight.
+        return makeItemProjectileMesh(appearance, icon, 8);
+    }
+
+    private Mesh makeItemProjectileMesh(Appearance appearance, int icon, int halfSize) {
+        // Two intersecting textured quads keep the sprite visible from every angle.
         short[] positions = new short[] {
-            -8,-8,0, 8,-8,0, -8,8,0, 8,8,0,
-            0,-8,-8, 0,-8,8, 0,8,-8, 0,8,8
+            -halfSize,-halfSize,0, halfSize,-halfSize,0,
+            -halfSize,halfSize,0, halfSize,halfSize,0,
+            0,-halfSize,-halfSize, 0,-halfSize,halfSize,
+            0,halfSize,-halfSize, 0,halfSize,halfSize
         };
         short[] uv = new short[16];
         int u0 = (icon & 15) * 16, v0 = (icon >> 4) * 16;
@@ -1812,50 +1817,6 @@ final class MobSystem {
         return new Mesh(vb, new TriangleStripArray(0, strips), spriteAppearance);
     }
 
-    private Mesh makeFireballSphere(Appearance appearance) {
-        // Low-poly UV sphere: round silhouette with a wool-textured surface.
-        final int segments = 8;
-        final int rings = 8;
-        final int stride = (segments + 1) * 2;
-        short[] positions = new short[rings * stride * 3];
-        short[] texCoords = new short[rings * stride * 2];
-        int vertex = 0;
-        int[] strips = new int[rings];
-        for (int ring = 0; ring < rings; ring++) {
-            strips[ring] = stride;
-            float latitude0 = -((float)Math.PI * 0.5f) +
-                    (float)Math.PI * ring / rings;
-            float latitude1 = -((float)Math.PI * 0.5f) +
-                    (float)Math.PI * (ring + 1) / rings;
-            for (int segment = 0; segment <= segments; segment++) {
-                float longitude = (float)(Math.PI * 2.0) * segment / segments;
-                float cosine = (float)Math.cos(longitude);
-                float sine = (float)Math.sin(longitude);
-                float[] latitudes = new float[] { latitude0, latitude1 };
-                for (int side = 0; side < 2; side++) {
-                    float latitude = latitudes[side];
-                    float radius = (float)Math.cos(latitude) * 0.76f;
-                    positions[vertex * 3] = (short)(radius * cosine * 1024.0f);
-                    positions[vertex * 3 + 1] =
-                            (short)((float)Math.sin(latitude) * 0.76f * 1024.0f);
-                    positions[vertex * 3 + 2] = (short)(radius * sine * 1024.0f);
-                    texCoords[vertex * 2] = (short)(segment * 1024 / segments);
-                    texCoords[vertex * 2 + 1] =
-                            (short)((ring + side) * 1024 / rings);
-                    vertex++;
-                }
-            }
-        }
-        VertexArray pa = new VertexArray(vertex, 3, 2);
-        pa.set(0, vertex, positions);
-        VertexArray ta = new VertexArray(vertex, 2, 2);
-        ta.set(0, vertex, texCoords);
-        VertexBuffer vb = new VertexBuffer();
-        vb.setPositions(pa, 1.0f / 1024.0f, null);
-        vb.setTexCoords(0, ta, 1.0f / 1024.0f, null);
-        return new Mesh(vb, new TriangleStripArray(0, strips), appearance);
-    }
-
     private final class Fireball {
         final Group root = new Group();
         boolean active, reflected;
@@ -1863,7 +1824,7 @@ final class MobSystem {
         int life;
         float x, y, z, vx, vy, vz;
         Fireball(Appearance appearance) {
-            root.addChild(makeFireballSphere(appearance));
+            root.addChild(makeItemProjectileMesh(appearance, 46, 12));
             root.setRenderingEnable(false);
         }
     }
