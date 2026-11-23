@@ -232,6 +232,26 @@ final class PlayerPhysics {
                         float doorMaxZ = bz + (state == 0 ? 3.0f / 16.0f : 1.0f);
                         if (x + RADIUS <= doorMinX || x - RADIUS >= doorMaxX ||
                             z + RADIUS <= doorMinZ || z - RADIUS >= doorMaxZ) continue;
+                    } else if (Block.isPartial(block)) {
+                        int meta = world.metadataAt(bx, by, bz);
+                        for (int box = 0; box < Block.collisionBoxCount(block, meta); box++) {
+                            float minX = bx + Block.boxMinX(block, meta, box);
+                            float maxX = bx + Block.boxMaxX(block, meta, box);
+                            float minY = by + Block.boxMinY(block, meta, box);
+                            float maxY = by + Block.boxMaxY(block, meta, box);
+                            float minZ = bz + Block.boxMinZ(block, meta, box);
+                            float maxZ = bz + Block.boxMaxZ(block, meta, box);
+                            if (x + RADIUS <= minX || x - RADIUS >= maxX ||
+                                z + RADIUS <= minZ || z - RADIUS >= maxZ) continue;
+                            if (dy > 0.0f && y + HEIGHT <= minY) {
+                                float gap = minY - (y + HEIGHT);
+                                if (dy > gap) dy = gap;
+                            } else if (dy < 0.0f && y >= maxY) {
+                                float gap = maxY - y;
+                                if (dy < gap) dy = gap;
+                            }
+                        }
+                        continue;
                     } else if (!Block.solid(block)) continue;
                     if (dy > 0.0f && y + HEIGHT <= by) {
                         float gap = by - (y + HEIGHT);
@@ -273,6 +293,27 @@ final class PlayerPhysics {
                         }
                         continue;
                     }
+                    if (Block.isPartial(block)) {
+                        int meta = world.metadataAt(bx, by, bz);
+                        for (int box = 0; box < Block.collisionBoxCount(block, meta); box++) {
+                            float minX = bx + Block.boxMinX(block, meta, box);
+                            float maxX = bx + Block.boxMaxX(block, meta, box);
+                            float minY = by + Block.boxMinY(block, meta, box);
+                            float maxY = by + Block.boxMaxY(block, meta, box);
+                            float minZ = bz + Block.boxMinZ(block, meta, box);
+                            float maxZ = bz + Block.boxMaxZ(block, meta, box);
+                            if (y + HEIGHT <= minY || y >= maxY ||
+                                z + RADIUS <= minZ || z - RADIUS >= maxZ) continue;
+                            if (dx > 0.0f && x + RADIUS <= minX) {
+                                float gap = minX - (x + RADIUS);
+                                if (dx > gap) dx = gap;
+                            } else if (dx < 0.0f && x - RADIUS >= maxX) {
+                                float gap = maxX - (x - RADIUS);
+                                if (dx < gap) dx = gap;
+                            }
+                        }
+                        continue;
+                    }
                     if (!Block.solid(block)) continue;
                     if (dx > 0.0f && x + RADIUS <= bx) {
                         float gap = bx - (x + RADIUS);
@@ -311,6 +352,27 @@ final class PlayerPhysics {
                         } else if (dz < 0.0f && z - RADIUS >= doorMaxZ) {
                             float gap = doorMaxZ - (z - RADIUS);
                             if (dz < gap) dz = gap;
+                        }
+                        continue;
+                    }
+                    if (Block.isPartial(block)) {
+                        int meta = world.metadataAt(bx, by, bz);
+                        for (int box = 0; box < Block.collisionBoxCount(block, meta); box++) {
+                            float minX = bx + Block.boxMinX(block, meta, box);
+                            float maxX = bx + Block.boxMaxX(block, meta, box);
+                            float minY = by + Block.boxMinY(block, meta, box);
+                            float maxY = by + Block.boxMaxY(block, meta, box);
+                            float minZ = bz + Block.boxMinZ(block, meta, box);
+                            float maxZ = bz + Block.boxMaxZ(block, meta, box);
+                            if (y + HEIGHT <= minY || y >= maxY ||
+                                x + RADIUS <= minX || x - RADIUS >= maxX) continue;
+                            if (dz > 0.0f && z + RADIUS <= minZ) {
+                                float gap = minZ - (z + RADIUS);
+                                if (dz > gap) dz = gap;
+                            } else if (dz < 0.0f && z - RADIUS >= maxZ) {
+                                float gap = maxZ - (z - RADIUS);
+                                if (dz < gap) dz = gap;
+                            }
                         }
                         continue;
                     }
