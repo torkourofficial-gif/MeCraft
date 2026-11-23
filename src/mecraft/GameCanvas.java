@@ -1510,13 +1510,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
         int selectedItem = hotbar[world.selectedSlot];
         boolean coloredWool = ItemCatalog.isColoredWool(selectedItem);
-        // A side-click into the opposite half joins a matching slab into a double slab.
-        if (target != null && target[4] == 0 && Block.isSlab((byte)selectedItem) &&
+        // A click on the open half of a matching slab completes its double form.
+        if (target != null && Block.isSlab((byte)selectedItem) &&
                 targetBlock == (byte)selectedItem) {
             int existingMeta = world.metadataAt(target[0], target[1], target[2]) & 3;
-            boolean clickedTopHalf = traceHitY > target[1] + 0.5f;
             boolean existingTopHalf = existingMeta == Block.SLAB_TOP;
-            if (existingMeta != Block.SLAB_DOUBLE && clickedTopHalf != existingTopHalf) {
+            boolean oppositeHalf = target[4] == 1 && !existingTopHalf ||
+                    target[4] == -1 && existingTopHalf ||
+                    target[4] == 0 && ((traceHitY > target[1] + 0.5f) != existingTopHalf);
+            if (existingMeta != Block.SLAB_DOUBLE && oppositeHalf) {
                 if (world.mode == 0 && inventory[selectedItem] <= 0) return;
                 if (world.setBlockState(target[0], target[1], target[2],
                         (byte)selectedItem, Block.SLAB_DOUBLE)) {
