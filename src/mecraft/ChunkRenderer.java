@@ -2715,7 +2715,7 @@ final class ChunkRenderer {
             builder = next;
         }
         builder.addSubQuad(x * 16 + x0, y * 16 + y0, z * 16 + z0,
-                x * 16 + x1, y * 16 + y1, z * 16 + z1, face);
+                x * 16 + x1, y * 16 + y1, z * 16 + z1, face, light);
     }
 
     private Chunk buildChunk(ChunkBuildSnapshot snapshot, int cx, int cy, int cz, int sector) {
@@ -3791,9 +3791,13 @@ final class ChunkRenderer {
         }
 
         void addSubQuad(int x0,int y0,int z0,int x1,int y1,int z1,int face) {
+            addSubQuad(x0,y0,z0,x1,y1,z1,face,14);
+        }
+
+        void addSubQuad(int x0,int y0,int z0,int x1,int y1,int z1,int face,int lightLevel) {
             ensure(vertexCount + 4);
             int u0=(tile & 15)*16+1, v0=(tile >> 4)*16+1, u1=u0+14, v1=v0+14;
-            int shade=face==0?255:(face==5?135:(face<=2?205:180));
+            int shade=litShade(face, lightLevel);
             if(face==0){vertexSub(x0,y1,z0,u0,v1,shade);vertexSub(x0,y1,z1,u0,v0,shade);vertexSub(x1,y1,z0,u1,v1,shade);vertexSub(x1,y1,z1,u1,v0,shade);}
             else if(face==1){vertexSub(x0,y0,z0,u1,v1,shade);vertexSub(x0,y0,z1,u0,v1,shade);vertexSub(x0,y1,z0,u1,v0,shade);vertexSub(x0,y1,z1,u0,v0,shade);}
             else if(face==2){vertexSub(x1,y0,z0,u0,v1,shade);vertexSub(x1,y1,z0,u0,v0,shade);vertexSub(x1,y0,z1,u1,v1,shade);vertexSub(x1,y1,z1,u1,v0,shade);}
