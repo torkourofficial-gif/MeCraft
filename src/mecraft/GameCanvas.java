@@ -5124,8 +5124,28 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         int[] sourcePixels = new int[sw * sh];
         source.getRGB(sourcePixels, 0, sw, 0, 0, sw, sh);
         for (int i = 0; i < sourcePixels.length; i++) {
-            int rgb = sourcePixels[i] & 0x00FFFFFF;
-            sourcePixels[i] = rgb == 0x00FF00FF ? 0x00000000 : (0xFF000000 | rgb);
+            int pixel = sourcePixels[i];
+            int red = (pixel >> 16) & 255;
+            int green = (pixel >> 8) & 255;
+            int blue = pixel & 255;
+
+            // The glyphs are yellow/brown over a magenta color key. MIDP font
+            // antialiasing blends edge pixels with that key; simply deleting
+            // pure magenta leaves purple fringes. Recover the glyph coverage
+            // and unblend the magenta from each edge pixel before rotation.
+            int alpha = 255 - blue;
+            if (alpha <= 2) {
+                sourcePixels[i] = 0;
+            } else {
+                int inv = 255 - alpha;
+                red = (red * 255 - 255 * inv) / alpha;
+                green = (green * 255 - 0 * inv) / alpha;
+                blue = (blue * 255 - 255 * inv) / alpha;
+                if (red < 0) red = 0; else if (red > 255) red = 255;
+                if (green < 0) green = 0; else if (green > 255) green = 255;
+                if (blue < 0) blue = 0; else if (blue > 255) blue = 255;
+                sourcePixels[i] = (alpha << 24) | (red << 16) | (green << 8) | blue;
+            }
         }
 
         final double angle = -20.0 * Math.PI / 180.0;
@@ -5176,7 +5196,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_LARGE).stringWidth("MeCraft");
             int logoHeight = title != null ? title.getHeight() : Font.getDefaultFont().getHeight();
             int splashX = w / 2 + logoWidth / 3;
-            int splashY = logoY + logoHeight - Font.getDefaultFont().getHeight() / 2;
+            int splashY = logoY + logoHeight - Font.getDefaultFont().getHeight() / 2
+                    - Math.max(8, logoHeight / 6);
             drawAnimatedMenuSplash(g, menuSplashText, splashX, splashY, w);
         }
         int buttonHeight = Font.getDefaultFont().getHeight() + 8;
