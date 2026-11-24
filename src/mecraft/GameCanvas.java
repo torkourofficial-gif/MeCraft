@@ -48,6 +48,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private static final int DEBUG_ITEMS = 23;
     private static final int FURNACE_INVENTORY = 24;
     private static final int SURVIVAL_INVENTORY = 25;
+    private static final int WORLD_OPTIONS = 26;
     private static final int PLAYER_INVENTORY_SLOTS = 36;
     private static final int PLAYER_MAIN_SLOTS = 27;
     private static final int CONTROL_LOOK_UP = 0, CONTROL_LOOK_DOWN = 1;
@@ -144,6 +145,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private int worldSelection;
     private int worldDeleteSelection;
     private boolean worldDeleteFailed;
+    private int worldOptionsSelection;
+    private int worldOptionsIndex = -1;
+    private boolean editingSavedWorldName;
     private int createSelection;
     private int newWorldMode;
     private int newWorldSize;
@@ -3447,8 +3451,24 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 state = WORLD_DELETE;
                 repaint();
             }
+            else if (keyCode == KEY_NUM6 || action == RIGHT) openWorldOptions(worldSelection);
             else if (keyCode == KEY_NUM5 || action == FIRE) activateWorldSelection();
             else if (keyCode == KEY_NUM0) backToMainMenu();
+            return;
+        }
+        if (state == WORLD_OPTIONS) {
+            int action = gameAction(keyCode);
+            if (keyCode == KEY_NUM2 || action == UP) worldOptionsSelection = (worldOptionsSelection + 3) % 4;
+            else if (keyCode == KEY_NUM8 || action == DOWN) worldOptionsSelection = (worldOptionsSelection + 1) % 4;
+            else if (worldOptionsSelection == 0 && (keyCode == KEY_NUM5 || action == FIRE)) openSavedWorldNameInput();
+            else if ((worldOptionsSelection == 1 || worldOptionsSelection == 2) &&
+                    (keyCode == KEY_NUM4 || action == LEFT || keyCode == KEY_NUM6 || action == RIGHT || keyCode == KEY_NUM5 || action == FIRE))
+                changeSavedWorldOption(worldOptionsSelection, (keyCode == KEY_NUM4 || action == LEFT) ? -1 : 1);
+            else if (worldOptionsSelection == 3 && (keyCode == KEY_NUM5 || action == FIRE || keyCode == KEY_NUM0)) {
+                state = WORLD_SELECT;
+                repaint();
+            } else if (keyCode == KEY_NUM0) { state = WORLD_SELECT; repaint(); }
+            repaint();
             return;
         }
         if (state == WORLD_DELETE) {
@@ -3979,6 +3999,55 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         repaint();
     }
 
+    private void openWorldOptions(int index) {
+        if (index < 0 || index >= savedWorlds.length) return;
+        worldOptionsIndex = index;
+        worldOptionsSelection = 0;
+        state = WORLD_OPTIONS;
+        repaint();
+    }
+
+    private void changeSavedWorldOption(int option, int delta) {
+        if (worldOptionsIndex < 0 || worldOptionsIndex >= savedWorlds.length) return;
+        VoxelWorld.SavedWorld entry = savedWorlds[worldOptionsIndex];
+        int mode = entry.mode;
+        int difficulty = entry.difficulty;
+        if (option == 1) mode = 1 - mode;
+        else if (option == 2) difficulty = (difficulty + (delta > 0 ? 1 : 3)) % 4;
+        if (!VoxelWorld.updateWorldSettings(entry.storeName, entry.name, mode, difficulty)) {
+            showError(worldUiText("No se pudieron guardar los ajustes del mundo.", "Could not save world settings."));
+            return;
+        }
+        refreshWorldList();
+        repaint();
+    }
+
+    private void openSavedWorldNameInput() {
+        if (worldOptionsIndex < 0 || worldOptionsIndex >= savedWorlds.length) return;
+        try {
+            VoxelWorld.SavedWorld entry = savedWorlds[worldOptionsIndex];
+            String initialName = entry.name == null ? "" : entry.name;
+            if (initialName.length() > 32) initialName = initialName.substring(0, 32);
+            worldNameInput = new TextBox(worldUiText("Nombre del mundo", "World name"), initialName, 32, TextField.ANY);
+            acceptWorldName = new Command(Language.text("Aceptar"), Command.OK, 1);
+            cancelWorldName = new Command(Language.text("Cancelar"), Command.CANCEL, 2);
+            worldNameInput.addCommand(acceptWorldName);
+            worldNameInput.addCommand(cancelWorldName);
+            worldNameInput.setCommandListener(this);
+            editingSavedWorldName = true;
+            state = WORLD_NAME;
+            Display.getDisplay(app).setCurrent(worldNameInput);
+        } catch (RuntimeException unavailable) {
+            editingSavedWorldName = false;
+            state = WORLD_OPTIONS;
+            repaint();
+        }
+    }
+
+    private String worldUiText(String spanish, String english) {
+        return Language.isEnglish() ? english : spanish;
+    }
+
     private void activateWorldSelection() {
         if (worldSelection < savedWorlds.length) {
             openSavedWorld(savedWorlds[worldSelection]);
@@ -4079,6 +4148,25 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             return;
         }
         if (displayable != worldNameInput || state != WORLD_NAME) return;
+        if (editingSavedWorldName) {
+            if (command != acceptWorldName && command != cancelWorldName) return;
+            if (command == acceptWorldName && worldOptionsIndex >= 0 && worldOptionsIndex < savedWorlds.length) {
+                VoxelWorld.SavedWorld entry = savedWorlds[worldOptionsIndex];
+                String value = worldNameInput.getString().trim();
+                if (value.length() == 0) value = entry.name;
+                if (!VoxelWorld.updateWorldSettings(entry.storeName, value, entry.mode, entry.difficulty))
+                    showError(worldUiText("No se pudo cambiar el nombre del mundo.", "Could not rename world."));
+                refreshWorldList();
+            }
+            editingSavedWorldName = false;
+            worldNameInput = null;
+            acceptWorldName = null;
+            cancelWorldName = null;
+            state = WORLD_OPTIONS;
+            Display.getDisplay(app).setCurrent(this);
+            repaint();
+            return;
+        }
         if (command == acceptWorldName) {
             String value = worldNameInput.getString().trim();
             if (editingWorldSeed) newWorldSeed = value;
@@ -4512,6 +4600,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         else if (state == LAN_CONNECTED) drawLanConnected(g);
         else if (state == ERROR) drawError(g);
         else if (state == WORLD_SELECT) drawWorldSelect(g);
+        else if (state == WORLD_OPTIONS) drawWorldOptions(g);
         else if (state == WORLD_DELETE) drawWorldDelete(g);
         else if (state == WORLD_CREATE) drawWorldCreate(g);
         else if (state == SETTINGS) drawSettings(g);
@@ -5751,16 +5840,83 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             if (index < savedWorlds.length) {
                 VoxelWorld.SavedWorld entry = savedWorlds[index];
                 String name = trimText(entry.name, 21);
-                g.drawString(name, 21, y + 2, Graphics.TOP | Graphics.LEFT);
+                g.drawString(trimText(name, 17), 21, y + 2, Graphics.TOP | Graphics.LEFT);
                 g.setColor(214, 196, 167);
-                g.drawString(Language.text(entry.mode == 1 ? "Creativo" : "Supervivencia"), 21,
-                        y + 15, Graphics.TOP | Graphics.LEFT);
+                String mode = Language.text(entry.mode == 1 ? "Creativo" : "Supervivencia");
+                String difficulty = worldDifficultyLabel(entry.difficulty);
+                g.drawString(mode + "  |  " + difficulty, 21, y + 15, Graphics.TOP | Graphics.LEFT);
+                drawWorldGear(g, w - 31, y + 5, index == worldSelection);
             } else {
                 String label = index == savedWorlds.length ? "Crear mundo nuevo" : "Volver";
                 g.drawString((selected ? "> " : "  ") + Language.text(label), w / 2, y + 7,
                         Graphics.TOP | Graphics.HCENTER);
             }
         }
+        g.setColor(255, 236, 196);
+        g.drawString(worldUiText("5 abrir  6 ajustes  1 borrar", "5 open  6 settings  1 delete"),
+                w / 2, h - 31, Graphics.TOP | Graphics.HCENTER);
+    }
+
+    private String worldDifficultyLabel(int difficulty) {
+        if (difficulty == VoxelWorld.DIFFICULTY_PEACEFUL) return worldUiText("Pacífico", "Peaceful");
+        if (difficulty == VoxelWorld.DIFFICULTY_EASY) return worldUiText("Fácil", "Easy");
+        if (difficulty == VoxelWorld.DIFFICULTY_HARD) return worldUiText("Difícil", "Hard");
+        return worldUiText("Normal", "Normal");
+    }
+
+    private void drawWorldGear(Graphics g, int x, int y, boolean selected) {
+        g.setColor(selected ? 255 : 190, selected ? 220 : 170, selected ? 130 : 120);
+        g.drawRect(x - 2, y - 2, 18, 18);
+        g.drawArc(x + 3, y + 3, 8, 8, 0, 360);
+        g.fillRect(x + 6, y, 2, 4);
+        g.fillRect(x + 6, y + 11, 2, 4);
+        g.fillRect(x, y + 6, 4, 2);
+        g.fillRect(x + 11, y + 6, 4, 2);
+        g.setColor(75, 52, 34);
+        g.fillArc(x + 6, y + 6, 3, 3, 0, 360);
+    }
+
+    private void drawWorldOptions(Graphics g) {
+        int w = getWidth(), h = getHeight();
+        drawDirtBackground(g);
+        drawInsetPanel(g, 12, 12, w - 24, h - 48);
+        if (worldOptionsIndex < 0 || worldOptionsIndex >= savedWorlds.length) {
+            g.setColor(255, 255, 255);
+            g.drawString(worldUiText("Mundo no disponible", "World unavailable"), w / 2, h / 2,
+                    Graphics.TOP | Graphics.HCENTER);
+            return;
+        }
+        VoxelWorld.SavedWorld entry = savedWorlds[worldOptionsIndex];
+        g.setColor(255, 255, 255);
+        g.drawString(worldUiText("Ajustes del mundo", "World settings"), w / 2, 22,
+                Graphics.TOP | Graphics.HCENTER);
+        String[] labels = new String[] {
+            worldUiText("Nombre: ", "Name: ") + trimText(entry.name, 18),
+            worldUiText("Modo de juego: ", "Game mode: ") +
+                    Language.text(entry.mode == 1 ? "Creativo" : "Supervivencia"),
+            worldUiText("Dificultad: ", "Difficulty: ") + worldDifficultyLabel(entry.difficulty),
+            worldUiText("Volver", "Back")
+        };
+        int top = Math.max(48, (h - 4 * 34) / 2);
+        for (int i = 0; i < labels.length; i++) {
+            int y = top + i * 34;
+            boolean selected = i == worldOptionsSelection;
+            g.setColor(selected ? 101 : 67, selected ? 73 : 49, selected ? 48 : 34);
+            g.fillRect(22, y, w - 44, 29);
+            g.setColor(selected ? 224 : 145, selected ? 191 : 115, selected ? 132 : 83);
+            g.drawRect(22, y, w - 45, 28);
+            g.setColor(255, 244, 220);
+            String marker = selected ? "> " : "  ";
+            g.drawString(marker + trimText(labels[i], 30), 29, y + 7, Graphics.TOP | Graphics.LEFT);
+            if (i == 1 || i == 2) {
+                g.setColor(255, 224, 160);
+                g.drawString("<  >", w - 39, y + 7, Graphics.TOP | Graphics.LEFT);
+            }
+        }
+        g.setColor(255, 236, 196);
+        g.drawString(worldUiText("2/8 elegir  4/6 cambiar  5 aceptar  0 volver",
+                "2/8 select  4/6 change  5 confirm  0 back"),
+                w / 2, h - 28, Graphics.TOP | Graphics.HCENTER);
     }
 
     private void drawWorldDelete(Graphics g) {
