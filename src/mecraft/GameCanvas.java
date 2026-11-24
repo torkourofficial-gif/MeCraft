@@ -5110,6 +5110,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             return;
         }
         Graphics sg = source.getGraphics();
+        // Use a color key so the temporary MIDP image has a truly transparent
+        // background on implementations that initialize mutable images opaque.
+        sg.setColor(255, 0, 255);
+        sg.fillRect(0, 0, textWidth + 4, textHeight + 4);
         sg.setFont(font);
         sg.setColor(45, 30, 0);
         sg.drawString(text, 3, 3, Graphics.TOP | Graphics.LEFT);
@@ -5119,6 +5123,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         int sw = source.getWidth(), sh = source.getHeight();
         int[] sourcePixels = new int[sw * sh];
         source.getRGB(sourcePixels, 0, sw, 0, 0, sw, sh);
+        for (int i = 0; i < sourcePixels.length; i++) {
+            int rgb = sourcePixels[i] & 0x00FFFFFF;
+            sourcePixels[i] = rgb == 0x00FF00FF ? 0x00000000 : (0xFF000000 | rgb);
+        }
 
         final double angle = -20.0 * Math.PI / 180.0;
         double cos = Math.cos(angle), sin = Math.sin(angle);
