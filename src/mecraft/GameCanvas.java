@@ -3460,8 +3460,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
         if (state == WORLD_OPTIONS) {
             int action = gameAction(keyCode);
-            if (keyCode == KEY_NUM2 || action == UP) worldOptionsSelection = (worldOptionsSelection + 3) % 4;
-            else if (keyCode == KEY_NUM8 || action == DOWN) worldOptionsSelection = (worldOptionsSelection + 1) % 4;
+            if (keyCode == KEY_NUM2 || action == UP) worldOptionsSelection = (worldOptionsSelection + 4) % 5;
+            else if (keyCode == KEY_NUM8 || action == DOWN) worldOptionsSelection = (worldOptionsSelection + 1) % 5;
             else if (worldOptionsSelection == 0 && (keyCode == KEY_NUM5 || action == FIRE)) openSavedWorldNameInput();
             else if ((worldOptionsSelection == 1 || worldOptionsSelection == 2) &&
                     (keyCode == KEY_NUM4 || action == LEFT || keyCode == KEY_NUM6 || action == RIGHT || keyCode == KEY_NUM5 || action == FIRE))
