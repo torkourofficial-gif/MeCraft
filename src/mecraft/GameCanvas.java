@@ -218,14 +218,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private MusicController music;
     private SkinGallery skinGallery;
     private static final String[] MENU_SPLASHES = {
-        "More blocks than ever!",
-        "Build something awesome!",
-        "Powered by tiny devices!",
-        "Creepers are not friends!",
-        "The world is your canvas!",
-        "Now with extra pixels!",
-        "Keep calm and craft on!",
-        "One more block!"
+        "Made in Sweden!",
+        "Not on Steam!",
+        "Reticulating splines!",
+        "Falling with style!",
+        "Don't feed chocolate to parrots!",
+        "The Creeper is a spy!",
+        "Also try Terraria!",
+        "Lives in a pineapple under the sea!",
+        "12345 is a bad password!",
+        "Follow the train, CJ!",
+        "Tip your waiter!",
+        "Spiders everywhere!",
+        "Jeb has amazing hair!",
+        "Pixels!",
+        "Explore the far lands!"
     };
     private String menuSplashText;
     private Image title;
@@ -4945,6 +4952,64 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         }
     }
 
+    /**
+     * Draw the classic tilted, pulsing title splash. The text is rendered to a
+     * tiny transparent image and transformed with a nearest-neighbour rotate/
+     * scale so it works on MIDP Graphics implementations without transforms.
+     */
+    private void drawAnimatedMenuSplash(Graphics g, String text, int centerX, int topY, int screenWidth) {
+        Font font = Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_SMALL);
+        int textWidth = font.stringWidth(text);
+        int textHeight = font.getHeight();
+        if (textWidth <= 0 || textHeight <= 0) return;
+
+        Image source;
+        try {
+            source = Image.createImage(textWidth + 4, textHeight + 4);
+        } catch (Throwable unavailable) {
+            return;
+        }
+        Graphics sg = source.getGraphics();
+        sg.setFont(font);
+        sg.setColor(45, 30, 0);
+        sg.drawString(text, 3, 3, Graphics.TOP | Graphics.LEFT);
+        sg.setColor(255, 255, 0);
+        sg.drawString(text, 2, 2, Graphics.TOP | Graphics.LEFT);
+
+        int sw = source.getWidth(), sh = source.getHeight();
+        int[] sourcePixels = new int[sw * sh];
+        source.getRGB(sourcePixels, 0, sw, 0, 0, sw, sh);
+
+        final double angle = -20.0 * Math.PI / 180.0;
+        double cos = Math.cos(angle), sin = Math.sin(angle);
+        long now = System.currentTimeMillis();
+        float wave = (float)(0.5 + 0.5 * Math.sin(now * (Math.PI * 2.0 / 1400.0)));
+        float pulse = 1.0f + 0.12f * wave;
+        double rotatedWidth = Math.abs(sw * cos) + Math.abs(sh * sin);
+        double fitScale = Math.min(1.0, (screenWidth - 16.0) / (rotatedWidth * 1.12));
+        if (fitScale < 0.35) fitScale = 0.35;
+        double scale = fitScale * pulse;
+        int dw = Math.max(1, (int)Math.ceil(rotatedWidth * scale));
+        int dh = Math.max(1, (int)Math.ceil((Math.abs(sw * sin) + Math.abs(sh * cos)) * scale));
+        int[] output = new int[dw * dh];
+        double sourceCx = sw * 0.5, sourceCy = sh * 0.5;
+        double destCx = dw * 0.5, destCy = dh * 0.5;
+
+        for (int y = 0; y < dh; y++) {
+            for (int x = 0; x < dw; x++) {
+                double dx = (x + 0.5 - destCx) / scale;
+                double dy = (y + 0.5 - destCy) / scale;
+                int sx = (int)Math.floor(cos * dx + sin * dy + sourceCx);
+                int sy = (int)Math.floor(-sin * dx + cos * dy + sourceCy);
+                if (sx >= 0 && sx < sw && sy >= 0 && sy < sh)
+                    output[y * dw + x] = sourcePixels[sy * sw + sx];
+            }
+        }
+        int drawX = centerX - dw / 2;
+        int drawY = topY - Math.max(0, (dh - sh) / 2);
+        g.drawRGB(output, 0, dw, drawX, drawY, dw, dh, true);
+    }
+
     private void drawMenu(Graphics g) {
         int w = getWidth(), h = getHeight();
         drawDioramaBackground(g);
@@ -4958,20 +5023,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             g.setFont(oldFont);
         }
         if (menuSplashText != null) {
-            Font oldFont = g.getFont();
-            Font splashFont = Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_SMALL);
-            g.setFont(splashFont);
-            String splash = menuSplashText;
-            int maxChars = Math.max(8, (w - 12) / Math.max(1, splashFont.charWidth('M')));
-            if (splash.length() > maxChars) splash = splash.substring(0, maxChars);
-            int splashY = logoY + (title != null ? title.getHeight() : oldFont.getHeight()) + 1;
-            if (splashY + splashFont.getHeight() < h / 2) {
-                g.setColor(45, 30, 0);
-                g.drawString(splash, w / 2 + 1, splashY + 1, Graphics.TOP | Graphics.HCENTER);
-                g.setColor(255, 255, 0);
-                g.drawString(splash, w / 2, splashY, Graphics.TOP | Graphics.HCENTER);
-            }
-            g.setFont(oldFont);
+            int splashY = logoY + (title != null ? title.getHeight() : Font.getDefaultFont().getHeight()) + 1;
+            if (splashY < h / 2) drawAnimatedMenuSplash(g, menuSplashText, w / 2, splashY, w);
         }
         int buttonHeight = Font.getDefaultFont().getHeight() + 8;
         int buttonStep = buttonHeight + 5;
