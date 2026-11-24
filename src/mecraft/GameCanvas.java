@@ -217,6 +217,17 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private float sleepSavedYaw, sleepSavedPitch;
     private MusicController music;
     private SkinGallery skinGallery;
+    private static final String[] MENU_SPLASHES = {
+        "More blocks than ever!",
+        "Build something awesome!",
+        "Powered by tiny devices!",
+        "Creepers are not friends!",
+        "The world is your canvas!",
+        "Now with extra pixels!",
+        "Keep calm and craft on!",
+        "One more block!"
+    };
+    private String menuSplashText;
     private Image title;
     private Image skybox;
     private MenuPanorama menuPanorama;
@@ -4137,6 +4148,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             Image source = GameAssets.image("title.png");
             title = scaleMenuLogo(source);
         } catch (Throwable ignored) { title = null; }
+        // Select once, not per frame, so the splash remains stable while the menu is open.
+        if (menuSplashText == null) {
+            int pick = (int)((System.currentTimeMillis() >>> 4) % MENU_SPLASHES.length);
+            menuSplashText = MENU_SPLASHES[pick];
+        }
     }
 
     /** Preserve the logo's aspect ratio and scale it to the active device display. */
@@ -4939,6 +4955,22 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             g.setFont(Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_LARGE));
             g.setColor(255, 255, 255);
             g.drawString("MeCraft", w / 2, logoY, Graphics.TOP | Graphics.HCENTER);
+            g.setFont(oldFont);
+        }
+        if (menuSplashText != null) {
+            Font oldFont = g.getFont();
+            Font splashFont = Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_SMALL);
+            g.setFont(splashFont);
+            String splash = menuSplashText;
+            int maxChars = Math.max(8, (w - 12) / Math.max(1, splashFont.charWidth('M')));
+            if (splash.length() > maxChars) splash = splash.substring(0, maxChars);
+            int splashY = logoY + (title != null ? title.getHeight() : oldFont.getHeight()) + 1;
+            if (splashY + splashFont.getHeight() < h / 2) {
+                g.setColor(45, 30, 0);
+                g.drawString(splash, w / 2 + 1, splashY + 1, Graphics.TOP | Graphics.HCENTER);
+                g.setColor(255, 255, 0);
+                g.drawString(splash, w / 2, splashY, Graphics.TOP | Graphics.HCENTER);
+            }
             g.setFont(oldFont);
         }
         int buttonHeight = Font.getDefaultFont().getHeight() + 8;
