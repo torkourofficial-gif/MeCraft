@@ -145,6 +145,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private int worldSelection;
     private int worldDeleteSelection;
     private boolean worldDeleteFailed;
+    private boolean worldDeleteFromOptions;
+    private int worldDeleteButtonSelection = 1;
     private int worldOptionsSelection;
     private int worldOptionsIndex = -1;
     private boolean editingSavedWorldName;
@@ -3464,7 +3466,14 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             else if ((worldOptionsSelection == 1 || worldOptionsSelection == 2) &&
                     (keyCode == KEY_NUM4 || action == LEFT || keyCode == KEY_NUM6 || action == RIGHT || keyCode == KEY_NUM5 || action == FIRE))
                 changeSavedWorldOption(worldOptionsSelection, (keyCode == KEY_NUM4 || action == LEFT) ? -1 : 1);
-            else if (worldOptionsSelection == 3 && (keyCode == KEY_NUM5 || action == FIRE || keyCode == KEY_NUM0)) {
+            else if (worldOptionsSelection == 3 && (keyCode == KEY_NUM5 || action == FIRE)) {
+                worldDeleteSelection = worldOptionsIndex;
+                worldDeleteFailed = false;
+                worldDeleteFromOptions = true;
+                worldDeleteButtonSelection = 1;
+                state = WORLD_DELETE;
+                repaint();
+            } else if (worldOptionsSelection == 4 && (keyCode == KEY_NUM5 || action == FIRE || keyCode == KEY_NUM0)) {
                 state = WORLD_SELECT;
                 repaint();
             } else if (keyCode == KEY_NUM0) { state = WORLD_SELECT; repaint(); }
@@ -3472,17 +3481,26 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             return;
         }
         if (state == WORLD_DELETE) {
-            if (keyCode == KEY_NUM5 || gameAction(keyCode) == FIRE) {
-                if (worldDeleteSelection >= 0 && worldDeleteSelection < savedWorlds.length &&
-                    VoxelWorld.deleteWorld(savedWorlds[worldDeleteSelection].storeName)) {
-                    refreshWorldList();
-                    worldSelection = worldDeleteSelection;
-                    if (worldSelection > savedWorlds.length) worldSelection = savedWorlds.length;
-                    state = WORLD_SELECT;
-                } else worldDeleteFailed = true;
+            int action = gameAction(keyCode);
+            if (keyCode == KEY_NUM4 || action == LEFT || keyCode == KEY_NUM6 || action == RIGHT)
+                worldDeleteButtonSelection = 1 - worldDeleteButtonSelection;
+            else if (keyCode == KEY_NUM5 || action == FIRE) {
+                if (worldDeleteButtonSelection == 0) {
+                    if (worldDeleteSelection >= 0 && worldDeleteSelection < savedWorlds.length &&
+                        VoxelWorld.deleteWorld(savedWorlds[worldDeleteSelection].storeName)) {
+                        refreshWorldList();
+                        worldSelection = worldDeleteSelection;
+                        if (worldSelection > savedWorlds.length) worldSelection = savedWorlds.length;
+                        state = WORLD_SELECT;
+                    } else worldDeleteFailed = true;
+                } else {
+                    state = worldDeleteFromOptions ? WORLD_OPTIONS : WORLD_SELECT;
+                    worldDeleteFailed = false;
+                }
                 repaint();
             } else if (keyCode == KEY_NUM0) {
-                state = WORLD_SELECT;
+                state = worldDeleteFromOptions ? WORLD_OPTIONS : WORLD_SELECT;
+                worldDeleteFailed = false;
                 repaint();
             }
             return;
@@ -4896,13 +4914,20 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 else activateWorldSelection();
             } else if (y >= h - 36) backToMainMenu();
         } else if (state == WORLD_OPTIONS) {
-            int rowTop = Math.max(48, (h - 4 * 34) / 2);
-            int row = (y - rowTop) / 34;
-            if (row >= 0 && row < 4) {
+            int rowTop = Math.max(38, (h - 5 * 31) / 2);
+            int row = (y - rowTop) / 31;
+            if (row >= 0 && row < 5) {
                 worldOptionsSelection = row;
                 if (row == 0) openSavedWorldNameInput();
                 else if (row == 1 || row == 2) changeSavedWorldOption(row, 1);
-                else { state = WORLD_SELECT; repaint(); }
+                else if (row == 3) {
+                    worldDeleteSelection = worldOptionsIndex;
+                    worldDeleteFailed = false;
+                    worldDeleteFromOptions = true;
+                    worldDeleteButtonSelection = 1;
+                    state = WORLD_DELETE;
+                    repaint();
+                } else { state = WORLD_SELECT; repaint(); }
             } else if (y >= h - 36) { state = WORLD_SELECT; repaint(); }
         } else if (state == WORLD_CREATE) {
             int row = (y - 55 + 14) / 29;
@@ -4924,7 +4949,20 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 else if (row == 2) changeRenderDistance(1);
             } else if (y > h - 28) state = MENU;
         } else if (state == WORLD_DELETE) {
-            if (y > h / 2) keyPressed(KEY_NUM0); else keyPressed(KEY_NUM5);
+            int buttonW = Math.min(76, (w - 44) / 2);
+            int gap = 12;
+            int left = (w - buttonW * 2 - gap) / 2;
+            int buttonY = h / 2 + 27;
+            if (y >= buttonY - 4 && y < buttonY + 29) {
+                worldDeleteButtonSelection = x < left + buttonW + gap / 2 ? 0 : 1;
+                keyPressed(KEY_NUM5);
+            } else if (y < h / 2) {
+                worldDeleteButtonSelection = 0;
+                keyPressed(KEY_NUM5);
+            } else {
+                worldDeleteButtonSelection = 1;
+                keyPressed(KEY_NUM5);
+            }
         } else if (state == ERROR) keyPressed(KEY_NUM5);
         else if (state == GAME_OVER) keyPressed(KEY_NUM5);
         else if (state == SURVIVAL_INVENTORY) {
@@ -5906,16 +5944,17 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             worldUiText("Modo de juego: ", "Game mode: ") +
                     Language.text(entry.mode == 1 ? "Creativo" : "Supervivencia"),
             worldUiText("Dificultad: ", "Difficulty: ") + worldDifficultyLabel(entry.difficulty),
+            worldUiText("Borrar mundo", "Delete world"),
             worldUiText("Volver", "Back")
         };
-        int top = Math.max(48, (h - 4 * 34) / 2);
+        int top = Math.max(38, (h - 5 * 31) / 2);
         for (int i = 0; i < labels.length; i++) {
-            int y = top + i * 34;
+            int y = top + i * 31;
             boolean selected = i == worldOptionsSelection;
             g.setColor(selected ? 101 : 67, selected ? 73 : 49, selected ? 48 : 34);
-            g.fillRect(22, y, w - 44, 29);
+            g.fillRect(22, y, w - 44, 27);
             g.setColor(selected ? 224 : 145, selected ? 191 : 115, selected ? 132 : 83);
-            g.drawRect(22, y, w - 45, 28);
+            g.drawRect(22, y, w - 45, 26);
             g.setColor(255, 244, 220);
             String marker = selected ? "> " : "  ";
             g.drawString(marker + trimText(labels[i], 30), 29, y + 7, Graphics.TOP | Graphics.LEFT);
@@ -5943,8 +5982,18 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         g.drawString(trimText(name, 22), w / 2, h / 2 - 20,
                 Graphics.TOP | Graphics.HCENTER);
         g.setColor(255, 110, 90);
-        g.drawString(Language.text(worldDeleteFailed ? "No se pudo borrar" : "Se eliminara para siempre"),
+        g.drawString(worldUiText(worldDeleteFailed ? "No se pudo borrar" : "Se eliminara para siempre",
+                worldDeleteFailed ? "Could not delete world" : "This world will be deleted forever"),
                 w / 2, h / 2 + 3, Graphics.TOP | Graphics.HCENTER);
+        int buttonW = Math.min(76, (w - 44) / 2);
+        int buttonY = h / 2 + 27;
+        int gap = 12;
+        int left = (w - buttonW * 2 - gap) / 2;
+        drawTouchButtonAt(g, "YES", left, buttonY, buttonW);
+        drawTouchButtonAt(g, "NO", left + buttonW + gap, buttonY, buttonW);
+        g.setColor(255, 244, 220);
+        g.drawRect(left + (worldDeleteButtonSelection == 0 ? 0 : buttonW + gap) - 2,
+                buttonY - 2, buttonW + 3, 28);
     }
 
     private void drawWorldCreate(Graphics g) {
