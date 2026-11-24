@@ -2781,8 +2781,18 @@ final class ChunkRenderer {
         }
         int px0 = x * 16 + x0, py0 = y * 16 + y0, pz0 = z * 16 + z0;
         int px1 = x * 16 + x1, py1 = y * 16 + y1, pz1 = z * 16 + z1;
-        // Move only the outer side planes by 1/256 block so they win against
-        // the coplanar face of a neighboring full cube without visible seams.
+        // Expand each partial face by 1/256 block along its edges. Without
+        // this tiny overlap, adjacent slab/stair faces can leave hairline gaps
+        // from fixed-point rounding at shared edges.
+        if (face == 0 || face == 5) {
+            px0--; px1++; pz0--; pz1++;
+        } else if (face == 1 || face == 2) {
+            py0--; py1++; pz0--; pz1++;
+        } else {
+            px0--; px1++; py0--; py1++;
+        }
+        // Also push exposed outer side planes just past the block boundary so
+        // they do not lose the depth test against neighboring full cubes.
         if (face == 1 && x0 == 0) px0--;
         else if (face == 2 && x1 == 16) px1++;
         else if (face == 3 && z0 == 0) pz0--;
