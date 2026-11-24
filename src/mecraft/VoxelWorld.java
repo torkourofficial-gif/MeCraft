@@ -1958,6 +1958,7 @@ final class VoxelWorld {
             info.writeInt(0x4D434249); // MCBI: compact world-list metadata
             info.writeByte(mode);
             info.writeUTF(worldName == null ? "Mundo" : worldName);
+            info.writeByte(difficulty);
             info.flush();
             byte[] infoData = infoBytes.toByteArray();
             if (store.getNumRecords() < 2) store.addRecord(infoData, 0, infoData.length);
