@@ -4626,7 +4626,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     private boolean isTouchBackState(int currentState) {
-        return currentState == WORLD_DELETE || currentState == SETTINGS ||
+        return currentState == WORLD_DELETE || currentState == WORLD_OPTIONS || currentState == SETTINGS ||
                 currentState == CONTROLS || currentState == SKIN_SELECT ||
                 currentState == LAN_MENU || currentState == LAN_HOSTING ||
                 currentState == LAN_CONNECTING || currentState == LAN_CONNECTED ||
@@ -4891,8 +4891,19 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             if (y >= 38 && y < 248 && row >= 0 && row < 7) {
                 worldSelection = first + row;
                 if (worldSelection >= savedWorlds.length + 2) worldSelection = savedWorlds.length + 1;
-                activateWorldSelection();
+                if (worldSelection < savedWorlds.length && x >= w - 48)
+                    openWorldOptions(worldSelection);
+                else activateWorldSelection();
             } else if (y >= h - 36) backToMainMenu();
+        } else if (state == WORLD_OPTIONS) {
+            int rowTop = Math.max(48, (h - 4 * 34) / 2);
+            int row = (y - rowTop) / 34;
+            if (row >= 0 && row < 4) {
+                worldOptionsSelection = row;
+                if (row == 0) openSavedWorldNameInput();
+                else if (row == 1 || row == 2) changeSavedWorldOption(row, 1);
+                else { state = WORLD_SELECT; repaint(); }
+            } else if (y >= h - 36) { state = WORLD_SELECT; repaint(); }
         } else if (state == WORLD_CREATE) {
             int row = (y - 55 + 14) / 29;
             if (row >= 0 && row <= 7) { createSelection = row; activateCreateSelection(); }
