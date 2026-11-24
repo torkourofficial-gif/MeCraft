@@ -5163,8 +5163,13 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             g.setFont(oldFont);
         }
         if (menuSplashText != null) {
-            int splashY = logoY + (title != null ? title.getHeight() : Font.getDefaultFont().getHeight()) + 1;
-            if (splashY < h / 2) drawAnimatedMenuSplash(g, menuSplashText, w / 2, splashY, w);
+            // Minecraft-style splash: anchored over the logo's lower-right corner.
+            int logoWidth = title != null ? title.getWidth() :
+                    Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_LARGE).stringWidth("MeCraft");
+            int logoHeight = title != null ? title.getHeight() : Font.getDefaultFont().getHeight();
+            int splashX = w / 2 + logoWidth / 3;
+            int splashY = logoY + logoHeight - Font.getDefaultFont().getHeight() / 2;
+            drawAnimatedMenuSplash(g, menuSplashText, splashX, splashY, w);
         }
         int buttonHeight = Font.getDefaultFont().getHeight() + 8;
         int buttonStep = buttonHeight + 5;
