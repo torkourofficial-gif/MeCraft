@@ -2536,8 +2536,70 @@ final class VoxelWorld {
         final String storeName;
         final String name;
         final int mode;
-        SavedWorld(String storeName, String name, int mode) {
-            this.storeName = storeName; this.name = name; this.mode = mode;
+        final int difficulty;
+        SavedWorld(String storeName, String name, int mode, int difficulty) {
+            this.storeName = storeName; this.name = name; this.mode = mode; this.difficulty = difficulty;
+        }
+    }
+
+    /** Updates only the compact save header, without loading the terrain arrays. */
+    static boolean updateWorldSettings(String storeName, String name, int mode, int difficulty) {
+        if (storeName == null ||
+            (!"mecraft-save".equals(storeName) && !storeName.startsWith("mecraft-world-")))
+            return false;
+        if (name == null || name.trim().length() == 0) return false;
+        if (name.length() > 32) name = name.substring(0, 32);
+        mode = mode == 1 ? 1 : 0;
+        if (difficulty < DIFFICULTY_PEACEFUL || difficulty > DIFFICULTY_HARD)
+            difficulty = DIFFICULTY_NORMAL;
+        RecordStore store = null;
+        try {
+            store = RecordStore.openRecordStore(storeName, false);
+            byte[] oldHeader = store.getRecord(1);
+            DataInputStream in = new DataInputStream(new ByteArrayInputStream(oldHeader));
+            int format = in.readInt();
+            if (format != DIMENSION_ID_WORLD_SAVE_MAGIC) return false;
+            int height = in.readUnsignedByte();
+            int size = in.readUnsignedByte();
+            int type = in.readUnsignedByte();
+            in.readUnsignedByte();
+            int noise = in.readUnsignedByte();
+            int seed = in.readInt();
+            in.readByte();
+            in.readUTF();
+            byte[] tail = new byte[in.available()];
+            in.readFully(tail);
+            ByteArrayOutputStream headerBytes = new ByteArrayOutputStream(oldHeader.length + 8);
+            DataOutputStream header = new DataOutputStream(headerBytes);
+            header.writeInt(format);
+            header.writeByte(height);
+            header.writeByte(size);
+            header.writeByte(type);
+            header.writeByte(difficulty);
+            header.writeByte(noise);
+            header.writeInt(seed);
+            header.writeByte(mode);
+            header.writeUTF(name);
+            header.write(tail);
+            header.flush();
+            byte[] updatedHeader = headerBytes.toByteArray();
+            store.setRecord(1, updatedHeader, 0, updatedHeader.length);
+
+            ByteArrayOutputStream infoBytes = new ByteArrayOutputStream(48);
+            DataOutputStream info = new DataOutputStream(infoBytes);
+            info.writeInt(0x4D434249);
+            info.writeByte(mode);
+            info.writeUTF(name);
+            info.writeByte(difficulty);
+            info.flush();
+            byte[] metadata = infoBytes.toByteArray();
+            if (store.getNumRecords() < 2) store.addRecord(metadata, 0, metadata.length);
+            else store.setRecord(2, metadata, 0, metadata.length);
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        } finally {
+            if (store != null) try { store.closeRecordStore(); } catch (RecordStoreException ignored) { }
         }
     }
 
@@ -2569,21 +2631,35 @@ final class VoxelWorld {
                 if (store.getNumRecords() == 0) continue;
                 String name = "Mundo guardado";
                 int mode = 0;
+                int difficulty = DIFFICULTY_NORMAL;
                 if (store.getNumRecords() >= 2) {
                     DataInputStream info = new DataInputStream(new ByteArrayInputStream(store.getRecord(2)));
                     if (info.readInt() == 0x4D434249) {
                         mode = info.readUnsignedByte();
                         name = info.readUTF();
+                        if (info.available() > 0) difficulty = info.readUnsignedByte();
                     }
                 }
                 if ("Mundo guardado".equals(name)) {
                     DataInputStream header = new DataInputStream(new ByteArrayInputStream(store.getRecord(1)));
                     int format = header.readInt();
                     header.readInt();
-                    mode = header.readUnsignedByte();
-                    if (format == 0x4D434642) name = header.readUTF();
+                    if (format == DIMENSION_ID_WORLD_SAVE_MAGIC) {
+                        header.readUnsignedByte();
+                        header.readUnsignedByte();
+                        difficulty = header.readUnsignedByte();
+                        header.readUnsignedByte();
+                        header.readInt();
+                        mode = header.readUnsignedByte();
+                        name = header.readUTF();
+                    } else {
+                        mode = header.readUnsignedByte();
+                        if (format == 0x4D434642) name = header.readUTF();
+                    }
                 }
-                worlds[count++] = new SavedWorld(storeName, name, mode);
+                if (difficulty < DIFFICULTY_PEACEFUL || difficulty > DIFFICULTY_HARD)
+                    difficulty = DIFFICULTY_NORMAL;
+                worlds[count++] = new SavedWorld(storeName, name, mode, difficulty);
             } catch (Exception ignored) {
                 // Ignore incomplete RMS entries rather than blocking the world selector.
             } finally {
