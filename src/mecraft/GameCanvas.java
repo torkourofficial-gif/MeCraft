@@ -3450,6 +3450,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             else if (keyCode == KEY_NUM1 && worldSelection < savedWorlds.length) {
                 worldDeleteSelection = worldSelection;
                 worldDeleteFailed = false;
+                worldDeleteFromOptions = false;
+                worldDeleteButtonSelection = 1;
                 state = WORLD_DELETE;
                 repaint();
             }
