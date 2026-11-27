@@ -1659,7 +1659,7 @@ final class ChunkRenderer {
                     if (chunkWorldX[slot] == chunkX && chunkWorldY[slot] == chunkY &&
                             chunkWorldZ[slot] == chunkZ)
                         markChunkDirtyRegion(slot,
-                                Math.max(x - (torchChanged ? TORCH_LIGHT_RADIUS : 1), chunkX * VoxelWorld.CHUNK_XZ),
+                                Math.max(x - (torchChanged ? LAVA_LIGHT_RADIUS : 1), chunkX * VoxelWorld.CHUNK_XZ),
                                 Math.min(x + (torchChanged ? TORCH_LIGHT_RADIUS : 1), (chunkX + 1) * VoxelWorld.CHUNK_XZ - 1),
                                 Math.max(z - (torchChanged ? TORCH_LIGHT_RADIUS : 1), chunkZ * VoxelWorld.CHUNK_XZ),
                                 Math.min(z + (torchChanged ? TORCH_LIGHT_RADIUS : 1), (chunkZ + 1) * VoxelWorld.CHUNK_XZ - 1));
@@ -3341,6 +3341,13 @@ final class ChunkRenderer {
      */
     private void prepareChunkLightMap(ChunkBuildSnapshot snapshot, int x0, int y0, int z0,
                                       int x1, int y1, int z1, int sectorX, int sectorZ) {
+        // Reuse the scratch map safely: each sector build starts from darkness.
+        for (int y = 0; y < VoxelWorld.CHUNK_Y; y++) {
+            int row = y * CHUNK_AREA;
+            for (int z = sectorZ; z < sectorZ + SECTOR_SIZE_Z; z++)
+                for (int x = sectorX; x < sectorX + SECTOR_SIZE_X; x++)
+                    chunkLightScratch[row + z * VoxelWorld.CHUNK_XZ + x] = 0;
+        }
         // Sunlight is directional: it enters from above and stops at opaque blocks.
         // The extra top voxel in the snapshot handles chunk boundaries without
         // querying the world from the background mesh worker.
@@ -3351,8 +3358,10 @@ final class ChunkRenderer {
                 for (int y = VoxelWorld.CHUNK_Y - 1; y >= 0; y--) {
                     int index = y * CHUNK_AREA + z * VoxelWorld.CHUNK_XZ + x;
                     byte id = chunkVoxelScratch[index];
+                    // The exposed top surface itself receives sunlight; the block
+                    // then occludes every cell below it in this column.
+                    if (exposed) chunkLightScratch[index] = (byte)sky;
                     if (blocksLight(id)) exposed = false;
-                    if (exposed && !blocksLight(id)) chunkLightScratch[index] = (byte)sky;
                 }
             }
         }
