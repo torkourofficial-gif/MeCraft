@@ -2919,6 +2919,9 @@ final class ChunkRenderer {
             return empty;
         }
 
+        // Prepare light before both partial and greedy geometry consume the scratch map.
+        prepareChunkLightMap(snapshot, x0, y0, z0, x1, y1, z1, sectorX, sectorZ);
+
         // Partial blocks bypass greedy cube meshing and emit their exact 1/16 geometry.
         for (int ly = 0; ly < VoxelWorld.CHUNK_Y; ly++) {
             for (int lz = sectorZ; lz < sectorZ + SECTOR_SIZE_Z; lz++) {
@@ -2933,7 +2936,6 @@ final class ChunkRenderer {
             }
         }
 
-        prepareChunkLightMap(snapshot, x0, y0, z0, x1, y1, z1, sectorX, sectorZ);
 
         // Mine64-style greedy meshing: combine adjacent visible faces on each
         // chunk plane when their atlas tile matches. Tile textures repeat, so
