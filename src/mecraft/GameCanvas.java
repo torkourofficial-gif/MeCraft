@@ -130,6 +130,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private int touchSetupSelection;
     private int language = Language.ENGLISH;
     private int cameraSensitivity = 2;
+    private int gameVolume = 100;
+    private boolean lightingEnabled;
     // Start with the short 3x3 chunk window on constrained J2ME devices.
     private int renderDistance = 0;
     private boolean economicMode;
@@ -340,7 +342,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     GameCanvas(MeCraft app) {
         this.app = app;
         int[] settings = new int[] { 20, cameraSensitivity,
-                                     selectedPlayerSkin, language, renderDistance, -1, 0 };
+                                     selectedPlayerSkin, language, renderDistance, -1, 0, 100, 0 };
         GameSettings.load(settings, controlCodes, customControls);
         targetFrameRate = clamp(settings[0], MIN_FRAME_RATE, MAX_FRAME_RATE);
         cameraSensitivity = clamp(settings[1], 0, 4);
@@ -349,9 +351,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         renderDistance = clamp(settings[4], 0, 4);
         touchEnabled = settings[5] == 1;
         economicMode = settings[6] == 1;
+        gameVolume = clamp(settings[7], 0, 100);
+        lightingEnabled = settings[8] == 1;
         VoxelWorld.economicModeEnabled = economicMode;
         Language.set(language);
-        try { music = new MusicController(); }
+        try { music = new MusicController(); music.setVolume(gameVolume); }
         catch (NoClassDefFoundError unsupported) { music = null; }
         setFullScreenMode(true);
         loadTitle();
@@ -1256,6 +1260,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             renderer = new ChunkRenderer(getWidth(), getHeight());
             renderer.setPlayerSkinIndex(selectedPlayerSkin);
             renderer.setRenderDistance(renderDistance);
+            renderer.setLightingEnabled(lightingEnabled);
             stage = "configurando cámara M3G";
             renderer.updateCamera(world, cameraPitch);
             stage = "construyendo sectores visibles M3G";
@@ -1329,6 +1334,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             renderer = new ChunkRenderer(getWidth(), getHeight());
             renderer.setPlayerSkinIndex(selectedPlayerSkin);
             renderer.setRenderDistance(renderDistance);
+            renderer.setLightingEnabled(lightingEnabled);
             stage = "configurando cámara M3G";
             renderer.updateCamera(world, cameraPitch);
             stage = "construyendo sectores visibles M3G";
@@ -3741,10 +3747,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (state == SETTINGS) {
             int action = gameAction(keyCode);
             if (keyCode == KEY_NUM2 || action == UP) {
-                settingsSelection = (settingsSelection + 7) % 8;
+                settingsSelection = (settingsSelection + 9) % 10;
                 repaint();
             } else if (keyCode == KEY_NUM8 || action == DOWN) {
-                settingsSelection = (settingsSelection + 1) % 8;
+                settingsSelection = (settingsSelection + 1) % 10;
                 repaint();
             } else if (settingsSelection == 0 && (keyCode == KEY_NUM4 || action == LEFT)) changeFrameRate(-1);
             else if (settingsSelection == 0 && (keyCode == KEY_NUM6 || action == RIGHT)) changeFrameRate(1);
@@ -3768,6 +3774,16 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     keyCode == KEY_NUM6 || action == RIGHT || keyCode == KEY_NUM5 || action == FIRE)) {
                 economicMode = !economicMode;
                 VoxelWorld.economicModeEnabled = economicMode;
+                saveSettings();
+                repaint();
+            } else if (settingsSelection == 8 && (keyCode == KEY_NUM4 || action == LEFT)) {
+                changeGameVolume(-10);
+            } else if (settingsSelection == 8 && (keyCode == KEY_NUM6 || action == RIGHT)) {
+                changeGameVolume(10);
+            } else if (settingsSelection == 9 && (keyCode == KEY_NUM4 || action == LEFT ||
+                    keyCode == KEY_NUM6 || action == RIGHT || keyCode == KEY_NUM5 || action == FIRE)) {
+                lightingEnabled = !lightingEnabled;
+                if (renderer != null) renderer.setLightingEnabled(lightingEnabled);
                 saveSettings();
                 repaint();
             }
@@ -4079,9 +4095,19 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         repaint();
     }
 
+    private void changeGameVolume(int delta) {
+        gameVolume += delta;
+        if (gameVolume < 0) gameVolume = 100;
+        if (gameVolume > 100) gameVolume = 0;
+        if (music != null) music.setVolume(gameVolume);
+        saveSettings();
+        repaint();
+    }
+
     private void saveSettings() {
         GameSettings.save(new int[] { targetFrameRate, cameraSensitivity, selectedPlayerSkin,
-                                      language, renderDistance, touchEnabled ? 1 : 0, economicMode ? 1 : 0 },
+                                      language, renderDistance, touchEnabled ? 1 : 0,
+                                      economicMode ? 1 : 0, gameVolume, lightingEnabled ? 1 : 0 },
                 controlCodes, customControls);
     }
 
@@ -5978,9 +6004,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private void drawSettings(Graphics g) {
         int w = getWidth(), h = getHeight();
         drawDirtBackground(g);
-        int panelY = Math.max(8, (h - 242) / 2);
-        int panelHeight = Math.min(h - panelY - 6, 242);
-        int rowStep = Math.min(22, Math.max(13, (panelHeight - 54) / 8));
+        int panelY = Math.max(5, (h - 278) / 2);
+        int panelHeight = Math.min(h - panelY - 6, 278);
+        int rowStep = Math.min(22, Math.max(11, (panelHeight - 54) / 10));
         int firstRowY = panelY + 32;
         drawInsetPanel(g, 12, panelY, w - 24, panelHeight);
         g.setColor(255, 244, 200);
@@ -6004,6 +6030,10 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 firstRowY + rowStep * 6, settingsSelection == 6);
         drawMenuItem(g, "Modo económico: " + (economicMode ? "Si" : "No"),
                 firstRowY + rowStep * 7, settingsSelection == 7);
+        drawMenuItem(g, "Volumen del juego: " + gameVolume + "%",
+                firstRowY + rowStep * 8, settingsSelection == 8);
+        drawMenuItem(g, "Iluminación: " + (lightingEnabled ? "Activada" : "Desactivada"),
+                firstRowY + rowStep * 9, settingsSelection == 9);
     }
 
     private void drawControls(Graphics g) {
