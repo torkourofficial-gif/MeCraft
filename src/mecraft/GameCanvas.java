@@ -1926,7 +1926,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     private void enterBed(int x,int y,int z,int meta) {
-        if(!world.isNight()||sleepingInBed)return;
+        if(sleepingInBed)return;
         int facing=Block.bedFacing(meta);
         if(Block.isBedHead(meta)){
             x-=facing==1?-1:(facing==3?1:0);
@@ -1941,11 +1941,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
            Block.isBedHead(footMeta) || Block.bedFacing(footMeta)!=facing ||
            world.get(headX,y,headZ)!=Block.WOOL || !Block.isBedMeta(headMeta) ||
            !Block.isBedHead(headMeta) || Block.bedFacing(headMeta)!=facing) return;
+        bedSpawnX=x; bedSpawnY=y; bedSpawnZ=z; bedSpawnFacing=facing;
+        bedSpawnDimension=world.dimensionId; hasBedSpawn=true; saveBedSpawn();
+        if(!world.isNight()) return;
         sleepingInBed=true; sleepTicks=0; wakeFadeTicks=0;
         sleepSavedYaw=world.yaw; sleepSavedPitch=cameraPitch;
         sleepBedX=x; sleepBedY=y; sleepBedZ=z; sleepBedFacing=facing;
-        bedSpawnX=x; bedSpawnY=y; bedSpawnZ=z; bedSpawnFacing=facing;
-        bedSpawnDimension=world.dimensionId; hasBedSpawn=true; saveBedSpawn();
         int dx=facing==1?-1:(facing==3?1:0);
         int dz=facing==0?1:(facing==2?-1:0);
         // Lay the camera just above the mattress, near the pillow, instead of
@@ -6290,8 +6291,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 Graphics.HCENTER | Graphics.TOP);
         g.setFont(oldFont);
         int buttonOffset = (int)((1.0f - eased) * 14.0f);
-        String respawn = language == Language.SPANISH ? "Respawnear" : "Respawn";
-        String titleScreen = language == Language.SPANISH ? "Salir al menú principal" : "Title Screen";
+        String respawn = language == Language.SPANISH ? "Reaparecer" : "Respawn";
+        String titleScreen = language == Language.SPANISH ? "Salir del mundo" : "Title Screen";
         drawGameOverButton(g, respawn, h / 4 + 72 + buttonOffset, gameOverSelection == 0);
         drawGameOverButton(g, titleScreen, h / 4 + 96 + buttonOffset, gameOverSelection == 1);
     }
