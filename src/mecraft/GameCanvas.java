@@ -425,6 +425,17 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                         }
                     }
                 }
+                if (visible && state == GAME_OVER) {
+                    try {
+                        updateGameOver();
+                    } catch (Throwable problem) {
+                        if (!loopFailureReported) {
+                            System.out.println("MeCraft: excepción al actualizar el mundo tras la muerte: " + problem);
+                            problem.printStackTrace();
+                            loopFailureReported = true;
+                        }
+                    }
+                }
                 if (visible && state == FURNACE_INVENTORY) {
                     try { updateFurnace(); } catch (Throwable ignored) { }
                 }
@@ -560,6 +571,61 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                 state == LAN_HOSTING || state == LAN_CONNECTING || state == LAN_CONNECTED)
             return MusicController.MENU;
         return MusicController.OFF;
+    }
+
+    /**
+     * Keep the world alive behind the death menu without moving or animating
+     * the player. The camera and player coordinates stay exactly where death
+     * occurred until the player chooses Respawn or Title Screen.
+     */
+    private void updateGameOver() {
+        synchronized (this) {
+            if (!visible || state != GAME_OVER || world == null || renderer == null) return;
+            gameUpdateStage = "avanzando el tiempo tras la muerte";
+            world.tickTime();
+            try {
+                renderer.updateDayNight(world);
+                reportedSubsystemFailures &= ~UPDATE_FAILURE_LIGHTING;
+            } catch (Throwable problem) {
+                reportGameUpdateFailure(UPDATE_FAILURE_LIGHTING, "iluminación tras la muerte", problem);
+            }
+
+            gameUpdateStage = "actualizando fluidos tras la muerte";
+            world.updateFluids();
+
+            gameUpdateStage = "actualizando entidades tras la muerte";
+            try {
+                ensureLookRay();
+                // Mobs and their projectiles keep moving, but damage is ignored:
+                // the player is already dead and must remain in the death pose.
+                renderer.updateMobs(world, (float)lookRayX, (float)lookRayY,
+                        (float)lookRayZ);
+                reportedSubsystemFailures &= ~UPDATE_FAILURE_MOBS;
+            } catch (Throwable problem) {
+                reportGameUpdateFailure(UPDATE_FAILURE_MOBS, "entidades tras la muerte", problem);
+            }
+
+            gameUpdateStage = "actualizando objetos caídos tras la muerte";
+            try {
+                // Keep item physics running while preventing automatic pickup
+                // before the player explicitly respawns.
+                for (int i = 0; i < playerInventoryPickupCapacity.length; i++)
+                    playerInventoryPickupCapacity[i] = 0;
+                renderer.updateDroppedItems(world, inventory, playerInventoryPickupCapacity,
+                        playerPhysics, true);
+                reportedSubsystemFailures &= ~UPDATE_FAILURE_DROPS;
+            } catch (Throwable problem) {
+                reportGameUpdateFailure(UPDATE_FAILURE_DROPS, "objetos tras la muerte", problem);
+            }
+
+            gameUpdateStage = "actualizando partículas tras la muerte";
+            try {
+                renderer.updateParticles(world, world.yaw, cameraPitch);
+            } catch (Throwable ignored) { }
+            try {
+                renderer.updateCamera(world, cameraPitch);
+            } catch (Throwable ignored) { }
+        }
     }
 
     private void updateGame() {
