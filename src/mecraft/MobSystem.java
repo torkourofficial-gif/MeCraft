@@ -619,7 +619,8 @@ final class MobSystem {
         mob.age = 0;
         mob.nextEggTick = tick + CHICKEN_EGG_MIN_INTERVAL +
                 random.nextInt(CHICKEN_EGG_MAX_INTERVAL - CHICKEN_EGG_MIN_INTERVAL + 1);
-        mob.health = mob.type == SLIME ? 1 : (mob.type == ENDERMAN ? 40 : (isHostile(mob.type) ? 20 : 10));
+        mob.health = mob.type == SLIME ? 1 : (mob.type == ENDERMAN ? 40 :
+                (isHostile(mob.type) ? 20 : (mob.type == CHICKEN ? 4 : 10)));
         mob.slimeSize = 1;
         mob.deathTicks = mob.fireTicks = mob.burnDamageTicks = 0;
         mob.attackDelay = mob.fuseTicks = mob.fleeTicks = mob.hurtTicks = 0;
@@ -743,7 +744,7 @@ final class MobSystem {
         mob.age = random.nextInt(100);
         mob.nextEggTick = tick + CHICKEN_EGG_MIN_INTERVAL +
                 random.nextInt(CHICKEN_EGG_MAX_INTERVAL - CHICKEN_EGG_MIN_INTERVAL + 1);
-        mob.health = 10;
+        mob.health = mob.type == CHICKEN ? 4 : 10;
         mob.deathTicks = mob.fireTicks = mob.burnDamageTicks = 0;
         mob.attackDelay = mob.fuseTicks = mob.fleeTicks = mob.hurtTicks = 0;
         mob.doorBreakTicks = 0; mob.doorBreakY = -1;
