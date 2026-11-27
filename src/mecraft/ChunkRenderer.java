@@ -2341,7 +2341,10 @@ final class ChunkRenderer {
         if (world.dimensionId == VoxelWorld.DIM_NETHER || world.nether) skyBrightness = 0.35f;
         if (world.dimensionId == VoxelWorld.DIM_END) skyBrightness = 0.28f;
         if (skyBrightness > 1.0f) skyBrightness = 1.0f;
-        snapshot.daylightLevel = (int)(14.0f * skyBrightness);
+        // Keep direct daylight below full brightness; the six visual bands below
+        // preserve a readable gradient instead of washing terrain out to white.
+        snapshot.daylightLevel = 1 + (int)(9.0f * skyBrightness);
+
         // Edits made while copying leave this sector dirty. Finish this build,
         // then rebuild once from the final world state instead of restarting the
         // entire snapshot on every mining tick.
@@ -3969,8 +3972,23 @@ final class ChunkRenderer {
         }
 
         private int litShade(int face, int lightLevel) {
-            int shade = face == 0 ? 22 : (face == 5 ? 10 : (face <= 2 ? 17 : 14));
-            return shade + (255 - shade) * lightLevel / 14;
+            // Six deliberately separated brightness steps, inspired by the
+            // classic Minecraft lightmap. Avoid pure white so bright sand and
+            // grass keep their texture detail on low-end phone displays.
+            int band;
+            if (lightLevel <= 1) band = 0;
+            else if (lightLevel <= 3) band = 1;
+            else if (lightLevel <= 5) band = 2;
+            else if (lightLevel <= 7) band = 3;
+            else if (lightLevel <= 10) band = 4;
+            else band = 5;
+
+            int[] top = { 34, 61, 88, 116, 148, 190 };
+            int[] side = { 27, 49, 72, 96, 124, 160 };
+            int[] bottom = { 20, 37, 54, 72, 94, 122 };
+            if (face == 0) return top[band];
+            if (face == 5) return bottom[band];
+            return side[band];
         }
 
         private void vertex(int x, int y, int z, int u, int v, int shade) {
