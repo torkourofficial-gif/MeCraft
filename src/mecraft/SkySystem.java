@@ -97,7 +97,10 @@ final class SkySystem {
         updateGradient(daylight, skyColor);
         float night = 1.0f - daylight;
         float starLevel = night * night;
-        boolean starsVisible = world.dimensionId == VoxelWorld.DIM_END || (!world.nether && starLevel > 0.015f);
+        // Stars emerge at dusk, not during the bright-blue afternoon twilight.
+        // This threshold is matched by VoxelWorld.isNight() for mob scheduling.
+        boolean starsVisible = world.dimensionId == VoxelWorld.DIM_END ||
+                (!world.nether && starLevel > 0.65f);
         if (!starVisibilityReady || starsVisible != lastStarsVisible) {
             stars.setRenderingEnable(starsVisible);
             lastStarsVisible = starsVisible;
