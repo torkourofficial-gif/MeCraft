@@ -4,6 +4,7 @@ import java.io.InputStream;
 import javax.microedition.media.Manager;
 import javax.microedition.media.Player;
 import javax.microedition.media.PlayerListener;
+import javax.microedition.media.control.VolumeControl;
 
 /** Small MMAPI music state machine; it keeps only one MIDI player open. */
 final class MusicController implements PlayerListener {
@@ -19,6 +20,7 @@ final class MusicController implements PlayerListener {
 
     private volatile Player player;
     private InputStream stream;
+    private int volume = 100;
     private int mode = OFF;
     private int failedTracks;
     private int lastCalmTrack = -1;
@@ -50,6 +52,18 @@ final class MusicController implements PlayerListener {
 
     public void playerUpdate(Player source, String event, Object eventData) {
         if (source == player && PlayerListener.END_OF_MEDIA.equals(event)) ended = true;
+    }
+
+    synchronized void setVolume(int value) {
+        volume = value < 0 ? 0 : (value > 100 ? 100 : value);
+        Player current = player;
+        if (current == null) return;
+        try {
+            VolumeControl control = (VolumeControl)current.getControl("VolumeControl");
+            if (control != null) control.setLevel(volume);
+        } catch (Throwable unsupported) {
+            // Some MIDP audio providers do not expose a volume control.
+        }
     }
 
     synchronized void close() {
@@ -97,6 +111,10 @@ final class MusicController implements PlayerListener {
             next.prefetch();
             stream = input;
             player = next;
+            try {
+                VolumeControl control = (VolumeControl)next.getControl("VolumeControl");
+                if (control != null) control.setLevel(volume);
+            } catch (Throwable unsupported) { }
             next.start();
             return true;
         } catch (Exception unavailable) {
