@@ -339,6 +339,57 @@ final class Language {
         if (!english && value.endsWith(" pickaxe")) return "Pico de " + text(value.substring(0, value.length() - 8));
         if (!english && value.endsWith(" axe")) return "Hacha de " + text(value.substring(0, value.length() - 4));
         if (!english && value.endsWith(" hoe")) return "Azada de " + text(value.substring(0, value.length() - 4));
+        // Settings and world-creation labels added after the original language table.
+        if (value.startsWith("Límite FPS: ")) return (english ? "FPS limit: " : "Límite FPS: ") + value.substring(12);
+        if (value.startsWith("FPS limit: ")) return (english ? "FPS limit: " : "Límite FPS: ") + value.substring(11);
+        if (value.startsWith("Volumen del juego: ")) return (english ? "Game volume: " : "Volumen del juego: ") + value.substring(19);
+        if (value.startsWith("Game volume: ")) return (english ? "Game volume: " : "Volumen del juego: ") + value.substring(13);
+        if (value.startsWith("Iluminación: ")) return (english ? "Lighting: " : "Iluminación: ") + text(value.substring(13));
+        if (value.startsWith("Lighting: ")) return (english ? "Lighting: " : "Iluminación: ") + text(value.substring(10));
+        if (value.startsWith("Dificultad: ")) return (english ? "Difficulty: " : "Dificultad: ") + text(value.substring(12));
+        if (value.startsWith("Difficulty: ")) return (english ? "Difficulty: " : "Dificultad: ") + text(value.substring(12));
+        if (value.startsWith("Semilla: ")) return (english ? "Seed: " : "Semilla: ") + text(value.substring(9));
+        if (value.startsWith("Seed: ")) return (english ? "Seed: " : "Semilla: ") + text(value.substring(6));
+        if (value.equals("Activada")) return english ? "Enabled" : "Activada";
+        if (value.equals("Enabled")) return english ? "Enabled" : "Activada";
+        if (value.equals("Desactivada")) return english ? "Disabled" : "Desactivada";
+        if (value.equals("Disabled")) return english ? "Disabled" : "Desactivada";
+        if (value.equals("Pacifico")) return english ? "Peaceful" : "Pacífico";
+        if (value.equals("Pacífico")) return english ? "Peaceful" : "Pacífico";
+        if (value.equals("Facil")) return english ? "Easy" : "Fácil";
+        if (value.equals("Fácil")) return english ? "Easy" : "Fácil";
+        if (value.equals("Dificil")) return english ? "Hard" : "Difícil";
+        if (value.equals("Difícil")) return english ? "Hard" : "Difícil";
+        if (value.equals("Aleatoria")) return english ? "Random" : "Aleatoria";
+        if (value.equals("Random")) return english ? "Random" : "Aleatoria";
+        if (value.equals("Plano")) return english ? "Flat" : "Plano";
+        if (value.equals("Flat")) return english ? "Flat" : "Plano";
+        if (value.equals("Economic")) return english ? "Economic" : "Económico";
+        if (value.equals("Económico")) return english ? "Economic" : "Económico";
+        if (value.equals("Standard")) return english ? "Standard" : "Estándar";
+        if (value.equals("Estándar")) return english ? "Standard" : "Estándar";
+        if (value.equals("Old 240x240")) return english ? "Old 240x240" : "Antiguo 240x240";
+        if (value.equals("Antiguo 240x240")) return english ? "Old 240x240" : "Antiguo 240x240";
+        if (value.equals("Infinite")) return english ? "Infinite" : "Infinito";
+        if (value.equals("Infinito")) return english ? "Infinite" : "Infinito";
+        if (value.equals("Huevo de spawn")) return english ? "Spawn egg" : "Huevo de spawn";
+        if (value.equals("Spawn egg")) return english ? "Spawn egg" : "Huevo de spawn";
+        if (value.equals("5 mover  # cerrar  * crafteo"))
+            return english ? "5 move  # close  * craft" : "5 mover  # cerrar  * crafteo";
+        if (value.equals("5 move  # close  * craft"))
+            return english ? "5 move  # close  * craft" : "5 mover  # cerrar  * crafteo";
+        if (value.equals("cerdo")) return english ? "Pig" : "cerdo";
+        if (value.equals("oveja")) return english ? "Sheep" : "oveja";
+        if (value.equals("zombi")) return english ? "Zombie" : "zombi";
+        if (value.equals("creeper")) return english ? "Creeper" : "creeper";
+        if (value.equals("esqueleto")) return english ? "Skeleton" : "esqueleto";
+        if (value.equals("vaca")) return english ? "Cow" : "vaca";
+        if (value.equals("gallina")) return english ? "Chicken" : "gallina";
+        if (value.equals("araña")) return english ? "Spider" : "araña";
+        if (value.equals("slime")) return english ? "Slime" : "slime";
+        if (value.equals("ghast")) return english ? "Ghast" : "ghast";
+        if (value.equals("cerdo zombi")) return english ? "Zombie pigman" : "cerdo zombi";
+        if (value.equals("Error")) return english ? "Error" : "Error";
         if (english) {
             if (value.equals("3 Puertas de hierro")) return "3 Iron Doors";
             for (int i = 0; i < SPANISH_TEXT.length; i++)
