@@ -424,7 +424,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                             loopFailureReported = true;
                             // Do not keep retrying a broken tick invisibly; show the
                             // existing diagnostic screen with the exact failing stage.
-                            showDiagnostic(stage, problem);
+                            synchronized (GameCanvas.this) {
+                                if (problem instanceof OutOfMemoryError)
+                                    showError("Memoria insuficiente durante la actualizacion del mundo.");
+                                else showDiagnostic(stage, problem);
+                            }
                         }
                     }
                 }
@@ -437,7 +441,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                             System.out.println("MeCraft: excepción al actualizar el mundo tras la muerte: " + problem);
                             problem.printStackTrace();
                             loopFailureReported = true;
-                            showDiagnostic(stage, problem);
+                            synchronized (GameCanvas.this) {
+                                if (problem instanceof OutOfMemoryError)
+                                    showError("Memoria insuficiente durante la actualizacion del mundo.");
+                                else showDiagnostic(stage, problem);
+                            }
                         }
                     }
                 }
@@ -445,7 +453,11 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                     try {
                         updateFurnace();
                     } catch (Throwable problem) {
-                        showDiagnostic("actualizando el horno", problem);
+                        synchronized (GameCanvas.this) {
+                            if (problem instanceof OutOfMemoryError)
+                                showError("Memoria insuficiente al actualizar el horno.");
+                            else showDiagnostic("actualizando el horno", problem);
+                        }
                     }
                 }
                 if (visible && state == GAME_OVER && gameOverTicks < 12) gameOverTicks++;
