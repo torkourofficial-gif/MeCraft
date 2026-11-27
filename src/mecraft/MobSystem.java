@@ -39,6 +39,9 @@ final class MobSystem {
     private static final float DESPAWN_DISTANCE_SQUARED = 32.0f * 32.0f;
     private static final int PASSIVE_RESPAWN_INTERVAL = 80;
     private static final int HOSTILE_RESPAWN_INTERVAL = 100;
+    // Alpha-era chickens lay one egg every 5-10 minutes (20 ticks/second).
+    private static final int CHICKEN_EGG_MIN_INTERVAL = 6000;
+    private static final int CHICKEN_EGG_MAX_INTERVAL = 12000;
     private static final int FIRE_FRAME_COUNT = 8;
     private static final int FIRE_FRAME_UV_HEIGHT = 32;
     // Small overlaps at moving joints prevent visible seams between closed cuboids.
@@ -137,8 +140,11 @@ final class MobSystem {
             float visualDz = world.playerZ - mob.z;
             boolean updatePose = visualDx * visualDx + visualDz * visualDz <= 144.0f ||
                     (tick & 1) == 0 || (mob.type == ENDERMAN && mob.endermanAngry);
-            if (mob.type == CHICKEN && mob.age > 0 && mob.age % 500 == 0)
+            if (mob.type == CHICKEN && tick >= mob.nextEggTick) {
                 drops.spawn(ItemCatalog.EGG, floor(mob.x), floor(mob.y), floor(mob.z));
+                mob.nextEggTick = tick + CHICKEN_EGG_MIN_INTERVAL +
+                        random.nextInt(CHICKEN_EGG_MAX_INTERVAL - CHICKEN_EGG_MIN_INTERVAL + 1);
+            }
             if (updateBurning(mob, world)) continue;
             if (mob.hurtTicks > 0 && --mob.hurtTicks == 0) mob.setHurt(false);
             mob.chasing = false;
@@ -611,6 +617,8 @@ final class MobSystem {
         mob.yaw = random.nextInt(360);
         mob.targetYaw = mob.yaw;
         mob.age = 0;
+        mob.nextEggTick = tick + CHICKEN_EGG_MIN_INTERVAL +
+                random.nextInt(CHICKEN_EGG_MAX_INTERVAL - CHICKEN_EGG_MIN_INTERVAL + 1);
         mob.health = mob.type == SLIME ? 1 : (mob.type == ENDERMAN ? 40 : (isHostile(mob.type) ? 20 : 10));
         mob.slimeSize = 1;
         mob.deathTicks = mob.fireTicks = mob.burnDamageTicks = 0;
@@ -733,6 +741,8 @@ final class MobSystem {
         mob.yaw = random.nextInt(360);
         mob.targetYaw = mob.yaw;
         mob.age = random.nextInt(100);
+        mob.nextEggTick = tick + CHICKEN_EGG_MIN_INTERVAL +
+                random.nextInt(CHICKEN_EGG_MAX_INTERVAL - CHICKEN_EGG_MIN_INTERVAL + 1);
         mob.health = 10;
         mob.deathTicks = mob.fireTicks = mob.burnDamageTicks = 0;
         mob.attackDelay = mob.fuseTicks = mob.fleeTicks = mob.hurtTicks = 0;
@@ -2008,6 +2018,7 @@ final class MobSystem {
         int health;
         int slimeSize = 1;
         int age;
+        int nextEggTick;
         int deathTicks;
         int fireTicks;
         int burnDamageTicks;
