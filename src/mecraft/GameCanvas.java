@@ -1041,7 +1041,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         if (!loadPlayerInventorySlots()) buildPlayerInventorySlots();
         reconcilePlayerInventorySlots();
         int bx = floorBlock(world.playerX);
-        int by = floorBlock(world.playerY + 0.2f);
+        int by = floorBlock(world.playerY + PLAYER_HEIGHT - 0.2f);
         int bz = floorBlock(world.playerZ);
         playerInventoryHeldItem = 0;
         playerInventoryHeldCount = 0;
