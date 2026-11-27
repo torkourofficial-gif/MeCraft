@@ -1307,6 +1307,10 @@ final class ChunkRenderer {
         return droppedItems.spawnStack(itemId, count, x, y, z) >= 0;
     }
 
+    void refreshDroppedItems() {
+        droppedItems.refreshMeshes();
+    }
+
     boolean spawnPrimedTnt(int x, int y, int z, int fuse) {
         return droppedItems.spawnPrimedTnt(x, y, z, fuse);
     }
