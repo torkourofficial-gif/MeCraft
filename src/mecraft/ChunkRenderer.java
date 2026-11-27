@@ -2397,12 +2397,8 @@ final class ChunkRenderer {
                     }
                     chunkBuildThread = worker;
                     worker.start();
-                } catch (OutOfMemoryError exhausted) {
-                    chunkBuildThread = null;
-                    chunkBuildWorkerBusy = false;
-                    chunkBuildRequestPending = false;
-                    markChunkDirtyMask(slot, 1 << chunkSnapshotSector);
-                } catch (RuntimeException failed) {
+                } catch (Throwable failed) {
+                    // A failed thread start must never leave streaming permanently busy.
                     chunkBuildThread = null;
                     chunkBuildWorkerBusy = false;
                     chunkBuildRequestPending = false;
@@ -2445,13 +2441,9 @@ final class ChunkRenderer {
             Chunk data = null;
             try {
                 data = buildChunk(chunkBuildSnapshot, cx, cy, cz, sector);
-                if (data == null) {
-                    data = new Chunk();
-                    data.faceBuilders = new FaceBuilder[TILE_COUNT];
-                }
-            } catch (OutOfMemoryError exhausted) {
-                data = null;
-            } catch (RuntimeException failed) {
+            } catch (Throwable failed) {
+                // Do not allocate a fallback Chunk here: this path is also used
+                // after OutOfMemoryError. A null result is retried by sync().
                 data = null;
             }
 
