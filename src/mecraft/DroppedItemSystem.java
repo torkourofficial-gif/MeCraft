@@ -12,7 +12,7 @@ import javax.microedition.m3g.VertexBuffer;
 
 /** Bounded Indev-style item entities using a block mesh and a small item-sprite mesh. */
 final class DroppedItemSystem {
-    private static final int CAPACITY = 32;
+    private static final int CAPACITY = 64;
     // Reserve slots so a field of block drops cannot prevent further TNT detonations.
     private static final int DROPPED_ITEM_LIMIT = CAPACITY - 8;
     private static final int CHAIN_TNT_LIMIT = CAPACITY - 1;
@@ -45,6 +45,7 @@ final class DroppedItemSystem {
     private final float[] vy = new float[CAPACITY];
     private final float[] vz = new float[CAPACITY];
     private final int[] itemId = new int[CAPACITY];
+    private final int[] stackCount = new int[CAPACITY];
     private final int[] age = new int[CAPACITY];
     private final int[] pickupDelay = new int[CAPACITY];
     private final int[] tntFuse = new int[CAPACITY];
@@ -164,7 +165,25 @@ final class DroppedItemSystem {
     }
 
     int spawn(int id, int bx, int by, int bz) {
-        return spawnWithLimit(id, bx, by, bz, DROPPED_ITEM_LIMIT);
+        return spawnStack(id, 1, bx, by, bz);
+    }
+
+    /** One rendered entity can represent a complete inventory stack. */
+    int spawnStack(int id, int count, int bx, int by, int bz) {
+        if (id <= Block.AIR || id >= ItemCatalog.COUNT || count <= 0) return -1;
+        int slot = spawnWithLimit(id, bx, by, bz, DROPPED_ITEM_LIMIT);
+        if (slot >= 0) {
+            stackCount[slot] = count;
+            return slot;
+        }
+        // Do not discard death drops when the bounded pool is busy.
+        for (int i = 0; i < CAPACITY; i++) {
+            if (itemId[i] == id && tntFuse[i] == 0) {
+                stackCount[i] += count;
+                return i;
+            }
+        }
+        return -1;
     }
 
     private int spawnWithLimit(int id, int bx, int by, int bz, int limit) {
@@ -181,6 +200,7 @@ final class DroppedItemSystem {
         if (itemId[slot] == 0) activeCount++;
 
         itemId[slot] = id;
+        stackCount[slot] = 1;
         spawnTick[slot] = updateTick;
         age[slot] = 0;
         tntFuse[slot] = 0;
@@ -270,6 +290,7 @@ final class DroppedItemSystem {
                 vy[i] = 0.0f;
             } else if (y[i] < -2.0f) {
                 itemId[i] = 0;
+                stackCount[i] = 0;
                 tntFuse[i] = 0;
                 activeCount--;
                 writeItem(i);
@@ -305,6 +326,7 @@ final class DroppedItemSystem {
                 damagePlayerFromExplosion(world, x[i], y[i], z[i], physics);
                 world.explode(x[i], y[i], z[i], 4.0f, this);
                 itemId[i] = 0;
+                stackCount[i] = 0;
                 tntFuse[i] = 0;
                 activeCount--;
                 writeItem(i);
@@ -316,19 +338,30 @@ final class DroppedItemSystem {
             float dy = y[i] - (world.playerY + 0.9f);
             float dz = z[i] - world.playerZ;
             boolean inPickupRange = dx * dx + dy * dy + dz * dz <= PICKUP_RADIUS_SQUARED;
-            boolean canCollect = creative || (id > 0 && id < pickupCapacity.length &&
-                    inventory[id] < pickupCapacity[id]);
             if (pickupDelay[i] == 0 && id > 0 && id < ItemCatalog.COUNT &&
-                    inPickupRange && (creative || (picked < 0 && canCollect))) {
+                    inPickupRange && creative) {
                 // Creative players collect the entity visually, but never write
                 // it into the survival inventory or hotbar.
-                if (!creative) {
-                    inventory[id]++;
-                    picked = id;
-                }
                 itemId[i] = 0;
+                stackCount[i] = 0;
                 tntFuse[i] = 0;
                 activeCount--;
+                writeItem(i);
+            } else if (pickupDelay[i] == 0 && id > 0 && id < ItemCatalog.COUNT &&
+                    inPickupRange && picked < 0 && stackCount[i] > 0 &&
+                    id < pickupCapacity.length && pickupCapacity[id] > 0) {
+                int moved = Math.min(stackCount[i], pickupCapacity[id]);
+                inventory[id] += moved;
+                stackCount[i] -= moved;
+                picked = id;
+                if (stackCount[i] <= 0) {
+                    itemId[i] = 0;
+                    stackCount[i] = 0;
+                    tntFuse[i] = 0;
+                    activeCount--;
+                } else {
+                    pickupDelay[i] = 10;
+                }
                 writeItem(i);
             } else {
                 writeItem(i);
