@@ -184,9 +184,9 @@ final class VoxelWorld {
         if (dayTime >= DAY_LENGTH) dayTime -= DAY_LENGTH;
     }
 
-    /** Indev's celestial curve reaches darkness after sunset and dawn near tick 23000. */
+    /** Night begins when the first stars become visible and ends as they fade at dawn. */
     boolean isNight() {
-        return dayTime >= 13000 && dayTime < 23000;
+        return dayTime >= 10400 && dayTime < 20800;
     }
 
     VoxelWorld(int seed, int mode) { this(seed, mode, SIZE_INFINITE, TYPE_STANDARD, 1); }
