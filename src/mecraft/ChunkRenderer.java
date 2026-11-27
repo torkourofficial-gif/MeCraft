@@ -115,6 +115,8 @@ final class ChunkRenderer {
     private volatile int readySlot, readyX, readyY, readyZ, readyEpoch, readySector, readyInvalidationVersion;
     private final Object chunkBuildWorkerLock = new Object();
     private volatile boolean chunkBuildWorkerBusy;
+    // Back off after native/heap allocation failures instead of retrying every frame.
+    private long chunkBuildRetryAfterMillis;
     private boolean chunkBuildRequestPending;
     private int chunkBuildRequestSlot, chunkBuildRequestX, chunkBuildRequestY;
     private int chunkBuildRequestZ, chunkBuildRequestEpoch, chunkBuildRequestSector;
@@ -2104,7 +2106,11 @@ final class ChunkRenderer {
                 completed.worldZ = cz * VoxelWorld.CHUNK_XZ;
             } else {
                 if (completed != null) recycleChunkBuilders(completed);
-                if (slotMatches) markChunkDirtyMask(slot, 1 << readySector);
+                if (slotMatches) {
+                    markChunkDirtyMask(slot, 1 << readySector);
+                    if (completed == null)
+                        chunkBuildRetryAfterMillis = System.currentTimeMillis() + 2000L;
+                }
             }
         }
         if (installingChunk != null) {
@@ -2152,7 +2158,8 @@ final class ChunkRenderer {
         }
         if (!chunkSnapshotPreparing && best >= 0 &&
                 (!residentChunks[best] || dirtySectorMasks[best] != 0) &&
-                !chunkBuildWorkerBusy && !buildResultReady && installingChunk == null) {
+                !chunkBuildWorkerBusy && !buildResultReady && installingChunk == null &&
+                System.currentTimeMillis() >= chunkBuildRetryAfterMillis) {
             beginChunkBuildSnapshot(world, best, chunkWorldX[best],
                     chunkWorldY[best], chunkWorldZ[best]);
             if (chunkSnapshotPreparing) advanceChunkBuildSnapshot(world);
