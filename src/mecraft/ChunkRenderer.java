@@ -2146,10 +2146,12 @@ final class ChunkRenderer {
                     recycleChunkBuilders(installingChunk);
                     markChunkDirtyMask(installingSlot, 1 << installingSector);
                     installingChunk = null;
+                    chunkBuildRetryAfterMillis = System.currentTimeMillis() + 2000L;
                 } catch (RuntimeException failed) {
                     recycleChunkBuilders(installingChunk);
                     markChunkDirtyMask(installingSlot, 1 << installingSector);
                     installingChunk = null;
+                    chunkBuildRetryAfterMillis = System.currentTimeMillis() + 500L;
                 }
             }
         }
