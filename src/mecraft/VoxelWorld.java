@@ -337,12 +337,11 @@ final class VoxelWorld {
                     try { worker.setPriority(Thread.MIN_PRIORITY); } catch (RuntimeException ignored) { }
                     proceduralPrefetchThread = worker;
                     worker.start();
-                } catch (OutOfMemoryError exhausted) {
+                } catch (Throwable failed) {
+                    // Do not leave a dead prefetch thread registered as active.
                     proceduralPrefetchThread = null;
                     proceduralPrefetchPending = false;
-                } catch (RuntimeException failed) {
-                    proceduralPrefetchThread = null;
-                    proceduralPrefetchPending = false;
+                    proceduralPrefetchBusy = false;
                 }
             } else {
                 proceduralPrefetchLock.notifyAll();
@@ -380,9 +379,8 @@ final class VoxelWorld {
                 generateChunk(cx, cz, proceduralPrefetchBlocks,
                         proceduralPrefetchHeights, proceduralPrefetchBiomes, dimension);
                 generated = true;
-            } catch (OutOfMemoryError exhausted) {
-                generated = false;
-            } catch (RuntimeException failed) {
+            } catch (Throwable failed) {
+                // Release the busy flag below so the next frame can retry this chunk.
                 generated = false;
             }
             synchronized (proceduralPrefetchLock) {
