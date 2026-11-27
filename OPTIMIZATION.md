@@ -183,3 +183,12 @@ The urgent snapshot path now uses the same 512-cell per-frame budget as backgrou
 The sector grid uses four columns and two rows. Dirty-region masks, urgent-sector selection, sector snapshot coordinates, mesh traversal, and per-sector light rasterization all use the rectangular dimensions. This keeps edits local while limiting the additional sector bookkeeping compared with a 4x4 grid.
 
 Validation note: source-level invariants were checked against the current branch and chunk dimensions (16x8x16). A Java ME SDK/CLDC 1.1 + JSR-184 toolchain and HTC S730/JBed runtime were not available in this environment, so compilation, device heap measurements, and frame-time benchmarks remain to be run before claiming a 20 FPS result.
+
+
+### Procedural chunk neighborhood queue
+
+- When a streamed mesh section needs terrain outside the saved world, the renderer now submits the entire padded 3x3 chunk neighborhood in one pass instead of discovering and requesting only the first missing neighbor on each sync.
+- A fixed 16-entry coordinate queue deduplicates requests and puts visible-section dependencies ahead of optional prefetch work. The terrain worker still generates only one chunk at a time and publishes through the existing single staging buffer, so peak generation memory does not multiply.
+- Requests carry seed, noise-version, and dimension tags. The worker skips queued work that belongs to a world that has since changed; installation still validates those tags before swapping the generated data into the live cache.
+- The chunk-mesh worker now uses MIN_PRIORITY, matching the intended low-priority scheduling policy and reducing competition with the game loop. Thread priority remains advisory and varies by device.
+- This removes repeated request-discovery frames when several neighboring procedural chunks are missing. It does not remove the synchronous fallback used by gameplay collision/block queries if the player outruns terrain prefetch, and it is not a measured FPS claim.
