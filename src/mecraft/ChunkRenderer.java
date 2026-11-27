@@ -882,7 +882,7 @@ final class ChunkRenderer {
     private void buildHeldEndPortalFrame() {
         FaceBuilder[] builders = new FaceBuilder[TILE_COUNT];
         FaceBuilder[] tails = new FaceBuilder[TILE_COUNT];
-        addEndPortalFrameGeometry(builders, tails, 0, 0, 0, 0);
+        addEndPortalFrameGeometry(builders, tails, 0, 0, 0, 0, 12);
         int count = 0;
         for (int i = 0; i < builders.length; i++)
             if (builders[i] != null) count++;
@@ -2894,7 +2894,8 @@ final class ChunkRenderer {
                                 (snapshot.metadata(localX, localY, localZ) & 4) != 0);
                     } else if (id == Block.END_PORTAL_FRAME) {
                         addEndPortalFrameGeometry(builders, builderTails, localX, localY, localZ,
-                                snapshot.metadata(localX, localY, localZ));
+                                snapshot.metadata(localX, localY, localZ),
+                                chunkLightScratch[(ly * VoxelWorld.CHUNK_XZ + lz) * VoxelWorld.CHUNK_XZ + lx] & 255);
                     } else if (id == Block.FIRE) {
                         if (fires == null) fires = acquireFireBuilder();
                         fires.add(localX, localY, localZ);
@@ -3086,27 +3087,27 @@ final class ChunkRenderer {
     }
 
     private void addEndPortalFrameGeometry(FaceBuilder[] builders, FaceBuilder[] tails,
-            int x, int y, int z, int metadata) {
+            int x, int y, int z, int metadata, int lightLevel) {
         int x0 = x * 16, x1 = x0 + 16, z0 = z * 16, z1 = z0 + 16;
         int y0 = y * 16, top = y0 + 13;
-        addFrameQuad(builders, tails, 158, x0,y0+13,z0, x1,y0+13,z1, 0);
-        addFrameQuad(builders, tails, 175, x0,y0,z0, x1,y0,z1, 5);
-        addFrameQuad(builders, tails, 159, x0,y0,z0, x1,top,z0, 3);
-        addFrameQuad(builders, tails, 159, x0,y0,z1, x1,top,z1, 4);
-        addFrameQuad(builders, tails, 159, x0,y0,z0, x0,top,z1, 1);
-        addFrameQuad(builders, tails, 159, x1,y0,z0, x1,top,z1, 2);
+        addFrameQuad(builders, tails, 158, x0,y0+13,z0, x1,y0+13,z1, 0, lightLevel);
+        addFrameQuad(builders, tails, 175, x0,y0,z0, x1,y0,z1, 5, lightLevel);
+        addFrameQuad(builders, tails, 159, x0,y0,z0, x1,top,z0, 3, lightLevel);
+        addFrameQuad(builders, tails, 159, x0,y0,z1, x1,top,z1, 4, lightLevel);
+        addFrameQuad(builders, tails, 159, x0,y0,z0, x0,top,z1, 1, lightLevel);
+        addFrameQuad(builders, tails, 159, x1,y0,z0, x1,top,z1, 2, lightLevel);
         if ((metadata & 4) != 0) {
             int ex0=x0+5, ex1=x0+11, ez0=z0+5, ez1=z0+11, ey0=top, ey1=y0+16;
-            addFrameQuad(builders,tails,174,ex0,ey1,ez0,ex1,ey1,ez1,0);
-            addFrameQuad(builders,tails,174,ex0,ey0,ez0,ex1,ey1,ez0,3);
-            addFrameQuad(builders,tails,174,ex0,ey0,ez1,ex1,ey1,ez1,4);
-            addFrameQuad(builders,tails,174,ex0,ey0,ez0,ex0,ey1,ez1,1);
-            addFrameQuad(builders,tails,174,ex1,ey0,ez0,ex1,ey1,ez1,2);
+            addFrameQuad(builders,tails,174,ex0,ey1,ez0,ex1,ey1,ez1,0,lightLevel);
+            addFrameQuad(builders,tails,174,ex0,ey0,ez0,ex1,ey1,ez0,3,lightLevel);
+            addFrameQuad(builders,tails,174,ex0,ey0,ez1,ex1,ey1,ez1,4,lightLevel);
+            addFrameQuad(builders,tails,174,ex0,ey0,ez0,ex0,ey1,ez1,1,lightLevel);
+            addFrameQuad(builders,tails,174,ex1,ey0,ez0,ex1,ey1,ez1,2,lightLevel);
         }
     }
 
     private void addFrameQuad(FaceBuilder[] builders, FaceBuilder[] tails, int tile,
-            int x0,int y0,int z0,int x1,int y1,int z1,int face) {
+            int x0,int y0,int z0,int x1,int y1,int z1,int face,int lightLevel) {
         FaceBuilder b = tails[tile];
         if (b == null) {
             b = acquireFaceBuilder(tile);
@@ -3118,7 +3119,7 @@ final class ChunkRenderer {
             tails[tile] = next;
             b = next;
         }
-        b.addSubQuad(x0,y0,z0,x1,y1,z1,face);
+        b.addSubQuad(x0,y0,z0,x1,y1,z1,face,lightLevel);
     }
 
     private void add(FaceBuilder[] builders, int tile, int x, int y, int z, int face) {
