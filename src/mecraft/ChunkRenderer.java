@@ -178,6 +178,8 @@ final class ChunkRenderer {
             VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
     private final byte[] chunkLightScratch = new byte[VoxelWorld.CHUNK_XZ *
             VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
+    // Compact sector-local queue for CPU-side sky-light propagation (16 KB).
+    private final short[] chunkSkyQueue = new short[SECTOR_SIZE_X * SECTOR_SIZE_Z * VoxelWorld.CHUNK_Y];
     private final int[] greedyMaskScratch = new int[CHUNK_AREA];
     // One chunk is meshed at a time; reuse the large material lookup table to
     // avoid allocating thousands of references every time the player moves.
@@ -3366,6 +3368,10 @@ final class ChunkRenderer {
             }
         }
 
+        // Spread sky light sideways through windows and doorways. A compact
+        // sector-local BFS visits each transparent voxel at most once.
+        propagateSkyLight(sectorX, sectorZ);
+
         // Rasterize the sparse emitter list. The Manhattan falloff is cheap and
         // predictable on J2ME; rays are rejected when an opaque voxel blocks them.
         for (int source = 0; source < snapshot.lightCount; source++) {
@@ -3396,6 +3402,53 @@ final class ChunkRenderer {
                         if ((chunkLightScratch[index] & 255) < level)
                             chunkLightScratch[index] = (byte)level;
                     }
+                }
+            }
+        }
+    }
+
+    private void propagateSkyLight(int sectorX, int sectorZ) {
+        int area = SECTOR_SIZE_X * SECTOR_SIZE_Z;
+        int head = 0, tail = 0;
+        for (int y = 0; y < VoxelWorld.CHUNK_Y; y++) {
+            int row = y * CHUNK_AREA;
+            for (int z = sectorZ; z < sectorZ + SECTOR_SIZE_Z; z++) {
+                for (int x = sectorX; x < sectorX + SECTOR_SIZE_X; x++) {
+                    int index = row + z * VoxelWorld.CHUNK_XZ + x;
+                    if ((chunkLightScratch[index] & 255) > 1 &&
+                            !blocksLight(chunkVoxelScratch[index])) {
+                        int packed = y * area + (z - sectorZ) * SECTOR_SIZE_X + x - sectorX;
+                        chunkSkyQueue[tail++] = (short)packed;
+                    }
+                }
+            }
+        }
+        while (head < tail) {
+            int packed = chunkSkyQueue[head++] & 0xFFFF;
+            int y = packed / area;
+            int rem = packed - y * area;
+            int z = sectorZ + rem / SECTOR_SIZE_X;
+            int x = sectorX + rem % SECTOR_SIZE_X;
+            int sourceIndex = y * CHUNK_AREA + z * VoxelWorld.CHUNK_XZ + x;
+            int nextLight = (chunkLightScratch[sourceIndex] & 255) - 1;
+            if (nextLight <= 1) continue;
+            for (int direction = 0; direction < 6; direction++) {
+                int nx = x, ny = y, nz = z;
+                if (direction == 0) ny++;
+                else if (direction == 1) ny--;
+                else if (direction == 2) nx++;
+                else if (direction == 3) nx--;
+                else if (direction == 4) nz++;
+                else nz--;
+                if (nx < sectorX || nx >= sectorX + SECTOR_SIZE_X ||
+                        nz < sectorZ || nz >= sectorZ + SECTOR_SIZE_Z ||
+                        ny < 0 || ny >= VoxelWorld.CHUNK_Y) continue;
+                int targetIndex = ny * CHUNK_AREA + nz * VoxelWorld.CHUNK_XZ + nx;
+                if ((chunkLightScratch[targetIndex] & 255) >= nextLight) continue;
+                chunkLightScratch[targetIndex] = (byte)nextLight;
+                if (!blocksLight(chunkVoxelScratch[targetIndex]) && tail < chunkSkyQueue.length) {
+                    int targetPacked = ny * area + (nz - sectorZ) * SECTOR_SIZE_X + nx - sectorX;
+                    chunkSkyQueue[tail++] = (short)targetPacked;
                 }
             }
         }
