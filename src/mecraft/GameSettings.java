@@ -41,7 +41,7 @@ final class GameSettings {
             }
             // Prior settings stored a frameskip mode in slot zero. The new
             // setting stores an FPS limit, so migrate old installs to 20 FPS.
-            if (versionOrFrameSkip < VERSION && values.length > 0) values[0] = 20;
+            if (versionOrFrameSkip < 6 && values.length > 0) values[0] = 20;
             if (versionOrFrameSkip < 2 || in.available() < 1) return;
             int count = in.readUnsignedByte();
             for (int i = 0; i < count; i++) {
