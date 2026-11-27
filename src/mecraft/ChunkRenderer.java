@@ -2412,7 +2412,7 @@ final class ChunkRenderer {
                         public void run() { runChunkBuildWorker(); }
                     });
                     try {
-                        worker.setPriority(Thread.NORM_PRIORITY);
+                        worker.setPriority(Thread.MIN_PRIORITY);
                     } catch (RuntimeException ignored) {
                     }
                     chunkBuildThread = worker;
