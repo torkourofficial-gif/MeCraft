@@ -1469,6 +1469,14 @@ final class ChunkRenderer {
             appliedSunlightIntensity = intensity;
         }
         currentSkyColor = blendColor(0xFF26354A, 0xFF82B8E8, sun);
+        // Warm orange light around the horizon at sunset instead of a cold,
+        // prematurely dark blue transition.
+        int sunsetDistance = Math.abs(world.dayTime - 10400);
+        float sunset = 1.0f - sunsetDistance / 2400.0f;
+        if (sunset < 0.0f) sunset = 0.0f;
+        if (sunset > 1.0f) sunset = 1.0f;
+        if (sunset > 0.0f)
+            currentSkyColor = blendColor(currentSkyColor, 0xFFE99A55, sunset * 0.88f);
         updateTorchLights(world);
     }
 
