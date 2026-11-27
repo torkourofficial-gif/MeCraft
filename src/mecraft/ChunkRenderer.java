@@ -3385,35 +3385,63 @@ final class ChunkRenderer {
         // sector-local BFS visits each transparent voxel at most once.
         propagateSkyLight(sectorX, sectorZ);
 
-        // Rasterize the sparse emitter list. The Manhattan falloff is cheap and
-        // predictable on J2ME; rays are rejected when an opaque voxel blocks them.
+        // Emitters use a bounded breadth-first flood instead of tracing a 3D ray
+        // to every candidate voxel. Each voxel enters the queue at most once per
+        // source, so the work is linear in the sector volume and has no ray cost.
         for (int source = 0; source < snapshot.lightCount; source++) {
             int sx = snapshot.lightX[source] - x0;
             int sy = snapshot.lightY[source] - y0;
             int sz = snapshot.lightZ[source] - z0;
             int radius = snapshot.lightRadius[source] & 255;
-            int minX = Math.max(sectorX, sx - radius);
-            int maxX = Math.min(sectorX + SECTOR_SIZE_X - 1, sx + radius);
-            int minY = Math.max(0, sy - radius);
-            int maxY = Math.min(VoxelWorld.CHUNK_Y - 1, sy + radius);
-            int minZ = Math.max(sectorZ, sz - radius);
-            int maxZ = Math.min(sectorZ + SECTOR_SIZE_Z - 1, sz + radius);
             int multiplier = snapshot.lavaSource[source] ? 2 : 3;
-            for (int y = minY; y <= maxY; y++) {
-                int dy = Math.abs(y - sy);
-                int yBase = y * CHUNK_AREA;
-                for (int z = minZ; z <= maxZ; z++) {
-                    int dz = dy + Math.abs(z - sz);
-                    int row = yBase + z * VoxelWorld.CHUNK_XZ;
-                    for (int x = minX; x <= maxX; x++) {
-                        int distance = dz + Math.abs(x - sx);
-                        if (distance > radius || !hasLightPath(sx, sy, sz, x, y, z,
-                                sectorX, sectorZ)) continue;
-                        int level = (radius + 1 - distance) * multiplier;
-                        if (level > 14) level = 14;
-                        int index = row + x;
-                        if ((chunkLightScratch[index] & 255) < level)
-                            chunkLightScratch[index] = (byte)level;
+            if (radius <= 0 || sy < 0 || sy >= VoxelWorld.CHUNK_Y) continue;
+
+            // A source can sit in an adjacent sector. Enter this sector at its
+            // nearest edge, reducing its starting intensity by the distance.
+            int seedX = sx < sectorX ? sectorX :
+                    (sx >= sectorX + SECTOR_SIZE_X ? sectorX + SECTOR_SIZE_X - 1 : sx);
+            int seedZ = sz < sectorZ ? sectorZ :
+                    (sz >= sectorZ + SECTOR_SIZE_Z ? sectorZ + SECTOR_SIZE_Z - 1 : sz);
+            int seedDistance = Math.abs(seedX - sx) + Math.abs(seedZ - sz);
+            if (seedDistance > radius) continue;
+            int level = (radius + 1 - seedDistance) * multiplier;
+            if (level > 14) level = 14;
+            int seedIndex = sy * CHUNK_AREA + seedZ * VoxelWorld.CHUNK_XZ + seedX;
+            if ((chunkLightScratch[seedIndex] & 255) >= level) continue;
+            chunkLightScratch[seedIndex] = (byte)level;
+
+            int area = SECTOR_SIZE_X * SECTOR_SIZE_Z;
+            int head = 0, tail = 0;
+            chunkSkyQueue[tail++] = (short)(sy * area +
+                    (seedZ - sectorZ) * SECTOR_SIZE_X + seedX - sectorX);
+            while (head < tail) {
+                int packed = chunkSkyQueue[head++] & 0xFFFF;
+                int y = packed / area;
+                int rem = packed - y * area;
+                int z = sectorZ + rem / SECTOR_SIZE_X;
+                int x = sectorX + rem % SECTOR_SIZE_X;
+                int from = y * CHUNK_AREA + z * VoxelWorld.CHUNK_XZ + x;
+                int nextLight = (chunkLightScratch[from] & 255) - multiplier;
+                if (nextLight <= 0) continue;
+                for (int direction = 0; direction < 6; direction++) {
+                    int nx = x, ny = y, nz = z;
+                    if (direction == 0) ny++;
+                    else if (direction == 1) ny--;
+                    else if (direction == 2) nx++;
+                    else if (direction == 3) nx--;
+                    else if (direction == 4) nz++;
+                    else nz--;
+                    if (nx < sectorX || nx >= sectorX + SECTOR_SIZE_X ||
+                            nz < sectorZ || nz >= sectorZ + SECTOR_SIZE_Z ||
+                            ny < 0 || ny >= VoxelWorld.CHUNK_Y) continue;
+                    int target = ny * CHUNK_AREA + nz * VoxelWorld.CHUNK_XZ + nx;
+                    if ((chunkLightScratch[target] & 255) >= nextLight) continue;
+                    chunkLightScratch[target] = (byte)nextLight;
+                    if (!blocksLight(chunkVoxelScratch[target]) &&
+                            tail < chunkSkyQueue.length) {
+                        int targetPacked = ny * area +
+                                (nz - sectorZ) * SECTOR_SIZE_X + nx - sectorX;
+                        chunkSkyQueue[tail++] = (short)targetPacked;
                     }
                 }
             }
@@ -3473,25 +3501,6 @@ final class ChunkRenderer {
                 Block.isDoor(id)) return false;
         // Leaves attenuate light rather than behaving like a full opaque cube.
         return id != Block.LEAVES;
-    }
-
-    /** Short 3D grid ray; checks only voxels available in the active sector snapshot. */
-    private boolean hasLightPath(int x0, int y0, int z0, int x1, int y1, int z1,
-                                 int sectorX, int sectorZ) {
-        int dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
-        int steps = Math.max(Math.abs(dx), Math.max(Math.abs(dy), Math.abs(dz)));
-        if (steps <= 1) return true;
-        for (int step = 1; step < steps; step++) {
-            int x = x0 + dx * step / steps;
-            int y = y0 + dy * step / steps;
-            int z = z0 + dz * step / steps;
-            if (x < sectorX || x >= sectorX + SECTOR_SIZE_X ||
-                    z < sectorZ || z >= sectorZ + SECTOR_SIZE_Z ||
-                    y < 0 || y >= VoxelWorld.CHUNK_Y) continue;
-            int index = y * CHUNK_AREA + z * VoxelWorld.CHUNK_XZ + x;
-            if (blocksLight(chunkVoxelScratch[index])) return false;
-        }
-        return true;
     }
 
     /** O(1) block-quantized light lookup from the precomputed chunk map. */
