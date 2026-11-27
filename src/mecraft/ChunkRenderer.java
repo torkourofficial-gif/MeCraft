@@ -2146,7 +2146,7 @@ final class ChunkRenderer {
         }
     }
 
-    private boolean isEndSectorEmpty(VoxelWorld world, int cx, int cy, int cz, int sector) {
+    private boolean isSectorEmpty(VoxelWorld world, int cx, int cy, int cz, int sector) {
         int x0 = cx * VoxelWorld.CHUNK_XZ +
                 (sector % SECTORS_X) * SECTOR_SIZE_X;
         int z0 = cz * VoxelWorld.CHUNK_XZ +
@@ -2169,9 +2169,8 @@ final class ChunkRenderer {
             dirtyChunks[slot] = dirtySectorMasks[slot] != 0;
             return;
         }
-        if (world.dimensionId == VoxelWorld.DIM_END &&
-                isEndSectorEmpty(world, cx, cy, cz, chunkSnapshotSector)) {
-            // Empty End sectors need no worker snapshot, lighting scan or M3G mesh.
+        if (isSectorEmpty(world, cx, cy, cz, chunkSnapshotSector)) {
+            // Empty sectors in any dimension need no worker snapshot, lighting scan or M3G mesh.
             // Mark the sector resident so the next sector can be considered.
             dirtySectorMasks[slot] &= ~(1 << chunkSnapshotSector);
             Chunk empty = new Chunk();
