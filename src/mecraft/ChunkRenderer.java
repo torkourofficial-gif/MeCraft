@@ -183,6 +183,7 @@ final class ChunkRenderer {
     // Sector-local queue plus a one-byte queued marker prevent duplicate sky entries.
     private final short[] chunkSkyQueue = new short[SECTOR_SIZE_X * SECTOR_SIZE_Z * VoxelWorld.CHUNK_Y];
     private final byte[] chunkSkyQueued = new byte[SECTOR_SIZE_X * SECTOR_SIZE_Z * VoxelWorld.CHUNK_Y];
+    private volatile boolean lightingEnabled;
     private final int[] greedyMaskScratch = new int[CHUNK_AREA];
     // One chunk is meshed at a time; reuse the large material lookup table to
     // avoid allocating thousands of references every time the player moves.
@@ -453,6 +454,13 @@ final class ChunkRenderer {
         tanHorizontalFov = tanVerticalFov * (float)builtWidth / (float)builtHeight;
         camera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight, 0.1f, cameraFar);
         externalCamera.setPerspective(cameraFov, (float)builtWidth / (float)builtHeight, 0.1f, cameraFar);
+    }
+
+    void setLightingEnabled(boolean enabled) {
+        if (lightingEnabled == enabled) return;
+        lightingEnabled = enabled;
+        // Rebuild resident sectors so the selected mode takes effect immediately.
+        builtRevision = -1;
     }
 
     void setRenderDistance(int setting) {
@@ -2338,7 +2346,9 @@ final class ChunkRenderer {
                 chunkLightSnapshotY == chunkSnapshotY &&
                 chunkLightSnapshotZ == chunkSnapshotZ &&
                 chunkLightSnapshotRevision == lightRevision;
-        if (cachedLights) {
+        if (!lightingEnabled) {
+            snapshot.lightCount = 0;
+        } else if (cachedLights) {
             snapshot.lightCount = chunkLightSnapshotCount;
         } else {
             boolean lightsReady = world.collectLightSourcesStep(
@@ -3357,6 +3367,17 @@ final class ChunkRenderer {
      */
     private void prepareChunkLightMap(ChunkBuildSnapshot snapshot, int x0, int y0, int z0,
                                       int x1, int y1, int z1, int sectorX, int sectorZ) {
+        // Low-end devices skip all per-voxel propagation unless the player opts in.
+        if (!lightingEnabled) {
+            int light = snapshot.daylightLevel;
+            for (int y = 0; y < VoxelWorld.CHUNK_Y; y++) {
+                int row = y * CHUNK_AREA;
+                for (int z = sectorZ; z < sectorZ + SECTOR_SIZE_Z; z++)
+                    for (int x = sectorX; x < sectorX + SECTOR_SIZE_X; x++)
+                        chunkLightScratch[row + z * VoxelWorld.CHUNK_XZ + x] = (byte)light;
+            }
+            return;
+        }
         // Reuse the scratch map safely: each sector build starts from darkness.
         for (int y = 0; y < VoxelWorld.CHUNK_Y; y++) {
             int row = y * CHUNK_AREA;
