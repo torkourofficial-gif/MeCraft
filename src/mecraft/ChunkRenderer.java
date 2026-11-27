@@ -1660,9 +1660,9 @@ final class ChunkRenderer {
                             chunkWorldZ[slot] == chunkZ)
                         markChunkDirtyRegion(slot,
                                 Math.max(x - (torchChanged ? LAVA_LIGHT_RADIUS : 1), chunkX * VoxelWorld.CHUNK_XZ),
-                                Math.min(x + (torchChanged ? TORCH_LIGHT_RADIUS : 1), (chunkX + 1) * VoxelWorld.CHUNK_XZ - 1),
-                                Math.max(z - (torchChanged ? TORCH_LIGHT_RADIUS : 1), chunkZ * VoxelWorld.CHUNK_XZ),
-                                Math.min(z + (torchChanged ? TORCH_LIGHT_RADIUS : 1), (chunkZ + 1) * VoxelWorld.CHUNK_XZ - 1));
+                                Math.min(x + (torchChanged ? LAVA_LIGHT_RADIUS : 1), (chunkX + 1) * VoxelWorld.CHUNK_XZ - 1),
+                                Math.max(z - (torchChanged ? LAVA_LIGHT_RADIUS : 1), chunkZ * VoxelWorld.CHUNK_XZ),
+                                Math.min(z + (torchChanged ? LAVA_LIGHT_RADIUS : 1), (chunkZ + 1) * VoxelWorld.CHUNK_XZ - 1));
                 }
             }
         }
