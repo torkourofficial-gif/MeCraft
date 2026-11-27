@@ -299,36 +299,55 @@ final class VoxelWorld {
         int x0 = sectionX * CHUNK_XZ, z0 = sectionZ * CHUNK_XZ;
         int minX = floorChunk(x0 - 1), maxX = floorChunk(x0 + CHUNK_XZ);
         int minZ = floorChunk(z0 - 1), maxZ = floorChunk(z0 + CHUNK_XZ);
+        boolean ready = true;
+        // Queue the complete padded neighborhood in one pass. The worker still
+        // generates one chunk at a time, but no longer waits for a separate
+        // renderer sync to discover each subsequent missing neighbor.
         for (int cz = minZ; cz <= maxZ; cz++) {
             for (int cx = minX; cx <= maxX; cx++) {
                 if (needsProceduralChunk(cx, cz) && findProceduralCache(cx, cz) < 0) {
                     requestProceduralPrefetch(cx, cz, true);
-                    return false;
+                    ready = false;
                 }
             }
         }
-        return true;
+        return ready;
     }
 
-    private void requestProceduralPrefetch(final int cx, final int cz, boolean priority) {
+    private void requestProceduralPrefetch(int cx, int cz, boolean priority) {
         if (!needsProceduralChunk(cx, cz) || findProceduralCache(cx, cz) >= 0) return;
         synchronized (proceduralPrefetchLock) {
             if ((proceduralPrefetchBusy && proceduralPrefetchBusyX == cx &&
                     proceduralPrefetchBusyZ == cz && proceduralPrefetchBusyDimension == dimensionId) ||
-                (proceduralPrefetchPending && proceduralPrefetchRequestX == cx &&
-                    proceduralPrefetchRequestZ == cz && proceduralPrefetchRequestDimension == dimensionId) ||
                 (proceduralPrefetchReady && proceduralPrefetchReadyX == cx &&
                     proceduralPrefetchReadyZ == cz && proceduralPrefetchReadyDimension == dimensionId))
                 return;
-            if (proceduralPrefetchPending &&
-                    (!priority || proceduralPrefetchRequestPriority)) return;
-            proceduralPrefetchRequestX = cx;
-            proceduralPrefetchRequestZ = cz;
-            proceduralPrefetchRequestDimension = dimensionId;
-            proceduralPrefetchRequestSeed = seed;
-            proceduralPrefetchRequestNoiseVersion = noiseVersion;
-            proceduralPrefetchRequestPriority = priority;
-            proceduralPrefetchPending = true;
+            for (int i = 0; i < proceduralPrefetchQueueCount; i++) {
+                if (proceduralPrefetchQueueX[i] == cx &&
+                        proceduralPrefetchQueueZ[i] == cz &&
+                        proceduralPrefetchQueueDimension[i] == dimensionId)
+                    return;
+            }
+            if (proceduralPrefetchQueueCount >= PROCEDURAL_PREFETCH_QUEUE_SIZE) {
+                if (!priority) return;
+                proceduralPrefetchQueueCount--;
+            }
+            int insert = priority ? 0 : proceduralPrefetchQueueCount;
+            if (priority) {
+                for (int i = proceduralPrefetchQueueCount; i > 0; i--) {
+                    proceduralPrefetchQueueX[i] = proceduralPrefetchQueueX[i - 1];
+                    proceduralPrefetchQueueZ[i] = proceduralPrefetchQueueZ[i - 1];
+                    proceduralPrefetchQueueSeed[i] = proceduralPrefetchQueueSeed[i - 1];
+                    proceduralPrefetchQueueNoiseVersion[i] = proceduralPrefetchQueueNoiseVersion[i - 1];
+                    proceduralPrefetchQueueDimension[i] = proceduralPrefetchQueueDimension[i - 1];
+                }
+            }
+            proceduralPrefetchQueueX[insert] = cx;
+            proceduralPrefetchQueueZ[insert] = cz;
+            proceduralPrefetchQueueSeed[insert] = seed;
+            proceduralPrefetchQueueNoiseVersion[insert] = noiseVersion;
+            proceduralPrefetchQueueDimension[insert] = dimensionId;
+            proceduralPrefetchQueueCount++;
             if (proceduralPrefetchThread == null) {
                 try {
                     Thread worker = new Thread(new Runnable() {
@@ -338,9 +357,8 @@ final class VoxelWorld {
                     proceduralPrefetchThread = worker;
                     worker.start();
                 } catch (Throwable failed) {
-                    // Do not leave a dead prefetch thread registered as active.
                     proceduralPrefetchThread = null;
-                    proceduralPrefetchPending = false;
+                    proceduralPrefetchQueueCount = 0;
                     proceduralPrefetchBusy = false;
                 }
             } else {
@@ -354,20 +372,27 @@ final class VoxelWorld {
             int cx, cz, requestSeed, requestNoiseVersion;
             int dimension;
             synchronized (proceduralPrefetchLock) {
-                while (!proceduralPrefetchPending || proceduralPrefetchReady) {
+                while (proceduralPrefetchQueueCount == 0 || proceduralPrefetchReady) {
                     try { proceduralPrefetchLock.wait(10000L); }
                     catch (InterruptedException ignored) { }
-                    if (!proceduralPrefetchPending && !proceduralPrefetchReady) {
+                    if (proceduralPrefetchQueueCount == 0 && !proceduralPrefetchReady) {
                         proceduralPrefetchThread = null;
                         return;
                     }
                 }
-                cx = proceduralPrefetchRequestX;
-                cz = proceduralPrefetchRequestZ;
-                dimension = proceduralPrefetchRequestDimension;
-                requestSeed = proceduralPrefetchRequestSeed;
-                requestNoiseVersion = proceduralPrefetchRequestNoiseVersion;
-                proceduralPrefetchPending = false;
+                cx = proceduralPrefetchQueueX[0];
+                cz = proceduralPrefetchQueueZ[0];
+                requestSeed = proceduralPrefetchQueueSeed[0];
+                requestNoiseVersion = proceduralPrefetchQueueNoiseVersion[0];
+                dimension = proceduralPrefetchQueueDimension[0];
+                for (int i = 1; i < proceduralPrefetchQueueCount; i++) {
+                    proceduralPrefetchQueueX[i - 1] = proceduralPrefetchQueueX[i];
+                    proceduralPrefetchQueueZ[i - 1] = proceduralPrefetchQueueZ[i];
+                    proceduralPrefetchQueueSeed[i - 1] = proceduralPrefetchQueueSeed[i];
+                    proceduralPrefetchQueueNoiseVersion[i - 1] = proceduralPrefetchQueueNoiseVersion[i];
+                    proceduralPrefetchQueueDimension[i - 1] = proceduralPrefetchQueueDimension[i];
+                }
+                proceduralPrefetchQueueCount--;
                 proceduralPrefetchBusy = true;
                 proceduralPrefetchBusyX = cx;
                 proceduralPrefetchBusyZ = cz;
@@ -376,11 +401,14 @@ final class VoxelWorld {
 
             boolean generated = false;
             try {
-                generateChunk(cx, cz, proceduralPrefetchBlocks,
-                        proceduralPrefetchHeights, proceduralPrefetchBiomes, dimension);
-                generated = true;
+                // Drop queued work from a world/dimension that has since changed.
+                if (requestSeed == seed && requestNoiseVersion == noiseVersion &&
+                        dimension == dimensionId) {
+                    generateChunk(cx, cz, proceduralPrefetchBlocks,
+                            proceduralPrefetchHeights, proceduralPrefetchBiomes, dimension);
+                    generated = true;
+                }
             } catch (Throwable failed) {
-                // Release the busy flag below so the next frame can retry this chunk.
                 generated = false;
             }
             synchronized (proceduralPrefetchLock) {
