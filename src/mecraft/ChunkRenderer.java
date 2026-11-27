@@ -180,8 +180,9 @@ final class ChunkRenderer {
             VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
     private final byte[] chunkLightScratch = new byte[VoxelWorld.CHUNK_XZ *
             VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
-    // Compact sector-local queue for CPU-side sky-light propagation (16 KB).
+    // Sector-local queue plus a one-byte queued marker prevent duplicate sky entries.
     private final short[] chunkSkyQueue = new short[SECTOR_SIZE_X * SECTOR_SIZE_Z * VoxelWorld.CHUNK_Y];
+    private final byte[] chunkSkyQueued = new byte[SECTOR_SIZE_X * SECTOR_SIZE_Z * VoxelWorld.CHUNK_Y];
     private final int[] greedyMaskScratch = new int[CHUNK_AREA];
     // One chunk is meshed at a time; reuse the large material lookup table to
     // avoid allocating thousands of references every time the player moves.
@@ -3450,20 +3451,32 @@ final class ChunkRenderer {
 
     private void propagateSkyLight(int sectorX, int sectorZ) {
         int area = SECTOR_SIZE_X * SECTOR_SIZE_Z;
+        int volume = area * VoxelWorld.CHUNK_Y;
         int head = 0, tail = 0;
+
+        // Reset only the active sector. The queue stores each sector voxel once,
+        // so its fixed capacity is sufficient even when many columns are sunlit.
+        for (int i = 0; i < volume; i++) chunkSkyQueued[i] = 0;
+
+        // Do not enqueue every directly sunlit voxel: most of those cells have
+        // nothing darker to illuminate. Seed only the lit boundary of a darker
+        // transparent region (cave mouths, windows and door openings).
         for (int y = 0; y < VoxelWorld.CHUNK_Y; y++) {
             int row = y * CHUNK_AREA;
             for (int z = sectorZ; z < sectorZ + SECTOR_SIZE_Z; z++) {
                 for (int x = sectorX; x < sectorX + SECTOR_SIZE_X; x++) {
                     int index = row + z * VoxelWorld.CHUNK_XZ + x;
-                    if ((chunkLightScratch[index] & 255) > 1 &&
-                            !blocksLight(chunkVoxelScratch[index])) {
-                        int packed = y * area + (z - sectorZ) * SECTOR_SIZE_X + x - sectorX;
+                    int light = chunkLightScratch[index] & 255;
+                    if (light <= 2 || blocksLight(chunkVoxelScratch[index])) continue;
+                    int packed = y * area + (z - sectorZ) * SECTOR_SIZE_X + x - sectorX;
+                    if (hasDarkerSkyNeighbor(x, y, z, sectorX, sectorZ, light)) {
+                        chunkSkyQueued[packed] = 1;
                         chunkSkyQueue[tail++] = (short)packed;
                     }
                 }
             }
         }
+
         while (head < tail) {
             int packed = chunkSkyQueue[head++] & 0xFFFF;
             int y = packed / area;
@@ -3473,6 +3486,7 @@ final class ChunkRenderer {
             int sourceIndex = y * CHUNK_AREA + z * VoxelWorld.CHUNK_XZ + x;
             int nextLight = (chunkLightScratch[sourceIndex] & 255) - 1;
             if (nextLight <= 1) continue;
+
             for (int direction = 0; direction < 6; direction++) {
                 int nx = x, ny = y, nz = z;
                 if (direction == 0) ny++;
@@ -3484,15 +3498,57 @@ final class ChunkRenderer {
                 if (nx < sectorX || nx >= sectorX + SECTOR_SIZE_X ||
                         nz < sectorZ || nz >= sectorZ + SECTOR_SIZE_Z ||
                         ny < 0 || ny >= VoxelWorld.CHUNK_Y) continue;
+
                 int targetIndex = ny * CHUNK_AREA + nz * VoxelWorld.CHUNK_XZ + nx;
                 if ((chunkLightScratch[targetIndex] & 255) >= nextLight) continue;
                 chunkLightScratch[targetIndex] = (byte)nextLight;
-                if (!blocksLight(chunkVoxelScratch[targetIndex]) && tail < chunkSkyQueue.length) {
-                    int targetPacked = ny * area + (nz - sectorZ) * SECTOR_SIZE_X + nx - sectorX;
-                    chunkSkyQueue[tail++] = (short)targetPacked;
+                if (!blocksLight(chunkVoxelScratch[targetIndex])) {
+                    int targetPacked = ny * area +
+                            (nz - sectorZ) * SECTOR_SIZE_X + nx - sectorX;
+                    if (chunkSkyQueued[targetPacked] == 0) {
+                        chunkSkyQueued[targetPacked] = 1;
+                        // Every packed voxel is queued at most once, hence tail
+                        // cannot exceed volume and no propagation is silently lost.
+                        chunkSkyQueue[tail++] = (short)targetPacked;
+                    }
                 }
             }
         }
+    }
+
+    private boolean hasDarkerSkyNeighbor(int x, int y, int z,
+            int sectorX, int sectorZ, int light) {
+        if (y + 1 < VoxelWorld.CHUNK_Y &&
+                !blocksLight(chunkVoxelScratch[(y + 1) * CHUNK_AREA +
+                        z * VoxelWorld.CHUNK_XZ + x]) &&
+                (chunkLightScratch[(y + 1) * CHUNK_AREA +
+                        z * VoxelWorld.CHUNK_XZ + x] & 255) < light - 1) return true;
+        if (y > 0 &&
+                !blocksLight(chunkVoxelScratch[(y - 1) * CHUNK_AREA +
+                        z * VoxelWorld.CHUNK_XZ + x]) &&
+                (chunkLightScratch[(y - 1) * CHUNK_AREA +
+                        z * VoxelWorld.CHUNK_XZ + x] & 255) < light - 1) return true;
+        if (x + 1 < sectorX + SECTOR_SIZE_X &&
+                !blocksLight(chunkVoxelScratch[y * CHUNK_AREA +
+                        z * VoxelWorld.CHUNK_XZ + x + 1]) &&
+                (chunkLightScratch[y * CHUNK_AREA +
+                        z * VoxelWorld.CHUNK_XZ + x + 1] & 255) < light - 1) return true;
+        if (x > sectorX &&
+                !blocksLight(chunkVoxelScratch[y * CHUNK_AREA +
+                        z * VoxelWorld.CHUNK_XZ + x - 1]) &&
+                (chunkLightScratch[y * CHUNK_AREA +
+                        z * VoxelWorld.CHUNK_XZ + x - 1] & 255) < light - 1) return true;
+        if (z + 1 < sectorZ + SECTOR_SIZE_Z &&
+                !blocksLight(chunkVoxelScratch[y * CHUNK_AREA +
+                        (z + 1) * VoxelWorld.CHUNK_XZ + x]) &&
+                (chunkLightScratch[y * CHUNK_AREA +
+                        (z + 1) * VoxelWorld.CHUNK_XZ + x] & 255) < light - 1) return true;
+        if (z > sectorZ &&
+                !blocksLight(chunkVoxelScratch[y * CHUNK_AREA +
+                        (z - 1) * VoxelWorld.CHUNK_XZ + x]) &&
+                (chunkLightScratch[y * CHUNK_AREA +
+                        (z - 1) * VoxelWorld.CHUNK_XZ + x] & 255) < light - 1) return true;
+        return false;
     }
 
     private boolean blocksLight(byte id) {
