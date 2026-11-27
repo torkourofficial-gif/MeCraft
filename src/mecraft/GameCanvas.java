@@ -1059,6 +1059,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             }
         }
         reconcilePlayerInventorySlots();
+        renderer.refreshDroppedItems();
         savePlayerInventorySlots();
         copyInventoryToWorld();
     }
