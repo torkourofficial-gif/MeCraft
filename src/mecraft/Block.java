@@ -63,6 +63,8 @@ final class Block {
     static final byte PORTAL = (byte)findTileBlock(14);
     static final byte FIRE = (byte)findTileBlock(31);
     static final byte FURNACE = (byte)findTileBlock(62);
+    // Metadata bit used by the lighting engine while a furnace is burning.
+    static final int FURNACE_LIT_META = 1;
     static final byte LEVER = (byte)findTileBlock(96);
     static final byte REDSTONE_TORCH_ON = (byte)findTileBlock(99);
     static final byte PUMPKIN = (byte)findTileBlock(102);
