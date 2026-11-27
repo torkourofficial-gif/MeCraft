@@ -1303,6 +1303,10 @@ final class ChunkRenderer {
         droppedItems.spawn(itemId, x, y, z);
     }
 
+    boolean spawnDroppedStack(int itemId, int count, int x, int y, int z) {
+        return droppedItems.spawnStack(itemId, count, x, y, z) >= 0;
+    }
+
     boolean spawnPrimedTnt(int x, int y, int z, int fuse) {
         return droppedItems.spawnPrimedTnt(x, y, z, fuse);
     }
