@@ -389,7 +389,31 @@ final class Language {
         if (value.equals("slime")) return english ? "Slime" : "slime";
         if (value.equals("ghast")) return english ? "Ghast" : "ghast";
         if (value.equals("cerdo zombi")) return english ? "Zombie pigman" : "cerdo zombi";
-        if (value.equals("Error")) return english ? "Error" : "Error";
+        if (value.equals("Error")) return "Error";
+        if (value.equals("Semilla del mundo")) return english ? "World seed" : "Semilla del mundo";
+        if (value.equals("World seed")) return english ? "World seed" : "Semilla del mundo";
+        if (value.startsWith("Huevo de spawn de "))
+            return (english ? "Spawn egg: " : "Huevo de spawn de ") + text(value.substring(18));
+        if (value.startsWith("Spawn egg: "))
+            return (english ? "Spawn egg: " : "Huevo de spawn de ") + text(value.substring(11));
+        if (value.equals("Ojo de Ender")) return english ? "Eye of Ender" : "Ojo de Ender";
+        if (value.equals("Eye of Ender")) return english ? "Eye of Ender" : "Ojo de Ender";
+        if (value.equals("Perla de Ender")) return english ? "Ender Pearl" : "Perla de Ender";
+        if (value.equals("Ender Pearl")) return english ? "Ender Pearl" : "Perla de Ender";
+        if (value.equals("Vara de Blaze")) return english ? "Blaze Rod" : "Vara de Blaze";
+        if (value.equals("Blaze Rod")) return english ? "Blaze Rod" : "Vara de Blaze";
+        if (value.equals("Polvo de Blaze")) return english ? "Blaze Powder" : "Polvo de Blaze";
+        if (value.equals("Blaze Powder")) return english ? "Blaze Powder" : "Polvo de Blaze";
+        if (value.equals("Cama")) return english ? "Bed" : "Cama";
+        if (value.equals("Bed")) return english ? "Bed" : "Cama";
+        if (value.equals("Losa de madera")) return english ? "Wooden Slab" : "Losa de madera";
+        if (value.equals("Wooden Slab")) return english ? "Wooden Slab" : "Losa de madera";
+        if (value.equals("Escaleras de madera")) return english ? "Wooden Stairs" : "Escaleras de madera";
+        if (value.equals("Wooden Stairs")) return english ? "Wooden Stairs" : "Escaleras de madera";
+        if (value.equals("Escaleras de piedra")) return english ? "Stone Stairs" : "Escaleras de piedra";
+        if (value.equals("Stone Stairs")) return english ? "Stone Stairs" : "Escaleras de piedra";
+        if (value.equals("Portal del End")) return english ? "End Portal" : "Portal del End";
+        if (value.equals("End Portal")) return english ? "End Portal" : "Portal del End";
         if (english) {
             if (value.equals("3 Puertas de hierro")) return "3 Iron Doors";
             for (int i = 0; i < SPANISH_TEXT.length; i++)
