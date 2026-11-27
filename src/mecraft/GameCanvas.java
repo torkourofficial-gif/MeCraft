@@ -213,6 +213,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     private boolean ridingMinecart;
     private boolean sleepingInBed;
     private int sleepTicks, sleepBedX, sleepBedY, sleepBedZ, sleepBedFacing;
+    private boolean hasBedSpawn;
+    private int bedSpawnX, bedSpawnY, bedSpawnZ, bedSpawnFacing, bedSpawnDimension;
     private int wakeFadeTicks;
     private float sleepSavedYaw, sleepSavedPitch;
     private MusicController music;
@@ -926,9 +928,12 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     private void respawn() {
-        world.playerX = VoxelWorld.WIDTH / 2 + 0.5f;
-        world.playerZ = VoxelWorld.DEPTH / 2 + 0.5f;
-        world.playerY = world.surfaceY(VoxelWorld.WIDTH / 2, VoxelWorld.DEPTH / 2) + 1.0f;
+        if (world == null) return;
+        if (!tryRespawnAtBed()) {
+            world.playerX = VoxelWorld.WIDTH / 2 + 0.5f;
+            world.playerZ = VoxelWorld.DEPTH / 2 + 0.5f;
+            world.playerY = world.surfaceY(VoxelWorld.WIDTH / 2, VoxelWorld.DEPTH / 2) + 1.0f;
+        }
         world.health = 20;
         playerPhysics.reset();
         airTicks = MAX_AIR;
@@ -937,10 +942,130 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         netherLavaDamageCooldown = 0;
         playerFireTicks = 0;
         playerBurnDamageTicks = 20;
+        playerLavaBurnTicks = 0;
+        playerLavaDamageTicks = 20;
+        sleepingInBed = false;
+        ridingBoat = false;
+        ridingMinecart = false;
+        sprinting = false;
+        jumpHeld = false;
+        clearKeys();
+        if (renderer != null) renderer.updateCamera(world, cameraPitch);
+    }
+
+    private boolean tryRespawnAtBed() {
+        if (!hasBedSpawn || world == null || bedSpawnDimension != world.dimensionId) return false;
+        int x = bedSpawnX, y = bedSpawnY, z = bedSpawnZ, facing = bedSpawnFacing;
+        int hx = x + (facing == 1 ? -1 : (facing == 3 ? 1 : 0));
+        int hz = z + (facing == 0 ? 1 : (facing == 2 ? -1 : 0));
+        int footMeta = world.metadataAt(x, y, z);
+        int headMeta = world.metadataAt(hx, y, hz);
+        if (world.get(x, y, z) != Block.WOOL || !Block.isBedMeta(footMeta) ||
+                Block.isBedHead(footMeta) || Block.bedFacing(footMeta) != facing ||
+                world.get(hx, y, hz) != Block.WOOL || !Block.isBedMeta(headMeta) ||
+                !Block.isBedHead(headMeta) || Block.bedFacing(headMeta) != facing) return false;
+
+        int fx = facing == 1 ? -1 : (facing == 3 ? 1 : 0);
+        int fz = facing == 0 ? 1 : (facing == 2 ? -1 : 0);
+        int sx = facing == 0 ? -1 : (facing == 2 ? 1 : 0);
+        int sz = facing == 1 ? -1 : (facing == 3 ? 1 : 0);
+        int[] exitX = new int[] { x + sx, x - sx, x - fx, x + fx };
+        int[] exitZ = new int[] { z + sz, z - sz, z - fz, z + fz };
+        for (int i = 0; i < exitX.length; i++) {
+            int ex = exitX[i], ez = exitZ[i];
+            byte floor = world.get(ex, y - 1, ez);
+            byte feet = world.get(ex, y, ez);
+            byte head = world.get(ex, y + 1, ez);
+            if (Block.solid(floor) && !Block.solid(feet) && !Block.solid(head) &&
+                    !Block.isFluid(feet) && !Block.isFluid(head)) {
+                world.playerX = ex + 0.5f;
+                world.playerY = y;
+                world.playerZ = ez + 0.5f;
+                world.yaw = facing * 90.0f;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String bedSpawnStoreName() {
+        String base = world == null || world.saveStoreName == null ? "mecraft-save" : world.saveStoreName;
+        return "mcbs" + Integer.toHexString(base.hashCode());
+    }
+
+    private void saveBedSpawn() {
+        if (world == null || world.saveStoreName == null || !hasBedSpawn) return;
+        RecordStore rs = null;
+        try {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream(32);
+            DataOutputStream out = new DataOutputStream(bytes);
+            out.writeInt(0x4D434253);
+            out.writeInt(bedSpawnX); out.writeInt(bedSpawnY); out.writeInt(bedSpawnZ);
+            out.writeInt(bedSpawnFacing); out.writeInt(bedSpawnDimension);
+            out.flush();
+            byte[] data = bytes.toByteArray();
+            rs = RecordStore.openRecordStore(bedSpawnStoreName(), true);
+            if (rs.getNumRecords() == 0) rs.addRecord(data, 0, data.length);
+            else rs.setRecord(1, data, 0, data.length);
+            out.close();
+        } catch (Exception ignored) { }
+        finally { if (rs != null) try { rs.closeRecordStore(); } catch (Exception ignored) { } }
+    }
+
+    private void loadBedSpawn() {
+        hasBedSpawn = false;
+        if (world == null || world.saveStoreName == null) return;
+        RecordStore rs = null;
+        try {
+            rs = RecordStore.openRecordStore(bedSpawnStoreName(), false);
+            if (rs.getNumRecords() > 0) {
+                DataInputStream in = new DataInputStream(new ByteArrayInputStream(rs.getRecord(1)));
+                if (in.readInt() == 0x4D434253) {
+                    int x = in.readInt(), y = in.readInt(), z = in.readInt();
+                    int facing = in.readInt(), dimension = in.readInt();
+                    if (y > 0 && y < VoxelWorld.HEIGHT && facing >= 0 && facing <= 3 &&
+                            dimension >= 0 && dimension < VoxelWorld.DIMENSION_COUNT) {
+                        bedSpawnX = x; bedSpawnY = y; bedSpawnZ = z;
+                        bedSpawnFacing = facing; bedSpawnDimension = dimension;
+                        hasBedSpawn = true;
+                    }
+                }
+                in.close();
+            }
+        } catch (Exception ignored) { }
+        finally { if (rs != null) try { rs.closeRecordStore(); } catch (Exception ignored) { } }
+    }
+
+    private void dropInventoryOnDeath() {
+        if (world == null || world.mode != 0 || renderer == null) return;
+        if (!loadPlayerInventorySlots()) buildPlayerInventorySlots();
+        reconcilePlayerInventorySlots();
+        int bx = floorBlock(world.playerX);
+        int by = floorBlock(world.playerY + 0.2f);
+        int bz = floorBlock(world.playerZ);
+        playerInventoryHeldItem = 0;
+        playerInventoryHeldCount = 0;
+        for (int id = 1; id < inventory.length; id++) {
+            int amount = inventory[id];
+            if (amount <= 0) continue;
+            if (renderer.spawnDroppedStack(id, amount, bx, by, bz)) {
+                inventory[id] = 0;
+                for (int slot = 0; slot < PLAYER_INVENTORY_SLOTS; slot++) {
+                    if (playerSlotItems[slot] == id) {
+                        playerSlotItems[slot] = 0;
+                        playerSlotCounts[slot] = 0;
+                    }
+                }
+            }
+        }
+        reconcilePlayerInventorySlots();
+        savePlayerInventorySlots();
+        copyInventoryToWorld();
     }
 
     private void enterGameOver() {
         if (state == GAME_OVER) return;
+        dropInventoryOnDeath();
         state = GAME_OVER;
         gameOverSelection = 0;
         gameOverTicks = 0;
@@ -950,24 +1075,20 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
     }
 
     private void activateGameOverSelection() {
-        // Indev offers to generate a new level or load a saved one from here.
-        // Keep this world's progress by saving it in its respawned state first.
-        int mode = world == null ? 0 : world.mode;
-        respawn();
-        saveIfNeeded();
-        renderer = null;
-        world = null;
-        System.gc();
+        if (world == null) return;
         if (gameOverSelection == 0) {
-            newWorldName = defaultWorldName(savedWorlds.length + 1);
-            newWorldSeed = "";
-            newWorldMode = mode;
-            createSelection = 0;
-            state = WORLD_CREATE;
+            respawn();
+            state = PLAYING;
+            saveIfNeeded();
         } else {
+            saveIfNeeded();
+            closeLanSession();
+            renderer = null;
+            world = null;
+            System.gc();
+            state = MENU;
+            menuSelection = MENU_SINGLEPLAYER;
             refreshWorldList();
-            worldSelection = 0;
-            state = WORLD_SELECT;
         }
         clearKeys();
         repaint();
@@ -1010,6 +1131,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
             world.worldName = name == null || name.trim().length() == 0 ? "Mundo" : name.trim();
             // Nether access is reached through a wool portal in the normal world.
             world.saveStoreName = VoxelWorld.nextWorldStoreName();
+            hasBedSpawn = false;
             copyHotbarFromWorld();
             playerPhysics.reset();
             flying = false;
@@ -1085,6 +1207,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         try {
             if (renderer != null) { renderer = null; System.gc(); }
             world = saved;
+            loadBedSpawn();
             world.health = clamp(world.health, 0, 20);
             playerPhysics.reset();
             flying = false;
@@ -1821,6 +1944,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         sleepingInBed=true; sleepTicks=0; wakeFadeTicks=0;
         sleepSavedYaw=world.yaw; sleepSavedPitch=cameraPitch;
         sleepBedX=x; sleepBedY=y; sleepBedZ=z; sleepBedFacing=facing;
+        bedSpawnX=x; bedSpawnY=y; bedSpawnZ=z; bedSpawnFacing=facing;
+        bedSpawnDimension=world.dimensionId; hasBedSpawn=true; saveBedSpawn();
         int dx=facing==1?-1:(facing==3?1:0);
         int dz=facing==0?1:(facing==2?-1:0);
         // Lay the camera just above the mattress, near the pillow, instead of
@@ -4764,6 +4889,21 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
 
     private void handleTouchMenu(int x, int y) {
         int w = getWidth(), h = getHeight();
+        if (state == GAME_OVER) {
+            float progress = gameOverTicks / 12.0f;
+            if (progress > 1.0f) progress = 1.0f;
+            float eased = 1.0f - (1.0f - progress) * (1.0f - progress) * (1.0f - progress);
+            int offset = (int)((1.0f - eased) * 14.0f);
+            int firstY = h / 4 + 72 + offset;
+            int secondY = h / 4 + 96 + offset;
+            if (y >= firstY - 4 && y < firstY + 24) gameOverSelection = 0;
+            else if ((y >= secondY - 4 && y < secondY + 24) ||
+                    isTouchBackButtonHit(state, x, y, w, h)) gameOverSelection = 1;
+            else return;
+            keyPressed(KEY_NUM5);
+            repaint();
+            return;
+        }
         if (isTouchBackButtonHit(state, x, y, w, h)) {
             if (state == GAME_OVER) backToMenu();
             else keyPressed(KEY_NUM0);
@@ -4819,7 +4959,6 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         } else if (state == WORLD_DELETE) {
             if (y > h / 2) keyPressed(KEY_NUM0); else keyPressed(KEY_NUM5);
         } else if (state == ERROR) keyPressed(KEY_NUM5);
-        else if (state == GAME_OVER) keyPressed(KEY_NUM5);
         else if (state == SURVIVAL_INVENTORY) {
             int left = (w - 176) / 2, top = (h - 166) / 2;
             if (x >= left + 7 && x < left + 169 && y >= top + 83 && y < top + 160) {
@@ -6146,21 +6285,15 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         Font oldFont = g.getFont();
         g.setFont(Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_LARGE));
         g.setColor(255, 255, 255);
-        g.drawString(Language.text("Game over!"), w / 2, h / 4 - 20 - enterOffset,
+        String title = language == Language.SPANISH ? "¡Has muerto!" : "You died!";
+        g.drawString(title, w / 2, h / 4 - 20 - enterOffset,
                 Graphics.HCENTER | Graphics.TOP);
         g.setFont(oldFont);
-        String scorePrefix = "Score: ";
-        int scoreWidth = oldFont.stringWidth(scorePrefix + "0");
-        int scoreX = (w - scoreWidth) / 2;
-        int scoreY = h / 4 + 20 - enterOffset / 2;
-        g.setColor(255, 255, 255);
-        g.drawString(scorePrefix, scoreX, scoreY, Graphics.TOP | Graphics.LEFT);
-        g.setColor(255, 220, 55);
-        g.drawString("0", scoreX + oldFont.stringWidth(scorePrefix), scoreY,
-                Graphics.TOP | Graphics.LEFT);
         int buttonOffset = (int)((1.0f - eased) * 14.0f);
-        drawGameOverButton(g, "Generate new level...", h / 4 + 72 + buttonOffset, gameOverSelection == 0);
-        drawGameOverButton(g, "Load level..", h / 4 + 96 + buttonOffset, gameOverSelection == 1);
+        String respawn = language == Language.SPANISH ? "Respawnear" : "Respawn";
+        String titleScreen = language == Language.SPANISH ? "Salir al menú principal" : "Title Screen";
+        drawGameOverButton(g, respawn, h / 4 + 72 + buttonOffset, gameOverSelection == 0);
+        drawGameOverButton(g, titleScreen, h / 4 + 96 + buttonOffset, gameOverSelection == 1);
     }
 
     /** Fade the Indev red overlay in during the first twelve game-over frames. */
