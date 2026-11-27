@@ -422,6 +422,9 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                             System.out.println("MeCraft: excepción en el bucle de juego (" + stage + "): " + problem);
                             problem.printStackTrace();
                             loopFailureReported = true;
+                            // Do not keep retrying a broken tick invisibly; show the
+                            // existing diagnostic screen with the exact failing stage.
+                            showDiagnostic(stage, problem);
                         }
                     }
                 }
@@ -430,14 +433,20 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
                         updateGameOver();
                     } catch (Throwable problem) {
                         if (!loopFailureReported) {
+                            String stage = gameUpdateStage;
                             System.out.println("MeCraft: excepción al actualizar el mundo tras la muerte: " + problem);
                             problem.printStackTrace();
                             loopFailureReported = true;
+                            showDiagnostic(stage, problem);
                         }
                     }
                 }
                 if (visible && state == FURNACE_INVENTORY) {
-                    try { updateFurnace(); } catch (Throwable ignored) { }
+                    try {
+                        updateFurnace();
+                    } catch (Throwable problem) {
+                        showDiagnostic("actualizando el horno", problem);
+                    }
                 }
                 if (visible && state == GAME_OVER && gameOverTicks < 12) gameOverTicks++;
 
