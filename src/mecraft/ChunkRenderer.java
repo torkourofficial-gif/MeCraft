@@ -1628,8 +1628,11 @@ final class ChunkRenderer {
         int lx = x - cx * VoxelWorld.CHUNK_XZ;
         int ly = y % VoxelWorld.CHUNK_Y;
         int lz = z - cz * VoxelWorld.CHUNK_XZ;
-        boolean torchChanged = world.changedOldId == Block.TORCH ||
-                world.get(x, y, z) == Block.TORCH;
+        byte changedNow = world.get(x, y, z);
+        boolean torchChanged = world.changedOldId == Block.TORCH || changedNow == Block.TORCH ||
+                world.changedOldId == Block.LAVA || changedNow == Block.LAVA ||
+                world.changedOldId == Block.FIRE || changedNow == Block.FIRE ||
+                world.changedOldId == Block.FURNACE || changedNow == Block.FURNACE;
         int minChunkX = torchChanged ? floorDiv(x - TORCH_LIGHT_RADIUS, VoxelWorld.CHUNK_XZ) :
                 cx - (lx == 0 ? 1 : 0);
         int maxChunkX = torchChanged ? floorDiv(x + TORCH_LIGHT_RADIUS, VoxelWorld.CHUNK_XZ) :
@@ -2332,6 +2335,11 @@ final class ChunkRenderer {
             snapshot.lightCount = snapshot.lightScanState[1];
         }
         snapshot.dimensionId = world.dimensionId;
+        float skyBrightness = 0.20f + currentDaylight * 0.80f;
+        if (world.dimensionId == VoxelWorld.DIM_NETHER || world.nether) skyBrightness = 0.35f;
+        if (world.dimensionId == VoxelWorld.DIM_END) skyBrightness = 0.28f;
+        if (skyBrightness > 1.0f) skyBrightness = 1.0f;
+        snapshot.daylightLevel = (int)(14.0f * skyBrightness);
         // Edits made while copying leave this sector dirty. Finish this build,
         // then rebuild once from the final world state instead of restarting the
         // entire snapshot on every mining tick.
@@ -2823,8 +2831,6 @@ final class ChunkRenderer {
         int sectorX = (sector % SECTORS_X) * SECTOR_SIZE_X;
         int sectorZ = (sector / SECTORS_X) * SECTOR_SIZE_Z;
 
-        prepareChunkLightMap(snapshot, x0, y0, z0, x1, y1, z1, sectorX, sectorZ);
-
         // Copy voxels once into a compact linear buffer. Special geometry is
         // collected in the same pass, avoiding repeated coordinate arithmetic.
         int nonAirBlocks = 0;
@@ -2900,6 +2906,8 @@ final class ChunkRenderer {
                 }
             }
         }
+
+        prepareChunkLightMap(snapshot, x0, y0, z0, x1, y1, z1, sectorX, sectorZ);
 
         // Mine64-style greedy meshing: combine adjacent visible faces on each
         // chunk plane when their atlas tile matches. Tile textures repeat, so
@@ -3333,46 +3341,82 @@ final class ChunkRenderer {
      */
     private void prepareChunkLightMap(ChunkBuildSnapshot snapshot, int x0, int y0, int z0,
                                       int x1, int y1, int z1, int sectorX, int sectorZ) {
-        // Light values are consumed only by vertices in this sector.
-        for (int y = 0; y < VoxelWorld.CHUNK_Y; y++) {
-            int row = y * CHUNK_AREA;
-            for (int z = sectorZ; z < sectorZ + SECTOR_SIZE_Z; z++)
-                for (int x = sectorX; x < sectorX + SECTOR_SIZE_X; x++)
-                    chunkLightScratch[row + z * VoxelWorld.CHUNK_XZ + x] = 0;
+        // Sunlight is directional: it enters from above and stops at opaque blocks.
+        // The extra top voxel in the snapshot handles chunk boundaries without
+        // querying the world from the background mesh worker.
+        int sky = snapshot.daylightLevel;
+        for (int z = sectorZ; z < sectorZ + SECTOR_SIZE_Z; z++) {
+            for (int x = sectorX; x < sectorX + SECTOR_SIZE_X; x++) {
+                boolean exposed = !blocksLight(snapshot.block(x, VoxelWorld.CHUNK_Y, z));
+                for (int y = VoxelWorld.CHUNK_Y - 1; y >= 0; y--) {
+                    int index = y * CHUNK_AREA + z * VoxelWorld.CHUNK_XZ + x;
+                    byte id = chunkVoxelScratch[index];
+                    if (blocksLight(id)) exposed = false;
+                    if (exposed && !blocksLight(id)) chunkLightScratch[index] = (byte)sky;
+                }
+            }
         }
+
+        // Rasterize the sparse emitter list. The Manhattan falloff is cheap and
+        // predictable on J2ME; rays are rejected when an opaque voxel blocks them.
         for (int source = 0; source < snapshot.lightCount; source++) {
-            int sx = snapshot.lightX[source];
-            int sy = snapshot.lightY[source];
-            int sz = snapshot.lightZ[source];
+            int sx = snapshot.lightX[source] - x0;
+            int sy = snapshot.lightY[source] - y0;
+            int sz = snapshot.lightZ[source] - z0;
             int radius = snapshot.lightRadius[source] & 255;
-            int minX = sx - radius, maxX = sx + radius;
-            int minY = sy - radius, maxY = sy + radius;
-            int minZ = sz - radius, maxZ = sz + radius;
-            if (minX < x0 + sectorX) minX = x0 + sectorX;
-            if (maxX >= x0 + sectorX + SECTOR_SIZE_X) maxX = x0 + sectorX + SECTOR_SIZE_X - 1;
-            if (minY < y0) minY = y0;
-            if (maxY >= y1) maxY = y1 - 1;
-            if (minZ < z0 + sectorZ) minZ = z0 + sectorZ;
-            if (maxZ >= z0 + sectorZ + SECTOR_SIZE_Z) maxZ = z0 + sectorZ + SECTOR_SIZE_Z - 1;
+            int minX = Math.max(sectorX, sx - radius);
+            int maxX = Math.min(sectorX + SECTOR_SIZE_X - 1, sx + radius);
+            int minY = Math.max(0, sy - radius);
+            int maxY = Math.min(VoxelWorld.CHUNK_Y - 1, sy + radius);
+            int minZ = Math.max(sectorZ, sz - radius);
+            int maxZ = Math.min(sectorZ + SECTOR_SIZE_Z - 1, sz + radius);
             int multiplier = snapshot.lavaSource[source] ? 2 : 3;
             for (int y = minY; y <= maxY; y++) {
                 int dy = Math.abs(y - sy);
-                int yBase = (y - y0) * CHUNK_AREA;
+                int yBase = y * CHUNK_AREA;
                 for (int z = minZ; z <= maxZ; z++) {
                     int dz = dy + Math.abs(z - sz);
-                    int row = yBase + (z - z0) * VoxelWorld.CHUNK_XZ;
+                    int row = yBase + z * VoxelWorld.CHUNK_XZ;
                     for (int x = minX; x <= maxX; x++) {
                         int distance = dz + Math.abs(x - sx);
-                        if (distance > radius) continue;
+                        if (distance > radius || !hasLightPath(sx, sy, sz, x, y, z,
+                                sectorX, sectorZ)) continue;
                         int level = (radius + 1 - distance) * multiplier;
                         if (level > 14) level = 14;
-                        int index = row + x - x0;
+                        int index = row + x;
                         if ((chunkLightScratch[index] & 255) < level)
                             chunkLightScratch[index] = (byte)level;
                     }
                 }
             }
         }
+    }
+
+    private boolean blocksLight(byte id) {
+        if (id == Block.AIR || id == Block.FIRE || id == Block.TORCH ||
+                id == Block.GLASS || Block.isFlower(id) || Block.isFluid(id) ||
+                Block.isDoor(id)) return false;
+        // Leaves attenuate light rather than behaving like a full opaque cube.
+        return id != Block.LEAVES;
+    }
+
+    /** Short 3D grid ray; checks only voxels available in the active sector snapshot. */
+    private boolean hasLightPath(int x0, int y0, int z0, int x1, int y1, int z1,
+                                 int sectorX, int sectorZ) {
+        int dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
+        int steps = Math.max(Math.abs(dx), Math.max(Math.abs(dy), Math.abs(dz)));
+        if (steps <= 1) return true;
+        for (int step = 1; step < steps; step++) {
+            int x = x0 + dx * step / steps;
+            int y = y0 + dy * step / steps;
+            int z = z0 + dz * step / steps;
+            if (x < sectorX || x >= sectorX + SECTOR_SIZE_X ||
+                    z < sectorZ || z >= sectorZ + SECTOR_SIZE_Z ||
+                    y < 0 || y >= VoxelWorld.CHUNK_Y) continue;
+            int index = y * CHUNK_AREA + z * VoxelWorld.CHUNK_XZ + x;
+            if (blocksLight(chunkVoxelScratch[index])) return false;
+        }
+        return true;
     }
 
     /** O(1) block-quantized light lookup from the precomputed chunk map. */
@@ -3564,6 +3608,7 @@ final class ChunkRenderer {
         final byte[] voxels = new byte[PAD_AREA * (VoxelWorld.CHUNK_Y + 2)];
         final byte[] metadata = new byte[VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_Y * VoxelWorld.CHUNK_XZ];
         int dimensionId;
+        int daylightLevel = 3;
         final int[] lightX = new int[MAX_CHUNK_TORCHES];
         final int[] lightY = new int[MAX_CHUNK_TORCHES];
         final int[] lightZ = new int[MAX_CHUNK_TORCHES];
@@ -3862,7 +3907,7 @@ final class ChunkRenderer {
         }
 
         private int litShade(int face, int lightLevel) {
-            int shade = face == 0 ? 255 : (face == 5 ? 135 : (face <= 2 ? 205 : 180));
+            int shade = face == 0 ? 22 : (face == 5 ? 10 : (face <= 2 ? 17 : 14));
             return shade + (255 - shade) * lightLevel / 14;
         }
 
