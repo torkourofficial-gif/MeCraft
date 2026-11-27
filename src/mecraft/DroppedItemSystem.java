@@ -165,13 +165,13 @@ final class DroppedItemSystem {
     }
 
     int spawn(int id, int bx, int by, int bz) {
-        return spawnStack(id, 1, bx, by, bz);
+        return spawnWithLimit(id, bx, by, bz, DROPPED_ITEM_LIMIT);
     }
 
     /** One rendered entity can represent a complete inventory stack. */
     int spawnStack(int id, int count, int bx, int by, int bz) {
         if (id <= Block.AIR || id >= ItemCatalog.COUNT || count <= 0) return -1;
-        int slot = spawnWithLimit(id, bx, by, bz, DROPPED_ITEM_LIMIT);
+        int slot = spawnWithLimit(id, bx, by, bz, CAPACITY);
         if (slot >= 0) {
             stackCount[slot] = count;
             return slot;
