@@ -2341,9 +2341,10 @@ final class ChunkRenderer {
         if (world.dimensionId == VoxelWorld.DIM_NETHER || world.nether) skyBrightness = 0.35f;
         if (world.dimensionId == VoxelWorld.DIM_END) skyBrightness = 0.28f;
         if (skyBrightness > 1.0f) skyBrightness = 1.0f;
-        // Keep direct daylight below full brightness; the six visual bands below
-        // preserve a readable gradient instead of washing terrain out to white.
-        snapshot.daylightLevel = 1 + (int)(9.0f * skyBrightness);
+        // Keep a gentle ambient floor and enough headroom for cave light to
+        // fade over several blocks instead of collapsing at the sector edge.
+        snapshot.daylightLevel = 2 + (int)(10.0f * skyBrightness);
+        if (snapshot.daylightLevel > 12) snapshot.daylightLevel = 12;
 
         // Edits made while copying leave this sector dirty. Finish this build,
         // then rebuild once from the final world state instead of restarting the
@@ -3972,20 +3973,19 @@ final class ChunkRenderer {
         }
 
         private int litShade(int face, int lightLevel) {
-            // Six deliberately separated brightness steps, inspired by the
-            // classic Minecraft lightmap. Avoid pure white so bright sand and
-            // grass keep their texture detail on low-end phone displays.
+            // Six smooth brightness bands. The lower bands retain visible
+            // texture detail, while daylight is brighter without clipping.
             int band;
-            if (lightLevel <= 1) band = 0;
-            else if (lightLevel <= 3) band = 1;
-            else if (lightLevel <= 5) band = 2;
-            else if (lightLevel <= 7) band = 3;
+            if (lightLevel <= 2) band = 0;
+            else if (lightLevel <= 4) band = 1;
+            else if (lightLevel <= 6) band = 2;
+            else if (lightLevel <= 8) band = 3;
             else if (lightLevel <= 10) band = 4;
             else band = 5;
 
-            int[] top = { 34, 61, 88, 116, 148, 190 };
-            int[] side = { 27, 49, 72, 96, 124, 160 };
-            int[] bottom = { 20, 37, 54, 72, 94, 122 };
+            int[] top = { 55, 82, 109, 136, 169, 214 };
+            int[] side = { 44, 66, 88, 111, 139, 178 };
+            int[] bottom = { 32, 49, 66, 83, 105, 137 };
             if (face == 0) return top[band];
             if (face == 5) return bottom[band];
             return side[band];
