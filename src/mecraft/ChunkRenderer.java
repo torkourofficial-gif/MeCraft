@@ -2893,9 +2893,8 @@ final class ChunkRenderer {
                                 id == Block.END_PORTAL,
                                 (snapshot.metadata(localX, localY, localZ) & 4) != 0);
                     } else if (id == Block.END_PORTAL_FRAME) {
-                        addEndPortalFrameGeometry(builders, builderTails, localX, localY, localZ,
-                                snapshot.metadata(localX, localY, localZ),
-                                chunkLightScratch[(ly * VoxelWorld.CHUNK_XZ + lz) * VoxelWorld.CHUNK_XZ + lx] & 255);
+                        // Frame geometry is emitted after prepareChunkLightMap(),
+                        // when its final ambient/propagated light value is available.
                     } else if (id == Block.FIRE) {
                         if (fires == null) fires = acquireFireBuilder();
                         fires.add(localX, localY, localZ);
@@ -2922,6 +2921,21 @@ final class ChunkRenderer {
 
         // Prepare light before both partial and greedy geometry consume the scratch map.
         prepareChunkLightMap(snapshot, x0, y0, z0, x1, y1, z1, sectorX, sectorZ);
+
+        // Emit End portal frames only after the final chunk light map is ready.
+        for (int ly = 0; ly < VoxelWorld.CHUNK_Y; ly++) {
+            int y = y0 + ly;
+            for (int lz = sectorZ; lz < sectorZ + SECTOR_SIZE_Z; lz++) {
+                int z = z0 + lz;
+                for (int lx = sectorX; lx < sectorX + SECTOR_SIZE_X; lx++) {
+                    int x = x0 + lx;
+                    int voxelIndex = (ly * VoxelWorld.CHUNK_XZ + lz) * VoxelWorld.CHUNK_XZ + lx;
+                    if (chunkVoxelScratch[voxelIndex] != Block.END_PORTAL_FRAME) continue;
+                    addEndPortalFrameGeometry(builders, builderTails, lx, ly, lz,
+                            snapshot.metadata(lx, ly, lz), chunkLightScratch[voxelIndex] & 255);
+                }
+            }
+        }
 
         // Partial blocks bypass greedy cube meshing and emit their exact 1/16 geometry.
         for (int ly = 0; ly < VoxelWorld.CHUNK_Y; ly++) {
