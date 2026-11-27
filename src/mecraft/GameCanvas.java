@@ -3363,7 +3363,7 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         drawInventoryPlayerPreview(g, left, top);
         // Controls hint sits just below the inventory panel.
         g.setColor(35, 35, 35);
-        g.drawString("5 mover  # cerrar  * crafteo",
+        g.drawString(Language.text("5 mover  # cerrar  * crafteo"),
                 w / 2, top + 168, Graphics.TOP | Graphics.HCENTER);
     }
 
@@ -6576,8 +6576,8 @@ final class GameCanvas extends Canvas implements Runnable, CommandListener, LanT
         int selectedBlock = creativeItemAt(creativeSelection);
         g.setColor(35, 35, 35);
         if (ItemCatalog.isSpawnEgg(selectedBlock)) {
-            g.drawString("Huevo de spawn", w / 2, top + 132, Graphics.TOP | Graphics.HCENTER);
-            g.drawString(ItemCatalog.spawnEggMobName(selectedBlock), w / 2, top + 146,
+            g.drawString(Language.text("Huevo de spawn"), w / 2, top + 132, Graphics.TOP | Graphics.HCENTER);
+            g.drawString(Language.text(ItemCatalog.spawnEggMobName(selectedBlock)), w / 2, top + 146,
                     Graphics.TOP | Graphics.HCENTER);
             g.drawString((creativeSelection / pageSize + 1) + "/" + pageCount,
                     left + panelW - 7, top + 132, Graphics.TOP | Graphics.RIGHT);
