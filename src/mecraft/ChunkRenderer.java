@@ -42,9 +42,9 @@ final class ChunkRenderer {
     private static final int MAX_FACE_BUILDER_VERTICES = 2048;
     // Larger bounded slices reduce streaming latency while keeping each sync short.
     private static final int MAX_CHUNK_MESHES_PER_SYNC = 3;
-    private static final int MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 3072;
+    private static final int MAX_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 4096;
     // Player edits stay responsive without taking an unbounded frame-sized copy.
-    private static final int MAX_URGENT_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 4096;
+    private static final int MAX_URGENT_CHUNK_SNAPSHOT_CELLS_PER_SYNC = 6144;
     private static final int MAX_CHUNK_LIGHT_SCAN_CELLS_PER_SYNC = 6144;
     private static final long MAX_CHUNK_MESH_INSTALL_MILLIS = 6L;
     private static final int CHUNK_AREA = VoxelWorld.CHUNK_XZ * VoxelWorld.CHUNK_XZ;
