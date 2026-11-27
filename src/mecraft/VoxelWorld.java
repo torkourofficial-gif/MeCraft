@@ -711,7 +711,7 @@ final class VoxelWorld {
                     x < minX || x >= maxX || y < y0 || y >= y1 ||
                     z < minZ || z >= maxZ) continue;
             byte id = editId[i];
-            if (id != Block.TORCH && id != Block.LAVA) continue;
+            if (!isLightEmitter(id, metadataAt(x, y, z))) continue;
             sourceX[count] = x;
             sourceY[count] = y;
             sourceZ[count] = z;
