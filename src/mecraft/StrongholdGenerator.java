@@ -9,7 +9,7 @@ package mecraft;
  * deterministic layout so generation stays cheap and cannot cross world edges.
  */
 final class StrongholdGenerator {
-    private static final byte FLOOR = Block.STONE_SLAB;
+    private static final byte FLOOR = Block.COBBLESTONE;
     private static final byte WALL = Block.MOSSY_COBBLESTONE;
     private static final int ROOM_HEIGHT = 5;
 
@@ -38,7 +38,7 @@ final class StrongholdGenerator {
         corridorX(blocks, width, depth, height, minX + 28, minX + 31, minZ + 24, y);
 
         // Side branch and a short library-like chamber, made from the blocks
-        // available in MeCraft rather than introducing unsupported brick IDs.
+        // available in MeCraft: cobblestone floors/ceilings and mossy cobblestone walls.
         corridorZ(blocks, width, depth, height, minX + 8, minZ + 11, minZ + 15, y);
         room(blocks, width, depth, height, minX + 5, minZ + 15, minX + 13, minZ + 21, y);
         corridorZ(blocks, width, depth, height, minX + 21, minZ + 5, minZ + 2, y);
