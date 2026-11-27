@@ -497,11 +497,15 @@ final class VoxelWorld {
     }
 
     private void setMetadata(int x, int y, int z, int metadata) {
+        int oldMetadata = metadataAt(x, y, z);
+        byte id = get(x, y, z);
         if (inside(x, z)) waterLevels[index(x, y, z)] = (byte)metadata;
         else {
             int i = ensureEdit(x, y, z);
             if (i >= 0) editMeta[i] = (byte)metadata;
         }
+        if (id == Block.FURNACE &&
+                ((oldMetadata ^ metadata) & Block.FURNACE_LIT_META) != 0) lightRevision++;
         recordLanChange(x, y, z);
     }
 
@@ -605,6 +609,11 @@ final class VoxelWorld {
      * Incremental counterpart to collectLightSources. state[0] is the scan
      * cursor and state[1] is the number of sources written so far.
      */
+    private boolean isLightEmitter(byte id, int metadata) {
+        return id == Block.TORCH || id == Block.LAVA || id == Block.FIRE ||
+                (id == Block.FURNACE && (metadata & Block.FURNACE_LIT_META) != 0);
+    }
+
     boolean collectLightSourcesStep(int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
             int[] sourceX, int[] sourceY, int[] sourceZ, byte[] radii,
             boolean[] lavaSources, int limit, int torchRadius, int lavaRadius,
@@ -653,7 +662,7 @@ final class VoxelWorld {
                         z < minZ || z >= maxZ) continue;
                 id = editId[edit];
             }
-            if (id != Block.TORCH && id != Block.LAVA) continue;
+            if (!isLightEmitter(id, metadataAt(x, y, z))) continue;
             sourceX[count] = x;
             sourceY[count] = y;
             sourceZ[count] = z;
@@ -683,7 +692,7 @@ final class VoxelWorld {
                 int row = index(x0, y, z);
                 for (int x = x0; x < x1 && count < limit; x++) {
                     byte id = blocks[row + (x - x0)];
-                    if (id != Block.TORCH && id != Block.LAVA) continue;
+                    if (!isLightEmitter(id, metadataAt(x, y, z))) continue;
                     sourceX[count] = x;
                     sourceY[count] = y;
                     sourceZ[count] = z;
@@ -1026,8 +1035,9 @@ final class VoxelWorld {
         changedY = y;
         changedZ = z;
         revision++;
-        if (oldId != id && (oldId == Block.TORCH || oldId == Block.LAVA ||
-                id == Block.TORCH || id == Block.LAVA)) lightRevision++;
+        if (oldId != id && (isLightEmitter(oldId, 0) || isLightEmitter(id, 0) ||
+                oldId == Block.FIRE || id == Block.FIRE || oldId == Block.FURNACE ||
+                id == Block.FURNACE)) lightRevision++;
         recordLanChange(x, y, z);
         scheduleFluidNeighbors(x, y, z);
         return true;
