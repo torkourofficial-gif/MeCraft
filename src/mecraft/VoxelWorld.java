@@ -319,6 +319,24 @@ final class VoxelWorld {
     private void requestProceduralPrefetch(int cx, int cz, boolean priority) {
         if (!needsProceduralChunk(cx, cz) || findProceduralCache(cx, cz) >= 0) return;
         synchronized (proceduralPrefetchLock) {
+            // Remove queued requests from a previous seed, noise version or dimension
+            // before deduplication, so stale work cannot block the current neighborhood.
+            int kept = 0;
+            for (int i = 0; i < proceduralPrefetchQueueCount; i++) {
+                if (proceduralPrefetchQueueSeed[i] == seed &&
+                        proceduralPrefetchQueueNoiseVersion[i] == noiseVersion &&
+                        proceduralPrefetchQueueDimension[i] == dimensionId) {
+                    if (kept != i) {
+                        proceduralPrefetchQueueX[kept] = proceduralPrefetchQueueX[i];
+                        proceduralPrefetchQueueZ[kept] = proceduralPrefetchQueueZ[i];
+                        proceduralPrefetchQueueSeed[kept] = proceduralPrefetchQueueSeed[i];
+                        proceduralPrefetchQueueNoiseVersion[kept] = proceduralPrefetchQueueNoiseVersion[i];
+                        proceduralPrefetchQueueDimension[kept] = proceduralPrefetchQueueDimension[i];
+                    }
+                    kept++;
+                }
+            }
+            proceduralPrefetchQueueCount = kept;
             if ((proceduralPrefetchBusy && proceduralPrefetchBusyX == cx &&
                     proceduralPrefetchBusyZ == cz && proceduralPrefetchBusyDimension == dimensionId) ||
                 (proceduralPrefetchReady && proceduralPrefetchReadyX == cx &&
