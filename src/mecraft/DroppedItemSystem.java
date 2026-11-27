@@ -398,6 +398,39 @@ final class DroppedItemSystem {
         return picked;
     }
 
+    /** Uploads newly spawned drops without advancing their physics or pickup timers. */
+    void refreshMeshes() {
+        boolean hasBlocks = false;
+        boolean hasSprites = false;
+        boolean hasTntFlash = false;
+        int highestActiveSlot = -1;
+        for (int i = 0; i < CAPACITY; i++) {
+            if (itemId[i] == 0) continue;
+            writeItem(i);
+            highestActiveSlot = i;
+            if (itemId[i] == Block.TNT && tntFuse[i] > 0) {
+                if (tntFuse[i] / 5 % 2 == 0) hasTntFlash = true;
+                hasBlocks = true;
+            } else if (itemId[i] < Block.COUNT || ItemCatalog.isColoredWool(itemId[i])) {
+                hasBlocks = true;
+            } else {
+                hasSprites = true;
+            }
+        }
+        int uploadSlots = highestActiveSlot + 1;
+        if (uploadSlots < renderedSlotCount) uploadSlots = renderedSlotCount;
+        int uploadVertices = uploadSlots * VERTICES_PER_ITEM;
+        if (uploadVertices > 0) {
+            positionArray.set(0, uploadVertices, positions);
+            spritePositionArray.set(0, uploadVertices, spritePositions);
+            tntFlashPositionArray.set(0, uploadVertices, tntFlashPositions);
+        }
+        renderedSlotCount = highestActiveSlot + 1;
+        mesh.setRenderingEnable(hasBlocks);
+        spriteMesh.setRenderingEnable(hasSprites);
+        tntFlashMesh.setRenderingEnable(hasTntFlash);
+    }
+
     boolean consumeExplosion() {
         if (!explosionPending) return false;
         explosionPending = false;
